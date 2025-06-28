@@ -1,0 +1,1112 @@
+package com.example.ocrmanga.data.repositories
+
+import android.app.Application
+import android.graphics.*
+import android.net.Uri
+import android.provider.MediaStore
+import android.util.Log
+import androidx.exifinterface.media.ExifInterface
+import com.example.ocrmanga.data.models.RecognitionResult
+import com.example.ocrmanga.data.models.TextBlockInfo
+import com.example.ocrmanga.data.models.TranslationMode
+import com.google.mlkit.nl.translate.TranslateLanguage
+import com.google.mlkit.nl.translate.Translation
+import com.google.mlkit.nl.translate.TranslatorOptions
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.google.gson.JsonParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.IOException
+import java.net.URLEncoder
+import kotlin.math.abs
+import kotlin.math.min
+
+class TranslationRepository(private val application: Application) {
+
+    private val latinRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private val chineseRecognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+    private val japaneseRecognizer = TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
+    private val koreanRecognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+    private val translators = mutableMapOf<String, com.google.mlkit.nl.translate.Translator>()
+    private val cache = mutableMapOf<String, Pair<String, List<TextBlockInfo>>>()
+    private val httpClient = OkHttpClient()
+
+    // Lưu session dịch gần nhất: Pair<Uri, Pair<text gốc, text dịch cuối>>
+    val lastTranslationSession = mutableListOf<Pair<Uri, Pair<String, String>>>()
+
+    private val vietnameseImprovements = mapOf(
+        "bạn là" to "cậu là",
+        "không có" to "chẳng có",
+        "rất tốt" to "tuyệt lắm",
+        "nhanh chóng" to "nhanh thôi",
+        "hãy làm" to "làm đi",
+        "fapping thời gian" to "thời gian thư giãn",
+        "người cao niên" to "tiền bối"
+    )
+
+    init {
+        preloadRecognitionModels()
+    }
+
+    private fun preloadRecognitionModels() {
+        val dummyBitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+        val dummyImage = InputImage.fromBitmap(dummyBitmap, 0)
+        listOf(latinRecognizer, chineseRecognizer, japaneseRecognizer, koreanRecognizer).forEach { recognizer ->
+            recognizer.process(dummyImage)
+                .addOnSuccessListener { Log.i("TranslationRepository", "Đã tải trước mô hình nhận diện: ${recognizer.javaClass.simpleName}") }
+                .addOnFailureListener { e ->
+                    Log.e("TranslationRepository", "Tải trước mô hình nhận diện thất bại: ${recognizer.javaClass.simpleName}", e)
+                }
+        }
+    }
+
+    private fun preprocessImage(bitmap: Bitmap, scaleFactor: Float): Pair<Bitmap, Float> {
+        val newWidth = (bitmap.width * scaleFactor).toInt()
+        val newHeight = (bitmap.height * scaleFactor).toInt()
+        val upscaledBitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+
+        val grayscaleBitmap = Bitmap.createBitmap(newWidth, newHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(grayscaleBitmap)
+        val paint = Paint()
+        val colorMatrix = ColorMatrix().apply { setSaturation(0f) }
+        val colorFilter = ColorMatrixColorFilter(colorMatrix)
+        paint.colorFilter = colorFilter
+        canvas.drawBitmap(upscaledBitmap, 0f, 0f, paint)
+
+        val contrastBitmap = Bitmap.createBitmap(newWidth, newHeight, Bitmap.Config.ARGB_8888)
+        val contrastCanvas = Canvas(contrastBitmap)
+        val contrastPaint = Paint()
+        val contrastMatrix = ColorMatrix().apply {
+            set(floatArrayOf(
+                1.5f, 0f, 0f, 0f, -50f,
+                0f, 1.5f, 0f, 0f, -50f,
+                0f, 0f, 1.5f, 0f, -50f,
+                0f, 0f, 0f, 1f, 0f
+            ))
+        }
+        val contrastFilter = ColorMatrixColorFilter(contrastMatrix)
+        contrastPaint.colorFilter = contrastFilter
+        contrastCanvas.drawBitmap(grayscaleBitmap, 0f, 0f, contrastPaint)
+
+        return Pair(contrastBitmap, scaleFactor)
+    }
+
+    suspend fun recognizeAndTranslateText(imageUri: Uri, mode: TranslationMode): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
+        if (mode == TranslationMode.OFF) {
+            Log.i("TranslationRepository", "Chế độ dịch đã tắt, bỏ qua việc dịch cho $imageUri")
+            return@withContext Triple("", emptyList(), "zh")
+        }
+
+        val cacheKey = "$imageUri-$mode"
+        cache[cacheKey]?.let {
+            Log.i("TranslationRepository", "Tìm thấy kết quả trong cache cho $imageUri: ${it.first}")
+            // Lưu vào session nếu lấy từ cache
+            lastTranslationSession.add(Pair(imageUri, Pair("(cache)", it.first)))
+            return@withContext Triple(it.first, it.second, detectLanguage(it.first) ?: "zh")
+        }
+
+        var bitmap: Bitmap? = null
+        var fullText: String = ""
+        var resultText: String = ""
+        var translatedBlocks: List<TextBlockInfo> = emptyList()
+        var sourceLanguage: String = "zh"
+        var detectedScript: String? = null
+        try {
+            bitmap = MediaStore.Images.Media.getBitmap(application.contentResolver, imageUri)
+            val rotationDegrees = getRotationDegrees(imageUri)
+            Log.i("TranslationRepository", "[INPUT] Đang xử lý ảnh: $imageUri với góc xoay: $rotationDegrees")
+
+            // Phát hiện loại ngôn ngữ trước khi quét (dựa trên bitmap)
+            val previewText = try {
+                val (previewText, _) = recognizeText(bitmap, rotationDegrees, onlyPreview = true)
+                previewText
+            } catch (e: Exception) {
+                ""
+            }
+            detectedScript = detectLanguage(previewText) ?: "zh"
+            Log.i("TranslationRepository", "[PREVIEW] Phát hiện script: $detectedScript")
+
+            // Quét chính xác với recognizer phù hợp
+            val (rawText, textBlocks) = recognizeText(bitmap, rotationDegrees, forceScript = detectedScript)
+            fullText = rawText
+            Log.i("TranslationRepository", "[INPUT] Văn bản gốc: $fullText, số khối: ${textBlocks.size}")
+
+            if (fullText.isEmpty()) {
+                Log.w("TranslationRepository", "Không nhận diện được văn bản trong $imageUri")
+                // Lưu session với text rỗng
+                lastTranslationSession.add(Pair(imageUri, Pair("", "")))
+                return@withContext Triple("", emptyList(), "zh")
+            }
+
+            sourceLanguage = detectLanguage(fullText) ?: "zh"
+            Log.i("TranslationRepository", "Ngôn ngữ nguồn được phát hiện: $sourceLanguage")
+
+            val blocks = mutableListOf<TextBlockInfo>()
+            for (block in textBlocks) {
+                Log.i("TranslationRepository", "Khối văn bản gốc: ${block.text}, tọa độ: left=${block.bounds.left}, top=${block.bounds.top}")
+
+                var translatedText = when (mode) {
+                    TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
+                    TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
+                    TranslationMode.OFF -> block.text
+                }
+                Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText")
+
+                val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
+                if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
+                    Log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
+                    translatedText = when (mode) {
+                        TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
+                        TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
+                        else -> translatedText
+                    }
+                }
+                Log.i("TranslationRepository", "Văn bản sau kiểm tra lần 2: $translatedText")
+
+                val naturalText = postProcessTranslation(translatedText)
+                Log.i("TranslationRepository", "Văn bản tự nhiên sau xử lý: $naturalText")
+
+                val isVertical = determineTextOrientation(listOf(block), block.text)
+                val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
+                    val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    val wordCounts = block.wordCountsPerLine
+                    val reformattedLines = mutableListOf<String>()
+                    var wordIndex = 0
+
+                    for (wordCount in wordCounts) {
+                        if (wordIndex >= words.size) break
+                        val lineWords = words.subList(wordIndex, minOf(wordIndex + wordCount, words.size))
+                        reformattedLines.add(lineWords.joinToString(" "))
+                        wordIndex += wordCount
+                    }
+
+                    val maxWordsPerLine = wordCounts.lastOrNull() ?: 5
+                    while (wordIndex < words.size) {
+                        val remainingWords = words.subList(wordIndex, minOf(wordIndex + maxWordsPerLine, words.size))
+                        reformattedLines.add(remainingWords.joinToString(" "))
+                        wordIndex += maxWordsPerLine
+                    }
+
+                    reformattedLines.joinToString("\n")
+                } else {
+                    naturalText
+                }
+                Log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
+
+                val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
+                blocks.add(TextBlockInfo(reformattedText, newBounds, block.fontSize, wordCountsPerLine = block.wordCountsPerLine, originalImageWidth = bitmap.width, originalImageHeight = bitmap.height))
+            }
+
+            resultText = blocks.joinToString("\n") { it.text }
+            translatedBlocks = blocks
+            val detectedFinal = detectLanguage(resultText) ?: ""
+            if (detectedFinal != "vi") {
+                Log.w("TranslationRepository", "Kết quả cuối chưa phải tiếng Việt, thử lại OCR và dịch lại...")
+                // Thực hiện lại OCR và dịch lại 1 lần nữa
+                val (rawText2, textBlocks2) = recognizeText(bitmap, rotationDegrees)
+                val blocks2 = mutableListOf<TextBlockInfo>()
+                for (block in textBlocks2) {
+                    var translatedText = when (mode) {
+                        TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
+                        TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
+                        TranslationMode.OFF -> block.text
+                    }
+                    val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
+                    if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
+                        translatedText = when (mode) {
+                            TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
+                            TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
+                            else -> translatedText
+                        }
+                    }
+                    val naturalText = postProcessTranslation(translatedText)
+                    val isVertical = determineTextOrientation(listOf(block), block.text)
+                    val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
+                        val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                        val wordCounts = block.wordCountsPerLine
+                        val reformattedLines = mutableListOf<String>()
+                        var wordIndex = 0
+                        for (wordCount in wordCounts) {
+                            if (wordIndex >= words.size) break
+                            val lineWords = words.subList(wordIndex, minOf(wordIndex + wordCount, words.size))
+                            reformattedLines.add(lineWords.joinToString(" "))
+                            wordIndex += wordCount
+                        }
+                        val maxWordsPerLine = wordCounts.lastOrNull() ?: 5
+                        while (wordIndex < words.size) {
+                            val remainingWords = words.subList(wordIndex, minOf(wordIndex + maxWordsPerLine, words.size))
+                            reformattedLines.add(remainingWords.joinToString(" "))
+                            wordIndex += maxWordsPerLine
+                        }
+                        reformattedLines.joinToString("\n")
+                    } else {
+                        naturalText
+                    }
+                    val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
+                    blocks2.add(TextBlockInfo(reformattedText, newBounds, block.fontSize, wordCountsPerLine = block.wordCountsPerLine, originalImageWidth = bitmap.width, originalImageHeight = bitmap.height))
+                }
+                val resultText2 = blocks2.joinToString("\n") { it.text }
+                val detectedFinal2 = detectLanguage(resultText2) ?: ""
+                if (detectedFinal2 == "vi") {
+                    resultText = resultText2
+                    translatedBlocks = blocks2
+                    Log.i("TranslationRepository", "Dịch lại thành công ra tiếng Việt.")
+                } else {
+                    Log.w("TranslationRepository", "Dịch lại vẫn không ra tiếng Việt, trả về kết quả tốt nhất.")
+                }
+            }
+            val result = Triple(resultText, translatedBlocks, sourceLanguage)
+            cache[cacheKey] = resultText to translatedBlocks
+            Log.i("TranslationRepository", "[OUTPUT] Kết quả cuối cùng: $resultText")
+            // Lưu session đầu vào + kết quả cuối
+            lastTranslationSession.add(Pair(imageUri, Pair(fullText, resultText)))
+            result
+        } catch (e: IOException) {
+            Log.e("TranslationRepository", "Lỗi IO với $imageUri", e)
+            lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
+            return@withContext Triple("", emptyList(), "zh")
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "Lỗi xử lý $imageUri", e)
+            lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
+            return@withContext Triple("", emptyList(), "zh")
+        } finally {
+            // Always recycle bitmap to free memory
+            try {
+                bitmap?.recycle()
+                bitmap = null
+            } catch (e: Exception) {
+                Log.e("TranslationRepository", "Lỗi khi giải phóng bitmap", e)
+            }
+        }
+    }
+
+    // recognizeText mới: cho phép chỉ quét preview hoặc ép loại recognizer
+    private suspend fun recognizeText(bitmap: Bitmap, rotationDegrees: Int, onlyPreview: Boolean = false, forceScript: String? = null): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
+        val scaleFactors = if (onlyPreview) listOf(1.003f) else listOf(1.003f, 1.12f)
+        val recognizers = when (forceScript) {
+            "zh" -> listOf(chineseRecognizer)
+            "ja" -> listOf(japaneseRecognizer)
+            "ko" -> listOf(koreanRecognizer)
+            "en" -> listOf(latinRecognizer)
+            else -> listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer)
+        }
+        val deferredResults = scaleFactors.flatMap { scale ->
+            recognizers.map { recognizer ->
+                async {
+                    var preprocessedBitmap: Bitmap? = null
+                    try {
+                        val (preBitmap, _) = preprocessImage(bitmap, scale)
+                        preprocessedBitmap = preBitmap
+                        val scaledInputImage = InputImage.fromBitmap(preprocessedBitmap, rotationDegrees)
+                        val result = recognizer.process(scaledInputImage).await()
+                        val elements = result.textBlocks.flatMap { it.lines }.flatMap { it.elements }
+                        val confidence = if (elements.isEmpty()) 0.0 else elements.sumOf { it.confidence.toDouble() } / elements.size
+                        val textLength = result.text.length
+                        val fontSizes = result.textBlocks.flatMap { block ->
+                            block.lines.flatMap { line ->
+                                line.elements.mapNotNull { element ->
+                                    element.boundingBox?.height()?.toFloat()?.div(scale)
+                                }
+                            }
+                        }
+                        val avgFontSize = if (fontSizes.isNotEmpty()) fontSizes.average().toFloat() else 16f
+                        Log.i(
+                            "TranslationRepository",
+                            "Kết quả quét với scaleFactor=$scale, recognizer=${recognizer.javaClass.simpleName}: " +
+                                    "textLength=$textLength, averageConfidence=$confidence, avgFontSize=$avgFontSize, text=${result.text.take(100)}[...]"
+                        )
+                        RecognitionResult(scale, recognizer, result, avgFontSize)
+                    } catch (e: Exception) {
+                        Log.e("TranslationRepository", "Nhận diện thất bại cho scale $scale và recognizer ${recognizer.javaClass.simpleName}", e)
+                        null
+                    } finally {
+                        try {
+                            preprocessedBitmap?.recycle()
+                        } catch (e: Exception) {
+                            Log.e("TranslationRepository", "Lỗi khi giải phóng preprocessedBitmap", e)
+                        }
+                    }
+                }
+            }
+        }
+        val results = deferredResults.awaitAll().filterNotNull()
+        if (results.isEmpty()) {
+            Log.e("TranslationRepository", "Tất cả nhận diện đều thất bại")
+            throw Exception("Không thể nhận diện văn bản trong hình ảnh")
+        }
+
+        // Group results by recognizer to check font size consistency within clusters
+        val groupedByRecognizer = results.groupBy { it.recognizer }
+        val bestResult = groupedByRecognizer.entries.maxByOrNull { entry ->
+            val recognizerResults = entry.value
+            val bestForRecognizer = recognizerResults.minByOrNull { it.avgFontSize } ?: return@maxByOrNull 0.0
+            val elements = bestForRecognizer.textResult.textBlocks.flatMap { it.lines }.flatMap { it.elements }
+            if (elements.isEmpty()) 0.0 else {
+                val totalConfidence = elements.sumOf { it.confidence.toDouble() }
+                val averageConfidence = totalConfidence / elements.size
+                val length = bestForRecognizer.textResult.text.length
+                val fontSizePenalty = if (bestForRecognizer.avgFontSize in 20f..200f) 1f else bestForRecognizer.avgFontSize / 200f
+                (length * averageConfidence * 2.0) / (fontSizePenalty + 1f) // Increased weight for confidence
+            }
+        }?.value?.minByOrNull { it.avgFontSize }
+
+        if (bestResult == null) {
+            Log.e("TranslationRepository", "Không tìm thấy kết quả tốt nhất")
+            throw Exception("Không có kết quả nhận diện văn bản")
+        }
+
+        val bestScaleFactor = bestResult.scale
+        val bestTextResult = bestResult.textResult
+        val bestAvgFontSize = bestResult.avgFontSize
+        Log.i("TranslationRepository", "Chọn scaleFactor tốt nhất: $bestScaleFactor với recognizer ${bestResult.recognizer.javaClass.simpleName}, avgFontSize=$bestAvgFontSize")
+
+        // Additional validation: Check for common errors in Chinese text
+        val bestText = bestTextResult.text
+        val hasCommonErrors = bestText.contains("地") && !bestText.contains("她") // "地" often mistaken for "她"
+        if (hasCommonErrors) {
+            Log.w("TranslationRepository", "Phát hiện lỗi ngữ pháp trong kết quả tốt nhất: $bestText")
+            val alternativeResult = groupedByRecognizer.entries
+                .flatMap { it.value }
+                .filter { it != bestResult && it.textResult.text.contains("她") }
+                .maxByOrNull { result ->
+                    val elements = result.textResult.textBlocks.flatMap { it.lines }.flatMap { it.elements }
+                    val averageConfidence = if (elements.isEmpty()) 0.0 else elements.sumOf { it.confidence.toDouble() } / elements.size
+                    averageConfidence
+                }
+            if (alternativeResult != null) {
+                Log.i("TranslationRepository", "Chuyển sang kết quả thay thế với scaleFactor=${alternativeResult.scale}")
+                val alternativeTextResult = alternativeResult.textResult
+                val alternativeAvgFontSize = alternativeResult.avgFontSize
+                val alternativeScaleFactor = alternativeResult.scale
+                Log.i("TranslationRepository", "Kết quả thay thế: scaleFactor=$alternativeScaleFactor, avgFontSize=$alternativeAvgFontSize")
+
+                val textBlocks = alternativeTextResult.textBlocks.flatMap { block ->
+                    block.lines.map { line ->
+                        val bounds = line.boundingBox ?: Rect()
+                        val scaledBounds = Rect(
+                            (bounds.left / alternativeScaleFactor).toInt(),
+                            (bounds.top / alternativeScaleFactor).toInt(),
+                            (bounds.right / alternativeScaleFactor).toInt(),
+                            (bounds.bottom / alternativeScaleFactor).toInt()
+                        )
+                        val fontSizes = line.elements.mapNotNull { it.boundingBox?.height()?.toFloat()?.div(alternativeScaleFactor) }
+                        val fontSize = if (fontSizes.isNotEmpty()) {
+                            fontSizes.sorted()[fontSizes.size / 2].coerceAtMost(alternativeAvgFontSize * 1.2f)
+                        } else {
+                            alternativeAvgFontSize
+                        }
+                        val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
+                        TextBlockInfo(line.text, scaledBounds, fontSize, wordCountsPerLine = listOf(wordCount), originalImageWidth = bitmap.width, originalImageHeight = bitmap.height)
+                    }
+                }
+
+                val clusters = groupBlocksIntoClusters(textBlocks)
+                val normalizedTextBlocks = clusters.flatMap { cluster ->
+                    val fontSizes = cluster.map { it.fontSize }
+                    if (fontSizes.isNotEmpty()) {
+                        val medianFontSize = fontSizes.sorted()[fontSizes.size / 2]
+                        cluster.map { block ->
+                            if (abs(block.fontSize - medianFontSize) > medianFontSize * 0.3f) {
+                                block.copy(fontSize = medianFontSize)
+                            } else {
+                                block
+                            }
+                        }
+                    } else {
+                        cluster
+                    }
+                }
+
+                val isVertical = determineTextOrientation(normalizedTextBlocks, alternativeTextResult.text)
+                val processedTextBlocks = if (isVertical) {
+                    sortVerticalTextBlocks(normalizedTextBlocks)
+                } else {
+                    sortHorizontalTextBlocks(normalizedTextBlocks)
+                }
+
+                processedTextBlocks.forEachIndexed { index, block ->
+                    Log.i("TranslationRepository", "Khối #$index: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, bottom=${block.bounds.bottom}, fontSize=${block.fontSize}")
+                }
+
+                val fullText = processedTextBlocks.joinToString("\n") { it.text }
+                Log.i("TranslationRepository", "Hướng văn bản: ${if (isVertical) "Dọc" else "Ngang"}, Toàn bộ văn bản: $fullText")
+                return@withContext fullText to processedTextBlocks
+            }
+        }
+
+        // Process text blocks with font size normalization
+        val textBlocks = bestTextResult.textBlocks.flatMap { block ->
+            block.lines.map { line ->
+                val bounds = line.boundingBox ?: Rect()
+                val scaledBounds = Rect(
+                    (bounds.left / bestScaleFactor).toInt(),
+                    (bounds.top / bestScaleFactor).toInt(),
+                    (bounds.right / bestScaleFactor).toInt(),
+                    (bounds.bottom / bestScaleFactor).toInt()
+                )
+                val fontSizes = line.elements.mapNotNull { it.boundingBox?.height()?.toFloat()?.div(bestScaleFactor) }
+                val fontSize = if (fontSizes.isNotEmpty()) {
+                    fontSizes.sorted()[fontSizes.size / 2].coerceAtMost(bestAvgFontSize * 1.2f)
+                } else {
+                    bestAvgFontSize
+                }
+                val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
+                TextBlockInfo(line.text, scaledBounds, fontSize, wordCountsPerLine = listOf(wordCount), originalImageWidth = bitmap.width, originalImageHeight = bitmap.height)
+            }
+        }
+
+        // Check for font size consistency within clusters
+        val clusters = groupBlocksIntoClusters(textBlocks)
+        val normalizedTextBlocks = clusters.flatMap { cluster ->
+            val fontSizes = cluster.map { it.fontSize }
+            if (fontSizes.isNotEmpty()) {
+                val medianFontSize = fontSizes.sorted()[fontSizes.size / 2]
+                cluster.map { block ->
+                    if (abs(block.fontSize - medianFontSize) > medianFontSize * 0.3f) {
+                        block.copy(fontSize = medianFontSize)
+                    } else {
+                        block
+                    }
+                }
+            } else {
+                cluster
+            }
+        }
+
+        val isVertical = determineTextOrientation(normalizedTextBlocks, bestTextResult.text)
+        val processedTextBlocks = if (isVertical) {
+            sortVerticalTextBlocks(normalizedTextBlocks)
+        } else {
+            sortHorizontalTextBlocks(normalizedTextBlocks)
+        }
+
+        processedTextBlocks.forEachIndexed { index, block ->
+            Log.i("TranslationRepository", "Khối #$index: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, bottom=${block.bounds.bottom}, fontSize=${block.fontSize}")
+        }
+
+        val fullText = processedTextBlocks.joinToString("\n") { it.text }
+        Log.i("TranslationRepository", "Hướng văn bản: ${if (isVertical) "Dọc" else "Ngang"}, Toàn bộ văn bản: $fullText")
+        fullText to processedTextBlocks
+    }
+
+    // Nhóm các text block thành các khung thoại (bubble) dựa trên vị trí và khoảng cách, kiểm tra overlap dọc đủ lớn và không ghép nếu lệch trục quá xa
+    private fun assignSpeechBubblesToBlocks(textBlocks: List<TextBlockInfo>): List<TextBlockInfo> {
+        if (textBlocks.isEmpty()) return emptyList()
+        val clusters = mutableListOf<MutableList<TextBlockInfo>>()
+        val threshold = 40 // px, điều chỉnh cho phù hợp với độ phân giải ảnh
+        val iouThreshold = 0.1f // Intersection over Union tối thiểu để coi là cùng cụm
+        fun iou(a: Rect, b: Rect): Float {
+            val left = maxOf(a.left, b.left)
+            val top = maxOf(a.top, b.top)
+            val right = minOf(a.right, b.right)
+            val bottom = minOf(a.bottom, b.bottom)
+            val intersection = maxOf(0, right - left) * maxOf(0, bottom - top)
+            val union = a.width() * a.height() + b.width() * b.height() - intersection
+            return if (union > 0) intersection.toFloat() / union else 0f
+        }
+        fun verticalOverlap(a: Rect, b: Rect): Int {
+            val overlap = minOf(a.bottom, b.bottom) - maxOf(a.top, b.top)
+            return maxOf(0, overlap)
+        }
+        fun isVerticalOverlapEnough(a: Rect, b: Rect): Boolean {
+            val overlap = verticalOverlap(a, b)
+            val minHeight = minOf(a.height(), b.height())
+            return overlap >= minHeight / 3
+        }
+        fun isTooFarVertical(a: Rect, b: Rect): Boolean {
+            val aHeight = a.height()
+            val bHeight = b.height()
+            val verticalGap1 = b.top - a.bottom
+            val verticalGap2 = a.top - b.bottom
+            return (verticalGap1 > aHeight / 2) || (verticalGap2 > bHeight / 2)
+        }
+        textBlocks.forEach { block ->
+            var assigned = false
+            for (cluster in clusters) {
+                if (cluster.any { other ->
+                        val a = block.bounds
+                        val b = other.bounds
+                        val overlap = Rect.intersects(a, b) && iou(a, b) > iouThreshold
+                        val verticalEnough = isVerticalOverlapEnough(a, b)
+                        val notTooFar = !isTooFarVertical(a, b)
+                        (overlap || verticalEnough) && notTooFar
+                    }) {
+                    cluster.add(block)
+                    assigned = true
+                    break
+                }
+            }
+            if (!assigned) clusters.add(mutableListOf(block))
+        }
+        // Với mỗi cluster, tính bounding box bao ngoài (bubbleBounds)
+        val clusterBounds = clusters.map { cluster ->
+            cluster.fold(Rect(cluster[0].bounds)) { acc, block ->
+                acc.union(block.bounds)
+                acc
+            }
+        }
+        // Gán bubbleId cho từng block
+        val result = mutableListOf<TextBlockInfo>()
+        clusters.forEachIndexed { idx, cluster ->
+            val bubble = clusterBounds[idx]
+            cluster.forEach { block ->
+                result.add(block.copy(
+                    polygon = null,
+                    bounds = block.bounds,
+                    fontSize = block.fontSize,
+                    isVertical = block.isVertical,
+                    wordCountsPerLine = block.wordCountsPerLine,
+                    originalImageWidth = block.originalImageWidth,
+                    originalImageHeight = block.originalImageHeight,
+                    bubbleId = idx // Gán bubbleId
+                ))
+            }
+        }
+        return result
+    }
+
+    private fun groupBlocksIntoClusters(textBlocks: List<TextBlockInfo>): List<List<TextBlockInfo>> {
+        val clusters = mutableListOf<MutableList<TextBlockInfo>>()
+        val verticalThreshold = 50
+        val horizontalThreshold = 100
+
+        textBlocks.forEach { block ->
+            var assigned = false
+            for (cluster in clusters) {
+                if (cluster.any { other ->
+                        val xDistance = minOf(
+                            abs(block.bounds.left - other.bounds.right),
+                            abs(other.bounds.left - block.bounds.right)
+                        )
+                        val yDistance = minOf(
+                            abs(block.bounds.top - other.bounds.bottom),
+                            abs(other.bounds.top - block.bounds.bottom)
+                        )
+                        xDistance <= horizontalThreshold && yDistance <= verticalThreshold
+                    }) {
+                    cluster.add(block)
+                    assigned = true
+                    break
+                }
+            }
+            if (!assigned) {
+                clusters.add(mutableListOf(block))
+            }
+        }
+        return clusters
+    }
+
+    private fun sortHorizontalTextBlocks(textBlocks: List<TextBlockInfo>): List<TextBlockInfo> {
+        if (textBlocks.isEmpty()) return emptyList()
+
+        val sortedByTopThenLeft = textBlocks.sortedWith(
+            compareBy<TextBlockInfo> { it.bounds.top }.thenBy { it.bounds.left }
+        )
+
+        val topValues = sortedByTopThenLeft.map { it.bounds.top }
+        val topGaps = topValues.zipWithNext { a, b -> b - a }.filter { it > 0 }
+        val avgTopGap = if (topGaps.isNotEmpty()) topGaps.average().toInt() else 50
+        val verticalThreshold = (avgTopGap * 0.5).toInt().coerceAtLeast(20)
+        val verticalProximityThreshold = avgTopGap.coerceAtLeast(30)
+
+        val rows = mutableListOf<MutableList<TextBlockInfo>>()
+        var currentRow = mutableListOf<TextBlockInfo>()
+        var lastTop = sortedByTopThenLeft.first().bounds.top
+
+        for (block in sortedByTopThenLeft) {
+            val currentTop = block.bounds.top
+            if (currentTop - lastTop <= verticalThreshold) {
+                currentRow.add(block)
+            } else {
+                if (currentRow.isNotEmpty()) {
+                    rows.add(currentRow.sortedBy { it.bounds.left }.toMutableList())
+                }
+                currentRow = mutableListOf(block)
+            }
+            lastTop = currentTop
+        }
+        if (currentRow.isNotEmpty()) {
+            rows.add(currentRow.sortedBy { it.bounds.left }.toMutableList())
+        }
+
+        rows.forEachIndexed { rowIndex, rowBlocks ->
+            rowBlocks.forEach { block ->
+                Log.i(
+                    "TranslationRepository",
+                    "Row #$rowIndex, Block: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, right=${block.bounds.right}, bottom=${block.bounds.bottom}"
+                )
+            }
+        }
+
+        val clusters = mutableListOf<MutableList<TextBlockInfo>>()
+        sortedByTopThenLeft.forEach { block ->
+            var assigned = false
+            for (cluster in clusters) {
+                if (cluster.any { other ->
+                        val xOverlap = block.bounds.left <= other.bounds.right && other.bounds.left <= block.bounds.right
+                        val yOverlap = block.bounds.top <= other.bounds.bottom && other.bounds.top <= block.bounds.bottom
+                        val yDistance = if (block.bounds.top > other.bounds.bottom) {
+                            block.bounds.top - other.bounds.bottom
+                        } else {
+                            other.bounds.top - block.bounds.bottom
+                        }
+                        val yCloseEnough = yDistance <= verticalProximityThreshold
+                        xOverlap && (yOverlap || yCloseEnough)
+                    }) {
+                    cluster.add(block)
+                    assigned = true
+                    break
+                }
+            }
+            if (!assigned) {
+                clusters.add(mutableListOf(block))
+            }
+        }
+
+        val secondMergeClusters = mutableListOf<MutableList<TextBlockInfo>>()
+        val processedClusters = mutableSetOf<Int>()
+        clusters.forEachIndexed { index, cluster ->
+            if (index in processedClusters) return@forEachIndexed
+
+            val mergedCluster = mutableListOf<TextBlockInfo>().apply { addAll(cluster) }
+            processedClusters.add(index)
+
+            for (otherIndex in (index + 1) until clusters.size) {
+                if (otherIndex in processedClusters) continue
+
+                val otherCluster = clusters[otherIndex]
+                val clusterBottom = cluster.maxOf { it.bounds.bottom }
+                val clusterTop = cluster.minOf { it.bounds.top }
+                val otherTop = otherCluster.minOf { it.bounds.top }
+                val otherBottom = otherCluster.maxOf { it.bounds.bottom }
+
+                val topDifference = abs(clusterTop - otherTop)
+                val isTopSimilar = topDifference <= verticalThreshold
+
+                val isVerticallyOverlapping = clusterTop <= otherBottom && otherTop <= clusterBottom
+                val yDistance = if (otherTop > clusterBottom) {
+                    otherTop - clusterBottom
+                } else {
+                    clusterTop - otherBottom
+                }
+                val isVerticallyClose = yDistance <= verticalProximityThreshold
+
+                if (isTopSimilar && (isVerticallyOverlapping || isVerticallyClose)) {
+                    val clusterText = cluster.joinToString(" ") { it.text }
+                    val otherText = otherCluster.joinToString(" ") { it.text }
+                    val combinedText = "$clusterText $otherText"
+                    if (isTextCoherent(combinedText)) {
+                        mergedCluster.addAll(otherCluster)
+                        processedClusters.add(otherIndex)
+                    }
+                }
+            }
+            secondMergeClusters.add(mergedCluster)
+        }
+
+        val mergedBlocks = mutableListOf<TextBlockInfo>()
+        secondMergeClusters.forEachIndexed { clusterIndex, clusterBlocks ->
+            if (clusterBlocks.isEmpty()) return@forEachIndexed
+
+            val sortedBlocks = clusterBlocks.sortedWith(
+                compareBy<TextBlockInfo> { it.bounds.top }.thenBy { it.bounds.left }
+            )
+            val mergedText = StringBuilder()
+            val wordCountsPerLine = mutableListOf<Int>()
+            lateinit var mergedBounds: Rect
+            var minFontSize = Float.MAX_VALUE
+            var blockCount = 0
+
+            sortedBlocks.forEachIndexed { blockIndex, block ->
+                if (mergedText.isNotEmpty()) {
+                    mergedText.append(" ")
+                }
+                mergedText.append(block.text)
+                val wordCount = block.wordCountsPerLine?.sum() ?: block.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
+                wordCountsPerLine.add(wordCount)
+                if (blockCount == 0) {
+                    mergedBounds = Rect(block.bounds)
+                } else {
+                    mergedBounds.set(
+                        minOf(mergedBounds.left, block.bounds.left),
+                        minOf(mergedBounds.top, block.bounds.top),
+                        maxOf(mergedBounds.right, block.bounds.right),
+                        maxOf(mergedBounds.bottom, block.bounds.bottom)
+                    )
+                }
+                minFontSize = minOf(minFontSize, block.fontSize)
+                blockCount++
+            }
+
+            val mergedBlock = TextBlockInfo(
+                text = mergedText.toString(),
+                bounds = Rect(mergedBounds),
+                fontSize = minFontSize,
+                wordCountsPerLine = wordCountsPerLine
+            )
+
+            Log.i(
+                "TranslationRepository",
+                "Cluster #$clusterIndex: text=${mergedBlock.text}, left=${mergedBlock.bounds.left}, top=${mergedBlock.bounds.top}, right=${mergedBlock.bounds.right}, bottom=${mergedBlock.bounds.bottom}, fontSize=${mergedBlock.fontSize}"
+            )
+
+            mergedBlocks.add(mergedBlock)
+        }
+
+        return mergedBlocks.sortedWith(
+            compareBy<TextBlockInfo> { it.bounds.top }.thenBy { it.bounds.left }
+        )
+    }
+
+    private fun sortVerticalTextBlocks(textBlocks: List<TextBlockInfo>): List<TextBlockInfo> {
+        if (textBlocks.isEmpty()) return emptyList()
+
+        val sortedByLeft = textBlocks.sortedBy { it.bounds.left }
+        val leftValues = sortedByLeft.map { it.bounds.left }
+        val leftGaps = leftValues.zipWithNext { a, b -> b - a }.filter { it > 0 }
+        val avgLeftGap = if (leftGaps.isNotEmpty()) leftGaps.average().toInt() else 100
+        val horizontalThreshold = (avgLeftGap * 0.8).toInt().coerceAtLeast(50)
+
+        val columns = mutableListOf<MutableList<TextBlockInfo>>()
+        var currentColumn = mutableListOf(sortedByLeft.first())
+        var lastLeft = sortedByLeft.first().bounds.left
+
+        for (block in sortedByLeft.drop(1)) {
+            val currentLeft = block.bounds.left
+            if (currentLeft - lastLeft <= horizontalThreshold) {
+                currentColumn.add(block)
+            } else {
+                columns.add(currentColumn)
+                currentColumn = mutableListOf(block)
+            }
+            lastLeft = currentLeft
+        }
+        if (currentColumn.isNotEmpty()) {
+            columns.add(currentColumn)
+        }
+
+        val mergedBlocks = mutableListOf<TextBlockInfo>()
+        columns.forEachIndexed { columnIndex, columnBlocks ->
+            val sortedByTop = columnBlocks.sortedBy { it.bounds.top }
+            val topValues = sortedByTop.map { it.bounds.top }
+            val topGaps = topValues.zipWithNext { a, b -> b - a }.filter { it > 0 }
+            val avgTopGap = if (topGaps.isNotEmpty()) topGaps.average().toInt() else 100
+            val verticalThreshold = (avgTopGap * 0.8).toInt().coerceAtLeast(50)
+
+            val regions = mutableListOf<MutableList<TextBlockInfo>>()
+            var currentRegion = mutableListOf(sortedByTop.first())
+            var lastTop = sortedByTop.first().bounds.top
+
+            for (block in sortedByTop.drop(1)) {
+                val currentTop = block.bounds.top
+                if (currentTop - lastTop <= verticalThreshold) {
+                    currentRegion.add(block)
+                } else {
+                    regions.add(currentRegion)
+                    currentRegion = mutableListOf(block)
+                }
+                lastTop = currentTop
+            }
+            if (currentRegion.isNotEmpty()) {
+                regions.add(currentRegion)
+            }
+
+            regions.forEachIndexed { regionIndex, regionBlocks ->
+                val sortedBlocks = regionBlocks.sortedWith(
+                    compareByDescending<TextBlockInfo> { it.bounds.left }
+                        .thenBy { it.bounds.top }
+                )
+
+                val mergedText = StringBuilder()
+                val wordCountsPerLine = mutableListOf<Int>()
+                lateinit var mergedBounds: Rect
+                var minFontSize = Float.MAX_VALUE
+                var blockCount = 0
+
+                sortedBlocks.forEachIndexed { blockIndex, block ->
+                    if (mergedText.isNotEmpty()) {
+                        mergedText.append(" ")
+                    }
+                    mergedText.append(block.text)
+                    val wordCount = block.wordCountsPerLine?.sum() ?: block.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
+                    wordCountsPerLine.add(wordCount)
+                    if (blockCount == 0) {
+                        mergedBounds = Rect(block.bounds)
+                    } else {
+                        mergedBounds.set(
+                            minOf(mergedBounds.left, block.bounds.left),
+                            minOf(mergedBounds.top, block.bounds.top),
+                            maxOf(mergedBounds.right, block.bounds.right),
+                            maxOf(mergedBounds.bottom, block.bounds.bottom)
+                        )
+                    }
+                    minFontSize = minOf(minFontSize, block.fontSize)
+                    blockCount++
+                }
+
+                val mergedBlock = TextBlockInfo(
+                    text = mergedText.toString(),
+                    bounds = mergedBounds,
+                    fontSize = minFontSize,
+                    wordCountsPerLine = wordCountsPerLine
+                )
+
+                Log.i("TranslationRepository", "Column #$columnIndex, Merged Region #$regionIndex: text=${mergedBlock.text}, left=${mergedBlock.bounds.left}, top=${mergedBlock.bounds.top}, right=${mergedBlock.bounds.right}, bottom=${mergedBlock.bounds.bottom}")
+
+                mergedBlocks.add(mergedBlock)
+            }
+        }
+
+        return mergedBlocks.sortedBy { it.bounds.top }
+    }
+
+    private fun determineTextOrientation(textBlocks: List<TextBlockInfo>, fullText: String): Boolean {
+        val sampleText = fullText.take(100)
+        val chinesePattern = Regex("[\\u4E00-\\u9FFF\\u3400-\\u4DBF\\uF900-\\uFAFF]")
+        val japanesePattern = Regex("[\\u3040-\\u309F\\u30A0-\\u30FF]")
+        val koreanPattern = Regex("[\\uAC00-\\uD7AF\\u1100-\\u11FF\\u3130-\\u318F]")
+
+        val isChineseJapaneseOrKorean = chinesePattern.containsMatchIn(sampleText) ||
+                japanesePattern.containsMatchIn(sampleText) ||
+                koreanPattern.containsMatchIn(sampleText)
+
+        if (isChineseJapaneseOrKorean && textBlocks.isNotEmpty()) {
+            val verticalCount = textBlocks.count { block ->
+                val bounds = block.bounds
+                bounds.height() > bounds.width() * 1.5
+            }
+            val totalBlocks = textBlocks.size
+            return verticalCount > totalBlocks * 0.6
+        }
+        return false
+    }
+
+    private fun adjustBoundsForTranslatedText(text: String, originalBounds: Rect, fontSize: Float, scaleFactor: Float): Rect {
+        val charWidthEstimate = fontSize * 0.6f
+        val textWidth = (text.length * charWidthEstimate).toInt()
+        val left = originalBounds.left
+        val top = originalBounds.top
+        val right = (left + textWidth).coerceAtMost(originalBounds.right)
+        val height = originalBounds.height().coerceAtLeast(fontSize.toInt())
+        val bottom = top + height
+        return Rect(left, top, right, bottom)
+    }
+
+    private suspend fun translateTextOffline(originalText: String, sourceLanguage: String): String = withContext(Dispatchers.IO) {
+        if (originalText.isEmpty()) return@withContext ""
+        if (sourceLanguage == "vi") return@withContext originalText
+        try {
+            val sourceLang = mapLanguageToMLKit(sourceLanguage)
+            val translator = translators.getOrPut(sourceLang) {
+                val options = TranslatorOptions.Builder()
+                    .setSourceLanguage(sourceLang)
+                    .setTargetLanguage(TranslateLanguage.VIETNAMESE)
+                    .build()
+                Translation.getClient(options).also { translator ->
+                    translator.downloadModelIfNeeded()
+                        .addOnSuccessListener { Log.i("TranslationRepository", "Đã tải mô hình dịch cho $sourceLang") }
+                        .addOnFailureListener { e -> Log.e("TranslationRepository", "Tải mô hình dịch cho $sourceLang thất bại", e) }
+                }
+            }
+            translator.translate(originalText).await()
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "Dịch ngoại tuyến thất bại cho văn bản: $originalText", e)
+            originalText
+        }
+    }
+
+    private suspend fun translateTextOnline(originalText: String, sourceLanguage: String): String = withContext(Dispatchers.IO) {
+        if (originalText.isEmpty()) return@withContext ""
+        if (sourceLanguage == "vi") return@withContext originalText
+        try {
+            val encodedText = URLEncoder.encode(originalText, "UTF-8")
+            val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=$sourceLanguage&tl=vi&dt=t&q=$encodedText"
+            val request = Request.Builder().url(url).build()
+            val response = httpClient.newCall(request).execute()
+            if (!response.isSuccessful) {
+                Log.e("TranslationRepository", "Yêu cầu dịch trực tuyến thất bại: ${response.code}")
+                return@withContext originalText
+            }
+            val json = response.body?.string() ?: return@withContext originalText
+            val jsonArray = JsonParser.parseString(json).asJsonArray
+            if (jsonArray.size() == 0) return@withContext originalText
+            val translations = mutableListOf<String>()
+            val sentencesArray = jsonArray[0].asJsonArray
+            for (sentence in sentencesArray) {
+                val translationArray = sentence.asJsonArray
+                val translatedText = translationArray[0].asString
+                translations.add(translatedText)
+            }
+            translations.joinToString("")
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "Dịch trực tuyến thất bại cho văn bản: $originalText", e)
+            originalText
+        }
+    }
+
+    private fun postProcessTranslation(translatedText: String): String {
+        var result = translatedText.trim()
+        vietnameseImprovements.forEach { (old, new) -> result = result.replace(old, new, ignoreCase = true) }
+        result = result.replace(" .", ".").replace(" ,", ",").replace(" !", "!").replace(" ?", "?")
+        if (result.length < 20) {
+            result = when {
+                result.endsWith("là") -> "$result thế nào nhỉ?"
+                result.contains("không") -> "$result đâu mà!"
+                result.contains("có") -> "$result thật đấy!"
+                else -> result
+            }
+        }
+        return result
+    }
+
+    private fun mapLanguageToMLKit(language: String): String {
+        return when (language) {
+            "zh" -> TranslateLanguage.CHINESE
+            "ja" -> TranslateLanguage.JAPANESE
+            "ko" -> TranslateLanguage.KOREAN
+            "en" -> TranslateLanguage.ENGLISH
+            "vi" -> TranslateLanguage.VIETNAMESE
+            else -> TranslateLanguage.ENGLISH
+        }
+    }
+
+    private fun detectLanguage(text: String): String? {
+        val sampleText = text.take(100)
+        val chinesePattern = Regex("[\\u4E00-\\u9FFF\\u3400-\\u4DBF\\uF900-\\uFAFF]")
+        val japanesePattern = Regex("[\\u3040-\\u309F\\u30A0-\\u30FF]")
+        val koreanPattern = Regex("[\\uAC00-\\uD7AF\\u1100-\\u11FF\\u3130-\\u318F]")
+        val vietnamesePattern = Regex("[àáảãạăắằẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]")
+        val latinPattern = Regex("[A-Za-z]")
+
+        return when {
+            vietnamesePattern.containsMatchIn(sampleText) -> "vi"
+            koreanPattern.containsMatchIn(sampleText) -> "ko"
+            japanesePattern.containsMatchIn(sampleText) -> "ja"
+            chinesePattern.containsMatchIn(sampleText) -> "zh"
+            latinPattern.containsMatchIn(sampleText) && sampleText.count { it in 'A'..'z' } > sampleText.length * 0.5 -> "en"
+            else -> null
+        }
+    }
+
+    private fun getRotationDegrees(imageUri: Uri): Int {
+        return try {
+            val inputStream = application.contentResolver.openInputStream(imageUri)
+            val exif = inputStream?.let { ExifInterface(it) }
+            inputStream?.close()
+            when (exif?.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "Không thể lấy góc xoay", e)
+            0
+        }
+    }
+
+    private fun isTextCoherent(text: String): Boolean {
+        val normalizedText = text.trim().replace(Regex("\\s+"), " ")
+        if (normalizedText.isEmpty()) return false
+
+        val words = normalizedText.split(" ")
+        if (words.size < 3) return false
+
+        val vietnameseContentWords = listOf(
+            "là", "có", "được", "đi", "làm", "nói", "nghĩ", "biết", "thấy", "muốn", "cần",
+            "người", "cái", "nhà", "điều", "thời gian", "công việc", "hôm nay", "tốt", "nhanh", "đẹp"
+        )
+        val hasContent = words.any { word ->
+            vietnameseContentWords.any { contentWord -> word.contains(contentWord, ignoreCase = true) }
+        }
+
+        val isNotPunctuationOnly = normalizedText.any { it.isLetterOrDigit() }
+
+        val incompleteEndings = listOf(" và", " nhưng", " hoặc", " vì", " nếu")
+        val endsAbruptly = incompleteEndings.any { normalizedText.endsWith(it, ignoreCase = true) }
+
+        return hasContent && isNotPunctuationOnly && !endsAbruptly
+    }
+
+    // Merge các block theo bubbleId, chỉ merge block thực sự cùng dòng (ngang) hoặc cùng cột (dọc) trong từng bubble
+    private fun mergeBlocksByBubble(blocks: List<TextBlockInfo>): List<TextBlockInfo> {
+        if (blocks.isEmpty()) return emptyList()
+        val grouped = blocks.groupBy { it.bubbleId ?: -1 }
+        val merged = mutableListOf<TextBlockInfo>()
+        for ((bubbleId, bubbleBlocks) in grouped) {
+            if (bubbleBlocks.size == 1) {
+                merged.add(bubbleBlocks.first())
+                continue
+            }
+            val isVertical = bubbleBlocks.first().isVertical
+            val sorted = if (isVertical) {
+                bubbleBlocks.sortedWith(compareBy({ it.bounds.left }, { it.bounds.top }))
+            } else {
+                bubbleBlocks.sortedWith(compareBy({ it.bounds.top }, { it.bounds.left }))
+            }
+            // Group theo dòng/cột trong bubble
+            val groups = mutableListOf<MutableList<TextBlockInfo>>()
+            val threshold = if (isVertical) 0.3 else 0.2 // tỉ lệ khoảng cách cho phép
+            for (block in sorted) {
+                var assigned = false
+                for (group in groups) {
+                    val ref = group.first()
+                    if (isVertical) {
+                        val leftDiff = kotlin.math.abs(block.bounds.left - ref.bounds.left)
+                        val avgWidth = (block.bounds.width() + ref.bounds.width()) / 2f
+                        if (leftDiff < avgWidth * threshold) {
+                            group.add(block)
+                            assigned = true
+                            break
+                        }
+                    } else {
+                        val topDiff = kotlin.math.abs(block.bounds.top - ref.bounds.top)
+                        val avgHeight = (block.bounds.height() + ref.bounds.height()) / 2f
+                        if (topDiff < avgHeight * threshold) {
+                            group.add(block)
+                            assigned = true
+                            break
+                        }
+                    }
+                }
+                if (!assigned) groups.add(mutableListOf(block))
+            }
+            // Merge từng group nhỏ trong bubble
+            for (group in groups) {
+                if (group.size == 1) {
+                    merged.add(group.first())
+                } else {
+                    val mergedText = group.joinToString(if (isVertical) " " else "\n") { it.text }
+                    val mergedBounds = group.drop(1).fold(Rect(group.first().bounds)) { acc, block ->
+                        acc.union(block.bounds)
+                        acc
+                    }
+                    val minFontSize = group.minOf { it.fontSize }
+                    merged.add(
+                        TextBlockInfo(
+                            text = mergedText,
+                            bounds = mergedBounds,
+                            fontSize = minFontSize,
+                            isVertical = isVertical,
+                            wordCountsPerLine = null,
+                            originalImageWidth = group.first().originalImageWidth,
+                            originalImageHeight = group.first().originalImageHeight,
+                            bubbleId = bubbleId
+                        )
+                    )
+                }
+            }
+        }
+        return merged
+    }
+}

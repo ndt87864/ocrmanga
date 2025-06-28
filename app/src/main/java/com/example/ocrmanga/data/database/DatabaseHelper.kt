@@ -1,0 +1,517 @@
+package com.example.ocrmanga.data.database
+
+import android.content.ContentResolver
+import android.content.ContentValues
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+import android.graphics.Rect
+import android.net.Uri
+import android.os.Build
+import android.provider.DocumentsContract
+import android.provider.MediaStore
+import android.util.Log
+import com.example.ocrmanga.data.models.TextBlockInfo
+import java.io.File
+import java.io.FileOutputStream
+
+class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+
+    private val appContext = context
+
+    companion object {
+        private const val DATABASE_NAME = "MangaDownloader.db"
+        private const val DATABASE_VERSION = 4
+        private const val TAG = "DatabaseHelper"
+
+        // Manga Rooms table
+        const val TABLE_ROOMS = "manga_rooms"
+        const val COLUMN_ROOM_ID = "room_id"
+        const val COLUMN_TITLE = "title" // Thêm trường title
+        private const val COLUMN_COVER_URI = "cover_uri"
+
+        // Images table
+        const val TABLE_IMAGES = "images"
+        const val COLUMN_IMAGE_ID = "image_id"
+        const val COLUMN_IMAGE_URI = "image_uri"
+        const val COLUMN_DISPLAY_ORDER = "display_order"
+        const val COLUMN_IS_TRANSLATED = "is_translated"
+    }
+
+    override fun onCreate(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE $TABLE_ROOMS (
+                $COLUMN_ROOM_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COLUMN_TITLE TEXT NOT NULL DEFAULT '',
+                $COLUMN_COVER_URI TEXT NOT NULL
+            )
+        """)
+
+        db.execSQL("""
+            CREATE TABLE $TABLE_IMAGES (
+                $COLUMN_IMAGE_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COLUMN_ROOM_ID INTEGER,
+                $COLUMN_IMAGE_URI TEXT NOT NULL,
+                $COLUMN_DISPLAY_ORDER INTEGER,
+                $COLUMN_IS_TRANSLATED INTEGER DEFAULT 0,
+                FOREIGN KEY ($COLUMN_ROOM_ID) REFERENCES $TABLE_ROOMS($COLUMN_ROOM_ID)
+            )
+        """)
+
+        db.execSQL("""
+            CREATE TABLE translations (
+                text_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COLUMN_IMAGE_ID INTEGER,
+                original_text TEXT,
+                translated_text TEXT,
+                bounds_left INTEGER,
+                bounds_top INTEGER,
+                bounds_right INTEGER,
+                bounds_bottom INTEGER,
+                font_size REAL,
+                original_image_width INTEGER, -- New column
+                original_image_height INTEGER, -- New column
+                FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
+            )
+        """)
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE $TABLE_IMAGES ADD COLUMN $COLUMN_IS_TRANSLATED INTEGER DEFAULT 0")
+        }
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE $TABLE_ROOMS ADD COLUMN $COLUMN_TITLE TEXT NOT NULL DEFAULT ''")
+        }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE translations ADD COLUMN original_image_width INTEGER")
+            db.execSQL("ALTER TABLE translations ADD COLUMN original_image_height INTEGER")
+        }
+    }
+
+    fun saveMangaRoom(imageUris: List<Uri>, translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>, title: String? = null): Long {
+        if (imageUris.isEmpty()) return -1L
+        val db = writableDatabase
+        db.beginTransaction()
+        var roomId = -1L
+        try {
+            val roomTitle = title ?: "Phòng " + System.currentTimeMillis()
+            val values = ContentValues().apply {
+                put(COLUMN_TITLE, roomTitle)
+                put(COLUMN_COVER_URI, imageUris.first().toString())
+            }
+            roomId = db.insertOrThrow(TABLE_ROOMS, null, values)
+            Log.i(TAG, "Saved new room with ID: $roomId, title: $roomTitle")
+
+            val imagesDir = File(appContext.getExternalFilesDir(null), "images/$roomId")
+            imagesDir.mkdirs()
+            Log.i(TAG, "Created directory: ${imagesDir.absolutePath}")
+
+            val coverFile = copyImageToInternalStorage(imageUris.first(), imagesDir, "cover.jpg")
+            if (coverFile != null) {
+                val coverUri = Uri.fromFile(coverFile)
+                val roomValues = ContentValues().apply {
+                    put(COLUMN_COVER_URI, coverUri.toString())
+                }
+                db.update(TABLE_ROOMS, roomValues, "$COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
+                Log.i(TAG, "Saved new room with ID: $roomId, cover URI: $coverUri")
+                deleteOriginalImage(imageUris.first()) // Xóa ảnh gốc của cover
+            } else {
+                Log.e(TAG, "Failed to copy cover image for room $roomId")
+            }
+
+            imageUris.forEachIndexed { index, originalUri ->
+                val fileName = "image_$index.jpg"
+                val newFile = copyImageToInternalStorage(originalUri, imagesDir, fileName)
+                if (newFile != null) {
+                    val newUri = Uri.fromFile(newFile)
+                    val imageValues = ContentValues().apply {
+                        put(COLUMN_ROOM_ID, roomId)
+                        put(COLUMN_IMAGE_URI, newUri.toString())
+                        put(COLUMN_DISPLAY_ORDER, index)
+                        put(COLUMN_IS_TRANSLATED, if (translatedTexts.containsKey(originalUri)) 1 else 0)
+                    }
+                    val imageId = db.insert(TABLE_IMAGES, null, imageValues)
+                    if (imageId == -1L) {
+                        Log.e(TAG, "Failed to insert image $newUri at index $index for room $roomId")
+                    } else {
+                        Log.i(TAG, "Saved image for room $roomId: ID=$imageId, URI=$newUri, Order=$index")
+                        deleteOriginalImage(originalUri) // Xóa ảnh gốc sau khi lưu
+                    }
+
+                    translatedTexts[originalUri]?.let { (originalText, textBlocks) ->
+                        textBlocks.forEach { textBlock ->
+                            val textValues = ContentValues().apply {
+                                put(COLUMN_IMAGE_ID, imageId)
+                                put("original_text", originalText)
+                                put("translated_text", textBlock.text)
+                                put("bounds_left", textBlock.bounds.left)
+                                put("bounds_top", textBlock.bounds.top)
+                                put("bounds_right", textBlock.bounds.right)
+                                put("bounds_bottom", textBlock.bounds.bottom)
+                                put("font_size", textBlock.fontSize)
+                                put("original_image_width", textBlock.originalImageWidth)
+                                put("original_image_height", textBlock.originalImageHeight)
+                            }
+                            val textId = db.insert("translations", null, textValues)
+                            if (textId == -1L) {
+                                Log.e(TAG, "Failed to insert translation for image $imageId")
+                            } else {
+                                Log.i(TAG, "Saved translation for image $imageId: ID=$textId")
+                            }
+                        }
+                    }
+                } else {
+                    Log.e(TAG, "Failed to copy image $originalUri to internal storage")
+                }
+            }
+
+            // Sau khi copy ảnh vào thư mục mới, xóa ảnh gốc
+            imageUris.forEach { uri ->
+                try {
+                    deleteOriginalImage(uri)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Không thể xóa ảnh gốc: $uri", e)
+                }
+            }
+            db.setTransactionSuccessful()
+            Log.i(TAG, "Successfully saved room $roomId with ${imageUris.size} images")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving manga room", e)
+            return -1L
+        } finally {
+            db.endTransaction()
+        }
+        return roomId
+    }
+
+    /**
+     * Cập nhật lại ảnh và bản dịch cho phòng đã có roomId, chỉ thay đổi những gì khác biệt
+     */
+    fun updateMangaRoom(roomId: Long, imageUris: List<Uri>, translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>): Boolean {
+        if (imageUris.isEmpty()) return false
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            // Lấy danh sách ảnh cũ trong DB
+            val oldImages = mutableListOf<Pair<Long, Uri>>() // Pair<imageId, uri>
+            val imageIdMap = mutableMapOf<String, Long>() // uri.toString() -> imageId
+            val cursor = db.rawQuery("SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
+            while (cursor.moveToNext()) {
+                val imageId = cursor.getLong(0)
+                val uri = Uri.parse(cursor.getString(1))
+                oldImages.add(imageId to uri)
+                imageIdMap[uri.toString()] = imageId
+            }
+            cursor.close()
+            val oldUris = oldImages.map { it.second }
+
+            // Xóa ảnh đã bị loại khỏi danh sách mới
+            oldImages.filter { it.second !in imageUris }.forEach { (imageId, uri) ->
+                db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                // Xóa file vật lý nếu ảnh không còn được dùng
+                val file = File(Uri.parse(uri.toString()).path ?: "")
+                if (file.exists()) file.delete()
+            }
+
+            // Thêm ảnh mới và cập nhật thứ tự, trạng thái dịch
+            val imagesDir = File(appContext.getExternalFilesDir(null), "images/$roomId")
+            imagesDir.mkdirs()
+            imageUris.forEachIndexed { index, uri ->
+                val uriStr = uri.toString()
+                val isTranslated = if (translatedTexts.containsKey(uri)) 1 else 0
+                if (uri !in oldUris) {
+                    // Ảnh mới: chỉ copy nếu file chưa tồn tại trong thư mục phòng
+                    val fileName = "image_$index.jpg"
+                    val newFile = File(imagesDir, fileName)
+                    if (!newFile.exists()) {
+                        val copied = copyImageToInternalStorage(uri, imagesDir, fileName)
+                        if (copied == null) {
+                            Log.e(TAG, "Không thể copy ảnh mới $uri vào phòng $roomId")
+                        }
+                    }
+                    val newUri = if (newFile.exists()) Uri.fromFile(newFile) else uri
+                    val imageValues = ContentValues().apply {
+                        put(COLUMN_ROOM_ID, roomId)
+                        put(COLUMN_IMAGE_URI, newUri.toString())
+                        put(COLUMN_DISPLAY_ORDER, index)
+                        put(COLUMN_IS_TRANSLATED, isTranslated)
+                    }
+                    val imageId = db.insert(TABLE_IMAGES, null, imageValues)
+                    if (imageId != -1L) {
+                        translatedTexts[uri]?.let { (originalText, textBlocks) ->
+                            textBlocks.forEach { textBlock ->
+                                val textValues = ContentValues().apply {
+                                    put(COLUMN_IMAGE_ID, imageId)
+                                    put("original_text", originalText)
+                                    put("translated_text", textBlock.text)
+                                    put("bounds_left", textBlock.bounds.left)
+                                    put("bounds_top", textBlock.bounds.top)
+                                    put("bounds_right", textBlock.bounds.right)
+                                    put("bounds_bottom", textBlock.bounds.bottom)
+                                    put("font_size", textBlock.fontSize)
+                                    put("original_image_width", textBlock.originalImageWidth)
+                                    put("original_image_height", textBlock.originalImageHeight)
+                                }
+                                db.insert("translations", null, textValues)
+                            }
+                        }
+                    }
+                } else {
+                    // Ảnh cũ: cập nhật thứ tự, trạng thái dịch
+                    val imageId = imageIdMap[uriStr] ?: return@forEachIndexed
+                    val imageValues = ContentValues().apply {
+                        put(COLUMN_DISPLAY_ORDER, index)
+                        put(COLUMN_IS_TRANSLATED, isTranslated)
+                    }
+                    db.update(TABLE_IMAGES, imageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    // Nếu có bản dịch mới, xóa bản dịch cũ và thêm lại
+                    if (translatedTexts.containsKey(uri)) {
+                        db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                        translatedTexts[uri]?.let { (originalText, textBlocks) ->
+                            textBlocks.forEach { textBlock ->
+                                val textValues = ContentValues().apply {
+                                    put(COLUMN_IMAGE_ID, imageId)
+                                    put("original_text", originalText)
+                                    put("translated_text", textBlock.text)
+                                    put("bounds_left", textBlock.bounds.left)
+                                    put("bounds_top", textBlock.bounds.top)
+                                    put("bounds_right", textBlock.bounds.right)
+                                    put("bounds_bottom", textBlock.bounds.bottom)
+                                    put("font_size", textBlock.fontSize)
+                                    put("original_image_width", textBlock.originalImageWidth)
+                                    put("original_image_height", textBlock.originalImageHeight)
+                                }
+                                db.insert("translations", null, textValues)
+                            }
+                        }
+                    }
+                }
+            }
+            // Cập nhật cover_uri nếu ảnh đầu tiên thay đổi
+            if (imageUris.isNotEmpty()) {
+                val coverUri = imageUris.first().toString()
+                val roomValues = ContentValues().apply { put(COLUMN_COVER_URI, coverUri) }
+                db.update(TABLE_ROOMS, roomValues, "$COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
+            }
+            db.setTransactionSuccessful()
+            Log.i(TAG, "Đã cập nhật phòng $roomId (tối ưu lưu trữ, chỉ copy ảnh mới)")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Lỗi khi cập nhật phòng $roomId", e)
+            return false
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    private fun copyImageToInternalStorage(originalUri: Uri, directory: File, fileName: String): File? {
+        return try {
+            val newFile = File(directory, fileName)
+            val inputStream = appContext.contentResolver.openInputStream(originalUri)
+            if (inputStream != null) {
+                // Decode bitmap
+                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                inputStream.close()
+                if (bitmap != null) {
+                    // Resize nếu lớn hơn maxWidth
+                    val maxWidth = 1200
+                    val scale = if (bitmap.width > maxWidth) maxWidth.toFloat() / bitmap.width else 1f
+                    val resizedBitmap = if (scale < 1f) {
+                        android.graphics.Bitmap.createScaledBitmap(
+                            bitmap,
+                            (bitmap.width * scale).toInt(),
+                            (bitmap.height * scale).toInt(),
+                            true
+                        )
+                    } else bitmap
+                    // Nén JPEG chất lượng 75%
+                    val outputStream = FileOutputStream(newFile)
+                    resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, outputStream)
+                    outputStream.flush()
+                    outputStream.close()
+                    if (resizedBitmap != bitmap) bitmap.recycle()
+                    resizedBitmap.recycle()
+                    Log.i(TAG, "Nén và lưu ảnh từ $originalUri vào ${newFile.absolutePath}")
+                    newFile
+                } else {
+                    Log.e(TAG, "Không decode được bitmap từ $originalUri")
+                    null
+                }
+            } else {
+                Log.e(TAG, "Không mở được inputStream từ $originalUri")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to copy & compress image $originalUri", e)
+            null
+        }
+    }
+
+    private fun deleteOriginalImage(uri: Uri) {
+        try {
+            val contentResolver = appContext.contentResolver
+            val scheme = uri.scheme
+            when {
+                // Nếu là MediaStore uri (content://media/external...)
+                scheme == "content" && uri.authority?.contains("media") == true -> {
+                    contentResolver.delete(uri, null, null)
+                }
+                // Nếu là Document uri (SAF)
+                scheme == "content" && uri.authority?.contains("documents") == true -> {
+                    try {
+                        DocumentsContract.deleteDocument(contentResolver, uri)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Không thể xóa bằng DocumentsContract: $uri", e)
+                    }
+                }
+                // Nếu là file vật lý (file:// hoặc path)
+                scheme == "file" || scheme == null -> {
+                    val file = File(uri.path ?: "")
+                    if (file.exists()) file.delete()
+                    // Nếu file nằm trong external files dir, cũng thử xóa
+                    val externalDir = appContext.getExternalFilesDir(null)
+                    if (externalDir != null && file.absolutePath.startsWith(externalDir.absolutePath)) {
+                        if (file.exists()) file.delete()
+                    }
+                }
+                else -> {
+                    // Thử xóa bằng contentResolver như fallback
+                    contentResolver.delete(uri, null, null)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Không thể xóa ảnh: $uri", e)
+        }
+    }
+
+    fun getMangaRoom(roomId: Long): Triple<List<Uri>, List<Int>, Map<Uri, Pair<String, List<TextBlockInfo>>>> {
+        val db = readableDatabase
+        val images = mutableListOf<Uri>()
+        val orders = mutableListOf<Int>()
+        val translations = mutableMapOf<Uri, Pair<String, MutableList<TextBlockInfo>>>()
+
+        val imageCursor = db.rawQuery("""
+            SELECT $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER, $COLUMN_IMAGE_ID 
+            FROM $TABLE_IMAGES 
+            WHERE $COLUMN_ROOM_ID = ? 
+            ORDER BY $COLUMN_DISPLAY_ORDER
+        """, arrayOf(roomId.toString()))
+
+        while (imageCursor.moveToNext()) {
+            val uri = Uri.parse(imageCursor.getString(0))
+            val order = imageCursor.getInt(1)
+            val imageId = imageCursor.getLong(2)
+
+            images.add(uri)
+            orders.add(order)
+
+            val textCursor = db.rawQuery("""
+                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size
+                FROM translations 
+                WHERE $COLUMN_IMAGE_ID = ?
+            """, arrayOf(imageId.toString()))
+
+            val textBlocks = mutableListOf<TextBlockInfo>()
+            var originalText = ""
+            while (textCursor.moveToNext()) {
+                originalText = textCursor.getString(0) ?: ""
+                val translatedText = textCursor.getString(1)
+                val bounds = Rect(
+                    textCursor.getInt(2),
+                    textCursor.getInt(3),
+                    textCursor.getInt(4),
+                    textCursor.getInt(5)
+                )
+                val fontSize = textCursor.getFloat(6)
+                val originalImageWidth = if (textCursor.columnCount > 8) textCursor.getInt(7) else null
+                val originalImageHeight = if (textCursor.columnCount > 8) textCursor.getInt(8) else null
+                textBlocks.add(TextBlockInfo(translatedText, bounds, fontSize, originalImageWidth = originalImageWidth, originalImageHeight = originalImageHeight))
+            }
+            textCursor.close()
+            if (textBlocks.isNotEmpty()) {
+                translations[uri] = originalText to textBlocks
+            }
+        }
+        imageCursor.close()
+
+        return Triple(images, orders, translations)
+    }
+
+    fun updateRoomTitle(roomId: Long, newTitle: String) {
+        val db = writableDatabase
+        val values = ContentValues().apply { put(COLUMN_TITLE, newTitle) }
+        db.update(TABLE_ROOMS, values, "$COLUMN_ROOM_ID=?", arrayOf(roomId.toString()))
+    }
+
+    fun getAllRooms(): List<Triple<Long, String, Uri>> {
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT $COLUMN_ROOM_ID, $COLUMN_TITLE, $COLUMN_COVER_URI FROM $TABLE_ROOMS ORDER BY $COLUMN_ROOM_ID DESC", null)
+        val rooms = mutableListOf<Triple<Long, String, Uri>>()
+        while (cursor.moveToNext()) {
+            val id = cursor.getLong(0)
+            val title = cursor.getString(1)
+            val coverUri = Uri.parse(cursor.getString(2))
+            rooms.add(Triple(id, title, coverUri))
+        }
+        cursor.close()
+        return rooms
+    }
+
+    fun deleteRoom(roomId: Long) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.execSQL("""
+                DELETE FROM translations 
+                WHERE $COLUMN_IMAGE_ID IN (
+                    SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES 
+                    WHERE $COLUMN_ROOM_ID = ?
+                )
+            """, arrayOf(roomId.toString()))
+
+            db.delete(TABLE_IMAGES, "$COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
+            db.delete(TABLE_ROOMS, "$COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
+
+            val imagesDir = File(appContext.getExternalFilesDir(null), "images/$roomId")
+            if (imagesDir.exists()) {
+                imagesDir.deleteRecursively()
+            }
+
+            db.setTransactionSuccessful()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting room $roomId", e)
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun migrateRoomImageLinks() {
+        val db = writableDatabase
+        val externalDir = appContext.getExternalFilesDir(null)
+        if (externalDir == null) return
+        val cursor = db.rawQuery("SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI, $COLUMN_ROOM_ID FROM $TABLE_IMAGES", null)
+        while (cursor.moveToNext()) {
+            val imageId = cursor.getLong(0)
+            val oldUriStr = cursor.getString(1)
+            val roomId = cursor.getLong(2)
+            val oldUri = Uri.parse(oldUriStr)
+            val fileName = File(oldUri.path ?: "").name
+            val correctFile = File(externalDir, "images/$roomId/$fileName")
+            if (correctFile.exists()) {
+                val newUri = Uri.fromFile(correctFile).toString()
+                if (oldUriStr != newUri) {
+                    val values = ContentValues().apply { put(COLUMN_IMAGE_URI, newUri) }
+                    db.update(TABLE_IMAGES, values, "$COLUMN_IMAGE_ID=?", arrayOf(imageId.toString()))
+                    Log.i(TAG, "Migrated imageUri for imageId=$imageId to $newUri")
+                }
+            }
+        }
+        cursor.close()
+    }
+
+    init {
+        migrateRoomImageLinks()
+    }
+}

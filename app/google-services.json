@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "380196240607",
+    "project_id": "mangadownloader-7fb1f",
+    "storage_bucket": "mangadownloader-7fb1f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:380196240607:android:aef23b52bdf0f047f53d6a",
+        "android_client_info": {
+          "package_name": "com.example.mangadownloader"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCHx2r1T91GafzZMHD3IuSEZy0di-rnGaA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
