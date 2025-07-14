@@ -289,6 +289,14 @@ fun ViewerScreen(
                                 showMainMenu = false
                             }
                         )
+                        // Convert to PDF option
+                        DropdownMenuItem(
+                            text = { Text("Chuyển thành PDF") },
+                            onClick = {
+                                viewModel.convertRoomToPDF()
+                                showMainMenu = false
+                            }
+                        )
                         // Đổi tên phòng (chỉ hiện khi đang ở trong phòng)
                         if (uiState.roomId != null) {
                             DropdownMenuItem(

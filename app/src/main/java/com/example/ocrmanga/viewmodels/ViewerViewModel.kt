@@ -520,6 +520,37 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun updateRoomTitle(roomId: Long, newTitle: String) {
         databaseHelper.updateRoomTitle(roomId, newTitle)
     }
+
+    fun convertRoomToPDF() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val context = getApplication<Application>().applicationContext
+                val pdfDocument = android.graphics.pdf.PdfDocument()
+                val imageUris = _uiState.value.imageUris
+
+                imageUris.forEachIndexed { index, uri ->
+                    val bitmap = android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                    val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, index + 1).create()
+                    val page = pdfDocument.startPage(pageInfo)
+                    page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+                    pdfDocument.finishPage(page)
+                }
+
+                val pdfFile = java.io.File(context.getExternalFilesDir(null), "room_${_uiState.value.roomId}.pdf")
+                pdfDocument.writeTo(java.io.FileOutputStream(pdfFile))
+                pdfDocument.close()
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "PDF created: ${pdfFile.absolutePath}", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating PDF", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Failed to create PDF", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 }
 
 data class ViewerUiState(

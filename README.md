@@ -49,7 +49,7 @@ where java
 where javac
 java -version
 javac -version
-
+gradlew.bat assembleRelease
 ## Cấu trúc dự án
 
 ```
