@@ -23,7 +23,7 @@ OCR Manga là một ứng dụng Android để nhận dạng và dịch văn b�
 2. Chọn `Tasks: Run Task`
 3. Chọn một trong các task sau:
    - **Build OCR Manga Debug**: Build debug APK
-   - **Build OCR Manga Release**: Build release APK  
+   - **Build OCR Manga Release**: Build release APK
    - **Clean OCR Manga**: Clean project
 
 ### Sử dụng Terminal
@@ -42,6 +42,14 @@ OCR Manga là một ứng dụng Android để nhận dạng và dịch văn b�
 .\gradlew.bat installDebug
 ```
 
+set JAVA_HOME=C:\Program Files\Java\jdk-22
+set PATH=%JAVA_HOME%\bin;%PATH%
+echo %JAVA_HOME%
+where java
+where javac
+java -version
+javac -version
+
 ## Cấu trúc dự án
 
 ```
@@ -59,6 +67,7 @@ app/src/main/java/com/example/ocrmanga/
 ## File APK
 
 Sau khi build thành công, APK sẽ được tạo tại:
+
 - Debug: `app/build/outputs/apk/debug/app-debug.apk`
 - Release: `app/build/outputs/apk/release/app-release.apk`
 

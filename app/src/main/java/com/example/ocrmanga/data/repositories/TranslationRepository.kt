@@ -1,7 +1,12 @@
 package com.example.ocrmanga.data.repositories
 
 import android.app.Application
-import android.graphics.*
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.graphics.Rect
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
@@ -22,6 +27,7 @@ import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -151,60 +157,61 @@ class TranslationRepository(private val application: Application) {
             sourceLanguage = detectLanguage(fullText) ?: "zh"
             Log.i("TranslationRepository", "Ngôn ngữ nguồn được phát hiện: $sourceLanguage")
 
+            // --- TỰ ĐỘNG GÁN BUBBLE, MERGE, VÀ DỊCH ---
+            val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
+            val mergedBlocks = mergeBlocksByBubble(blocksWithBubble)
             val blocks = mutableListOf<TextBlockInfo>()
-            for (block in textBlocks) {
-                Log.i("TranslationRepository", "Khối văn bản gốc: ${block.text}, tọa độ: left=${block.bounds.left}, top=${block.bounds.top}")
-
-                var translatedText = when (mode) {
-                    TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
-                    TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
-                    TranslationMode.OFF -> block.text
-                }
-                Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText")
-
-                val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
-                if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
-                    Log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
-                    translatedText = when (mode) {
-                        TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
-                        TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
-                        else -> translatedText
+            // Sử dụng coroutineScope để dịch song song các block
+            kotlinx.coroutines.coroutineScope {
+                val deferredBlocks = mergedBlocks.map { block ->
+                    async {
+                        Log.i("TranslationRepository", "Khối văn bản gốc: ${block.text}, tọa độ: left=${block.bounds.left}, top=${block.bounds.top}")
+                        var translatedText = when (mode) {
+                            TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
+                            TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
+                            TranslationMode.OFF -> block.text
+                        }
+                        Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText")
+                        val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
+                        if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
+                            Log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
+                            translatedText = when (mode) {
+                                TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
+                                TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
+                                else -> translatedText
+                            }
+                        }
+                        Log.i("TranslationRepository", "Văn bản sau kiểm tra lần 2: $translatedText")
+                        val naturalText = postProcessTranslation(translatedText)
+                        Log.i("TranslationRepository", "Văn bản tự nhiên sau xử lý: $naturalText")
+                        val isVertical = block.isVertical
+                        val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
+                            val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                            val wordCounts = block.wordCountsPerLine
+                            val reformattedLines = mutableListOf<String>()
+                            var wordIndex = 0
+                            for (wordCount in wordCounts) {
+                                if (wordIndex >= words.size) break
+                                val lineWords = words.subList(wordIndex, minOf(wordIndex + wordCount, words.size))
+                                reformattedLines.add(lineWords.joinToString(" "))
+                                wordIndex += wordCount
+                            }
+                            val maxWordsPerLine = wordCounts.lastOrNull() ?: 5
+                            while (wordIndex < words.size) {
+                                val remainingWords = words.subList(wordIndex, minOf(wordIndex + maxWordsPerLine, words.size))
+                                reformattedLines.add(remainingWords.joinToString(" "))
+                                wordIndex += maxWordsPerLine
+                            }
+                            reformattedLines.joinToString("\n")
+                        } else {
+                            naturalText
+                        }
+                        Log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
+                        val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
+                        block.copy(text = reformattedText, bounds = newBounds)
                     }
                 }
-                Log.i("TranslationRepository", "Văn bản sau kiểm tra lần 2: $translatedText")
-
-                val naturalText = postProcessTranslation(translatedText)
-                Log.i("TranslationRepository", "Văn bản tự nhiên sau xử lý: $naturalText")
-
-                val isVertical = determineTextOrientation(listOf(block), block.text)
-                val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
-                    val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
-                    val wordCounts = block.wordCountsPerLine
-                    val reformattedLines = mutableListOf<String>()
-                    var wordIndex = 0
-
-                    for (wordCount in wordCounts) {
-                        if (wordIndex >= words.size) break
-                        val lineWords = words.subList(wordIndex, minOf(wordIndex + wordCount, words.size))
-                        reformattedLines.add(lineWords.joinToString(" "))
-                        wordIndex += wordCount
-                    }
-
-                    val maxWordsPerLine = wordCounts.lastOrNull() ?: 5
-                    while (wordIndex < words.size) {
-                        val remainingWords = words.subList(wordIndex, minOf(wordIndex + maxWordsPerLine, words.size))
-                        reformattedLines.add(remainingWords.joinToString(" "))
-                        wordIndex += maxWordsPerLine
-                    }
-
-                    reformattedLines.joinToString("\n")
-                } else {
-                    naturalText
-                }
-                Log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
-
-                val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
-                blocks.add(TextBlockInfo(reformattedText, newBounds, block.fontSize, wordCountsPerLine = block.wordCountsPerLine, originalImageWidth = bitmap.width, originalImageHeight = bitmap.height))
+                blocks.addAll(deferredBlocks.awaitAll())
             }
 
             resultText = blocks.joinToString("\n") { it.text }
@@ -215,7 +222,9 @@ class TranslationRepository(private val application: Application) {
                 // Thực hiện lại OCR và dịch lại 1 lần nữa
                 val (rawText2, textBlocks2) = recognizeText(bitmap, rotationDegrees)
                 val blocks2 = mutableListOf<TextBlockInfo>()
-                for (block in textBlocks2) {
+                val blocksWithBubble2 = assignSpeechBubblesToBlocks(textBlocks2)
+                val mergedBlocks2 = mergeBlocksByBubble(blocksWithBubble2)
+                for (block in mergedBlocks2) {
                     var translatedText = when (mode) {
                         TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
                         TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
@@ -230,19 +239,19 @@ class TranslationRepository(private val application: Application) {
                         }
                     }
                     val naturalText = postProcessTranslation(translatedText)
-                    val isVertical = determineTextOrientation(listOf(block), block.text)
+                    val isVertical = block.isVertical
                     val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
                         val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
                         val wordCounts = block.wordCountsPerLine
                         val reformattedLines = mutableListOf<String>()
                         var wordIndex = 0
-                        for (wordCount in wordCounts) {
+                        for (wordCount in wordCounts ?: emptyList()) {
                             if (wordIndex >= words.size) break
                             val lineWords = words.subList(wordIndex, minOf(wordIndex + wordCount, words.size))
                             reformattedLines.add(lineWords.joinToString(" "))
                             wordIndex += wordCount
                         }
-                        val maxWordsPerLine = wordCounts.lastOrNull() ?: 5
+                        val maxWordsPerLine = wordCounts?.lastOrNull() ?: 5
                         while (wordIndex < words.size) {
                             val remainingWords = words.subList(wordIndex, minOf(wordIndex + maxWordsPerLine, words.size))
                             reformattedLines.add(remainingWords.joinToString(" "))
@@ -253,7 +262,7 @@ class TranslationRepository(private val application: Application) {
                         naturalText
                     }
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
-                    blocks2.add(TextBlockInfo(reformattedText, newBounds, block.fontSize, wordCountsPerLine = block.wordCountsPerLine, originalImageWidth = bitmap.width, originalImageHeight = bitmap.height))
+                    blocks2.add(block.copy(text = reformattedText, bounds = newBounds))
                 }
                 val resultText2 = blocks2.joinToString("\n") { it.text }
                 val detectedFinal2 = detectLanguage(resultText2) ?: ""
@@ -291,14 +300,20 @@ class TranslationRepository(private val application: Application) {
     }
 
     // recognizeText mới: cho phép chỉ quét preview hoặc ép loại recognizer
-    private suspend fun recognizeText(bitmap: Bitmap, rotationDegrees: Int, onlyPreview: Boolean = false, forceScript: String? = null): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
-        val scaleFactors = if (onlyPreview) listOf(1.003f) else listOf(1.003f, 1.12f)
+    private suspend fun recognizeText(
+        bitmap: Bitmap,
+        rotationDegrees: Int,
+        onlyPreview: Boolean = false,
+        forceScript: String? = null
+    ): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
+        // Tăng số lượng scale thử nghiệm để tăng độ chính xác
+        val scaleFactors = if (onlyPreview) listOf(0.95f, 1.003f, 1.08f, 1.12f) else listOf(0.95f, 1.003f, 1.08f, 1.12f, 1.18f)
         val recognizers = when (forceScript) {
             "zh" -> listOf(chineseRecognizer)
             "ja" -> listOf(japaneseRecognizer)
             "ko" -> listOf(koreanRecognizer)
             "en" -> listOf(latinRecognizer)
-            else -> listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer)
+            else -> listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer, latinRecognizer)
         }
         val deferredResults = scaleFactors.flatMap { scale ->
             recognizers.map { recognizer ->
@@ -344,27 +359,29 @@ class TranslationRepository(private val application: Application) {
             Log.e("TranslationRepository", "Tất cả nhận diện đều thất bại")
             throw Exception("Không thể nhận diện văn bản trong hình ảnh")
         }
-
-        // Group results by recognizer to check font size consistency within clusters
+        // Group results by recognizer để dùng cho kiểm tra lỗi Chinese
         val groupedByRecognizer = results.groupBy { it.recognizer }
-        val bestResult = groupedByRecognizer.entries.maxByOrNull { entry ->
-            val recognizerResults = entry.value
-            val bestForRecognizer = recognizerResults.minByOrNull { it.avgFontSize } ?: return@maxByOrNull 0.0
-            val elements = bestForRecognizer.textResult.textBlocks.flatMap { it.lines }.flatMap { it.elements }
-            if (elements.isEmpty()) 0.0 else {
-                val totalConfidence = elements.sumOf { it.confidence.toDouble() }
-                val averageConfidence = totalConfidence / elements.size
-                val length = bestForRecognizer.textResult.text.length
-                val fontSizePenalty = if (bestForRecognizer.avgFontSize in 20f..200f) 1f else bestForRecognizer.avgFontSize / 200f
-                (length * averageConfidence * 2.0) / (fontSizePenalty + 1f) // Increased weight for confidence
-            }
-        }?.value?.minByOrNull { it.avgFontSize }
-
+        // Tìm script mong muốn dựa trên forceScript hoặc đoán từ text
+        val scriptPattern = when (forceScript) {
+            "zh" -> Regex("[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]") // Chinese
+            "ja" -> Regex("[\u3040-\u309F\u30A0-\u30FF]") // Japanese
+            "ko" -> Regex("[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]") // Korean
+            else -> Regex("[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
+        }
+        // Chọn bestResult: ưu tiên confidence, text dài, nhiều block, nhiều ký tự script mong muốn
+        val bestResult = results.maxByOrNull { result ->
+            val elements = result.textResult.textBlocks.flatMap { b -> b.lines }.flatMap { l -> l.elements }
+            val confidence = if (elements.isEmpty()) 0.0 else elements.sumOf { e -> e.confidence.toDouble() } / elements.size
+            val length = result.textResult.text.length
+            val blockCount = result.textResult.textBlocks.size
+            val scriptCharCount = scriptPattern.findAll(result.textResult.text).count()
+            // Ưu tiên: confidence * 2 + length/100 + blockCount*0.5 + scriptCharCount*0.2
+            (confidence * 2.0) + (length / 100.0) + (blockCount * 0.5) + (scriptCharCount * 0.2)
+        }
         if (bestResult == null) {
             Log.e("TranslationRepository", "Không tìm thấy kết quả tốt nhất")
             throw Exception("Không có kết quả nhận diện văn bản")
         }
-
         val bestScaleFactor = bestResult.scale
         val bestTextResult = bestResult.textResult
         val bestAvgFontSize = bestResult.avgFontSize
@@ -375,12 +392,11 @@ class TranslationRepository(private val application: Application) {
         val hasCommonErrors = bestText.contains("地") && !bestText.contains("她") // "地" often mistaken for "她"
         if (hasCommonErrors) {
             Log.w("TranslationRepository", "Phát hiện lỗi ngữ pháp trong kết quả tốt nhất: $bestText")
-            val alternativeResult = groupedByRecognizer.entries
-                .flatMap { it.value }
-                .filter { it != bestResult && it.textResult.text.contains("她") }
+            val alternativeResult = groupedByRecognizer.values.flatten()
+                .filter { result -> result != bestResult && result.textResult.text.contains("她") }
                 .maxByOrNull { result ->
                     val elements = result.textResult.textBlocks.flatMap { it.lines }.flatMap { it.elements }
-                    val averageConfidence = if (elements.isEmpty()) 0.0 else elements.sumOf { it.confidence.toDouble() } / elements.size
+                    val averageConfidence = if (elements.isEmpty()) 0.0 else elements.sumOf { e -> e.confidence.toDouble() } / elements.size
                     averageConfidence
                 }
             if (alternativeResult != null) {
@@ -399,7 +415,9 @@ class TranslationRepository(private val application: Application) {
                             (bounds.right / alternativeScaleFactor).toInt(),
                             (bounds.bottom / alternativeScaleFactor).toInt()
                         )
-                        val fontSizes = line.elements.mapNotNull { it.boundingBox?.height()?.toFloat()?.div(alternativeScaleFactor) }
+                        val fontSizes = line.elements.mapNotNull { element ->
+                            element.boundingBox?.height()?.toFloat()?.div(alternativeScaleFactor)
+                        }
                         val fontSize = if (fontSizes.isNotEmpty()) {
                             fontSizes.sorted()[fontSizes.size / 2].coerceAtMost(alternativeAvgFontSize * 1.2f)
                         } else {
@@ -416,7 +434,7 @@ class TranslationRepository(private val application: Application) {
                     if (fontSizes.isNotEmpty()) {
                         val medianFontSize = fontSizes.sorted()[fontSizes.size / 2]
                         cluster.map { block ->
-                            if (abs(block.fontSize - medianFontSize) > medianFontSize * 0.3f) {
+                            if (kotlin.math.abs(block.fontSize - medianFontSize) > medianFontSize * 0.3f) {
                                 block.copy(fontSize = medianFontSize)
                             } else {
                                 block
@@ -503,8 +521,8 @@ class TranslationRepository(private val application: Application) {
     private fun assignSpeechBubblesToBlocks(textBlocks: List<TextBlockInfo>): List<TextBlockInfo> {
         if (textBlocks.isEmpty()) return emptyList()
         val clusters = mutableListOf<MutableList<TextBlockInfo>>()
-        val threshold = 40 // px, điều chỉnh cho phù hợp với độ phân giải ảnh
-        val iouThreshold = 0.1f // Intersection over Union tối thiểu để coi là cùng cụm
+        val threshold = 60 // px, tăng threshold để tránh merge nhầm cụm gần nhau
+        val iouThreshold = 0.25f // Tăng IoU tối thiểu để merge
         fun iou(a: Rect, b: Rect): Float {
             val left = maxOf(a.left, b.left)
             val top = maxOf(a.top, b.top)
@@ -521,7 +539,7 @@ class TranslationRepository(private val application: Application) {
         fun isVerticalOverlapEnough(a: Rect, b: Rect): Boolean {
             val overlap = verticalOverlap(a, b)
             val minHeight = minOf(a.height(), b.height())
-            return overlap >= minHeight / 3
+            return overlap >= minHeight / 2 // tăng yêu cầu overlap dọc
         }
         fun isTooFarVertical(a: Rect, b: Rect): Boolean {
             val aHeight = a.height()
@@ -533,14 +551,8 @@ class TranslationRepository(private val application: Application) {
         textBlocks.forEach { block ->
             var assigned = false
             for (cluster in clusters) {
-                if (cluster.any { other ->
-                        val a = block.bounds
-                        val b = other.bounds
-                        val overlap = Rect.intersects(a, b) && iou(a, b) > iouThreshold
-                        val verticalEnough = isVerticalOverlapEnough(a, b)
-                        val notTooFar = !isTooFarVertical(a, b)
-                        (overlap || verticalEnough) && notTooFar
-                    }) {
+                val last = cluster.last()
+                if (iou(block.bounds, last.bounds) > iouThreshold && isVerticalOverlapEnough(block.bounds, last.bounds) && !isTooFarVertical(block.bounds, last.bounds)) {
                     cluster.add(block)
                     assigned = true
                     break
