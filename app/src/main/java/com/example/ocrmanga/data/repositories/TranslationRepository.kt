@@ -1037,7 +1037,8 @@ class TranslationRepository(private val application: Application) {
                 for (sentence in sentences) {
                     val prompt = """
                     Dịch sang tiếng Việt: $sentence
-                    Chỉ trả về bản dịch.
+                    Đây là văn bản từ truyện tranh/manga, hãy tổ hợp văn bản để dịch tự nhiên và phù hợp ngữ cảnh.
+                    Chỉ trả về bản dịch, không thêm gì khác.
                 """.trimIndent()
 
                     val response = generativeModel.generateContent(prompt)
