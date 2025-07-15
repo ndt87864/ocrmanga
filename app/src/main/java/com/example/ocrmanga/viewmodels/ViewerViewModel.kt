@@ -27,6 +27,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentLinkedQueue
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
@@ -267,7 +269,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 Log.e(TAG, "Lỗi khi tải thêm ảnh", e)
             }
         }
-    }    fun setTranslationMode(mode: TranslationMode) {
+    }    
+    
+    fun setTranslationMode(mode: TranslationMode) {
         val currentMode = uiState.value.translationMode
         
         _uiState.update {
@@ -279,10 +283,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         Log.i(TAG, "Chế độ dịch được đặt thành $mode")
 
         if (mode != TranslationMode.OFF) {
-            // If switching between different translation modes (OFFLINE <-> ONLINE)
+            // If switching between different translation modes (OFFLINE <-> ONLINE <-> GEMINI)
             // or turning on translation for the first time, retranslate all images
             val shouldRetranslate = currentMode != mode && 
-                                  (currentMode != TranslationMode.OFF || uiState.value.imageUris.isNotEmpty())
+                                  (currentMode == TranslationMode.OFF || uiState.value.imageUris.isNotEmpty())
             
             if (shouldRetranslate) {
                 // Clear existing translations and retranslate all images
@@ -317,7 +321,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     Log.i(TAG, "Không có ảnh mới để dịch")
                 }
             }
-        } else {
+        } else { // TranslationMode.OFF
             _uiState.update {
                 it.copy(
                     isTranslating = false,
@@ -529,13 +533,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val context = getApplication<Application>().applicationContext
-                val pdfDocument = android.graphics.pdf.PdfDocument()
+                val pdfDocument = PdfDocument()
                 val imageUris = _uiState.value.imageUris
 
                 imageUris.forEachIndexed { index, uri ->
-                    val bitmap = android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                    val bitmap = MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
                     val scaledBitmap = Bitmap.createScaledBitmap(bitmap, bitmap.width, bitmap.height, true)
-                    val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(scaledBitmap.width, scaledBitmap.height, index + 1).create()
+                    val pageInfo = PdfDocument.PageInfo.Builder(scaledBitmap.width, scaledBitmap.height, index + 1).create()
                     val page = pdfDocument.startPage(pageInfo)
                     val paint = Paint().apply {
                         isAntiAlias = true
@@ -546,8 +550,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     pdfDocument.finishPage(page)
                 }
 
-                val pdfFile = java.io.File(context.getExternalFilesDir(null), "room_${_uiState.value.roomId}.pdf")
-                pdfDocument.writeTo(java.io.FileOutputStream(pdfFile))
+                val pdfFile = File(context.getExternalFilesDir(null), "room_${_uiState.value.roomId}.pdf")
+                pdfDocument.writeTo(FileOutputStream(pdfFile))
                 pdfDocument.close()
 
                 withContext(Dispatchers.Main) {

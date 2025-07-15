@@ -88,7 +88,6 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
-
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
     implementation ("com.google.mlkit:language-id:16.1.1")
     implementation ("androidx.compose.material:material-icons-extended:1.6.1")
@@ -108,5 +107,6 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     implementation ("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
 }

@@ -11,6 +11,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
+import com.example.ocrmanga.data.database.DatabaseHelper
 import com.example.ocrmanga.data.models.RecognitionResult
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
@@ -36,6 +37,12 @@ import java.io.IOException
 import java.net.URLEncoder
 import kotlin.math.abs
 import kotlin.math.min
+import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.HarmCategory
+import com.google.ai.client.generativeai.type.SafetySetting
+import com.google.ai.client.generativeai.type.BlockThreshold
+import com.google.gson.stream.JsonReader
+import java.io.StringReader
 
 class TranslationRepository(private val application: Application) {
 
@@ -46,6 +53,12 @@ class TranslationRepository(private val application: Application) {
     private val translators = mutableMapOf<String, com.google.mlkit.nl.translate.Translator>()
     private val cache = mutableMapOf<String, Pair<String, List<TextBlockInfo>>>()
     private val httpClient = OkHttpClient()
+    private val databaseHelper = DatabaseHelper(application)
+
+    private var geminiApiKeys: List<String> = emptyList()
+    private var currentGeminiKeyIndex = 0
+    private var currentGeminiModelIndex = 0
+    private val geminiModels = listOf("gemini-2.0-flash", "gemini-2.5-flash") // Add more models if needed
 
     // Lưu session dịch gần nhất: Pair<Uri, Pair<text gốc, text dịch cuối>>
     val lastTranslationSession = mutableListOf<Pair<Uri, Pair<String, String>>>()
@@ -62,6 +75,35 @@ class TranslationRepository(private val application: Application) {
 
     init {
         preloadRecognitionModels()
+        loadGeminiApiKeys()
+    }
+
+    private fun loadGeminiApiKeys() {
+        geminiApiKeys = databaseHelper.getAllApiKeys().filter { it.isNotBlank() }
+        if (geminiApiKeys.isEmpty()) {
+            Log.w("TranslationRepository", "Không tìm thấy API key Gemini nào trong cơ sở dữ liệu.")
+        } else {
+            Log.i("TranslationRepository", "Đã tải ${geminiApiKeys.size} API key Gemini.")
+        }
+    }
+
+    private fun getNextGeminiApiKey(): String? {
+        if (geminiApiKeys.isEmpty()) {
+            Log.e("TranslationRepository", "Không có API key Gemini nào được cấu hình.")
+            return null
+        }
+        val key = geminiApiKeys[currentGeminiKeyIndex]
+        currentGeminiKeyIndex = (currentGeminiKeyIndex + 1) % geminiApiKeys.size
+        if (currentGeminiKeyIndex == 0) {
+            // Cycle through models when all keys have been used once
+            currentGeminiModelIndex = (currentGeminiModelIndex + 1) % geminiModels.size
+            Log.i("TranslationRepository", "Đã sử dụng hết các API key, chuyển sang model: ${geminiModels[currentGeminiModelIndex]}")
+        }
+        return key
+    }
+
+    private fun getCurrentGeminiModel(): String {
+        return geminiModels[currentGeminiModelIndex]
     }
 
     private fun preloadRecognitionModels() {
@@ -169,6 +211,7 @@ class TranslationRepository(private val application: Application) {
                         var translatedText = when (mode) {
                             TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
                             TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
+                            TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                             TranslationMode.OFF -> block.text
                         }
                         Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText")
@@ -178,6 +221,7 @@ class TranslationRepository(private val application: Application) {
                             translatedText = when (mode) {
                                 TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
                                 TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
+                                TranslationMode.GEMINI -> translateTextWithGemini(translatedText, detectedAfterTranslation)
                                 else -> translatedText
                             }
                         }
@@ -228,6 +272,7 @@ class TranslationRepository(private val application: Application) {
                     var translatedText = when (mode) {
                         TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
                         TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
+                        TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                         TranslationMode.OFF -> block.text
                     }
                     val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
@@ -235,6 +280,7 @@ class TranslationRepository(private val application: Application) {
                         translatedText = when (mode) {
                             TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
                             TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
+                            TranslationMode.GEMINI -> translateTextWithGemini(translatedText, detectedAfterTranslation)
                             else -> translatedText
                         }
                     }
@@ -289,13 +335,8 @@ class TranslationRepository(private val application: Application) {
             lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
             return@withContext Triple("", emptyList(), "zh")
         } finally {
-            // Always recycle bitmap to free memory
-            try {
                 bitmap?.recycle()
                 bitmap = null
-            } catch (e: Exception) {
-                Log.e("TranslationRepository", "Lỗi khi giải phóng bitmap", e)
-            }
         }
     }
 
@@ -345,11 +386,7 @@ class TranslationRepository(private val application: Application) {
                         Log.e("TranslationRepository", "Nhận diện thất bại cho scale $scale và recognizer ${recognizer.javaClass.simpleName}", e)
                         null
                     } finally {
-                        try {
                             preprocessedBitmap?.recycle()
-                        } catch (e: Exception) {
-                            Log.e("TranslationRepository", "Lỗi khi giải phóng preprocessedBitmap", e)
-                        }
                     }
                 }
             }
@@ -734,7 +771,6 @@ class TranslationRepository(private val application: Application) {
                 compareBy<TextBlockInfo> { it.bounds.top }.thenBy { it.bounds.left }
             )
             val mergedText = StringBuilder()
-            val wordCountsPerLine = mutableListOf<Int>()
             lateinit var mergedBounds: Rect
             var minFontSize = Float.MAX_VALUE
             var blockCount = 0
@@ -745,7 +781,7 @@ class TranslationRepository(private val application: Application) {
                 }
                 mergedText.append(block.text)
                 val wordCount = block.wordCountsPerLine?.sum() ?: block.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                wordCountsPerLine.add(wordCount)
+                val currentWordCountsPerLine = block.wordCountsPerLine ?: listOf(wordCount)
                 if (blockCount == 0) {
                     mergedBounds = Rect(block.bounds)
                 } else {
@@ -764,7 +800,7 @@ class TranslationRepository(private val application: Application) {
                 text = mergedText.toString(),
                 bounds = Rect(mergedBounds),
                 fontSize = minFontSize,
-                wordCountsPerLine = wordCountsPerLine
+                wordCountsPerLine = null // Reset wordCountsPerLine after merging
             )
 
             Log.i(
@@ -840,7 +876,6 @@ class TranslationRepository(private val application: Application) {
                 )
 
                 val mergedText = StringBuilder()
-                val wordCountsPerLine = mutableListOf<Int>()
                 lateinit var mergedBounds: Rect
                 var minFontSize = Float.MAX_VALUE
                 var blockCount = 0
@@ -851,7 +886,7 @@ class TranslationRepository(private val application: Application) {
                     }
                     mergedText.append(block.text)
                     val wordCount = block.wordCountsPerLine?.sum() ?: block.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                    wordCountsPerLine.add(wordCount)
+                    val currentWordCountsPerLine = block.wordCountsPerLine ?: listOf(wordCount)
                     if (blockCount == 0) {
                         mergedBounds = Rect(block.bounds)
                     } else {
@@ -870,7 +905,7 @@ class TranslationRepository(private val application: Application) {
                     text = mergedText.toString(),
                     bounds = mergedBounds,
                     fontSize = minFontSize,
-                    wordCountsPerLine = wordCountsPerLine
+                    wordCountsPerLine = null // Reset wordCountsPerLine after merging
                 )
 
                 Log.i("TranslationRepository", "Column #$columnIndex, Merged Region #$regionIndex: text=${mergedBlock.text}, left=${mergedBlock.bounds.left}, top=${mergedBlock.bounds.top}, right=${mergedBlock.bounds.right}, bottom=${mergedBlock.bounds.bottom}")
@@ -963,6 +998,110 @@ class TranslationRepository(private val application: Application) {
         } catch (e: Exception) {
             Log.e("TranslationRepository", "Dịch trực tuyến thất bại cho văn bản: $originalText", e)
             originalText
+        }
+    }
+
+    private suspend fun translateTextWithGemini(originalText: String, sourceLanguage: String): String = withContext(Dispatchers.IO) {
+        if (originalText.isEmpty()) return@withContext ""
+        if (sourceLanguage == "vi") return@withContext originalText
+
+        val apiKey = getNextGeminiApiKey()
+        if (apiKey == null) {
+            Log.e("TranslationRepository", "Không có API key Gemini khả dụng để dịch.")
+            return@withContext originalText
+        }
+
+        val modelName = getCurrentGeminiModel()
+        Log.i("TranslationRepository", "Đang dịch bằng Gemini model: $modelName với key: ${apiKey.take(5)}...")
+
+        try {
+            val safetySettings = listOf(
+                SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.MEDIUM_AND_ABOVE),
+                SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.MEDIUM_AND_ABOVE),
+                SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.MEDIUM_AND_ABOVE),
+                SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.MEDIUM_AND_ABOVE),
+            )
+
+            val generativeModel = GenerativeModel(
+                modelName = modelName,
+                apiKey = apiKey,
+                safetySettings = safetySettings
+            )
+
+            // Chia văn bản thành các câu để dịch
+            val sentences = originalText.split(Regex("[.!?。！？]+")).filter { it.isNotBlank() }
+            val translations = mutableListOf<String>()
+
+            // Dịch từng câu hoặc toàn bộ nếu ngắn
+            if (sentences.size > 1 && originalText.length > 100) {
+                for (sentence in sentences) {
+                    val prompt = """
+                    Dịch sang tiếng Việt: $sentence
+                    Chỉ trả về bản dịch.
+                """.trimIndent()
+
+                    val response = generativeModel.generateContent(prompt)
+                    val translated = response.text?.trim()
+                        ?.removeSurrounding("\"")
+                        ?.removeSurrounding("'")
+                        ?.trim() ?: sentence
+                    translations.add(translated)
+                }
+                // Ghép lại với dấu câu phù hợp
+                translations.joinToString(" ").also { result ->
+                    Log.i("TranslationRepository", "Gemini translated (sentences): $originalText -> $result")
+                    return@withContext result
+                }
+            } else {
+                // Dịch toàn bộ nếu văn bản ngắn
+                val prompt = """
+                Dịch sang tiếng Việt: $originalText
+                Chỉ trả về bản dịch.
+            """.trimIndent()
+
+                val response = generativeModel.generateContent(prompt)
+                val translatedText = response.text?.trim()
+                    ?.removeSurrounding("\"")
+                    ?.removeSurrounding("'")
+                    ?.trim() ?: originalText
+
+                Log.i("TranslationRepository", "Gemini translated: $originalText -> $translatedText")
+                translatedText
+            }
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "Dịch bằng Gemini thất bại cho văn bản: $originalText. Lỗi: ${e.message}", e)
+            originalText
+        }
+    }
+
+    private suspend fun translateWithGemini(inputText: String): String? {
+        if (geminiApiKeys.isEmpty()) {
+            Log.e("TranslationRepository", "No API keys available.")
+            return null
+        }
+
+        val apiKey = geminiApiKeys[currentGeminiKeyIndex]
+        val client = GenerativeModel(
+            modelName = currentGeminiModelIndex.toString(),
+            apiKey = apiKey
+        )
+
+        val prompt = "Translate the following text: $inputText"
+
+        return try {
+            val response = client.generateContent(prompt)
+            val translatedText = response.text
+
+            // Cycle to the next API key
+            currentGeminiKeyIndex = (currentGeminiKeyIndex + 1) % geminiApiKeys.size
+            if (currentGeminiKeyIndex == 0) {
+                currentGeminiModelIndex = if (currentGeminiModelIndex == 0) 1 else 0
+            }
+
+            translatedText
+        } catch (e: IOException) {
+            Log.e("TranslationRepository", "Error during translation: ${e.message}")
+            null
         }
     }
 

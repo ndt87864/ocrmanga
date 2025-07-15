@@ -334,6 +334,13 @@ fun ViewerScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("Dịch với AI") },
+                            onClick = {
+                                viewModel.setTranslationMode(TranslationMode.GEMINI)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Tắt") },
                             onClick = {
                                 viewModel.setTranslationMode(TranslationMode.OFF)
