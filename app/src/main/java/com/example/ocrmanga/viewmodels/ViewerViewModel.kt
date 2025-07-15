@@ -1,7 +1,11 @@
 package com.example.ocrmanga.viewmodels
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
@@ -530,9 +534,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                 imageUris.forEachIndexed { index, uri ->
                     val bitmap = android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
-                    val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, index + 1).create()
+                    val scaledBitmap = Bitmap.createScaledBitmap(bitmap, bitmap.width, bitmap.height, true)
+                    val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(scaledBitmap.width, scaledBitmap.height, index + 1).create()
                     val page = pdfDocument.startPage(pageInfo)
-                    page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+                    val paint = Paint().apply {
+                        isAntiAlias = true
+                        isFilterBitmap = true
+                        isDither = true
+                    }
+                    page.canvas.drawBitmap(scaledBitmap, 0f, 0f, paint)
                     pdfDocument.finishPage(page)
                 }
 

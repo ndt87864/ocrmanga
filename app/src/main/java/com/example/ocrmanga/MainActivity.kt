@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.ocrmanga.ui.screens.api.ApiKeyManagementScreen
 import com.example.ocrmanga.ui.screens.GalleryScreen
 import com.example.ocrmanga.ui.screens.ViewerScreen
 import com.example.ocrmanga.ui.theme.OCRMangaTheme
@@ -29,13 +30,16 @@ class MainActivity : ComponentActivity() {
                         composable("gallery") {
                             GalleryScreen(
                                 onNavigateBack = { finish() },
-                                onNavigateToViewer = { imageUris ->
+                                onNavigateToViewer = { imageUris: List<String> ->
                                     navController.currentBackStackEntry?.savedStateHandle?.set("imageUris", imageUris)
                                     navController.navigate("viewer")
                                 },
                                 onNavigateToRoom = { roomId ->
                                     navController.currentBackStackEntry?.savedStateHandle?.set("roomId", roomId)
                                     navController.navigate("viewer")
+                                },
+                                onNavigateToApiKeyManagement = {
+                                    navController.navigate("apiKeyManagement")
                                 }
                             )
                         }
@@ -47,6 +51,9 @@ class MainActivity : ComponentActivity() {
                                 roomId = roomId,
                                 onNavigateBack = { navController.popBackStack() }
                             )
+                        }
+                        composable("apiKeyManagement") {
+                            ApiKeyManagementScreen()
                         }
                     }
                 }

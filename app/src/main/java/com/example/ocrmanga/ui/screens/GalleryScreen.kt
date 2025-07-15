@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -49,6 +50,7 @@ fun GalleryScreen(
     onNavigateBack: () -> Unit,
     onNavigateToViewer: (List<String>) -> Unit,
     onNavigateToRoom: (Long) -> Unit,
+    onNavigateToApiKeyManagement: () -> Unit,
     viewModel: GalleryViewModel = viewModel()
 ) {
     // Khi quay lại gallery, luôn xóa dữ liệu session (selectedImages)
@@ -160,6 +162,12 @@ fun GalleryScreen(
                                 }
                             )
                         }
+                    }
+                    IconButton(onClick = { onNavigateToApiKeyManagement() }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Quản lý API Key"
+                        )
                     }
                 }
             )

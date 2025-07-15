@@ -56,6 +56,11 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             loadSavedRooms()
         }
     }
+
+    // Thêm hàm điều hướng đến ApiKeyManagementScreen
+    fun navigateToApiKeyManagement() {
+        // Logic for navigation to ApiKeyManagementScreen
+    }
 }
 
 data class GalleryUiState(

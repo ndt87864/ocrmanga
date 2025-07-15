@@ -36,6 +36,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COLUMN_IMAGE_URI = "image_uri"
         const val COLUMN_DISPLAY_ORDER = "display_order"
         const val COLUMN_IS_TRANSLATED = "is_translated"
+
+        // API Keys table
+        private const val TABLE_API_KEYS = "api_keys"
+        private const val COLUMN_API_KEY_ID = "api_key_id"
+        private const val COLUMN_API_KEY_VALUE = "api_key_value"
+        private const val COLUMN_CREATED_DATE = "created_date"
+        private const val COLUMN_UPDATED_DATE = "updated_date"
+        private const val COLUMN_IS_ACTIVE = "is_active"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -74,6 +82,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
+
+        db.execSQL(
+            """
+            CREATE TABLE $TABLE_API_KEYS (
+                $COLUMN_API_KEY_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COLUMN_API_KEY_VALUE TEXT NOT NULL,
+                created_date TEXT NOT NULL,
+                updated_date TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -86,6 +106,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         if (oldVersion < 4) {
             db.execSQL("ALTER TABLE translations ADD COLUMN original_image_width INTEGER")
             db.execSQL("ALTER TABLE translations ADD COLUMN original_image_height INTEGER")
+            db.execSQL("CREATE TABLE IF NOT EXISTS api_keys ( api_key_value TEXT PRIMARY KEY )")
         }
     }
 
@@ -509,6 +530,60 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
         }
         cursor.close()
+    }
+
+    fun getAllApiKeys(): List<String> {
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT $COLUMN_API_KEY_VALUE FROM $TABLE_API_KEYS", null)
+        val apiKeys = mutableListOf<String>()
+        while (cursor.moveToNext()) {
+            apiKeys.add(cursor.getString(0))
+        }
+        cursor.close()
+        return apiKeys
+    }
+
+    fun insertApiKey(apiKey: String) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COLUMN_API_KEY_VALUE, apiKey)
+            put(COLUMN_CREATED_DATE, "2025-07-15") // Default created date
+            put(COLUMN_UPDATED_DATE, "2025-07-15") // Default updated date
+            put(COLUMN_IS_ACTIVE, 1) // Default active status
+        }
+        db.insert(TABLE_API_KEYS, null, values)
+    }
+
+    fun updateApiKey(oldKey: String, newKey: String) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COLUMN_API_KEY_VALUE, newKey)
+        }
+        db.update(TABLE_API_KEYS, values, "$COLUMN_API_KEY_VALUE = ?", arrayOf(oldKey))
+    }
+
+    fun deleteApiKey(apiKey: String) {
+        val db = writableDatabase
+        db.delete(TABLE_API_KEYS, "$COLUMN_API_KEY_VALUE = ?", arrayOf(apiKey))
+    }
+
+    fun updateApiKeyStatus(apiKey: String, isActive: Boolean): Boolean {
+        val newStatus = if (isActive) 1 else 0
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("is_active", newStatus)
+        }
+        val rowsUpdated = db.update(TABLE_API_KEYS, values, "$COLUMN_API_KEY_VALUE = ?", arrayOf(apiKey))
+        db.close()
+        return rowsUpdated > 0
+    }
+
+    fun getApiKeyStatus(apiKey: String): Boolean {
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT is_active FROM $TABLE_API_KEYS WHERE $COLUMN_API_KEY_VALUE = ?", arrayOf(apiKey))
+        val isActive = if (cursor.moveToFirst()) cursor.getInt(0) == 1 else false
+        cursor.close()
+        return isActive
     }
 
     init {
