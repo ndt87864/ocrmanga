@@ -542,151 +542,65 @@ fun ViewerScreen(
                     if (uiState.translationEnabled && uiState.translatedTexts.containsKey(uri) && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success) {
                         val (fullText, translatedBlocks) = uiState.translatedTexts[uri] ?: ("" to emptyList())
                         if (translatedBlocks.isNotEmpty()) {
-                            // Group các block theo bubbleId (nếu có), nếu không thì mỗi block là một bubble riêng
-                            val blocksByBubble = translatedBlocks.filter { it.bubbleId != null }
-                                .groupBy { it.bubbleId }
-                                .values
-                                .ifEmpty { listOf(translatedBlocks) }
-
-                            // Hàm hợp nhất các vùng bôi trắng trồng lấn (vùng nhỏ vào đuôi vùng lớn)
-                            fun mergeOverlappingWhiteoutRegions(
-                                regions: List<Triple<TextBlockInfo, Rect, Float>>
-                            ): List<Triple<TextBlockInfo, Rect, Float>> {
-                                if (regions.isEmpty()) return emptyList()
-                                val merged = mutableListOf<Triple<TextBlockInfo, Rect, Float>>()
-                                val used = BooleanArray(regions.size)
-                                for (i in regions.indices) {
-                                    if (used[i]) continue
-                                    var (blockA, rectA, fontA) = regions[i]
-                                    for (j in regions.indices) {
-                                        if (i == j || used[j]) continue
-                                        val (blockB, rectB, fontB) = regions[j]
-                                        val overlap = rectA.left < rectB.right && rectA.right > rectB.left && rectA.top < rectB.bottom && rectA.bottom > rectB.top
-                                        if (overlap) {
-                                            val areaA = rectA.width * rectA.height
-                                            val areaB = rectB.width * rectB.height
-                                            val bigBlock: TextBlockInfo
-                                            val bigRect: Rect
-                                            val bigFont: Float
-                                            val smallBlock: TextBlockInfo
-                                            val smallRect: Rect
-                                            val smallFont: Float
-                                            if (areaA >= areaB) {
-                                                bigBlock = blockA
-                                                bigRect = rectA
-                                                bigFont = fontA
-                                                smallBlock = blockB
-                                                smallRect = rectB
-                                                smallFont = fontB
-                                            } else {
-                                                bigBlock = blockB
-                                                bigRect = rectB
-                                                bigFont = fontB
-                                                smallBlock = blockA
-                                                smallRect = rectA
-                                                smallFont = fontA
-                                            }
-                                            val mergedText = if (bigBlock.isVertical) {
-                                                bigBlock.text + " " + smallBlock.text
-                                            } else {
-                                                bigBlock.text + "\n" + smallBlock.text
-                                            }
-                                            val mergedRect = Rect(
-                                                minOf(bigRect.left, smallRect.left),
-                                                minOf(bigRect.top, smallRect.top),
-                                                maxOf(bigRect.right, smallRect.right),
-                                                maxOf(bigRect.bottom, smallRect.bottom)
-                                            )
-                                            val mergedFont = minOf(bigFont, smallFont)
-                                            val mergedBlock = bigBlock.copy(
-                                                text = mergedText,
-                                                bounds = android.graphics.Rect(
-                                                    mergedRect.left.toInt(),
-                                                    mergedRect.top.toInt(),
-                                                    mergedRect.right.toInt(),
-                                                    mergedRect.bottom.toInt()
-                                                ),
-                                                fontSize = mergedFont
-                                            )
-                                            blockA = mergedBlock
-                                            rectA = mergedRect
-                                            fontA = mergedFont
-                                            used[j] = true
-                                        }
-                                    }
-                                    merged.add(Triple(blockA, rectA, fontA))
-                                    used[i] = true
-                                }
-                                return merged
-                            }
-
-                            Canvas(
-                                modifier = Modifier.matchParentSize().drawWithCache {
-                                    // Chuẩn bị regions cho từng bubble
-                                    val allBubbleRegions = blocksByBubble.map { bubbleBlocks ->
-                                        val regions = bubbleBlocks.mapNotNull { block ->
-                                            val blockImageWidth = block.originalImageWidth?.toFloat() ?: originalImageWidth
-                                            val blockImageHeight = block.originalImageHeight?.toFloat() ?: originalImageHeight
-                                            val scale = if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
-                                            val scaledHeight = blockImageHeight * scale
-                                            val offsetY = if (imageHeight > scaledHeight) (imageHeight - scaledHeight) / 2 else 0f
-                                            val offsetX = 0f
-                                            if (block.text.isNotBlank()) {
-                                                val bounds = block.bounds
-                                                val scaledLeft = (bounds.left * scale) + offsetX
-                                                val scaledTop = (bounds.top * scale) + offsetY
-                                                val scaledWidth = (bounds.width() * scale).toFloat()
-                                                val scaledHeight = (bounds.height() * scale).toFloat()
-                                                val minFontSize = if (blockImageWidth < 1500f) 12f else 16f
-                                                val optimalFontSize = calculateOptimalFontSize(
-                                                    block.text, scaledWidth, scaledHeight, minFontSize
-                                                )
-                                                val padding = optimalFontSize * if (blockImageWidth < 1500f) 0.15f else 0.2f
-                                                Triple(
-                                                    block,
-                                                    Rect(
-                                                        scaledLeft - padding,
-                                                        scaledTop - padding,
-                                                        scaledLeft + scaledWidth + padding,
-                                                        scaledTop + scaledHeight + padding
-                                                    ),
-                                                    optimalFontSize
-                                                )
-                                            } else null
-                                        }
-                                        // Hợp nhất các vùng trồng lấn sử dụng utils chuẩn
-                                        com.example.ocrmanga.utils.mergeOverlappingRegions(regions, imageWidth)
-                                    }
-                                    onDrawBehind {
-                                        // Vẽ lần lượt từng bubble (mỗi bubble là một nhóm block)
-                                        allBubbleRegions.forEach { regions ->
-                                            // Xóa hoàn toàn văn bản gốc bằng cách sử dụng advanced text removal cho từng block trong bubble
-                                            regions.forEach { triple ->
-                                                val rect = triple.component2()
-                                                advancedTextRemoval(rect, originalImageWidth)
-                                            }
-                                            // Vẽ văn bản đã dịch cho từng block trong bubble
-                                            regions.forEach { triple ->
-                                                val block = triple.component1()
-                                                val rect = triple.component2()
-                                                val fontSize = triple.component3()
-                                                if (block.text.isNotBlank()) {
-                                                    drawText(
-                                                        text = block.text,
-                                                        x = rect.left,
-                                                        y = rect.top,
-                                                        width = rect.width,
-                                                        height = rect.height,
-                                                        color = Color.Black,
-                                                        fontSize = fontSize,
-                                                        isVertical = block.isVertical
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            ) {}
+    // Thu nhỏ bounding box toàn bộ block để loại bỏ chồng lấn
+    val shrinkedBlocks = splitNonOverlappingBoxes(translatedBlocks)
+    Canvas(
+        modifier = Modifier.matchParentSize().drawWithCache {
+            val regions = shrinkedBlocks.mapNotNull { block ->
+                val blockImageWidth = block.originalImageWidth?.toFloat() ?: originalImageWidth
+                val blockImageHeight = block.originalImageHeight?.toFloat() ?: originalImageHeight
+                val scale = if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
+                val scaledHeight = blockImageHeight * scale
+                val offsetY = if (imageHeight > scaledHeight) (imageHeight - scaledHeight) / 2 else 0f
+                val offsetX = 0f
+                if (block.text.isNotBlank()) {
+                    val bounds = block.bounds
+                    val scaledLeft = (bounds.left * scale) + offsetX
+                    val scaledTop = (bounds.top * scale) + offsetY
+                    val scaledWidth = (bounds.width() * scale).toFloat()
+                    val scaledHeight = (bounds.height() * scale).toFloat()
+                    val optimalFontSize = calculateOptimalFontSize(
+                        block.text, scaledWidth, scaledHeight, 12f
+                    )
+                    Triple(
+                        block,
+                        Rect(
+                            scaledLeft,
+                            scaledTop,
+                            scaledLeft + scaledWidth,
+                            scaledTop + scaledHeight
+                        ),
+                        optimalFontSize
+                    )
+                } else null
+            }
+            onDrawBehind {
+                // Xóa từng vùng text đã shrink
+                regions.forEach { triple ->
+                    val rect = triple.component2()
+                    advancedTextRemoval(rect, originalImageWidth)
+                }
+                // Vẽ text dịch đúng vùng đã shrink
+                regions.forEach { triple ->
+                    val block = triple.component1()
+                    val rect = triple.component2()
+                    val fontSize = triple.component3()
+                    if (block.text.isNotBlank()) {
+                        drawText(
+                            text = block.text,
+                            x = rect.left,
+                            y = rect.top,
+                            width = rect.width,
+                            height = rect.height,
+                            color = Color.Black,
+                            fontSize = fontSize,
+                            isVertical = block.isVertical
+                        )
+                    }
+                }
+            }
+        }
+    ) {}
                         }
                     }
                 }
@@ -848,5 +762,86 @@ fun ViewerScreen(
             )
         }
     }
+}
+
+// Hàm kiểm tra và thu nhỏ bounding box nếu bị chồng lấn
+private fun shrinkOverlappingBoxes(blocks: List<com.example.ocrmanga.data.models.TextBlockInfo>): List<com.example.ocrmanga.data.models.TextBlockInfo> {
+    val result = blocks.map { it.copy() }.toMutableList()
+    for (i in result.indices) {
+        val boxA = result[i].bounds
+        for (j in result.indices) {
+            if (i == j) continue
+            val boxB = result[j].bounds
+            // Kiểm tra overlap
+            if (android.graphics.Rect.intersects(boxA, boxB)) {
+                // Tìm vùng giao nhau
+                val intersect = android.graphics.Rect(
+                    maxOf(boxA.left, boxB.left),
+                    maxOf(boxA.top, boxB.top),
+                    minOf(boxA.right, boxB.right),
+                    minOf(boxA.bottom, boxB.bottom)
+                )
+                // Nếu vùng giao nhau nhỏ hơn 40% diện tích boxA thì bỏ qua (chỉ cắt khi chồng lấn lớn)
+                val areaA = (boxA.width() * boxA.height()).toFloat()
+                val areaIntersect = (intersect.width() * intersect.height()).toFloat()
+                if (areaA > 0 && areaIntersect / areaA > 0.15f) {
+                    // Thu nhỏ boxA bằng cách cắt bớt vùng giao nhau ở mép (ưu tiên giữ vùng giữa)
+                    // Nếu boxA rộng hơn, cắt chiều ngang; nếu cao hơn, cắt chiều dọc
+                    val shrinkLeft = if (intersect.left == boxA.left) intersect.width() / 2 else 0
+                    val shrinkRight = if (intersect.right == boxA.right) intersect.width() / 2 else 0
+                    val shrinkTop = if (intersect.top == boxA.top) intersect.height() / 2 else 0
+                    val shrinkBottom = if (intersect.bottom == boxA.bottom) intersect.height() / 2 else 0
+                    result[i] = result[i].copy(
+                        bounds = android.graphics.Rect(
+                            boxA.left + shrinkLeft,
+                            boxA.top + shrinkTop,
+                            boxA.right - shrinkRight,
+                            boxA.bottom - shrinkBottom
+                        )
+                    )
+                }
+            }
+        }
+    }
+    return result
+}
+
+// Hàm tách các bounding box không chồng lấn
+private fun splitNonOverlappingBoxes(blocks: List<TextBlockInfo>): List<TextBlockInfo> {
+    val result = mutableListOf<TextBlockInfo>()
+    val used = BooleanArray(blocks.size)
+    for (i in blocks.indices) {
+        var boxA = blocks[i].bounds
+        var keep = true
+        for (j in blocks.indices) {
+            if (i == j) continue
+            val boxB = blocks[j].bounds
+            if (android.graphics.Rect.intersects(boxA, boxB)) {
+                // Nếu boxA nằm hoàn toàn trong boxB thì bỏ boxA
+                if (boxB.contains(boxA)) {
+                    keep = false
+                    break
+                }
+                // Nếu chỉ giao một phần, cắt phần giao nhau khỏi boxA
+                val intersect = android.graphics.Rect(
+                    maxOf(boxA.left, boxB.left),
+                    maxOf(boxA.top, boxB.top),
+                    minOf(boxA.right, boxB.right),
+                    minOf(boxA.bottom, boxB.bottom)
+                )
+                // Cắt phần giao nhau ở mép dưới hoặc phải
+                if (intersect.width() > 0 && intersect.height() > 0) {
+                    if (intersect.right == boxA.right) boxA.right = intersect.left
+                    if (intersect.left == boxA.left) boxA.left = intersect.right
+                    if (intersect.bottom == boxA.bottom) boxA.bottom = intersect.top
+                    if (intersect.top == boxA.top) boxA.top = intersect.bottom
+                }
+            }
+        }
+        if (keep && boxA.width() > 0 && boxA.height() > 0) {
+            result.add(blocks[i].copy(bounds = android.graphics.Rect(boxA)))
+        }
+    }
+    return result
 }
 
