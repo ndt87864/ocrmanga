@@ -160,19 +160,38 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         deleteOriginalImage(originalUri) // Xóa ảnh gốc sau khi lưu
                     }
 
+                    // Tự động scale lại bounds nếu ảnh đã bị resize
                     translatedTexts[originalUri]?.let { (originalText, textBlocks) ->
+                        // Lấy kích thước gốc từ textBlock đầu tiên (nếu có)
+                        val originalWidth = textBlocks.firstOrNull()?.originalImageWidth
+                        val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
+                        // Lấy kích thước ảnh đã lưu
+                        val savedBitmap = android.graphics.BitmapFactory.decodeFile(newFile.absolutePath)
+                        val savedWidth = savedBitmap?.width
+                        val savedHeight = savedBitmap?.height
+                        val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
+                        val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
                         textBlocks.forEach { textBlock ->
+                            val origRect = textBlock.bounds
+                            val scaledRect = if (scaleX != 1f || scaleY != 1f) {
+                                android.graphics.Rect(
+                                    (origRect.left * scaleX).toInt(),
+                                    (origRect.top * scaleY).toInt(),
+                                    (origRect.right * scaleX).toInt(),
+                                    (origRect.bottom * scaleY).toInt()
+                                )
+                            } else origRect
                             val textValues = ContentValues().apply {
                                 put(COLUMN_IMAGE_ID, imageId)
                                 put("original_text", originalText)
                                 put("translated_text", textBlock.text)
-                                put("bounds_left", textBlock.bounds.left)
-                                put("bounds_top", textBlock.bounds.top)
-                                put("bounds_right", textBlock.bounds.right)
-                                put("bounds_bottom", textBlock.bounds.bottom)
+                                put("bounds_left", scaledRect.left)
+                                put("bounds_top", scaledRect.top)
+                                put("bounds_right", scaledRect.right)
+                                put("bounds_bottom", scaledRect.bottom)
                                 put("font_size", textBlock.fontSize)
-                                put("original_image_width", textBlock.originalImageWidth)
-                                put("original_image_height", textBlock.originalImageHeight)
+                                put("original_image_width", savedWidth)
+                                put("original_image_height", savedHeight)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -181,6 +200,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 Log.i(TAG, "Saved translation for image $imageId: ID=$textId")
                             }
                         }
+                        savedBitmap?.recycle()
                     }
                 } else {
                     Log.e(TAG, "Failed to copy image $originalUri to internal storage")
@@ -261,22 +281,40 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     }
                     val imageId = db.insert(TABLE_IMAGES, null, imageValues)
                     if (imageId != -1L) {
+                        // Tự động scale lại bounds nếu ảnh đã bị resize
                         translatedTexts[uri]?.let { (originalText, textBlocks) ->
+                            val originalWidth = textBlocks.firstOrNull()?.originalImageWidth
+                            val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
+                            val savedBitmap = android.graphics.BitmapFactory.decodeFile(newFile.absolutePath)
+                            val savedWidth = savedBitmap?.width
+                            val savedHeight = savedBitmap?.height
+                            val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
+                            val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
                             textBlocks.forEach { textBlock ->
+                                val origRect = textBlock.bounds
+                                val scaledRect = if (scaleX != 1f || scaleY != 1f) {
+                                    android.graphics.Rect(
+                                        (origRect.left * scaleX).toInt(),
+                                        (origRect.top * scaleY).toInt(),
+                                        (origRect.right * scaleX).toInt(),
+                                        (origRect.bottom * scaleY).toInt()
+                                    )
+                                } else origRect
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, imageId)
                                     put("original_text", originalText)
                                     put("translated_text", textBlock.text)
-                                    put("bounds_left", textBlock.bounds.left)
-                                    put("bounds_top", textBlock.bounds.top)
-                                    put("bounds_right", textBlock.bounds.right)
-                                    put("bounds_bottom", textBlock.bounds.bottom)
+                                    put("bounds_left", scaledRect.left)
+                                    put("bounds_top", scaledRect.top)
+                                    put("bounds_right", scaledRect.right)
+                                    put("bounds_bottom", scaledRect.bottom)
                                     put("font_size", textBlock.fontSize)
-                                    put("original_image_width", textBlock.originalImageWidth)
-                                    put("original_image_height", textBlock.originalImageHeight)
+                                    put("original_image_width", savedWidth)
+                                    put("original_image_height", savedHeight)
                                 }
                                 db.insert("translations", null, textValues)
                             }
+                            savedBitmap?.recycle()
                         }
                     }
                 } else {
@@ -291,21 +329,40 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     if (translatedTexts.containsKey(uri)) {
                         db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                         translatedTexts[uri]?.let { (originalText, textBlocks) ->
+                            // Lấy lại kích thước ảnh đã lưu
+                            val imageFile = File(Uri.parse(uriStr).path ?: "")
+                            val savedBitmap = android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath)
+                            val savedWidth = savedBitmap?.width
+                            val savedHeight = savedBitmap?.height
+                            val originalWidth = textBlocks.firstOrNull()?.originalImageWidth
+                            val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
+                            val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
+                            val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
                             textBlocks.forEach { textBlock ->
+                                val origRect = textBlock.bounds
+                                val scaledRect = if (scaleX != 1f || scaleY != 1f) {
+                                    android.graphics.Rect(
+                                        (origRect.left * scaleX).toInt(),
+                                        (origRect.top * scaleY).toInt(),
+                                        (origRect.right * scaleX).toInt(),
+                                        (origRect.bottom * scaleY).toInt()
+                                    )
+                                } else origRect
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, imageId)
                                     put("original_text", originalText)
                                     put("translated_text", textBlock.text)
-                                    put("bounds_left", textBlock.bounds.left)
-                                    put("bounds_top", textBlock.bounds.top)
-                                    put("bounds_right", textBlock.bounds.right)
-                                    put("bounds_bottom", textBlock.bounds.bottom)
+                                    put("bounds_left", scaledRect.left)
+                                    put("bounds_top", scaledRect.top)
+                                    put("bounds_right", scaledRect.right)
+                                    put("bounds_bottom", scaledRect.bottom)
                                     put("font_size", textBlock.fontSize)
-                                    put("original_image_width", textBlock.originalImageWidth)
-                                    put("original_image_height", textBlock.originalImageHeight)
+                                    put("original_image_width", savedWidth)
+                                    put("original_image_height", savedHeight)
                                 }
                                 db.insert("translations", null, textValues)
                             }
+                            savedBitmap?.recycle()
                         }
                     }
                 }
