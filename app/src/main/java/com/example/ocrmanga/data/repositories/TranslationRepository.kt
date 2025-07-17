@@ -58,7 +58,7 @@ class TranslationRepository(private val application: Application) {
     private var geminiApiKeys: List<String> = emptyList()
     private var currentGeminiKeyIndex = 0
     private var currentGeminiModelIndex = 0
-    private val geminiModels = listOf("gemini-2.0-flash", "gemini-2.5-flash") // Add more models if needed
+    private val geminiModels = listOf("gemini-1.5-flash","gemini-1.5-pro","gemini-2.0-flash-lite","gemini-2.0-flash", "gemini-2.5-flash","gemini-2.5-pro") // Add more models if needed
 
     // Lưu session dịch gần nhất: Pair<Uri, Pair<text gốc, text dịch cuối>>
     val lastTranslationSession = mutableListOf<Pair<Uri, Pair<String, String>>>()
@@ -323,9 +323,30 @@ class TranslationRepository(private val application: Application) {
             val result = Triple(resultText, translatedBlocks, sourceLanguage)
             cache[cacheKey] = resultText to translatedBlocks
             Log.i("TranslationRepository", "[OUTPUT] Kết quả cuối cùng: $resultText")
-            // Lưu session đầu vào + kết quả cuối
-            lastTranslationSession.add(Pair(imageUri, Pair(fullText, resultText)))
-            result
+            // Kiểm tra lại các block chưa dịch ra tiếng Việt, thử lại với model khác nếu cần
+            val finalBlocks = translatedBlocks.map { block ->
+                val lang = detectLanguage(block.text) ?: ""
+                if (lang != "vi" && mode != TranslationMode.OFF) {
+                    // Thử lại với model khác
+                    val retryText = when (mode) {
+                        TranslationMode.OFFLINE -> translateTextOnline(block.text, sourceLanguage)
+                        TranslationMode.ONLINE -> translateTextWithGemini(block.text, sourceLanguage)
+                        TranslationMode.GEMINI -> translateTextOffline(block.text, sourceLanguage)
+                        else -> block.text
+                    }
+                    val retryLang = detectLanguage(retryText) ?: ""
+                    if (retryLang == "vi") {
+                        block.copy(text = postProcessTranslation(retryText))
+                    } else {
+                        block
+                    }
+                } else {
+                    block
+                }
+            }
+            val finalResultText = finalBlocks.joinToString("\n") { it.text }
+            lastTranslationSession.add(Pair(imageUri, Pair(fullText, finalResultText)))
+            return@withContext Triple(finalResultText, finalBlocks, sourceLanguage)
         } catch (e: IOException) {
             Log.e("TranslationRepository", "Lỗi IO với $imageUri", e)
             lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
@@ -1005,60 +1026,46 @@ class TranslationRepository(private val application: Application) {
         if (originalText.isEmpty()) return@withContext ""
         if (sourceLanguage == "vi") return@withContext originalText
 
-        val apiKey = getNextGeminiApiKey()
-        if (apiKey == null) {
-            Log.e("TranslationRepository", "Không có API key Gemini khả dụng để dịch.")
-            return@withContext originalText
-        }
+        val triedKeys = mutableSetOf<Int>()
+        val triedModels = mutableSetOf<Int>()
+        var lastError: Exception? = null
 
-        val modelName = getCurrentGeminiModel()
-        Log.i("TranslationRepository", "Đang dịch bằng Gemini model: $modelName với key: ${apiKey.take(5)}...")
+        repeat(geminiApiKeys.size * geminiModels.size) {
+            val apiKeyIndex = currentGeminiKeyIndex
+            val modelIndex = currentGeminiModelIndex
+            val apiKey = getNextGeminiApiKey()
+            val modelName = getCurrentGeminiModel()
+            if (apiKey == null) return@withContext originalText
 
-        try {
-            val safetySettings = listOf(
-                SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.MEDIUM_AND_ABOVE),
-                SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.MEDIUM_AND_ABOVE),
-                SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.MEDIUM_AND_ABOVE),
-                SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.MEDIUM_AND_ABOVE),
-            )
+            triedKeys.add(apiKeyIndex)
+            triedModels.add(modelIndex)
 
-            val generativeModel = GenerativeModel(
-                modelName = modelName,
-                apiKey = apiKey,
-                safetySettings = safetySettings
-            )
+            try {
+                val safetySettings = listOf(
+                    SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.MEDIUM_AND_ABOVE),
+                    SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.MEDIUM_AND_ABOVE),
+                    SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.MEDIUM_AND_ABOVE),
+                    SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.MEDIUM_AND_ABOVE),
+                )
 
-            // Chia văn bản thành các câu để dịch
-            val sentences = originalText.split(Regex("[.!?。！？]+")).filter { it.isNotBlank() }
-            val translations = mutableListOf<String>()
+                val generativeModel = GenerativeModel(
+                    modelName = modelName,
+                    apiKey = apiKey,
+                    safetySettings = safetySettings
+                )
 
-            // Dịch từng câu hoặc toàn bộ nếu ngắn
-            if (sentences.size > 1 && originalText.length > 100) {
-                for (sentence in sentences) {
-                    val prompt = """
-                    Dịch sang tiếng Việt: $sentence
-                    Đây là văn bản từ truyện tranh/manga, hãy tổ hợp văn bản để dịch tự nhiên và phù hợp ngữ cảnh.
-                    Chỉ trả về bản dịch, không thêm gì khác.
-                """.trimIndent()
-
-                    val response = generativeModel.generateContent(prompt)
-                    val translated = response.text?.trim()
-                        ?.removeSurrounding("\"")
-                        ?.removeSurrounding("'")
-                        ?.trim() ?: sentence
-                    translations.add(translated)
-                }
-                // Ghép lại với dấu câu phù hợp
-                translations.joinToString(" ").also { result ->
-                    Log.i("TranslationRepository", "Gemini translated (sentences): $originalText -> $result")
-                    return@withContext result
-                }
-            } else {
-                // Dịch toàn bộ nếu văn bản ngắn
                 val prompt = """
-                Dịch sang tiếng Việt: $originalText
-                Chỉ trả về bản dịch.
-            """.trimIndent()
+                    Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .
+                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác nhất sang tiếng Việt: $originalText
+                    Lưu ý :1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
+                           2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .
+                           3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .
+                           4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được ( ghi nguyên gốc  từ không dịch được và dịch các từ còn lại).
+                           5. không trả về nhiều bản dịch khác nhau cho cùng một văn bản .VD:Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả?
+                            -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
+                           6. Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .
+                    Chỉ trả về 1 bản dịch chính xác duy nhất .
+                """.trimIndent()
 
                 val response = generativeModel.generateContent(prompt)
                 val translatedText = response.text?.trim()
@@ -1066,13 +1073,21 @@ class TranslationRepository(private val application: Application) {
                     ?.removeSurrounding("'")
                     ?.trim() ?: originalText
 
-                Log.i("TranslationRepository", "Gemini translated: $originalText -> $translatedText")
-                translatedText
+                // Nếu dịch thành công và khác với gốc thì trả về luôn
+                if (!translatedText.equals(originalText, ignoreCase = true)) {
+                    Log.i("TranslationRepository", "Gemini translated: $originalText -> $translatedText (model=$modelName, key=${apiKey.take(5)}...)")
+                    return@withContext translatedText
+                }
+            } catch (e: Exception) {
+                lastError = e
+                Log.e("TranslationRepository", "Dịch bằng Gemini thất bại với model=$modelName, key=${apiKey.take(5)}...: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e("TranslationRepository", "Dịch bằng Gemini thất bại cho văn bản: $originalText. Lỗi: ${e.message}", e)
-            originalText
+            // Nếu chưa thử hết key/model thì tiếp tục, còn không thì break
         }
+
+        // Nếu thử hết vẫn không dịch được, trả về văn bản gốc
+        lastError?.let { Log.e("TranslationRepository", "Tất cả key/model đều thất bại: ${it.message}") }
+        return@withContext originalText
     }
 
     private suspend fun translateWithGemini(inputText: String): String? {
