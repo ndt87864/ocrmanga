@@ -32,18 +32,6 @@ import android.provider.MediaStore
 import androidx.compose.ui.layout.ContentScale
 import android.widget.Toast
 
-// Hàm tiện ích để lấy tên tệp từ URI
-fun getFileNameFromUri(context: Context, uri: Uri): String? {
-    val projection = arrayOf(MediaStore.Images.Media.DISPLAY_NAME)
-    context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst()) {
-            val columnIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-            return cursor.getString(columnIndex)
-        }
-    }
-    return null
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryScreen(
@@ -106,7 +94,11 @@ fun GalleryScreen(
                     naturalOrderComparator(n1, n2)
                 }
                 viewModel.updateSelectedImages(sortedUris)
-                Toast.makeText(context, "Đã chọn ${sortedUris.size} ảnh từ thư mục", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    "Đã chọn ${sortedUris.size} ảnh từ thư mục",
+                    Toast.LENGTH_SHORT
+                ).show()
                 onNavigateToViewer(sortedUris.map { it.toString() })
             }
         }
@@ -123,7 +115,11 @@ fun GalleryScreen(
                     naturalOrderComparator(n1, n2)
                 }
                 viewModel.updateSelectedImages(sortedUris)
-                Toast.makeText(context, "Đã chọn ${sortedUris.size} ảnh từ thư viện", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    "Đã chọn ${sortedUris.size} ảnh từ thư viện",
+                    Toast.LENGTH_SHORT
+                ).show()
                 onNavigateToViewer(sortedUris.map { it.toString() })
             }
         }
@@ -163,111 +159,112 @@ fun GalleryScreen(
                             )
                         }
                     }
-                    IconButton(onClick = { onNavigateToApiKeyManagement() }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Quản lý API Key"
-                        )
-                    }
+                    // Đã chuyển nút cài đặt xuống dưới
                 }
             )
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            var searchQuery by remember { mutableStateOf("") }
-            var filterType by remember { mutableStateOf(0) } // 0: Mới nhất, 1: Cũ nhất
-            val filterOptions = listOf("Mới nhất", "Cũ nhất")
-
-            // Thanh tìm kiếm phòng
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                label = { Text("Tìm kiếm phòng theo tên...") },
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                singleLine = true
-            )
-
-            // Bộ lọc phòng
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Sắp xếp:", modifier = Modifier.padding(end = 8.dp))
-                filterOptions.forEachIndexed { idx, label ->
-                    FilterChip(
-                        selected = filterType == idx,
-                        onClick = { filterType = idx },
-                        label = { Text(label) },
-                        modifier = Modifier.padding(horizontal = 2.dp)
-                    )
-                }
-            }
+                var searchQuery by remember { mutableStateOf("") }
+                var filterType by remember { mutableStateOf(0) } // 0: Mới nhất, 1: Cũ nhất
+                val filterOptions = listOf("Mới nhất", "Cũ nhất")
 
-            val filteredRooms = remember(uiState.savedRooms, searchQuery, filterType) {
-                val filtered = if (searchQuery.isBlank()) uiState.savedRooms else uiState.savedRooms.filter {
-                    it.second.contains(searchQuery, ignoreCase = true)
-                }
-                when (filterType) {
-                    0 -> filtered // Mới nhất
-                    1 -> filtered.reversed() // Cũ nhất
-                    else -> filtered
-                }
-            }
-
-            if (filteredRooms.isNotEmpty()) {
-                Text(
-                    text = "Danh sách đã lưu",
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                // Thanh tìm kiếm phòng
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Tìm kiếm phòng theo tên...") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    singleLine = true
                 )
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+
+                // Bộ lọc phòng
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(filteredRooms) { (roomId, title, coverUri) ->
-                        Card(modifier = Modifier.aspectRatio(0.7f)) {
-                            Box {
-                                AsyncImage(
-                                    model = coverUri,
-                                    contentDescription = "Cover image",
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clickable { onNavigateToRoom(roomId) },
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                )
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color.Black.copy(alpha = 0.7f))
-                                        .padding(4.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = title,
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f).padding(end = 4.dp)
+                    Text("Sắp xếp:", modifier = Modifier.padding(end = 8.dp))
+                    filterOptions.forEachIndexed { idx, label ->
+                        FilterChip(
+                            selected = filterType == idx,
+                            onClick = { filterType = idx },
+                            label = { Text(label) },
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        )
+                    }
+                }
+
+                val filteredRooms = remember(uiState.savedRooms, searchQuery, filterType) {
+                    val filtered =
+                        if (searchQuery.isBlank()) uiState.savedRooms else uiState.savedRooms.filter {
+                            it.second.contains(searchQuery, ignoreCase = true)
+                        }
+                    when (filterType) {
+                        0 -> filtered // Mới nhất
+                        1 -> filtered.reversed() // Cũ nhất
+                        else -> filtered
+                    }
+                }
+
+                if (filteredRooms.isNotEmpty()) {
+                    Text(
+                        text = "Danh sách đã lưu",
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filteredRooms) { (roomId, title, coverUri) ->
+                            Card(modifier = Modifier.aspectRatio(0.7f)) {
+                                Box {
+                                    AsyncImage(
+                                        model = coverUri,
+                                        contentDescription = "Cover image",
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clickable { onNavigateToRoom(roomId) },
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                     )
-                                    IconButton(
-                                        onClick = { showDeleteDialog = roomId },
-                                        modifier = Modifier.size(24.dp)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color.Black.copy(alpha = 0.7f))
+                                            .padding(4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Xóa phòng",
-                                            tint = Color.White
+                                        Text(
+                                            text = title,
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.weight(1f).padding(end = 4.dp)
                                         )
+                                        IconButton(
+                                            onClick = { showDeleteDialog = roomId },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Xóa phòng",
+                                                tint = Color.White
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -275,23 +272,54 @@ fun GalleryScreen(
                     }
                 }
             }
+            // Nút settings ở góc phải dưới
+            IconButton(
+                onClick = { onNavigateToApiKeyManagement() },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(24.dp)
+                    .size(56.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = MaterialTheme.shapes.medium
+                    )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Quản lý API Key",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+
+        showDeleteDialog?.let { roomId ->
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = null },
+                title = { Text("Xác nhận xóa") },
+                text = { Text("Bạn có chắc chắn muốn xóa phòng này không? Thao tác này không thể hoàn tác.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.deleteRoom(roomId)
+                        showDeleteDialog = null
+                    }) { Text("Xóa", color = Color.Red) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteDialog = null }) { Text("Hủy") }
+                }
+            )
         }
     }
-
-    showDeleteDialog?.let { roomId ->
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = null },
-            title = { Text("Xác nhận xóa") },
-            text = { Text("Bạn có chắc chắn muốn xóa phòng này không? Thao tác này không thể hoàn tác.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteRoom(roomId)
-                    showDeleteDialog = null
-                }) { Text("Xóa", color = Color.Red) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = null }) { Text("Hủy") }
-            }
-        )
-    }
 }
+// Hàm tiện ích để lấy tên tệp từ URI
+fun getFileNameFromUri(context: Context, uri: Uri): String? {
+    val projection = arrayOf(MediaStore.Images.Media.DISPLAY_NAME)
+    context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            val columnIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+            return cursor.getString(columnIndex)
+        }
+    }
+    return null
+}
+
