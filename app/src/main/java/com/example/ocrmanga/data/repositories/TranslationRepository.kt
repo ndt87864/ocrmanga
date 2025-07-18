@@ -42,6 +42,7 @@ import com.google.ai.client.generativeai.type.HarmCategory
 import com.google.ai.client.generativeai.type.SafetySetting
 import com.google.ai.client.generativeai.type.BlockThreshold
 import com.google.gson.stream.JsonReader
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.io.StringReader
 
 class TranslationRepository(private val application: Application) {
@@ -60,6 +61,13 @@ class TranslationRepository(private val application: Application) {
     private var currentGeminiModelIndex = 0
     private val geminiModels = listOf("gemini-1.5-flash","gemini-1.5-pro","gemini-2.0-flash-lite","gemini-2.0-flash", "gemini-2.5-flash","gemini-2.5-pro") // Add more models if needed
 
+    // Mistral API keys
+    private var mistralApiKeys: List<String> = emptyList()
+    private var mistralKeyUsageQueue: MutableList<String> = mutableListOf()
+    private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
+    // Toast spam prevention for Mistral errors
+    @Volatile private var mistralErrorToastShown = false
+
     // Lưu session dịch gần nhất: Pair<Uri, Pair<text gốc, text dịch cuối>>
     val lastTranslationSession = mutableListOf<Pair<Uri, Pair<String, String>>>()
 
@@ -76,14 +84,90 @@ class TranslationRepository(private val application: Application) {
     init {
         preloadRecognitionModels()
         loadGeminiApiKeys()
+        loadMistralApiKeys()
     }
 
     private fun loadGeminiApiKeys() {
-        geminiApiKeys = databaseHelper.getAllApiKeys().filter { it.isNotBlank() }
+        geminiApiKeys = databaseHelper.getAllApiKeys()
+            .filter { it.second == "gemini" && it.first.isNotBlank() }
+            .map { it.first }
         if (geminiApiKeys.isEmpty()) {
             Log.w("TranslationRepository", "Không tìm thấy API key Gemini nào trong cơ sở dữ liệu.")
         } else {
             Log.i("TranslationRepository", "Đã tải ${geminiApiKeys.size} API key Gemini.")
+        }
+    }
+
+    private fun loadMistralApiKeys() {
+        mistralApiKeys = databaseHelper.getAllApiKeys()
+            .filter { it.second == "mistral" && it.first.isNotBlank() }
+            .map { it.first }
+        mistralKeyUsageQueue = mistralApiKeys.toMutableList()
+        if (mistralApiKeys.isEmpty()) {
+            Log.w("TranslationRepository", "Không tìm thấy API key Mistral nào trong cơ sở dữ liệu.")
+        } else {
+            Log.i("TranslationRepository", "Đã tải ${mistralApiKeys.size} API key Mistral.")
+        }
+    }
+    // Hàm lấy API key Mistral tiếp theo: mỗi key chỉ dùng 1 lần/lượt, hết danh sách mới quay lại đầu
+    private fun getNextMistralApiKey(): String? {
+        if (mistralKeyUsageQueue.isEmpty()) {
+            // refill queue when all keys have been used
+            mistralKeyUsageQueue = mistralApiKeys.toMutableList()
+        }
+        if (mistralKeyUsageQueue.isEmpty()) return null
+        return mistralKeyUsageQueue.removeAt(0)
+    }
+
+    /**
+     * Hàm dịch văn bản bằng Mistral API
+     * @param text Văn bản nguồn
+     * @param sourceLang Ngôn ngữ nguồn (ví dụ: "ja", "zh", "en")
+     * @param targetLang Ngôn ngữ đích (ví dụ: "vi")
+     * @return Văn bản đã dịch hoặc null nếu lỗi
+     */
+    suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
+        val mistralKey = getNextMistralApiKey() ?: return null
+        val prompt = """Dịch đoạn văn sau từ $sourceLang sang $targetLang, chỉ trả về phần dịch, không giải thích: $text"""
+        val requestBody = """
+            {
+              "model": "mistral-large-latest",
+              "messages": [
+                {"role": "user", "content": "$prompt"}
+              ]
+            }
+        """.trimIndent()
+
+        val request = okhttp3.Request.Builder()
+            .url(mistralApiUrl)
+            .addHeader("Authorization", "Bearer $mistralKey")
+            .addHeader("Content-Type", "application/json")
+            .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
+            .build()
+
+        return try {
+            val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
+            if (!response.isSuccessful) {
+                Log.e("TranslationRepository", "Mistral API error: ${response.code} ${response.message}")
+                if (!mistralErrorToastShown) {
+                    mistralErrorToastShown = true
+                    android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${response.code} ${response.message}", android.widget.Toast.LENGTH_SHORT).show()
+                }
+                return null
+            }
+            val body = response.body?.string() ?: return null
+            // Parse JSON để lấy phần dịch
+            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+            val choices = json["choices"]?.asJsonArray
+            val content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
+            content?.trim()
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "Mistral API exception: ${e.message}", e)
+            if (!mistralErrorToastShown) {
+                mistralErrorToastShown = true
+                android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            null
         }
     }
 
@@ -155,6 +239,11 @@ class TranslationRepository(private val application: Application) {
             return@withContext Triple("", emptyList(), "zh")
         }
 
+        // Reset Toast flag at the start of each batch
+        if (mode == TranslationMode.MISTRAL) {
+            mistralErrorToastShown = false
+        }
+
         val cacheKey = "$imageUri-$mode"
         cache[cacheKey]?.let {
             Log.i("TranslationRepository", "Tìm thấy kết quả trong cache cho $imageUri: ${it.first}")
@@ -213,24 +302,34 @@ class TranslationRepository(private val application: Application) {
                             TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
                             TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                             TranslationMode.OFF -> block.text
+                            TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
                         }
                         Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText")
-                        val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
+                        val detectedAfterTranslation = translatedText?.let { detectLanguage(it) } ?: "vi"
                         if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
                             Log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
                             translatedText = when (mode) {
-                                TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
-                                TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
-                                TranslationMode.GEMINI -> translateTextWithGemini(translatedText, detectedAfterTranslation)
+                                TranslationMode.OFFLINE -> translatedText?.let {
+                                    translateTextOffline(
+                                        it, detectedAfterTranslation)
+                                }.toString()
+                                TranslationMode.ONLINE -> translatedText?.let {
+                                    translateTextOnline(
+                                        it, detectedAfterTranslation)
+                                }.toString()
+                                TranslationMode.GEMINI -> translatedText?.let {
+                                    translateTextWithGemini(
+                                        it, detectedAfterTranslation)
+                                }.toString()
                                 else -> translatedText
                             }
                         }
                         Log.i("TranslationRepository", "Văn bản sau kiểm tra lần 2: $translatedText")
-                        val naturalText = postProcessTranslation(translatedText)
+                        val naturalText = translatedText?.let { postProcessTranslation(it) }
                         Log.i("TranslationRepository", "Văn bản tự nhiên sau xử lý: $naturalText")
                         val isVertical = block.isVertical
                         val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
-                            val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                            val words = naturalText?.split(Regex("\\s+")).orEmpty().filter { it.isNotEmpty() }
                             val wordCounts = block.wordCountsPerLine
                             val reformattedLines = mutableListOf<String>()
                             var wordIndex = 0
@@ -251,8 +350,8 @@ class TranslationRepository(private val application: Application) {
                             naturalText
                         }
                         Log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
-                        val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
-                        block.copy(text = reformattedText, bounds = newBounds)
+                        val newBounds = adjustBoundsForTranslatedText(reformattedText.orEmpty(), block.bounds, block.fontSize, 1.0f)
+                        block.copy(text = reformattedText.orEmpty(), bounds = newBounds)
                     }
                 }
                 blocks.addAll(deferredBlocks.awaitAll())
@@ -273,6 +372,7 @@ class TranslationRepository(private val application: Application) {
                         TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
                         TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
                         TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
+                        TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
                         TranslationMode.OFF -> block.text
                     }
                     val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
@@ -281,6 +381,7 @@ class TranslationRepository(private val application: Application) {
                             TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
                             TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
                             TranslationMode.GEMINI -> translateTextWithGemini(translatedText, detectedAfterTranslation)
+                            TranslationMode.MISTRAL -> translateWithMistral(translatedText, detectedAfterTranslation, "vi") ?: translatedText
                             else -> translatedText
                         }
                     }
@@ -332,6 +433,7 @@ class TranslationRepository(private val application: Application) {
                         TranslationMode.OFFLINE -> translateTextOnline(block.text, sourceLanguage)
                         TranslationMode.ONLINE -> translateTextWithGemini(block.text, sourceLanguage)
                         TranslationMode.GEMINI -> translateTextOffline(block.text, sourceLanguage)
+                        TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: block.text
                         else -> block.text
                     }
                     val retryLang = detectLanguage(retryText) ?: ""
