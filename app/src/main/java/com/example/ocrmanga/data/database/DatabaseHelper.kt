@@ -16,6 +16,30 @@ import java.io.File
 import java.io.FileOutputStream
 
 class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+    // Sửa API key theo key và type cũ
+    fun updateApiKeyWithType(oldKey: String, oldType: String, newKey: String, newType: String) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COLUMN_API_KEY_VALUE, newKey)
+            put(COLUMN_API_KEY_TYPE, newType)
+        }
+        db.update(
+            TABLE_API_KEYS,
+            values,
+            "$COLUMN_API_KEY_VALUE = ? AND $COLUMN_API_KEY_TYPE = ?",
+            arrayOf(oldKey, oldType)
+        )
+    }
+
+    // Xóa API key theo key và type
+    fun deleteApiKeyWithType(key: String, type: String) {
+        val db = writableDatabase
+        db.delete(
+            TABLE_API_KEYS,
+            "$COLUMN_API_KEY_VALUE = ? AND $COLUMN_API_KEY_TYPE = ?",
+            arrayOf(key, type)
+        )
+    }
 
     private val appContext = context
 
@@ -44,6 +68,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         private const val COLUMN_CREATED_DATE = "created_date"
         private const val COLUMN_UPDATED_DATE = "updated_date"
         private const val COLUMN_IS_ACTIVE = "is_active"
+        private const val COLUMN_API_KEY_TYPE = "type" // Thêm trường type
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -88,6 +113,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             CREATE TABLE $TABLE_API_KEYS (
                 $COLUMN_API_KEY_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COLUMN_API_KEY_VALUE TEXT NOT NULL,
+                $COLUMN_API_KEY_TYPE TEXT NOT NULL DEFAULT 'default',
                 created_date TEXT NOT NULL,
                 updated_date TEXT NOT NULL,
                 is_active INTEGER NOT NULL DEFAULT 1
@@ -107,6 +133,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             db.execSQL("ALTER TABLE translations ADD COLUMN original_image_width INTEGER")
             db.execSQL("ALTER TABLE translations ADD COLUMN original_image_height INTEGER")
             db.execSQL("CREATE TABLE IF NOT EXISTS api_keys ( api_key_value TEXT PRIMARY KEY )")
+        }
+        // Thêm cột type cho bảng api_keys nếu chưa có (version 5)
+        if (oldVersion < 5) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_API_KEYS ADD COLUMN $COLUMN_API_KEY_TYPE TEXT NOT NULL DEFAULT 'default'")
+            } catch (e: Exception) {
+                // Có thể cột đã tồn tại
+            }
         }
     }
 
@@ -589,21 +623,23 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         cursor.close()
     }
 
-    fun getAllApiKeys(): List<String> {
+    // Lấy tất cả API key cùng type
+    fun getAllApiKeys(): List<Pair<String, String>> {
         val db = readableDatabase
-        val cursor = db.rawQuery("SELECT $COLUMN_API_KEY_VALUE FROM $TABLE_API_KEYS", null)
-        val apiKeys = mutableListOf<String>()
+        val cursor = db.rawQuery("SELECT $COLUMN_API_KEY_VALUE, $COLUMN_API_KEY_TYPE FROM $TABLE_API_KEYS", null)
+        val apiKeys = mutableListOf<Pair<String, String>>()
         while (cursor.moveToNext()) {
-            apiKeys.add(cursor.getString(0))
+            apiKeys.add(cursor.getString(0) to cursor.getString(1))
         }
         cursor.close()
         return apiKeys
     }
 
-    fun insertApiKey(apiKey: String) {
+    fun insertApiKey(apiKey: String, type: String = "default") {
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COLUMN_API_KEY_VALUE, apiKey)
+            put(COLUMN_API_KEY_TYPE, type)
             put(COLUMN_CREATED_DATE, "2025-07-15") // Default created date
             put(COLUMN_UPDATED_DATE, "2025-07-15") // Default updated date
             put(COLUMN_IS_ACTIVE, 1) // Default active status
@@ -611,10 +647,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.insert(TABLE_API_KEYS, null, values)
     }
 
-    fun updateApiKey(oldKey: String, newKey: String) {
+    fun updateApiKey(oldKey: String, newKey: String, newType: String? = null) {
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COLUMN_API_KEY_VALUE, newKey)
+            if (newType != null) put(COLUMN_API_KEY_TYPE, newType)
         }
         db.update(TABLE_API_KEYS, values, "$COLUMN_API_KEY_VALUE = ?", arrayOf(oldKey))
     }

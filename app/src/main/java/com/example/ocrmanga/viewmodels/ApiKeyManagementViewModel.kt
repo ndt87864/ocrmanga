@@ -7,15 +7,38 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.example.ocrmanga.data.database.DatabaseHelper
 
+import android.content.SharedPreferences
 // Data class to represent an API key
 data class ApiKey(
     val key: String,
+    val type: String = "default",
     val createdDate: String,
     val updatedDate: String,
     var isActive: Boolean
 )
 
+
 class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
+    private val prefs: SharedPreferences = context.getSharedPreferences("api_key_prefs", Context.MODE_PRIVATE)
+
+    fun getDefaultKeyType(): String {
+        return prefs.getString("default_key_type", "gemini") ?: "gemini"
+    }
+
+    fun setDefaultKeyType(type: String) {
+        prefs.edit().putString("default_key_type", type).apply()
+    }
+    // Sửa API key theo key và type cũ
+    fun editApiKeyWithType(oldKey: String, oldType: String, newKey: String, newType: String) {
+        databaseHelper.updateApiKeyWithType(oldKey, oldType, newKey, newType)
+        loadApiKeysFromDatabase()
+    }
+
+    // Xóa API key theo key và type
+    fun deleteApiKeyWithType(key: String, type: String) {
+        databaseHelper.deleteApiKeyWithType(key, type)
+        loadApiKeysFromDatabase()
+    }
 
     private val databaseHelper = DatabaseHelper(context)
 
@@ -30,26 +53,47 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
     private fun loadApiKeysFromDatabase() {
         val keys = databaseHelper.getAllApiKeys()
         apiKeys.clear()
-        apiKeys.addAll(keys.map {
-            val isActive = databaseHelper.getApiKeyStatus(it) // Fetch isActive status from DB
-            ApiKey(it, createdDate = "2025-07-15", updatedDate = "2025-07-15", isActive = isActive)
+        apiKeys.addAll(keys.map { (key, type) ->
+            val isActive = databaseHelper.getApiKeyStatus(key) // Fetch isActive status from DB
+            ApiKey(key, type = type, createdDate = "2025-07-15", updatedDate = "2025-07-15", isActive = isActive)
         })
     }
 
     // Function to add a new API key
-    fun addApiKey(newKey: String) {
+    // Khi thêm key mới, luôn lấy type đang hiển thị (type truyền vào từ UI) để setDefaultKeyType
+    /**
+     * Thêm API key mới. Nếu type khác với loại đang hiển thị, trả về true để UI tự động chuyển sang loại đó.
+     * @param newKey key mới
+     * @param displayType loại key đang hiển thị trên UI
+     * @param currentDisplayType loại key hiện tại trên UI
+     * @return true nếu cần chuyển UI sang loại key vừa thêm
+     */
+    fun addApiKey(newKey: String, displayType: String = "default", currentDisplayType: String = displayType): Boolean {
         if (newKey.isNotBlank()) {
-            databaseHelper.insertApiKey(newKey)
-            // Do not add the new key to the apiKeys list
+            databaseHelper.insertApiKey(newKey, displayType)
+            setDefaultKeyType(displayType)
+            loadApiKeysByType(displayType)
+            return displayType != currentDisplayType
         }
+        return false
+    }
+
+    // Hàm load danh sách apiKeys theo type
+    fun loadApiKeysByType(type: String) {
+        val keys = databaseHelper.getAllApiKeys().filter { it.second == type }
+        apiKeys.clear()
+        apiKeys.addAll(keys.map { (key, type) ->
+            val isActive = databaseHelper.getApiKeyStatus(key)
+            ApiKey(key, type = type, createdDate = "2025-07-15", updatedDate = "2025-07-15", isActive = isActive)
+        })
     }
 
     // Function to edit an existing API key
-    fun editApiKey(apiKey: ApiKey, newKey: String) {
+    fun editApiKey(apiKey: ApiKey, newKey: String, newType: String? = null) {
         val index = apiKeys.indexOf(apiKey)
         if (index != -1 && newKey.isNotBlank()) {
-            databaseHelper.updateApiKey(apiKey.key, newKey)
-            apiKeys[index] = ApiKey(newKey, createdDate = apiKey.createdDate, updatedDate = "2025-07-15", isActive = apiKey.isActive)
+            databaseHelper.updateApiKey(apiKey.key, newKey, newType)
+            apiKeys[index] = ApiKey(newKey, type = newType ?: apiKey.type, createdDate = apiKey.createdDate, updatedDate = "2025-07-15", isActive = apiKey.isActive)
         }
     }
 
