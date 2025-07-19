@@ -41,7 +41,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 _uiState.update {
                     it.copy(
                         translatedTexts = it.translatedTexts + (uri to result),
-                        translatedStatus = it.translatedStatus + (uri to true)
+                        translatedStatus = it.translatedStatus + (uri to true),
+                        translationEnabled = true // Bật lại hiển thị dịch cho UI
                     )
                 }
             }

@@ -361,14 +361,6 @@ fun ViewerScreen(
                                 showMainMenu = false
                             }
                         )
-                        // Convert to PDF option
-                        DropdownMenuItem(
-                            text = { Text("Chuyển thành PDF") },
-                            onClick = {
-                                viewModel.convertRoomToPDF()
-                                showMainMenu = false
-                            }
-                        )
                         // Đổi tên phòng (chỉ hiện khi đang ở trong phòng)
                         if (uiState.roomId != null) {
                             DropdownMenuItem(
@@ -780,90 +772,54 @@ fun ViewerScreen(
             AlertDialog(
                 onDismissRequest = { showImageMenu = false },
                 title = { Text("Tùy chọn ảnh") },
-                text = { Text("Bạn muốn làm gì với ảnh này?") },
-                confirmButton = {
+                text = {
                     Column {
+                        // Xóa ảnh
                         Button(
                             onClick = {
-                                imageMenuUri?.let { viewModel.removeImageFromRoom(it) }
+                                imageMenuUri?.let {
+                                    viewModel.removeImageFromRoom(it)
+                                    Toast.makeText(context, "Đã xóa ảnh khỏi trang", Toast.LENGTH_SHORT).show()
+                                }
                                 showImageMenu = false
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Xóa ảnh khỏi trang") }
+                        Spacer(Modifier.height(16.dp))
+                        Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(8.dp))
-                        Button(
-                            onClick = {
-                                showImageMenu = false
-                                retranslateUri = imageMenuUri
-                                selectedRetranslateMode = TranslationMode.GEMINI
-                                // Dùng coroutineScope.launch thay cho LaunchedEffect
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(100)
-                                    showRetranslateDialog = true
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("Dịch lại ảnh") }
-        // Dialog chọn loại dịch khi retranslate
-        if (showRetranslateDialog && retranslateUri != null) {
-            AlertDialog(
-                onDismissRequest = { showRetranslateDialog = false },
-                title = { Text("Chọn loại dịch lại ảnh") },
-                text = {
-                    Column {
                         TranslationMode.values().forEach { mode ->
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        selectedRetranslateMode = mode
+                                        // Khi chọn 1 type dịch, thực hiện dịch lại ảnh
+                                        val uri = imageMenuUri
+                                        if (uri != null) {
+                                            Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
+                                            viewModel.retranslateImage(uri, mode)
+                                            coroutineScope.launch {
+                                                // Đợi trạng thái translatedStatus của uri chuyển sang true
+                                                while (true) {
+                                                    val status = viewModel.uiState.value.translatedStatus[uri]
+                                                    if (status == true) break
+                                                    kotlinx.coroutines.delay(200)
+                                                }
+                                                Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        showImageMenu = false
                                     }
                                     .padding(vertical = 4.dp)
                             ) {
-                                RadioButton(
-                                    selected = selectedRetranslateMode == mode,
-                                    onClick = { selectedRetranslateMode = mode }
-                                )
+                                Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Text(mode.name, modifier = Modifier.padding(start = 8.dp))
                             }
                         }
                     }
                 },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            val uri = retranslateUri
-                            val mode = selectedRetranslateMode
-                            if (uri != null && mode != null) {
-                                Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
-                                viewModel.retranslateImage(uri, mode)
-                                coroutineScope.launch {
-                                    // Đợi trạng thái translatedStatus của uri chuyển sang true
-                                    while (true) {
-                                        val status = viewModel.uiState.value.translatedStatus[uri]
-                                        if (status == true) break
-                                        kotlinx.coroutines.delay(200)
-                                    }
-                                    Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            showRetranslateDialog = false
-                            showImageMenu = false
-                        },
-                        enabled = selectedRetranslateMode != null
-                    ) { Text("Dịch lại") }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        showRetranslateDialog = false
-                        showImageMenu = false // Đảm bảo đóng luôn menu tùy chọn ảnh nếu còn
-                    }) { Text("Hủy") }
-                }
-            )
-        }
-                    }
-                },
+                confirmButton = {},
                 dismissButton = {
                     TextButton(onClick = { showImageMenu = false }) { Text("Đóng") }
                 }
