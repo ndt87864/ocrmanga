@@ -225,16 +225,27 @@ fun ViewerScreen(
         }
     }
 
-    LaunchedEffect(uiState.translationEnabled, uiState.isTranslating, uiState.translationProgress, uiState.totalImagesToTranslate) {
+    // Toast báo tiến trình dịch
+    var prevProgress by remember { mutableStateOf(0) }
+    var hasShownTranslatingToast by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.translationProgress, uiState.isTranslating, uiState.translationEnabled) {
+        val progress = uiState.translationProgress
+        val total = uiState.totalImagesToTranslate
+        val percentage = if (total > 0) (progress * 100 / total) else 0
         if (uiState.translationEnabled && uiState.isTranslating) {
-            while (uiState.isTranslating) {
-                val progress = uiState.translationProgress
-                val total = uiState.totalImagesToTranslate
-                val percentage = if (total > 0) (progress * 100 / total) else 0
-                Toast.makeText(context, "Đang dịch... ($progress/$total, $percentage%)", Toast.LENGTH_SHORT).show()
-                delay(1000)
+            if (progress > prevProgress) {
+                // Dịch xong 1 ảnh
+                Toast.makeText(context, "Đã dịch xong $progress/$total ảnh ($percentage%)", Toast.LENGTH_SHORT).show()
+                hasShownTranslatingToast = false // Reset để dịch ảnh tiếp theo sẽ hiện lại toast "Đang dịch"
+            } else if (!hasShownTranslatingToast && progress < total) {
+                // Chỉ hiện 1 lần khi bắt đầu dịch ảnh này
+                Toast.makeText(context, "Đang dịch ảnh ${progress + 1}/$total...", Toast.LENGTH_SHORT).show()
+                hasShownTranslatingToast = true
             }
+        } else {
+            hasShownTranslatingToast = false // Reset khi dừng dịch
         }
+        prevProgress = progress
     }
 
     // Thay đổi onNavigateBack để kiểm tra nếu đang ở session ảnh mới thì hỏi xác nhận
