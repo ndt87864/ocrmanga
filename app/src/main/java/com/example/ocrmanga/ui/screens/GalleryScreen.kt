@@ -31,6 +31,9 @@ import com.example.ocrmanga.viewmodels.GalleryViewModel
 import android.provider.MediaStore
 import androidx.compose.ui.layout.ContentScale
 import android.widget.Toast
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Search
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,43 +129,6 @@ fun GalleryScreen(
     )
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Thư viện") },
-                actions = {
-                    Box {
-                        IconButton(onClick = { showCreateMenu = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Tạo mới"
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showCreateMenu,
-                            onDismissRequest = { showCreateMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Chọn ảnh từ thư viện") },
-                                onClick = {
-                                    multiplePhotoPickerLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                    )
-                                    showCreateMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Chọn ảnh từ file") },
-                                onClick = {
-                                    multipleFilePickerLauncher.launch(arrayOf("image/*"))
-                                    showCreateMenu = false
-                                }
-                            )
-                        }
-                    }
-                    // Đã chuyển nút cài đặt xuống dưới
-                }
-            )
-        }
     ) { paddingValues ->
         Box(
             modifier = Modifier
@@ -179,14 +145,33 @@ fun GalleryScreen(
                 var filterType by remember { mutableStateOf(0) } // 0: Mới nhất, 1: Cũ nhất
                 val filterOptions = listOf("Mới nhất", "Cũ nhất")
 
-                // Thanh tìm kiếm phòng
+                // Thanh tìm kiếm phòng kiểu Material 3 giống ảnh mẫu
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    label = { Text("Tìm kiếm phòng theo tên...") },
+                    placeholder = { Text("Search replies", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    shape = MaterialTheme.shapes.extraLarge,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        cursorColor = MaterialTheme.colorScheme.primary
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 8.dp),
+                        .padding(bottom = 16.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = MaterialTheme.shapes.extraLarge
+                        ),
                     singleLine = true
                 )
 
@@ -226,43 +211,65 @@ fun GalleryScreen(
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
+                        columns = GridCells.Fixed(2),
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(filteredRooms) { (roomId, title, coverUri) ->
-                            Card(modifier = Modifier.aspectRatio(0.7f)) {
-                                Box {
+                            Card(
+                                modifier = Modifier
+                                    .aspectRatio(0.7f)
+                                    .padding(6.dp),
+                                shape = RoundedCornerShape(10.dp), // giảm bo góc cho vuông hơn
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F5F1)),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable { onNavigateToRoom(roomId) }
+                                ) {
                                     AsyncImage(
                                         model = coverUri,
                                         contentDescription = "Cover image",
                                         modifier = Modifier
-                                            .fillMaxSize()
-                                            .clickable { onNavigateToRoom(roomId) },
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                            .fillMaxWidth()
+                                            .height(0.dp)
+                                            .weight(1f),
+                                        contentScale = ContentScale.Crop
                                     )
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .background(Color.Black.copy(alpha = 0.7f))
-                                            .padding(4.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                            .background(Color(0xFFEDE7DF), RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
                                             text = title,
-                                            color = Color.White,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.weight(1f).padding(end = 4.dp)
+                                            color = Color(0xFF2D2D2D),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            modifier = Modifier.weight(1f).padding(end = 4.dp),
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                         )
-                                        IconButton(
-                                            onClick = { showDeleteDialog = roomId },
-                                            modifier = Modifier.size(24.dp)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .background(
+                                                    color = Color(0xFFF3ECE3), // màu nhạt hơn màu bottom card
+                                                    shape = RoundedCornerShape(6.dp)
+                                                )
+                                                .clickable { showDeleteDialog = roomId },
+                                            contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Delete,
                                                 contentDescription = "Xóa phòng",
-                                                tint = Color.White
+                                                tint = Color.Red,
+                                                modifier = Modifier.size(10.dp)
                                             )
                                         }
                                     }
@@ -272,24 +279,71 @@ fun GalleryScreen(
                     }
                 }
             }
-            // Nút settings ở góc phải dưới
-            IconButton(
-                onClick = { onNavigateToApiKeyManagement() },
+            // Nút thêm và nút settings ở góc phải dưới
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(24.dp)
-                    .size(56.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = MaterialTheme.shapes.medium
-                    )
+                    .padding(end = 24.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.End
             ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Quản lý API Key",
-                    tint = Color.White,
-                    modifier = Modifier.size(32.dp)
-                )
+                // Nút thêm
+                Box {
+                    IconButton(
+                        onClick = { showCreateMenu = true },
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.primary,
+                                shape = MaterialTheme.shapes.medium
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Tạo mới",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showCreateMenu,
+                        onDismissRequest = { showCreateMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Chọn ảnh từ thư viện") },
+                            onClick = {
+                                multiplePhotoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                                showCreateMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Chọn ảnh từ file") },
+                            onClick = {
+                                multipleFilePickerLauncher.launch(arrayOf("image/*"))
+                                showCreateMenu = false
+                            }
+                        )
+                    }
+                }
+                // Nút settings
+                IconButton(
+                    onClick = { onNavigateToApiKeyManagement() },
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = MaterialTheme.shapes.medium
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Quản lý API Key",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
         }
 
