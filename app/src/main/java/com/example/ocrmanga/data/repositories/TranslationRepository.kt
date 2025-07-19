@@ -47,6 +47,12 @@ import java.io.StringReader
 
 class TranslationRepository(private val application: Application) {
 
+    // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
+    suspend fun translateImage(imageUri: Uri, mode: TranslationMode): Pair<String, List<TextBlockInfo>> {
+        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode)
+        return Pair(translatedText, translatedBlocks)
+    }
+
     private val latinRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val chineseRecognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
     private val japaneseRecognizer = TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
@@ -59,7 +65,7 @@ class TranslationRepository(private val application: Application) {
     private var geminiApiKeys: List<String> = emptyList()
     private var currentGeminiKeyIndex = 0
     private var currentGeminiModelIndex = 0
-    private val geminiModels = listOf("gemini-1.5-flash","gemini-1.5-pro","gemini-2.0-flash-lite","gemini-2.0-flash", "gemini-2.5-flash","gemini-2.5-pro") // Add more models if needed
+    private val geminiModels = listOf("gemini-2.0-flash-lite","gemini-2.0-flash", "gemini-2.5-flash") // Add more models if needed
 
     // Mistral API keys
     private var mistralApiKeys: List<String> = emptyList()
@@ -111,11 +117,18 @@ class TranslationRepository(private val application: Application) {
     }
     // Hàm lấy API key Mistral tiếp theo: mỗi key chỉ dùng 1 lần/lượt, hết danh sách mới quay lại đầu
     private fun getNextMistralApiKey(): String? {
-        if (mistralKeyUsageQueue.isEmpty()) {
-            // refill queue when all keys have been used
-            mistralKeyUsageQueue = mistralApiKeys.toMutableList()
+        if (mistralApiKeys.isEmpty()) {
+            Log.e("TranslationRepository", "Không có API key Mistral nào được cấu hình. Không thể dịch.")
+            return null
         }
-        if (mistralKeyUsageQueue.isEmpty()) return null
+        if (mistralKeyUsageQueue.isEmpty()) {
+            // Khi queue rỗng, reload lại danh sách key từ database
+            loadMistralApiKeys()
+        }
+        if (mistralKeyUsageQueue.isEmpty()) {
+            Log.e("TranslationRepository", "Hàng đợi API key Mistral rỗng sau khi reload. Không thể dịch.")
+            return null
+        }
         return mistralKeyUsageQueue.removeAt(0)
     }
 
@@ -127,48 +140,79 @@ class TranslationRepository(private val application: Application) {
      * @return Văn bản đã dịch hoặc null nếu lỗi
      */
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
-        val mistralKey = getNextMistralApiKey() ?: return null
-        val prompt = """Dịch đoạn văn sau từ $sourceLang sang $targetLang, chỉ trả về phần dịch, không giải thích: $text"""
-        val requestBody = """
-            {
-              "model": "mistral-large-latest",
-              "messages": [
-                {"role": "user", "content": "$prompt"}
-              ]
-            }
-        """.trimIndent()
+        var lastError: Exception? = null
+        val maxTries = mistralApiKeys.size.coerceAtLeast(1)
+        for (i in 0 until maxTries) {
+            val mistralKey = getNextMistralApiKey() ?: return null
+            val prompt = "Dịch đoạn sau từ $sourceLang sang $targetLang. Chỉ trả về kết quả dịch, không giải thích, không thêm bất kỳ văn bản nào khác. Nếu không dịch được, trả về nguyên văn bản gốc:\n$text"
 
-        val request = okhttp3.Request.Builder()
-            .url(mistralApiUrl)
-            .addHeader("Authorization", "Bearer $mistralKey")
-            .addHeader("Content-Type", "application/json")
-            .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
-            .build()
+            // Build JSON body using Gson to avoid invalid JSON
+            val gson = com.google.gson.Gson()
+            val message = mapOf("role" to "user", "content" to prompt)
+            val bodyMap = mapOf(
+                "model" to "mistral-medium-latest",
+                "messages" to listOf(message)
+            )
+            val requestBody = gson.toJson(bodyMap)
 
-        return try {
-            val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
-            if (!response.isSuccessful) {
-                Log.e("TranslationRepository", "Mistral API error: ${response.code} ${response.message}")
+            val request = okhttp3.Request.Builder()
+                .url(mistralApiUrl)
+                .addHeader("Authorization", "Bearer $mistralKey")
+                .addHeader("Content-Type", "application/json")
+                .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
+                .build()
+
+            try {
+                val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
+                if (!response.isSuccessful) {
+                    Log.e("TranslationRepository", "Mistral API error: ${response.code} ${response.message}")
+                    if (response.code == 429) {
+                        // Nếu bị 429 thì thử key tiếp theo ngay lập tức
+                        continue
+                    }
+                    if (response.code == 422) {
+                        // Lỗi request không hợp lệ, chỉ log 1 lần, không Toast
+                        if (!mistralErrorToastShown) {
+                            mistralErrorToastShown = true
+                            Log.w("TranslationRepository", "Mistral API error 422: ${response.message}")
+                        }
+                        return null
+                    }
+                    if (!mistralErrorToastShown) {
+                        mistralErrorToastShown = true
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${response.code} ${response.message}", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    return null
+                }
+                val body = response.body?.string() ?: return null
+                // Parse JSON để lấy phần dịch
+                val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                val choices = json["choices"]?.asJsonArray
+                val content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
+                return content?.trim()
+            } catch (e: Exception) {
+                lastError = e
+                Log.e("TranslationRepository", "Mistral API exception: ${e.message}", e)
                 if (!mistralErrorToastShown) {
                     mistralErrorToastShown = true
-                    android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${response.code} ${response.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                // Nếu lỗi là HTTP 429 (Too Many Requests) từ OkHttp
+                if (e is okhttp3.internal.http2.StreamResetException && e.errorCode == okhttp3.internal.http2.ErrorCode.ENHANCE_YOUR_CALM) {
+                    continue
+                }
+                // Hoặc kiểm tra message có chứa 429 (phòng trường hợp khác)
+                if (e.message?.contains("429") == true) {
+                    continue
                 }
                 return null
             }
-            val body = response.body?.string() ?: return null
-            // Parse JSON để lấy phần dịch
-            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-            val choices = json["choices"]?.asJsonArray
-            val content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
-            content?.trim()
-        } catch (e: Exception) {
-            Log.e("TranslationRepository", "Mistral API exception: ${e.message}", e)
-            if (!mistralErrorToastShown) {
-                mistralErrorToastShown = true
-                android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-            }
-            null
         }
+        return null
     }
 
     private fun getNextGeminiApiKey(): String? {
@@ -191,14 +235,17 @@ class TranslationRepository(private val application: Application) {
     }
 
     private fun preloadRecognitionModels() {
-        val dummyBitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-        val dummyImage = InputImage.fromBitmap(dummyBitmap, 0)
-        listOf(latinRecognizer, chineseRecognizer, japaneseRecognizer, koreanRecognizer).forEach { recognizer ->
-            recognizer.process(dummyImage)
-                .addOnSuccessListener { Log.i("TranslationRepository", "Đã tải trước mô hình nhận diện: ${recognizer.javaClass.simpleName}") }
-                .addOnFailureListener { e ->
-                    Log.e("TranslationRepository", "Tải trước mô hình nhận diện thất bại: ${recognizer.javaClass.simpleName}", e)
-                }
+        try {
+            // Tạo bitmap dummy kích thước tối thiểu 32x32
+            val dummyBitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+            val inputImage = InputImage.fromBitmap(dummyBitmap, 0)
+            latinRecognizer.process(inputImage)
+            chineseRecognizer.process(inputImage)
+            japaneseRecognizer.process(inputImage)
+            koreanRecognizer.process(inputImage)
+        } catch (e: Exception) {
+            // Chỉ log lỗi, không Toast để tránh spam Toast
+            Log.e("TranslationRepository", "Tải trước mô hình nhận diện thất bại: ${e.javaClass.simpleName}", e)
         }
     }
 
@@ -1159,13 +1206,14 @@ class TranslationRepository(private val application: Application) {
                 val prompt = """
                     Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .
                     Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác nhất sang tiếng Việt: $originalText
-                    Lưu ý :1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
+                    Yêu cầu khi dịch :1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
                            2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .
                            3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .
                            4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được ( ghi nguyên gốc  từ không dịch được và dịch các từ còn lại).
                            5. không trả về nhiều bản dịch khác nhau cho cùng một văn bản .VD:Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả?
                             -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
-                           6. Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .
+                           6. Không trả về lí do không dịch được hoặc lí do dịch không chính xác , hãy chỉ trả về văn bản gốc trong 2 trường hợp này .
+                           7.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .
                     Chỉ trả về 1 bản dịch chính xác duy nhất .
                 """.trimIndent()
 

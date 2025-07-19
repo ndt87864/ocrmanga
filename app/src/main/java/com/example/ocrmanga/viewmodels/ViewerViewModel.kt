@@ -32,6 +32,21 @@ import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentLinkedQueue
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
+    // Dịch lại 1 ảnh (re-translate single image)
+    fun retranslateImage(uri: Uri, mode: TranslationMode) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
+            if (mode != TranslationMode.OFF) {
+                val result = translationRepository.translateImage(uri, mode)
+                _uiState.update {
+                    it.copy(
+                        translatedTexts = it.translatedTexts + (uri to result),
+                        translatedStatus = it.translatedStatus + (uri to true)
+                    )
+                }
+            }
+        }
+    }
 
     private val translationRepository = TranslationRepository(application)
     private val databaseHelper = DatabaseHelper(application)

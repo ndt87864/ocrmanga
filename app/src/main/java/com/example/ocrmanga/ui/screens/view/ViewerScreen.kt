@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -65,6 +66,7 @@ import com.example.ocrmanga.ui.screens.view.drawText
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.launch
 
 @Composable
 fun ViewerScreen(
@@ -75,6 +77,16 @@ fun ViewerScreen(
 ) {
     // State cho dialog xác nhận xóa ảnh (phải đặt ở đầu hàm)
     var imageToDelete by remember { mutableStateOf<Uri?>(null) }
+    // State cho menu tùy chọn ảnh (long-press)
+    var imageMenuUri by remember { mutableStateOf<Uri?>(null) }
+    var showImageMenu by remember { mutableStateOf(false) }
+    // State cho dialog chọn loại dịch khi retranslate
+    var showRetranslateDialog by remember { mutableStateOf(false) }
+    var retranslateUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedRetranslateMode by remember { mutableStateOf<TranslationMode?>(null) }
+
+    // Sử dụng coroutineScope cho Toast khi dịch lại ảnh
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(key1 = imageUris, key2 = roomId) {
         if (imageUris.isNotEmpty()) {
@@ -503,7 +515,8 @@ fun ViewerScreen(
                         .pointerInput(uri) {
                             detectTapGestures(
                                 onLongPress = {
-                                    imageToDelete = uri
+                                    imageMenuUri = uri
+                                    showImageMenu = true
                                 }
                             )
                         }
@@ -751,20 +764,97 @@ fun ViewerScreen(
             )
         }
 
-        // Dialog xác nhận xóa ảnh khỏi phòng
-        if (imageToDelete != null) {
+        // Dialog menu tùy chọn ảnh khi long-press
+        if (showImageMenu && imageMenuUri != null) {
             AlertDialog(
-                onDismissRequest = { imageToDelete = null },
-                title = { Text("Xóa ảnh khỏi phòng?") },
-                text = { Text("Bạn có chắc chắn muốn xóa ảnh này khỏi phòng không?") },
+                onDismissRequest = { showImageMenu = false },
+                title = { Text("Tùy chọn ảnh") },
+                text = { Text("Bạn muốn làm gì với ảnh này?") },
                 confirmButton = {
-                    TextButton(onClick = {
-                        imageToDelete?.let { viewModel.removeImageFromRoom(it) }
-                        imageToDelete = null
-                    }) { Text("Xóa") }
+                    Column {
+                        Button(
+                            onClick = {
+                                imageMenuUri?.let { viewModel.removeImageFromRoom(it) }
+                                showImageMenu = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Xóa ảnh khỏi trang") }
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                showImageMenu = false
+                                retranslateUri = imageMenuUri
+                                selectedRetranslateMode = TranslationMode.GEMINI
+                                // Dùng coroutineScope.launch thay cho LaunchedEffect
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(100)
+                                    showRetranslateDialog = true
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Dịch lại ảnh") }
+        // Dialog chọn loại dịch khi retranslate
+        if (showRetranslateDialog && retranslateUri != null) {
+            AlertDialog(
+                onDismissRequest = { showRetranslateDialog = false },
+                title = { Text("Chọn loại dịch lại ảnh") },
+                text = {
+                    Column {
+                        TranslationMode.values().forEach { mode ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedRetranslateMode = mode
+                                    }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                RadioButton(
+                                    selected = selectedRetranslateMode == mode,
+                                    onClick = { selectedRetranslateMode = mode }
+                                )
+                                Text(mode.name, modifier = Modifier.padding(start = 8.dp))
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val uri = retranslateUri
+                            val mode = selectedRetranslateMode
+                            if (uri != null && mode != null) {
+                                Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
+                                viewModel.retranslateImage(uri, mode)
+                                coroutineScope.launch {
+                                    // Đợi trạng thái translatedStatus của uri chuyển sang true
+                                    while (true) {
+                                        val status = viewModel.uiState.value.translatedStatus[uri]
+                                        if (status == true) break
+                                        kotlinx.coroutines.delay(200)
+                                    }
+                                    Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            showRetranslateDialog = false
+                            showImageMenu = false
+                        },
+                        enabled = selectedRetranslateMode != null
+                    ) { Text("Dịch lại") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { imageToDelete = null }) { Text("Hủy") }
+                    TextButton(onClick = {
+                        showRetranslateDialog = false
+                        showImageMenu = false // Đảm bảo đóng luôn menu tùy chọn ảnh nếu còn
+                    }) { Text("Hủy") }
+                }
+            )
+        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showImageMenu = false }) { Text("Đóng") }
                 }
             )
         }
