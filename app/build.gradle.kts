@@ -47,6 +47,9 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += setOf("META-INF/DEPENDENCIES")
+
+    // Google Drive API dependencies
         }
     }
 }
@@ -108,5 +111,14 @@ dependencies {
     implementation ("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+
+    // Google Sign-In & Drive API
+    implementation("com.google.android.gms:play-services-auth:21.1.0")
+    implementation("com.google.api-client:google-api-client-android:1.35.0")
+    implementation("com.google.apis:google-api-services-drive:v3-rev20230815-2.0.0")
+
+    implementation("com.google.api-client:google-api-client-android:1.33.0")
+    implementation("com.google.apis:google-api-services-drive:v3-rev20230815-2.0.0")
+    implementation("com.google.http-client:google-http-client-gson:1.43.3")
 
 }

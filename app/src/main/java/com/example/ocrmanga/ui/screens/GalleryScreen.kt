@@ -1,4 +1,8 @@
+
 package com.example.ocrmanga.ui.screens
+// Kiểm tra có bản sao lưu nào trên Google Drive không
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 import android.content.Context
 import android.net.Uri
@@ -6,7 +10,6 @@ import android.util.Log
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -31,9 +34,33 @@ import com.example.ocrmanga.viewmodels.GalleryViewModel
 import android.provider.MediaStore
 import androidx.compose.ui.layout.ContentScale
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Person
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+// ...existing code...
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clip
+import kotlinx.coroutines.launch
+
+// Google Drive API imports
+import com.google.api.services.drive.Drive
+import com.google.api.services.drive.DriveScopes
+import com.google.api.client.http.javanet.NetHttpTransport
+import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.json.gson.GsonFactory
+import com.google.api.services.drive.model.File as GDriveFile
+import java.io.InputStream
+import java.io.OutputStream
+import java.io.FileInputStream
+import java.io.IOException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,6 +82,71 @@ fun GalleryScreen(
     var showDeleteDialog by remember { mutableStateOf<Long?>(null) }
     var showCreateMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // Google Sign-In state
+    var googleAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
+    var hasBackup by remember { mutableStateOf<Boolean?>(null) }
+    val gso = remember {
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestScopes(com.google.android.gms.common.api.Scope("https://www.googleapis.com/auth/drive.file"))
+            .build()
+    }
+    val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
+    val googleSignInLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.result
+            googleAccount = account
+            Toast.makeText(context, "Đăng nhập Google Drive thành công: ${'$'}{account.email}", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Đăng nhập Google Drive thất bại: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "Google Sign-In failed", e)
+        }
+    }
+
+    // Launcher chọn file để upload lên Drive
+    val uploadFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && googleAccount != null) {
+            coroutineScope.launch {
+                try {
+                    // Tạo credential từ account
+                    val credential = GoogleAccountCredential.usingOAuth2(
+                        context,
+                        listOf(DriveScopes.DRIVE_FILE)
+                    )
+                    credential.selectedAccount = googleAccount!!.account
+                    val driveService = Drive.Builder(
+                        NetHttpTransport(),
+                        GsonFactory.getDefaultInstance(),
+                        credential
+                    ).setApplicationName("OCR Manga").build()
+
+                    // Lấy tên file
+                    val fileName = getFileNameFromUri(context, uri) ?: "uploaded_file.jpg"
+                    val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+                    if (inputStream != null) {
+                        val fileMetadata = GDriveFile()
+                        fileMetadata.name = fileName
+                        val mediaContent = com.google.api.client.http.InputStreamContent(
+                            "image/jpeg", inputStream
+                        )
+                        val file = driveService.files().create(fileMetadata, mediaContent)
+                            .setFields("id, name")
+                            .execute()
+                        Toast.makeText(context, "Đã upload lên Drive: ${'$'}{file.name}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Không đọc được file để upload", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Lỗi upload Drive: ${'$'}{e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        } else if (uri != null) {
+            Toast.makeText(context, "Bạn cần đăng nhập Google Drive trước", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     // Hàm tiện ích: lấy tên file không có phần mở rộng
     fun getFileNameWithoutExtension(name: String): String {
@@ -145,35 +237,161 @@ fun GalleryScreen(
                 var filterType by remember { mutableStateOf(0) } // 0: Mới nhất, 1: Cũ nhất
                 val filterOptions = listOf("Mới nhất", "Cũ nhất")
 
-                // Thanh tìm kiếm phòng kiểu Material 3 giống ảnh mẫu
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search replies", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        cursorColor = MaterialTheme.colorScheme.primary
-                    ),
+                // Thanh tìm kiếm + Avatar Google (nếu đã đăng nhập)
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 16.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.surface,
-                            shape = MaterialTheme.shapes.extraLarge
+                        .padding(bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Tìm kiếm", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        shape = MaterialTheme.shapes.extraLarge,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            cursorColor = MaterialTheme.colorScheme.primary
                         ),
-                    singleLine = true
-                )
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    // Avatar Google hoặc avatar mặc định, dùng Button Material3, chiều cao bằng search
+                    var showDriveMenu by remember { mutableStateOf(false) }
+                    val buttonSize = 56.dp
+    // Kiểm tra có backup khi đăng nhập Google
+    LaunchedEffect(googleAccount) {
+        if (googleAccount != null) {
+            hasBackup = hasBackupOnDrive(context, googleAccount!!)
+        } else {
+            hasBackup = null
+        }
+    }
+
+    if (googleAccount != null) {
+                        Box {
+                            IconButton(
+                                onClick = { showDriveMenu = true },
+                                modifier = Modifier
+                                    .size(buttonSize)
+                                    .aspectRatio(1f)
+                            ) {
+                                val photoUrl = googleAccount?.photoUrl?.toString()
+                                if (photoUrl != null) {
+                                    AsyncImage(
+                                        model = photoUrl,
+                                        contentDescription = "Avatar Google",
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .background(Color.LightGray, shape = CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = googleAccount?.displayName?.firstOrNull()?.toString() ?: "A",
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                            DropdownMenu(
+                                expanded = showDriveMenu,
+                                onDismissRequest = { showDriveMenu = false },
+                                modifier = Modifier.align(Alignment.TopEnd)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Sao lưu") },
+                                    onClick = {
+                                        showDriveMenu = false
+                                        if (googleAccount != null) {
+                                            coroutineScope.launch {
+                                                val backupResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                    com.example.ocrmanga.backup.BackupManager(context, googleAccount!!).backupAppData()
+                                                }
+                                                if (backupResult) {
+                                                    Toast.makeText(context, "Sao lưu thành công lên Google Drive", Toast.LENGTH_LONG).show()
+                                                } else {
+                                                    Toast.makeText(context, "Sao lưu thất bại!", Toast.LENGTH_LONG).show()
+                                                }
+                                                // Cập nhật lại trạng thái backup sau khi sao lưu
+                                                hasBackup = hasBackupOnDrive(context, googleAccount!!)
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "Bạn cần đăng nhập Google Drive trước", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
+                                if (hasBackup == true) {
+                                    DropdownMenuItem(
+                                        text = { Text("Khôi phục") },
+                                        onClick = {
+                                            showDriveMenu = false
+                                            if (googleAccount != null) {
+                                                coroutineScope.launch {
+                                                    val restoreResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                        com.example.ocrmanga.backup.RestoreManager(context, googleAccount!!).restoreAppData()
+                                                    }
+                                                    if (restoreResult) {
+                                                        Toast.makeText(context, "Khôi phục dữ liệu thành công!", Toast.LENGTH_LONG).show()
+                                                        viewModel.loadSavedRooms() // reload lại dữ liệu phòng
+                                                    } else {
+                                                        Toast.makeText(context, "Khôi phục dữ liệu thất bại!", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                            } else {
+                                                Toast.makeText(context, "Bạn cần đăng nhập Google Drive trước", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("Đăng xuất") },
+                                    onClick = {
+                                        googleSignInClient.signOut()
+                                        googleAccount = null
+                                        Toast.makeText(context, "Đã đăng xuất Google Drive", Toast.LENGTH_SHORT).show()
+                                        showDriveMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    } else {
+                        IconButton(
+                            onClick = { googleSignInLauncher.launch(googleSignInClient.signInIntent) },
+                            modifier = Modifier
+                                .size(buttonSize)
+                                .aspectRatio(1f)
+                                .background(
+                                    color = Color(0xFF4285F4), // Google blue
+                                    shape = CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Avatar mặc định Google",
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
+                }
 
                 // Bộ lọc phòng
                 Row(
@@ -279,6 +497,10 @@ fun GalleryScreen(
                     }
                 }
             }
+            // Đã chuyển icon Drive/avatar lên hàng search, bỏ nút + upload ở đây
+            // Đã bỏ hiển thị text tên tài khoản nếu đã đăng nhập
+            // Nút thêm (giữ nguyên nếu có)
+            // ...existing code...
             // Nút thêm và nút settings ở góc phải dưới
             Column(
                 modifier = Modifier
@@ -377,3 +599,24 @@ fun getFileNameFromUri(context: Context, uri: Uri): String? {
     return null
 }
 
+private suspend fun hasBackupOnDrive(context: Context, googleAccount: GoogleSignInAccount): Boolean {
+    return withContext(Dispatchers.IO) {
+        try {
+            val credential = GoogleAccountCredential.usingOAuth2(
+                context, listOf(DriveScopes.DRIVE_FILE)
+            ).apply { selectedAccount = googleAccount.account }
+            val driveService = Drive.Builder(
+                NetHttpTransport(),
+                GsonFactory.getDefaultInstance(),
+                credential
+            ).setApplicationName("OCR Manga").build()
+            val result = driveService.files().list()
+                .setQ("mimeType='application/zip' and name contains 'ocrmanga_backup_'")
+                .setFields("files(id)")
+                .execute()
+            result.files != null && result.files.isNotEmpty()
+        } catch (e: Exception) {
+            false
+        }
+    }
+}
