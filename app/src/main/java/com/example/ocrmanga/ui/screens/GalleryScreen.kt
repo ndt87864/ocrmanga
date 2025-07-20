@@ -86,6 +86,14 @@ fun GalleryScreen(
 
     // Google Sign-In state
     var googleAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
+
+    // On first launch, check if already signed in
+    LaunchedEffect(Unit) {
+        val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
+        if (lastAccount != null) {
+            googleAccount = lastAccount
+        }
+    }
     var hasBackup by remember { mutableStateOf<Boolean?>(null) }
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
@@ -340,7 +348,7 @@ fun GalleryScreen(
                                 )
                                 if (hasBackup == true) {
                                     DropdownMenuItem(
-                                        text = { Text("Khôi phục") },
+                                        text = { Text("Khôi phục    ") },
                                         onClick = {
                                             showDriveMenu = false
                                             if (googleAccount != null) {
@@ -598,6 +606,7 @@ fun getFileNameFromUri(context: Context, uri: Uri): String? {
     }
     return null
 }
+
 
 private suspend fun hasBackupOnDrive(context: Context, googleAccount: GoogleSignInAccount): Boolean {
     return withContext(Dispatchers.IO) {
