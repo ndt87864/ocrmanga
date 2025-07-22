@@ -216,22 +216,30 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 cursor.close()
 
+                // Tự động set rotation = 0f cho block chưa có rotation (phòng cũ)
+                val fixedTranslations = translations.mapValues { (uri, pair) ->
+                    val (originalText, blocks) = pair
+                    val fixedBlocks = blocks.map { block ->
+                        if (block.rotation == null) block.copy(rotation = 0f) else block
+                    }
+                    originalText to fixedBlocks
+                }
                 _uiState.update {
                     it.copy(
                         imageUris = initialBatch,
-                        translatedTexts = translations.filterKeys { it in initialBatch },
-                        translationEnabled = translations.isNotEmpty(),
-                        translationMode = if (translations.isNotEmpty()) TranslationMode.OFFLINE else TranslationMode.OFF,
+                        translatedTexts = fixedTranslations.filterKeys { it in initialBatch },
+                        translationEnabled = fixedTranslations.isNotEmpty(),
+                        translationMode = if (fixedTranslations.isNotEmpty()) TranslationMode.OFFLINE else TranslationMode.OFF,
                         isTranslating = false,
                         roomId = roomId,
                         translatedStatus = translatedStatus,
-                        sourceLanguages = translations.mapValues { "zh" },
+                        sourceLanguages = fixedTranslations.mapValues { "zh" },
                         remainingImages = remainingImages
                     )
                 }
                 Log.i(TAG, "Đã tải batch đầu tiên của phòng $roomId với ${initialBatch.size} ảnh")
                 // Log độ nghiêng (rotation) cho từng block bản dịch
-                translations.forEach { (uri, pair) ->
+                fixedTranslations.forEach { (uri, pair) ->
                     val blocks = pair.second
                     blocks.forEachIndexed { idx, block ->
                         Log.i(TAG, "[LOAD] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")

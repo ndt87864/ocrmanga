@@ -43,6 +43,29 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     private val appContext = context
 
+    init {
+        migrateRoomImageLinks()
+        // Tự động thêm cột rotation vào bảng translations nếu chưa có
+        try {
+            val db = writableDatabase
+            val cursor = db.rawQuery("PRAGMA table_info(translations)", null)
+            var hasRotation = false
+            while (cursor.moveToNext()) {
+                val columnName = cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                if (columnName == "rotation") {
+                    hasRotation = true
+                    break
+                }
+            }
+            cursor.close()
+            if (!hasRotation) {
+                db.execSQL("ALTER TABLE translations ADD COLUMN rotation REAL DEFAULT 0")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Không thể tự động thêm cột rotation vào bảng translations", e)
+        }
+    }
+
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
         private const val DATABASE_VERSION = 4
@@ -133,7 +156,30 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         if (oldVersion < 4) {
             db.execSQL("ALTER TABLE translations ADD COLUMN original_image_width INTEGER")
             db.execSQL("ALTER TABLE translations ADD COLUMN original_image_height INTEGER")
-            db.execSQL("ALTER TABLE translations ADD COLUMN rotation REAL DEFAULT 0")
+            // Chỉ thêm cột rotation nếu chưa tồn tại
+            try {
+                val cursor = db.rawQuery("PRAGMA table_info(translations)", null)
+                var hasRotation = false
+                while (cursor.moveToNext()) {
+                    val columnName = cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                    if (columnName == "rotation") {
+                        hasRotation = true
+                        break
+                    }
+                }
+                cursor.close()
+                if (!hasRotation) {
+                    db.execSQL("ALTER TABLE translations ADD COLUMN rotation REAL DEFAULT 0")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể kiểm tra/thêm cột rotation cho translations", e)
+            }
+            // Update các bản ghi cũ có rotation IS NULL về 0
+            try {
+                db.execSQL("UPDATE translations SET rotation = 0 WHERE rotation IS NULL")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể update rotation cho các bản ghi cũ", e)
+            }
             db.execSQL("CREATE TABLE IF NOT EXISTS api_keys ( api_key_value TEXT PRIMARY KEY )")
         }
         // Thêm cột type cho bảng api_keys nếu chưa có (version 5)
