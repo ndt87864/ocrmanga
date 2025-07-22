@@ -102,6 +102,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 bounds_right INTEGER,
                 bounds_bottom INTEGER,
                 font_size REAL,
+                rotation REAL DEFAULT 0,
                 original_image_width INTEGER, -- New column
                 original_image_height INTEGER, -- New column
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
@@ -132,6 +133,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         if (oldVersion < 4) {
             db.execSQL("ALTER TABLE translations ADD COLUMN original_image_width INTEGER")
             db.execSQL("ALTER TABLE translations ADD COLUMN original_image_height INTEGER")
+            db.execSQL("ALTER TABLE translations ADD COLUMN rotation REAL DEFAULT 0")
             db.execSQL("CREATE TABLE IF NOT EXISTS api_keys ( api_key_value TEXT PRIMARY KEY )")
         }
         // Thêm cột type cho bảng api_keys nếu chưa có (version 5)
@@ -224,6 +226,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("bounds_right", scaledRect.right)
                                 put("bounds_bottom", scaledRect.bottom)
                                 put("font_size", textBlock.fontSize)
+                                put("rotation", textBlock.rotation ?: 0f)
                                 put("original_image_width", savedWidth)
                                 put("original_image_height", savedHeight)
                             }
@@ -343,6 +346,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("bounds_right", scaledRect.right)
                                     put("bounds_bottom", scaledRect.bottom)
                                     put("font_size", textBlock.fontSize)
+                                    put("rotation", textBlock.rotation ?: 0f)
                                     put("original_image_width", savedWidth)
                                     put("original_image_height", savedHeight)
                                 }
@@ -391,6 +395,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("bounds_right", scaledRect.right)
                                     put("bounds_bottom", scaledRect.bottom)
                                     put("font_size", textBlock.fontSize)
+                                   put("rotation", textBlock.rotation ?: 0f)
                                     put("original_image_width", savedWidth)
                                     put("original_image_height", savedHeight)
                                 }
@@ -520,7 +525,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             orders.add(order)
 
             val textCursor = db.rawQuery("""
-                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size
+                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height
                 FROM translations 
                 WHERE $COLUMN_IMAGE_ID = ?
             """, arrayOf(imageId.toString()))
@@ -537,9 +542,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     textCursor.getInt(5)
                 )
                 val fontSize = textCursor.getFloat(6)
-                val originalImageWidth = if (textCursor.columnCount > 8) textCursor.getInt(7) else null
-                val originalImageHeight = if (textCursor.columnCount > 8) textCursor.getInt(8) else null
-                textBlocks.add(TextBlockInfo(translatedText, bounds, fontSize, originalImageWidth = originalImageWidth, originalImageHeight = originalImageHeight))
+                val rotation = if (textCursor.columnCount > 7) textCursor.getFloat(7) else 0f
+                val originalImageWidth = if (textCursor.columnCount > 8) textCursor.getInt(8) else null
+                val originalImageHeight = if (textCursor.columnCount > 9) textCursor.getInt(9) else null
+                textBlocks.add(TextBlockInfo(translatedText, bounds, fontSize, rotation = rotation, originalImageWidth = originalImageWidth, originalImageHeight = originalImageHeight))
             }
             textCursor.close()
             if (textBlocks.isNotEmpty()) {

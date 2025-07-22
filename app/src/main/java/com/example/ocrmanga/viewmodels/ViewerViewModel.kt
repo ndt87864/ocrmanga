@@ -51,15 +51,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     // Thêm hàm mới để cập nhật translatedTexts cho một uri cụ thể (sửa lỗi unresolved reference)
     fun updateTranslatedBlocks(uri: Uri, blocks: List<TextBlockInfo>) {
+        // Always update rotation from DragBlockState if available
+        val updatedBlocks = blocks.map { block ->
+            val rot = if (block.rotation == null) 0f else block.rotation
+            Log.i(TAG, "[UPDATE] Block text='${block.text}' rotation=$rot for uri=$uri")
+            if (block.rotation == null) block.copy(rotation = 0f) else block
+        }
         val current = _uiState.value.translatedTexts[uri] ?: ("" to emptyList())
-        val newPair = current.first to blocks
+        val newPair = current.first to updatedBlocks
         _uiState.update {
             it.copy(
                 translatedTexts = it.translatedTexts + (uri to newPair),
                 translatedStatus = it.translatedStatus + (uri to true)
             )
         }
-        Log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${blocks.size} blocks")
+        Log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${updatedBlocks.size} blocks")
+        updatedBlocks.forEachIndexed { idx, block ->
+            Log.i(TAG, "[UPDATE] Block[$idx] rotation=${block.rotation} text='${block.text}' uri=$uri")
+        }
     }
 
     private val translationRepository = TranslationRepository(application)
@@ -221,6 +230,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
                 Log.i(TAG, "Đã tải batch đầu tiên của phòng $roomId với ${initialBatch.size} ảnh")
+                // Log độ nghiêng (rotation) cho từng block bản dịch
+                translations.forEach { (uri, pair) ->
+                    val blocks = pair.second
+                    blocks.forEachIndexed { idx, block ->
+                        Log.i(TAG, "[LOAD] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi tải phòng $roomId", e)
                 withContext(Dispatchers.Main) {
@@ -378,6 +394,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
             try {
                 val currentRoomId = uiState.value.roomId
+                // Log all rotation values before saving
+                uiState.value.translatedTexts.forEach { (uri, pair) ->
+                    pair.second.forEachIndexed { idx, block ->
+                        Log.i(TAG, "[SAVE ROOM] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
+                    }
+                }
                 val roomId: Long = if (currentRoomId != null) {
                     // Nếu đã có roomId, update phòng
                     val updated = databaseHelper.updateMangaRoom(
@@ -396,6 +418,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 if (roomId != -1L) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Đã lưu thành công!", Toast.LENGTH_SHORT).show()
+                        // Sau khi lưu xong, reload lại phòng để cập nhật UI
+                        loadRoom(roomId)
                     }
                     _uiState.update { it.copy(roomId = roomId) }
                     galleryViewModel.notifyDataSaved()

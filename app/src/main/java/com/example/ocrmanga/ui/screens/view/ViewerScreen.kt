@@ -339,13 +339,18 @@ fun ViewerScreen(
                                 }
                             },
                             onClick = {
-                                dragBlocksMap.forEach { (uri, blocks) ->
-                                    if (uri is android.net.Uri) {
-                                        viewModel.updateTranslatedBlocks(uri, blocks.map { it.block })
+                        dragBlocksMap.forEach { (uri, blocks) ->
+                            if (uri is android.net.Uri) {
+                                viewModel.updateTranslatedBlocks(
+                                    uri,
+                                    blocks.map { dragBlock ->
+                                        dragBlock.block.copy(rotation = dragBlock.rotation)
                                     }
-                                }
-                                viewModel.saveCurrentRoom()
-                                showMainMenu = false
+                                )
+                            }
+                        }
+                        viewModel.saveCurrentRoom()
+                        showMainMenu = false
                             }
                         )
                         DropdownMenuItem(
@@ -514,7 +519,12 @@ fun ViewerScreen(
                     dragBlocksMap.forEach { (uri, blocks) ->
                         if (uri is android.net.Uri) {
                             android.util.Log.i("ViewerScreen", "[SAVE] updateTranslatedBlocks $uri, blocks: ${blocks.size}")
-                            viewModel.updateTranslatedBlocks(uri, blocks.map { it.block })
+                            viewModel.updateTranslatedBlocks(
+                                uri,
+                                blocks.map { dragBlock ->
+                                    dragBlock.block.copy(rotation = dragBlock.rotation)
+                                }
+                            )
                         }
                     }
                     Toast.makeText(context, "Đã lưu thay đổi bản dịch!", Toast.LENGTH_SHORT).show()
