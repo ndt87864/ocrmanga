@@ -76,6 +76,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.runtime.snapshotFlow
+import com.example.ocrmanga.ui.screens.view.splitNonOverlappingBoxes
 
 data class DragBlockState(
     val block: TextBlockInfo,
@@ -1371,75 +1372,4 @@ fun ViewerScreen(
             )
         }
     }
-}
-
-private fun shrinkOverlappingBoxes(blocks: List<com.example.ocrmanga.data.models.TextBlockInfo>): List<com.example.ocrmanga.data.models.TextBlockInfo> {
-    val result = blocks.map { it.copy() }.toMutableList()
-    for (i in result.indices) {
-        val boxA = result[i].bounds
-        for (j in result.indices) {
-            if (i == j) continue
-            val boxB = result[j].bounds
-            if (android.graphics.Rect.intersects(boxA, boxB)) {
-                val intersect = android.graphics.Rect(
-                    maxOf(boxA.left, boxB.left),
-                    maxOf(boxA.top, boxB.top),
-                    minOf(boxA.right, boxB.right),
-                    minOf(boxA.bottom, boxB.bottom)
-                )
-                val areaA = (boxA.width() * boxA.height()).toFloat()
-                val areaIntersect = (intersect.width() * intersect.height()).toFloat()
-                if (areaA > 0 && areaIntersect / areaA > 0.15f) {
-                    val shrinkLeft = if (intersect.left == boxA.left) intersect.width() / 2 else 0
-                    val shrinkRight = if (intersect.right == boxA.right) intersect.width() / 2 else 0
-                    val shrinkTop = if (intersect.top == boxA.top) intersect.height() / 2 else 0
-                    val shrinkBottom = if (intersect.bottom == boxA.bottom) intersect.height() / 2 else 0
-                    result[i] = result[i].copy(
-                        bounds = android.graphics.Rect(
-                            boxA.left + shrinkLeft,
-                            boxA.top + shrinkTop,
-                            boxA.right - shrinkRight,
-                            boxA.bottom - shrinkBottom
-                        )
-                    )
-                }
-            }
-        }
-    }
-    return result
-}
-
-private fun splitNonOverlappingBoxes(blocks: List<TextBlockInfo>): List<TextBlockInfo> {
-    val result = mutableListOf<TextBlockInfo>()
-    val used = BooleanArray(blocks.size)
-    for (i in blocks.indices) {
-        var boxA = blocks[i].bounds
-        var keep = true
-        for (j in blocks.indices) {
-            if (i == j) continue
-            val boxB = blocks[j].bounds
-            if (android.graphics.Rect.intersects(boxA, boxB)) {
-                if (boxB.contains(boxA)) {
-                    keep = false
-                    break
-                }
-                val intersect = android.graphics.Rect(
-                    maxOf(boxA.left, boxB.left),
-                    maxOf(boxA.top, boxB.top),
-                    minOf(boxA.right, boxB.right),
-                    minOf(boxA.bottom, boxB.bottom)
-                )
-                if (intersect.width() > 0 && intersect.height() > 0) {
-                    if (intersect.right == boxA.right) boxA.right = intersect.left
-                    if (intersect.left == boxA.left) boxA.left = intersect.right
-                    if (intersect.bottom == boxA.bottom) boxA.bottom = intersect.top
-                    if (intersect.top == boxA.top) boxA.top = intersect.bottom
-                }
-            }
-        }
-        if (keep && boxA.width() > 0 && boxA.height() > 0) {
-            result.add(blocks[i].copy(bounds = android.graphics.Rect(boxA)))
-        }
-    }
-    return result
 }
