@@ -49,6 +49,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // Thêm hàm mới để cập nhật translatedTexts cho một uri cụ thể (sửa lỗi unresolved reference)
+    fun updateTranslatedBlocks(uri: Uri, blocks: List<TextBlockInfo>) {
+        val current = _uiState.value.translatedTexts[uri] ?: ("" to emptyList())
+        val newPair = current.first to blocks
+        _uiState.update {
+            it.copy(
+                translatedTexts = it.translatedTexts + (uri to newPair),
+                translatedStatus = it.translatedStatus + (uri to true)
+            )
+        }
+        Log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${blocks.size} blocks")
+    }
+
     private val translationRepository = TranslationRepository(application)
     private val databaseHelper = DatabaseHelper(application)
     private val _uiState = MutableStateFlow(ViewerUiState())
@@ -285,11 +298,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 Log.e(TAG, "Lỗi khi tải thêm ảnh", e)
             }
         }
-    }    
-    
+    }
+
     fun setTranslationMode(mode: TranslationMode) {
         val currentMode = uiState.value.translationMode
-        
+
         _uiState.update {
             it.copy(
                 translationMode = mode,
@@ -301,13 +314,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         if (mode != TranslationMode.OFF) {
             // If switching between different translation modes (OFFLINE <-> ONLINE <-> GEMINI)
             // or turning on translation for the first time, retranslate all images
-            val shouldRetranslate = currentMode != mode && 
-                                  (currentMode == TranslationMode.OFF || uiState.value.imageUris.isNotEmpty())
-            
+            val shouldRetranslate = currentMode != mode &&
+                    (currentMode == TranslationMode.OFF || uiState.value.imageUris.isNotEmpty())
+
             if (shouldRetranslate) {
                 // Clear existing translations and retranslate all images
                 val imagesToRetranslate = uiState.value.imageUris
-                
+
                 _uiState.update {
                     it.copy(
                         isTranslating = true,
@@ -565,7 +578,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     page.canvas.drawBitmap(scaledBitmap, 0f, 0f, paint)
                     pdfDocument.finishPage(page)
                 }
-
                 val pdfFile = File(context.getExternalFilesDir(null), "room_${_uiState.value.roomId}.pdf")
                 pdfDocument.writeTo(FileOutputStream(pdfFile))
                 pdfDocument.close()

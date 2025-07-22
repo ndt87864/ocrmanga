@@ -10,6 +10,7 @@ data class TextBlockInfo(
     val bounds: Rect,
     val fontSize: Float,
     val isVertical: Boolean = false,
+    val rotation: Float? = null,
     val polygon: Path? = null,
     val wordCountsPerLine: List<Int>? = null, // New field to store word counts per line
     val originalImageWidth: Int? = null, // Width of the image when OCR was performed
