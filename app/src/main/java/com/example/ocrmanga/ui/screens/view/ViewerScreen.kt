@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
@@ -556,7 +557,10 @@ fun ViewerScreen(
                             awaitPointerEventScope {
                                 while (true) {
                                     val event = awaitPointerEvent()
-                                    event.changes.forEach { it.consume() }
+                                    // Chỉ chặn sự kiện chạm truyền xuống, không chặn cuộn ngang
+                                    if (event.changes.any { it.pressed }) {
+                                        event.changes.forEach { it.consume() }
+                                    }
                                 }
                             }
                         }
@@ -618,42 +622,22 @@ fun ViewerScreen(
                                 .background(Color(0xFFF0F0F0))
                                 .padding(8.dp)
                                 .horizontalScroll(rememberScrollState())
-                                .pointerInput(Unit) {
-                                    awaitPointerEventScope {
-                                        while (true) {
-                                            val event = awaitPointerEvent()
-                                            event.changes.forEach { change ->
-                                                if (change.pressed) {
-                                                    change.consume()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
                         ) {
                             val isBlockSelected = selectedIndex != null
                             var showShapeMenu by remember { mutableStateOf(false) }
                             val shapeLabels = listOf("Hình chữ nhật", "Hình oval")
                             val shapeIcons = listOf(Icons.Default.CropSquare, Icons.Default.Circle)
                             Row(
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .wrapContentWidth(unbounded = true)
+                                    .padding(horizontal = 8.dp)
                             ) {
                                 Box {
                                     IconButton(
                                         onClick = { showShapeMenu = true },
-                                        modifier = Modifier.pointerInput(Unit) {
-                                            awaitPointerEventScope {
-                                                while (true) {
-                                                    val event = awaitPointerEvent()
-                                                    event.changes.forEach { change ->
-                                                        if (change.pressed) {
-                                                            change.consume()
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        modifier = Modifier
                                     ) {
                                         Icon(
                                             imageVector = shapeIcons[selectedIndex?.let { getWhiteoutShape(it) } ?: 0],
@@ -707,39 +691,14 @@ fun ViewerScreen(
                                         }
                                     },
                                     enabled = isBlockSelected,
-                                    modifier = Modifier.pointerInput(Unit) {
-                                        awaitPointerEventScope {
-                                            while (true) {
-                                                val event = awaitPointerEvent()
-                                                event.changes.forEach { change ->
-                                                    if (change.pressed) {
-                                                        change.consume()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    modifier = Modifier
                                 ) { Icon(Icons.Default.AddBox, contentDescription = "Tăng kích thước") }
                                 Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
+                                    modifier = Modifier.size(40.dp)
                                 ) {
                                     OutlinedButton(
                                         onClick = { resizeDropdownExpanded = true },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .pointerInput(Unit) {
-                                                awaitPointerEventScope {
-                                                    while (true) {
-                                                        val event = awaitPointerEvent()
-                                                        event.changes.forEach { change ->
-                                                            if (change.pressed) {
-                                                                change.consume()
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            },
+                                        modifier = Modifier.size(40.dp),
                                         contentPadding = PaddingValues(0.dp),
                                         shape = RoundedCornerShape(8.dp),
                                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
@@ -794,18 +753,7 @@ fun ViewerScreen(
                                         }
                                     },
                                     enabled = isBlockSelected,
-                                    modifier = Modifier.pointerInput(Unit) {
-                                        awaitPointerEventScope {
-                                            while (true) {
-                                                val event = awaitPointerEvent()
-                                                event.changes.forEach { change ->
-                                                    if (change.pressed) {
-                                                        change.consume()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    modifier = Modifier
                                 ) { Icon(Icons.Default.IndeterminateCheckBox, contentDescription = "Giảm kích thước") }
                                 IconButton(
                                     onClick = {
@@ -817,18 +765,7 @@ fun ViewerScreen(
                                         }
                                     },
                                     enabled = isBlockSelected,
-                                    modifier = Modifier.pointerInput(Unit) {
-                                        awaitPointerEventScope {
-                                            while (true) {
-                                                val event = awaitPointerEvent()
-                                                event.changes.forEach { change ->
-                                                    if (change.pressed) {
-                                                        change.consume()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    modifier = Modifier
                                 ) { Icon(Icons.Default.Delete, contentDescription = "Xóa vùng đã chọn", tint = if (isBlockSelected) Color.Red else Color.Gray) }
                                 var showEditBlockDialog by remember { mutableStateOf(false) }
                                 IconButton(
@@ -836,18 +773,7 @@ fun ViewerScreen(
                                         if (isBlockSelected) showEditBlockDialog = true
                                     },
                                     enabled = isBlockSelected,
-                                    modifier = Modifier.pointerInput(Unit) {
-                                        awaitPointerEventScope {
-                                            while (true) {
-                                                val event = awaitPointerEvent()
-                                                event.changes.forEach { change ->
-                                                    if (change.pressed) {
-                                                        change.consume()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    modifier = Modifier
                                 ) {
                                     Icon(Icons.Default.Edit, contentDescription = "Sửa bản dịch", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
                                 }
@@ -917,18 +843,7 @@ fun ViewerScreen(
                                         }
                                     },
                                     enabled = isBlockSelected,
-                                    modifier = Modifier.pointerInput(Unit) {
-                                        awaitPointerEventScope {
-                                            while (true) {
-                                                val event = awaitPointerEvent()
-                                                event.changes.forEach { change ->
-                                                    if (change.pressed) {
-                                                        change.consume()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    modifier = Modifier
                                 ) { Icon(Icons.Default.TextIncrease, contentDescription = "Tăng cỡ chữ") }
                                 IconButton(
                                     onClick = {
@@ -941,18 +856,7 @@ fun ViewerScreen(
                                         }
                                     },
                                     enabled = isBlockSelected,
-                                    modifier = Modifier.pointerInput(Unit) {
-                                        awaitPointerEventScope {
-                                            while (true) {
-                                                val event = awaitPointerEvent()
-                                                event.changes.forEach { change ->
-                                                    if (change.pressed) {
-                                                        change.consume()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    modifier = Modifier
                                 ) { Icon(Icons.Default.TextDecrease, contentDescription = "Giảm cỡ chữ") }
                                 Spacer(Modifier.width(16.dp))
                                 var isRotatingClockwise by remember { mutableStateOf(false) }
