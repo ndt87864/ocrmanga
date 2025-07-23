@@ -1,4 +1,4 @@
-package com.example.ocrmanga.ui.screens
+package com.example.ocrmanga.ui.screens.view
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -15,7 +15,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
@@ -34,12 +33,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -73,8 +71,6 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.runtime.snapshotFlow
 import com.example.ocrmanga.ui.screens.view.splitNonOverlappingBoxes
 
@@ -596,7 +592,11 @@ fun ViewerScreen(
                 }
                 var whiteoutShapes by remember(uri, translationVersion) { mutableStateOf(mutableMapOf<Int, Int>()) }
                 fun getWhiteoutShape(idx: Int) = whiteoutShapes[idx] ?: 0
-                Box(
+                var draggingIndex by remember { mutableStateOf<Int?>(null) }
+                var lastDragPos by remember { mutableStateOf(Offset.Zero) }
+                var selectedIndex by remember(uri, editTranslationMode) { mutableStateOf<Int?>(null) }
+                val shrinkedBlocks = splitNonOverlappingBoxes(dragBlocks.map { it.block })
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .pointerInput(uri, editTranslationMode) {
@@ -610,467 +610,493 @@ fun ViewerScreen(
                             )
                         }
                 ) {
-                    var imageWidth by remember { mutableStateOf(0f) }
-                    var imageHeight by remember { mutableStateOf(0f) }
-                    var originalImageWidth by remember { mutableStateOf(0f) }
-                    var originalImageHeight by remember { mutableStateOf(0f) }
-                    var isImageLoaded by remember { mutableStateOf(false) }
-                    var imageLoadState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
-
-                    LaunchedEffect(uri) {
-                        try {
-                            val (width, height) = getImageDimensions(context, uri)
-                            originalImageWidth = width.toFloat()
-                            originalImageHeight = height.toFloat()
-                            isImageLoaded = true
-                        } catch (e: IOException) {
-                            originalImageWidth = 1280f
-                            originalImageHeight = 1808f
-                            isImageLoaded = true
-                            Log.e("ViewerScreen", "Failed to load image dimensions for $uri", e)
-                        }
-                    }
-
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(uri)
-                            .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                            .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-                            .build(),
-                        contentDescription = "Ảnh manga",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onGloballyPositioned { coordinates ->
-                                imageWidth = coordinates.size.width.toFloat()
-                                imageHeight = coordinates.size.height.toFloat()
-                            },
-                        contentScale = ContentScale.FillWidth,
-                        onState = { state -> imageLoadState = state }
-                    )
-                    if (uiState.translationEnabled && uiState.translatedTexts.containsKey(uri) && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success) {
-                        val (fullText, translatedBlocks) = uiState.translatedTexts[uri] ?: ("" to emptyList())
-                        if (translatedBlocks.isNotEmpty()) {
-                            Canvas(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .drawWithCache {
-                                        data class RegionInfo(
-                                            val block: TextBlockInfo,
-                                            val rect: Rect,
-                                            val fontSize: Float,
-                                            val rotation: Float
-                                        )
-                                        val regions = dragBlocks.mapIndexedNotNull { i, dragBlock ->
-                                            val block = dragBlock.block
-                                            val blockImageWidth = block.originalImageWidth?.toFloat() ?: originalImageWidth
-                                            val blockImageHeight = block.originalImageHeight?.toFloat() ?: originalImageHeight
-                                            val scale = if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
-                                            val scaledBlockHeight = blockImageHeight * scale
-                                            val offsetY = if (imageHeight > scaledBlockHeight) (imageHeight - scaledBlockHeight) / 2 else 0f
-                                            val offsetX = 0f
-                                            if (block.text.isNotBlank()) {
-                                                val bounds = block.bounds
-                                                val scaledLeft = (bounds.left * scale) + offsetX + dragBlock.offset.x
-                                                val scaledTop = (bounds.top * scale) + offsetY + dragBlock.offset.y
-                                                val scaledWidth = (bounds.width() * scale).toFloat()
-                                                val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
-                                                val fontSize = dragBlock.fontSize ?: calculateOptimalFontSize(
-                                                    block.text, scaledWidth, scaledBlockHeight2, 12f
-                                                )
-                                                RegionInfo(
-                                                    block = block,
-                                                    rect = Rect(
-                                                        scaledLeft,
-                                                        scaledTop,
-                                                        scaledLeft + scaledWidth,
-                                                        scaledTop + scaledBlockHeight2
-                                                    ),
-                                                    fontSize = fontSize,
-                                                    rotation = dragBlock.rotation
-                                                )
-                                            } else null
-                                        }
-                                        onDrawBehind {
-                                            regions.forEachIndexed { i, region ->
-                                                val block = region.block
-                                                val rect = region.rect
-                                                val fontSize = region.fontSize
-                                                val rotation = region.rotation
-                                                if (block.text.isNotBlank()) {
-                                                    withTransform({
-                                                        rotate(rotation, Offset(rect.left + rect.width/2, rect.top + rect.height/2))
-                                                    }) {
-                                                        val isOval = (getWhiteoutShape(i) == 1)
-                                                        if (isOval) {
-                                                            drawOval(
-                                                                color = Color.White,
-                                                                topLeft = Offset(rect.left, rect.top),
-                                                                size = Size(rect.width, rect.height),
-                                                                style = Fill
-                                                            )
-                                                        } else {
-                                                            drawRect(
-                                                                color = Color.White,
-                                                                topLeft = Offset(rect.left, rect.top),
-                                                                size = Size(rect.width, rect.height),
-                                                                style = Fill
-                                                            )
-                                                        }
-                                                        val textPadding = if (isOval) 0.15f else 0f
-                                                        val textLeft = rect.left + rect.width * textPadding
-                                                        val textTop = rect.top + rect.height * textPadding
-                                                        val textWidth = rect.width * (1 - 2 * textPadding)
-                                                        val textHeight = rect.height * (1 - 2 * textPadding)
-                                                        drawText(
-                                                            text = block.text,
-                                                            x = textLeft,
-                                                            y = textTop,
-                                                            width = textWidth,
-                                                            height = textHeight,
-                                                            color = Color.Black,
-                                                            fontSize = fontSize,
-                                                            isVertical = block.isVertical
-                                                        )
-                                                    }
+                    // Thanh công cụ chỉnh sửa
+                    if (editTranslationMode) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFF0F0F0))
+                                .padding(8.dp)
+                                .horizontalScroll(rememberScrollState())
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            event.changes.forEach { change ->
+                                                if (change.pressed) {
+                                                    change.consume()
                                                 }
                                             }
                                         }
                                     }
-                            ) {}
-                        }
-                    }
-
-                    if (editTranslationMode && uiState.translationEnabled && uiState.translatedTexts.containsKey(uri) && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success) {
-                        val (fullText, translatedBlocks) = uiState.translatedTexts[uri] ?: ("" to emptyList())
-                        if (translatedBlocks.isNotEmpty()) {
-                            var draggingIndex by remember { mutableStateOf<Int?>(null) }
-                            var lastDragPos by remember { mutableStateOf(Offset.Zero) }
-                            var selectedIndex by remember(uri, editTranslationMode) { mutableStateOf<Int?>(null) }
-                            val shrinkedBlocks = splitNonOverlappingBoxes(dragBlocks.map { it.block })
-                            Column {
-                                val isBlockSelected = selectedIndex != null
-                                val headerScrollState = rememberScrollState()
-                                var showShapeMenu by remember { mutableStateOf(false) }
-                                val shapeLabels = listOf("Hình chữ nhật", "Hình oval")
-                                val shapeIcons = listOf(Icons.Default.CropSquare, Icons.Default.Circle)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFFF0F0F0))
-                                        .padding(8.dp)
-                                        .horizontalScroll(headerScrollState),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box {
-                                        IconButton(onClick = { showShapeMenu = true }) {
-                                            Icon(
-                                                imageVector = shapeIcons[selectedIndex?.let { getWhiteoutShape(it) } ?: 0],
-                                                contentDescription = "Chọn hình dạng bôi trắng",
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
-                                        }
-                                        DropdownMenu(
-                                            expanded = showShapeMenu,
-                                            onDismissRequest = { showShapeMenu = false }
-                                        ) {
-                                            shapeLabels.forEachIndexed { i, label ->
-                                                DropdownMenuItem(
-                                                    text = { Text(label) },
-                                                    leadingIcon = {
-                                                        Icon(shapeIcons[i], contentDescription = null)
-                                                    },
-                                                    onClick = {
-                                                        selectedIndex?.let { idx ->
-                                                            whiteoutShapes = whiteoutShapes.toMutableMap().also { it[idx] = i }
+                                }
+                        ) {
+                            val isBlockSelected = selectedIndex != null
+                            var showShapeMenu by remember { mutableStateOf(false) }
+                            val shapeLabels = listOf("Hình chữ nhật", "Hình oval")
+                            val shapeIcons = listOf(Icons.Default.CropSquare, Icons.Default.Circle)
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box {
+                                    IconButton(
+                                        onClick = { showShapeMenu = true },
+                                        modifier = Modifier.pointerInput(Unit) {
+                                            awaitPointerEventScope {
+                                                while (true) {
+                                                    val event = awaitPointerEvent()
+                                                    event.changes.forEach { change ->
+                                                        if (change.pressed) {
+                                                            change.consume()
                                                         }
-                                                        showShapeMenu = false
                                                     }
-                                                )
+                                                }
                                             }
                                         }
-                                    }
-                                    var resizeMode by remember { mutableStateOf(0) }
-                                    val resizeOptions = listOf("Tất cả", "Chiều cao", "Chiều rộng")
-                                    var resizeDropdownExpanded by remember { mutableStateOf(false) }
-                                    IconButton(
-                                        onClick = {
-                                            selectedIndex?.let { idx ->
-                                                dragBlocks = dragBlocks.toMutableList().also {
-                                                    val old = it[idx]
-                                                    val b = old.block
-                                                    val bounds = android.graphics.Rect(b.bounds)
-                                                    when (resizeMode) {
-                                                        0 -> bounds.inset(-10, -10)
-                                                        1 -> {
-                                                            bounds.top -= 10
-                                                            bounds.bottom += 10
-                                                        }
-                                                        2 -> {
-                                                            bounds.left -= 10
-                                                            bounds.right += 10
-                                                        }
-                                                    }
-                                                    it[idx] = old.copy(block = b.copy(bounds = bounds))
-                                                }
-                                            }
-                                        },
-                                        enabled = isBlockSelected
-                                    ) { Icon(Icons.Default.AddBox, contentDescription = "Tăng kích thước") }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                    ) {
-                                        OutlinedButton(
-                                            onClick = { resizeDropdownExpanded = true },
-                                            modifier = Modifier.size(40.dp),
-                                            contentPadding = PaddingValues(0.dp),
-                                            shape = RoundedCornerShape(8.dp),
-                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
-                                        ) {
-                                            Text(
-                                                resizeOptions[resizeMode],
-                                                style = MaterialTheme.typography.bodySmall,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Clip,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                                        }
-                                        DropdownMenu(
-                                            expanded = resizeDropdownExpanded,
-                                            onDismissRequest = { resizeDropdownExpanded = false }
-                                        ) {
-                                            resizeOptions.forEachIndexed { i, label ->
-                                                DropdownMenuItem(
-                                                    text = { Text(label) },
-                                                    onClick = {
-                                                        resizeMode = i
-                                                        resizeDropdownExpanded = false
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            selectedIndex?.let { idx ->
-                                                dragBlocks = dragBlocks.toMutableList().also {
-                                                    val old = it[idx]
-                                                    val b = old.block
-                                                    val bounds = android.graphics.Rect(b.bounds)
-                                                    when (resizeMode) {
-                                                        0 -> bounds.inset(10, 10)
-                                                        1 -> {
-                                                            bounds.top += 10
-                                                            bounds.bottom -= 10
-                                                        }
-                                                        2 -> {
-                                                            bounds.left += 10
-                                                            bounds.right += 10
-                                                        }
-                                                    }
-                                                    it[idx] = old.copy(block = b.copy(bounds = bounds))
-                                                }
-                                            }
-                                        },
-                                        enabled = isBlockSelected
-                                    ) { Icon(Icons.Default.IndeterminateCheckBox, contentDescription = "Giảm kích thước") }
-                                    IconButton(
-                                        onClick = {
-                                            selectedIndex?.let { idx ->
-                                                dragBlocks = dragBlocks.toMutableList().also {
-                                                    it.removeAt(idx)
-                                                }
-                                                selectedIndex = dragBlocks.indices.minOrNull()?.takeIf { dragBlocks.isNotEmpty() }
-                                            }
-                                        },
-                                        enabled = isBlockSelected
-                                    ) { Icon(Icons.Default.Delete, contentDescription = "Xóa vùng đã chọn", tint = if (isBlockSelected) Color.Red else Color.Gray) }
-                                    var showEditBlockDialog by remember { mutableStateOf(false) }
-                                    IconButton(
-                                        onClick = {
-                                            if (isBlockSelected) showEditBlockDialog = true
-                                        },
-                                        enabled = isBlockSelected
-                                    ) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Sửa bản dịch", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
-                                    }
-                                    Spacer(Modifier.width(16.dp))
-                                    if (showEditBlockDialog && isBlockSelected && selectedIndex != null) {
-                                        val idx = selectedIndex!!
-                                        val block = dragBlocks[idx].block
-                                        val parts = remember(block.text) { block.text.split("\n") }
-                                        var editedParts by remember(block.text) { mutableStateOf(parts.toMutableList()) }
-                                        AlertDialog(
-                                            onDismissRequest = { showEditBlockDialog = false },
-                                            title = { Text("Sửa bản dịch") },
-                                            text = {
-                                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                                                    editedParts.forEachIndexed { i, part ->
-                                                        OutlinedTextField(
-                                                            value = part,
-                                                            onValueChange = { newText ->
-                                                                editedParts = editedParts.toMutableList().also { it[i] = newText }
-                                                            },
-                                                            label = { Text("Phần ${i + 1}") },
-                                                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-                                                        )
-                                                    }
-                                                    Spacer(Modifier.height(8.dp))
-                                                    Button(
-                                                        onClick = {
-                                                            editedParts = editedParts.toMutableList().also { it.add("") }
-                                                        },
-                                                        modifier = Modifier.align(Alignment.End)
-                                                    ) {
-                                                        Icon(Icons.Default.Add, contentDescription = null)
-                                                        Spacer(Modifier.width(4.dp))
-                                                        Text("Thêm phần")
-                                                    }
-                                                }
-                                            },
-                                            confirmButton = {
-                                                TextButton(onClick = {
-                                                    val nonBlankParts = editedParts.map { it.trim() }.filter { it.isNotEmpty() }
-                                                    if (nonBlankParts.isNotEmpty()) {
-                                                        dragBlocks = dragBlocks.toMutableList().also {
-                                                            val old = it[idx]
-                                                            val newBlocks = nonBlankParts.map { part ->
-                                                                old.copy(block = old.block.copy(text = part))
-                                                            }
-                                                            it.removeAt(idx)
-                                                            it.addAll(idx, newBlocks)
-                                                        }
-                                                    }
-                                                    showEditBlockDialog = false
-                                                }) { Text("Lưu") }
-                                            },
-                                            dismissButton = {
-                                                TextButton(onClick = { showEditBlockDialog = false }) { Text("Hủy") }
-                                            }
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            selectedIndex?.let { idx ->
-                                                dragBlocks = dragBlocks.toMutableList().also {
-                                                    val old = it[idx]
-                                                    val newFont = (old.fontSize ?: 16f) + 2f
-                                                    it[idx] = old.copy(fontSize = newFont)
-                                                }
-                                            }
-                                        },
-                                        enabled = isBlockSelected
-                                    ) { Icon(Icons.Default.TextIncrease, contentDescription = "Tăng cỡ chữ") }
-                                    IconButton(
-                                        onClick = {
-                                            selectedIndex?.let { idx ->
-                                                dragBlocks = dragBlocks.toMutableList().also {
-                                                    val old = it[idx]
-                                                    val newFont = (old.fontSize ?: 16f) - 2f
-                                                    it[idx] = old.copy(fontSize = newFont.coerceAtLeast(8f))
-                                                }
-                                            }
-                                        },
-                                        enabled = isBlockSelected
-                                    ) { Icon(Icons.Default.TextDecrease, contentDescription = "Giảm cỡ chữ") }
-                                    Spacer(Modifier.width(16.dp))
-                                    var isRotatingClockwise by remember { mutableStateOf(false) }
-                                    var isRotatingCounterClockwise by remember { mutableStateOf(false) }
-                                    val rotationSpeed = 2f
-                                    val rotationInterval = 16L
-                                    val coroutineScope = rememberCoroutineScope()
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .pointerInput(isBlockSelected) {
-                                                if (isBlockSelected) {
-                                                    awaitEachGesture {
-                                                        val down = awaitFirstDown()
-                                                        isRotatingClockwise = true
-                                                        val job = coroutineScope.launch {
-                                                            while (isRotatingClockwise) {
-                                                                selectedIndex?.let { idx ->
-                                                                    dragBlocks = dragBlocks.toMutableList().also {
-                                                                        val old = it[idx]
-                                                                        val newRot = (old.rotation + rotationSpeed) % 360f
-                                                                        it[idx] = old.copy(rotation = newRot)
-                                                                    }
-                                                                }
-                                                                delay(rotationInterval)
-                                                            }
-                                                        }
-                                                        waitForUpOrCancellation()
-                                                        isRotatingClockwise = false
-                                                        job.cancel()
-                                                    }
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
-                                            Icons.Default.RotateRight,
-                                            contentDescription = "Xoay theo chiều kim đồng hồ",
-                                            tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                                            imageVector = shapeIcons[selectedIndex?.let { getWhiteoutShape(it) } ?: 0],
+                                            contentDescription = "Chọn hình dạng bôi trắng",
+                                            tint = MaterialTheme.colorScheme.primary
                                         )
-                                        if (isBlockSelected) {
-                                            val rot = selectedIndex?.let { dragBlocks[it].rotation } ?: 0f
-                                            Text(
-                                                text = "${rot.toInt()}°",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                modifier = Modifier.align(Alignment.BottomCenter)
-                                            )
-                                        }
                                     }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .pointerInput(isBlockSelected) {
-                                                if (isBlockSelected) {
-                                                    awaitEachGesture {
-                                                        val down = awaitFirstDown()
-                                                        isRotatingCounterClockwise = true
-                                                        val job = coroutineScope.launch {
-                                                            while (isRotatingCounterClockwise) {
-                                                                selectedIndex?.let { idx ->
-                                                                    dragBlocks = dragBlocks.toMutableList().also {
-                                                                        val old = it[idx]
-                                                                        val newRot = (old.rotation - rotationSpeed) % 360f
-                                                                        it[idx] = old.copy(rotation = newRot)
-                                                                    }
-                                                                }
-                                                                delay(rotationInterval)
-                                                            }
-                                                        }
-                                                        waitForUpOrCancellation()
-                                                        isRotatingCounterClockwise = false
-                                                        job.cancel()
-                                                    }
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
+                                    DropdownMenu(
+                                        expanded = showShapeMenu,
+                                        onDismissRequest = { showShapeMenu = false }
                                     ) {
-                                        Icon(
-                                            Icons.Default.RotateLeft,
-                                            contentDescription = "Xoay ngược chiều kim đồng hồ",
-                                            tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray
-                                        )
-                                        if (isBlockSelected) {
-                                            val rot = selectedIndex?.let { dragBlocks[it].rotation } ?: 0f
-                                            Text(
-                                                text = "${rot.toInt()}°",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                modifier = Modifier.align(Alignment.BottomCenter)
+                                        shapeLabels.forEachIndexed { index, label ->
+                                            DropdownMenuItem(
+                                                text = { Text(label) },
+                                                leadingIcon = {
+                                                    Icon(shapeIcons[index], contentDescription = null)
+                                                },
+                                                onClick = {
+                                                    selectedIndex?.let { idx ->
+                                                        whiteoutShapes = whiteoutShapes.toMutableMap().also { it[idx] = index }
+                                                    }
+                                                    showShapeMenu = false
+                                                }
                                             )
                                         }
                                     }
                                 }
-                                Box(modifier = Modifier.fillMaxWidth().aspectRatio(originalImageWidth / originalImageHeight)) {
-                                    Canvas(
+                                var resizeMode by remember { mutableStateOf(0) }
+                                val resizeOptions = listOf("Tất cả", "Chiều cao", "Chiều rộng")
+                                var resizeDropdownExpanded by remember { mutableStateOf(false) }
+                                IconButton(
+                                    onClick = {
+                                        selectedIndex?.let { idx ->
+                                            dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                val old = list[idx]
+                                                val b = old.block
+                                                val bounds = android.graphics.Rect(b.bounds)
+                                                when (resizeMode) {
+                                                    0 -> bounds.inset(-10, -10)
+                                                    1 -> {
+                                                        bounds.top -= 10
+                                                        bounds.bottom += 10
+                                                    }
+                                                    2 -> {
+                                                        bounds.left -= 10
+                                                        bounds.right += 10
+                                                    }
+                                                }
+                                                list[idx] = old.copy(block = b.copy(bounds = bounds))
+                                            }
+                                        }
+                                    },
+                                    enabled = isBlockSelected,
+                                    modifier = Modifier.pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                event.changes.forEach { change ->
+                                                    if (change.pressed) {
+                                                        change.consume()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) { Icon(Icons.Default.AddBox, contentDescription = "Tăng kích thước") }
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { resizeDropdownExpanded = true },
                                         modifier = Modifier
-                                            .matchParentSize()
-                                            .pointerInput(shrinkedBlocks, editTranslationMode) {
+                                            .size(40.dp)
+                                            .pointerInput(Unit) {
+                                                awaitPointerEventScope {
+                                                    while (true) {
+                                                        val event = awaitPointerEvent()
+                                                        event.changes.forEach { change ->
+                                                            if (change.pressed) {
+                                                                change.consume()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                        contentPadding = PaddingValues(0.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                                    ) {
+                                        Text(
+                                            resizeOptions[resizeMode],
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Clip,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    }
+                                    DropdownMenu(
+                                        expanded = resizeDropdownExpanded,
+                                        onDismissRequest = { resizeDropdownExpanded = false }
+                                    ) {
+                                        resizeOptions.forEachIndexed { index, label ->
+                                            DropdownMenuItem(
+                                                text = { Text(label) },
+                                                onClick = {
+                                                    resizeMode = index
+                                                    resizeDropdownExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                                IconButton(
+                                    onClick = {
+                                        selectedIndex?.let { idx ->
+                                            dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                val old = list[idx]
+                                                val b = old.block
+                                                val bounds = android.graphics.Rect(b.bounds)
+                                                when (resizeMode) {
+                                                    0 -> bounds.inset(10, 10)
+                                                    1 -> {
+                                                        bounds.top += 10
+                                                        bounds.bottom -= 10
+                                                    }
+                                                    2 -> {
+                                                        val shrinkAmount = 10
+                                                        if (bounds.width() > 2 * shrinkAmount) {
+                                                            bounds.left += shrinkAmount
+                                                            bounds.right -= shrinkAmount
+                                                        }
+                                                    }
+                                                }
+                                                list[idx] = old.copy(block = b.copy(bounds = bounds))
+                                            }
+                                        }
+                                    },
+                                    enabled = isBlockSelected,
+                                    modifier = Modifier.pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                event.changes.forEach { change ->
+                                                    if (change.pressed) {
+                                                        change.consume()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) { Icon(Icons.Default.IndeterminateCheckBox, contentDescription = "Giảm kích thước") }
+                                IconButton(
+                                    onClick = {
+                                        selectedIndex?.let { idx ->
+                                            dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                list.removeAt(idx)
+                                            }
+                                            selectedIndex = dragBlocks.indices.minOrNull()?.takeIf { dragBlocks.isNotEmpty() }
+                                        }
+                                    },
+                                    enabled = isBlockSelected,
+                                    modifier = Modifier.pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                event.changes.forEach { change ->
+                                                    if (change.pressed) {
+                                                        change.consume()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) { Icon(Icons.Default.Delete, contentDescription = "Xóa vùng đã chọn", tint = if (isBlockSelected) Color.Red else Color.Gray) }
+                                var showEditBlockDialog by remember { mutableStateOf(false) }
+                                IconButton(
+                                    onClick = {
+                                        if (isBlockSelected) showEditBlockDialog = true
+                                    },
+                                    enabled = isBlockSelected,
+                                    modifier = Modifier.pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                event.changes.forEach { change ->
+                                                    if (change.pressed) {
+                                                        change.consume()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Sửa bản dịch", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                                }
+                                Spacer(Modifier.width(16.dp))
+                                if (showEditBlockDialog && isBlockSelected && selectedIndex != null) {
+                                    val idx = selectedIndex!!
+                                    val block = dragBlocks[idx].block
+                                    val parts = remember(block.text) { block.text.split("\n") }
+                                    var editedParts by remember(block.text) { mutableStateOf(parts.toMutableList()) }
+                                    AlertDialog(
+                                        onDismissRequest = { showEditBlockDialog = false },
+                                        title = { Text("Sửa bản dịch") },
+                                        text = {
+                                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                                editedParts.forEachIndexed { i, part ->
+                                                    OutlinedTextField(
+                                                        value = part,
+                                                        onValueChange = { newText ->
+                                                            editedParts = editedParts.toMutableList().also { it[i] = newText }
+                                                        },
+                                                        label = { Text("Phần ${i + 1}") },
+                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                                                    )
+                                                }
+                                                Spacer(Modifier.height(8.dp))
+                                                Button(
+                                                    onClick = {
+                                                        editedParts = editedParts.toMutableList().also { it.add("") }
+                                                    },
+                                                    modifier = Modifier.align(Alignment.End)
+                                                ) {
+                                                    Icon(Icons.Default.Add, contentDescription = null)
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text("Thêm phần")
+                                                }
+                                            }
+                                        },
+                                        confirmButton = {
+                                            TextButton(onClick = {
+                                                val nonBlankParts = editedParts.map { it.trim() }.filter { it.isNotEmpty() }
+                                                if (nonBlankParts.isNotEmpty()) {
+                                                    dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                        val old = list[idx]
+                                                        val newBlocks = nonBlankParts.map { part ->
+                                                            old.copy(block = old.block.copy(text = part))
+                                                        }
+                                                        list.removeAt(idx)
+                                                        list.addAll(idx, newBlocks)
+                                                    }
+                                                }
+                                                showEditBlockDialog = false
+                                            }) { Text("Lưu") }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showEditBlockDialog = false }) { Text("Hủy") }
+                                        }
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        selectedIndex?.let { idx ->
+                                            dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                val old = list[idx]
+                                                val newFont = (old.fontSize ?: 16f) + 2f
+                                                list[idx] = old.copy(fontSize = newFont)
+                                            }
+                                        }
+                                    },
+                                    enabled = isBlockSelected,
+                                    modifier = Modifier.pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                event.changes.forEach { change ->
+                                                    if (change.pressed) {
+                                                        change.consume()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) { Icon(Icons.Default.TextIncrease, contentDescription = "Tăng cỡ chữ") }
+                                IconButton(
+                                    onClick = {
+                                        selectedIndex?.let { idx ->
+                                            dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                val old = list[idx]
+                                                val newFont = (old.fontSize ?: 16f) - 2f
+                                                list[idx] = old.copy(fontSize = newFont.coerceAtLeast(8f))
+                                            }
+                                        }
+                                    },
+                                    enabled = isBlockSelected,
+                                    modifier = Modifier.pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                event.changes.forEach { change ->
+                                                    if (change.pressed) {
+                                                        change.consume()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) { Icon(Icons.Default.TextDecrease, contentDescription = "Giảm cỡ chữ") }
+                                Spacer(Modifier.width(16.dp))
+                                var isRotatingClockwise by remember { mutableStateOf(false) }
+                                var isRotatingCounterClockwise by remember { mutableStateOf(false) }
+                                val rotationSpeed = 2f
+                                val rotationInterval = 16L
+                                val coroutineScope = rememberCoroutineScope()
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .pointerInput(isBlockSelected) {
+                                            if (isBlockSelected) {
+                                                awaitEachGesture {
+                                                    val down = awaitFirstDown()
+                                                    down.consume()
+                                                    isRotatingClockwise = true
+                                                    val job = coroutineScope.launch {
+                                                        while (isRotatingClockwise) {
+                                                            selectedIndex?.let { idx ->
+                                                                dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                                    val old = list[idx]
+                                                                    val newRot = (old.rotation + rotationSpeed) % 360f
+                                                                    list[idx] = old.copy(rotation = newRot)
+                                                                }
+                                                            }
+                                                            delay(rotationInterval)
+                                                        }
+                                                    }
+                                                    waitForUpOrCancellation()?.consume()
+                                                    isRotatingClockwise = false
+                                                    job.cancel()
+                                                }
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.RotateRight,
+                                        contentDescription = "Xoay theo chiều kim đồng hồ",
+                                        tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                                    )
+                                    if (isBlockSelected) {
+                                        val rot = selectedIndex?.let { idx -> dragBlocks[idx].rotation } ?: 0f
+                                        Text(
+                                            text = "${rot.toInt()}°",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.align(Alignment.BottomCenter)
+                                        )
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .pointerInput(isBlockSelected) {
+                                            if (isBlockSelected) {
+                                                awaitEachGesture {
+                                                    val down = awaitFirstDown()
+                                                    down.consume()
+                                                    isRotatingCounterClockwise = true
+                                                    val job = coroutineScope.launch {
+                                                        while (isRotatingCounterClockwise) {
+                                                            selectedIndex?.let { idx ->
+                                                                dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                                    val old = list[idx]
+                                                                    val newRot = (old.rotation - rotationSpeed) % 360f
+                                                                    list[idx] = old.copy(rotation = newRot)
+                                                                }
+                                                            }
+                                                            delay(rotationInterval)
+                                                        }
+                                                    }
+                                                    waitForUpOrCancellation()?.consume()
+                                                    isRotatingCounterClockwise = false
+                                                    job.cancel()
+                                                }
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.RotateLeft,
+                                        contentDescription = "Xoay ngược chiều kim đồng hồ",
+                                        tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                                    )
+                                    if (isBlockSelected) {
+                                        val rot = selectedIndex?.let { idx -> dragBlocks[idx].rotation } ?: 0f
+                                        Text(
+                                            text = "${rot.toInt()}°",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.align(Alignment.BottomCenter)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        var imageWidth by remember { mutableStateOf(0f) }
+                        var imageHeight by remember { mutableStateOf(0f) }
+                        var originalImageWidth by remember { mutableStateOf(0f) }
+                        var originalImageHeight by remember { mutableStateOf(0f) }
+                        var isImageLoaded by remember { mutableStateOf(false) }
+                        var imageLoadState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
+
+                        LaunchedEffect(uri) {
+                            try {
+                                val (width, height) = getImageDimensions(context, uri)
+                                originalImageWidth = width.toFloat()
+                                originalImageHeight = height.toFloat()
+                                isImageLoaded = true
+                            } catch (e: IOException) {
+                                originalImageWidth = 1280f
+                                originalImageHeight = 1808f
+                                isImageLoaded = true
+                                Log.e("ViewerScreen", "Failed to load image dimensions for $uri", e)
+                            }
+                        }
+
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(uri)
+                                .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                                .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                                .build(),
+                            contentDescription = "Ảnh manga",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { coordinates ->
+                                    imageWidth = coordinates.size.width.toFloat()
+                                    imageHeight = coordinates.size.height.toFloat()
+                                },
+                            contentScale = ContentScale.FillWidth,
+                            onState = { state -> imageLoadState = state }
+                        )
+                        if (uiState.translationEnabled && uiState.translatedTexts.containsKey(uri) && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success) {
+                            val (fullText, translatedBlocks) = uiState.translatedTexts[uri] ?: ("" to emptyList())
+                            if (translatedBlocks.isNotEmpty()) {
+                                Canvas(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .pointerInput(shrinkedBlocks, editTranslationMode) {
+                                            if (editTranslationMode) {
                                                 awaitPointerEventScope {
                                                     while (true) {
                                                         val event = awaitPointerEvent()
@@ -1095,6 +1121,7 @@ fun ViewerScreen(
                                                                     val rect = Rect(scaledLeft, scaledTop, scaledLeft + scaledWidth, scaledTop + scaledBlockHeight2)
                                                                     rect.contains(offset)
                                                                 }
+                                                                dragEvent.consume()
                                                                 if (blockIndex != -1) {
                                                                     selectedIndex = blockIndex
                                                                     draggingIndex = blockIndex
@@ -1105,11 +1132,12 @@ fun ViewerScreen(
                                                             } else {
                                                                 val idx = draggingIndex!!
                                                                 val dragAmount = dragEvent.position - lastDragPos
-                                                                dragBlocks = dragBlocks.toMutableList().also {
-                                                                    val old = it[idx]
-                                                                    it[idx] = old.copy(offset = old.offset + dragAmount)
+                                                                dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                                    val old = list[idx]
+                                                                    list[idx] = old.copy(offset = old.offset + dragAmount)
                                                                 }
                                                                 lastDragPos = dragEvent.position
+                                                                dragEvent.consume()
                                                             }
                                                         } else {
                                                             draggingIndex?.let { idx ->
@@ -1122,12 +1150,13 @@ fun ViewerScreen(
                                                                 val dy = dragBlock.offset.y / scale
                                                                 val newBounds = android.graphics.Rect(block.bounds)
                                                                 newBounds.offset(dx.toInt(), dy.toInt())
-                                                                dragBlocks = dragBlocks.toMutableList().also {
-                                                                    it[idx] = it[idx].copy(
-                                                                        block = it[idx].block.copy(bounds = newBounds),
+                                                                dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                                    list[idx] = list[idx].copy(
+                                                                        block = list[idx].block.copy(bounds = newBounds),
                                                                         offset = Offset.Zero
                                                                     )
                                                                 }
+                                                                dragEvent.consume()
                                                             }
                                                             draggingIndex = null
                                                             lastDragPos = Offset.Zero
@@ -1135,84 +1164,86 @@ fun ViewerScreen(
                                                     }
                                                 }
                                             }
-                                            .drawWithCache {
-                                                data class RegionInfo(
-                                                    val block: TextBlockInfo,
-                                                    val rect: Rect,
-                                                    val fontSize: Float,
-                                                    val rotation: Float
-                                                )
-                                                val regions = dragBlocks.mapIndexedNotNull { i, dragBlock ->
-                                                    val block = dragBlock.block
-                                                    val blockImageWidth = block.originalImageWidth?.toFloat() ?: originalImageWidth
-                                                    val blockImageHeight = block.originalImageHeight?.toFloat() ?: originalImageHeight
-                                                    val scale = if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
-                                                    val scaledBlockHeight = blockImageHeight * scale
-                                                    val offsetY = if (imageHeight > scaledBlockHeight) (imageHeight - scaledBlockHeight) / 2 else 0f
-                                                    val offsetX = 0f
+                                        }
+                                        .drawWithCache {
+                                            data class RegionInfo(
+                                                val block: TextBlockInfo,
+                                                val rect: Rect,
+                                                val fontSize: Float,
+                                                val rotation: Float
+                                            )
+                                            val regions = dragBlocks.mapIndexedNotNull { i, dragBlock ->
+                                                val block = dragBlock.block
+                                                val blockImageWidth = block.originalImageWidth?.toFloat() ?: originalImageWidth
+                                                val blockImageHeight = block.originalImageHeight?.toFloat() ?: originalImageHeight
+                                                val scale = if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
+                                                val scaledBlockHeight = blockImageHeight * scale
+                                                val offsetY = if (imageHeight > scaledBlockHeight) (imageHeight - scaledBlockHeight) / 2 else 0f
+                                                val offsetX = 0f
+                                                if (block.text.isNotBlank()) {
+                                                    val bounds = block.bounds
+                                                    val scaledLeft = (bounds.left * scale) + offsetX + dragBlock.offset.x
+                                                    val scaledTop = (bounds.top * scale) + offsetY + dragBlock.offset.y
+                                                    val scaledWidth = (bounds.width() * scale).toFloat()
+                                                    val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
+                                                    val fontSize = dragBlock.fontSize ?: calculateOptimalFontSize(
+                                                        block.text, scaledWidth, scaledBlockHeight2, 12f
+                                                    )
+                                                    RegionInfo(
+                                                        block = block,
+                                                        rect = Rect(
+                                                            scaledLeft,
+                                                            scaledTop,
+                                                            scaledLeft + scaledWidth,
+                                                            scaledTop + scaledBlockHeight2
+                                                        ),
+                                                        fontSize = fontSize,
+                                                        rotation = dragBlock.rotation
+                                                    )
+                                                } else null
+                                            }
+                                            onDrawBehind {
+                                                regions.forEachIndexed { i, region ->
+                                                    val block = region.block
+                                                    val rect = region.rect
+                                                    val fontSize = region.fontSize
+                                                    val rotation = region.rotation
                                                     if (block.text.isNotBlank()) {
-                                                        val bounds = block.bounds
-                                                        val scaledLeft = (bounds.left * scale) + offsetX + dragBlock.offset.x
-                                                        val scaledTop = (bounds.top * scale) + offsetY + dragBlock.offset.y
-                                                        val scaledWidth = (bounds.width() * scale).toFloat()
-                                                        val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
-                                                        val fontSize = dragBlock.fontSize ?: calculateOptimalFontSize(
-                                                            block.text, scaledWidth, scaledBlockHeight2, 12f
-                                                        )
-                                                        RegionInfo(
-                                                            block = block,
-                                                            rect = Rect(
-                                                                scaledLeft,
-                                                                scaledTop,
-                                                                scaledLeft + scaledWidth,
-                                                                scaledTop + scaledBlockHeight2
-                                                            ),
-                                                            fontSize = fontSize,
-                                                            rotation = dragBlock.rotation
-                                                        )
-                                                    } else null
-                                                }
-                                                onDrawBehind {
-                                                    regions.forEachIndexed { i, region ->
-                                                        val block = region.block
-                                                        val rect = region.rect
-                                                        val fontSize = region.fontSize
-                                                        val rotation = region.rotation
-                                                        if (block.text.isNotBlank()) {
-                                                            withTransform({
-                                                                rotate(rotation, Offset(rect.left + rect.width/2, rect.top + rect.height/2))
-                                                            }) {
-                                                                val isOval = (getWhiteoutShape(i) == 1)
-                                                                if (isOval) {
-                                                                    drawOval(
-                                                                        color = Color.White,
-                                                                        topLeft = Offset(rect.left, rect.top),
-                                                                        size = Size(rect.width, rect.height),
-                                                                        style = Fill
-                                                                    )
-                                                                } else {
-                                                                    drawRect(
-                                                                        color = Color.White,
-                                                                        topLeft = Offset(rect.left, rect.top),
-                                                                        size = Size(rect.width, rect.height),
-                                                                        style = Fill
-                                                                    )
-                                                                }
-                                                                val textPadding = if (isOval) 0.15f else 0f
-                                                                val textLeft = rect.left + rect.width * textPadding
-                                                                val textTop = rect.top + rect.height * textPadding
-                                                                val textWidth = rect.width * (1 - 2 * textPadding)
-                                                                val textHeight = rect.height * (1 - 2 * textPadding)
-                                                                drawText(
-                                                                    text = block.text,
-                                                                    x = textLeft,
-                                                                    y = textTop,
-                                                                    width = textWidth,
-                                                                    height = textHeight,
-                                                                    color = if (i == draggingIndex) Color.Red else Color.Black,
-                                                                    fontSize = fontSize,
-                                                                    isVertical = block.isVertical
+                                                        withTransform({
+                                                            rotate(rotation, Offset(rect.left + rect.width/2, rect.top + rect.height/2))
+                                                        }) {
+                                                            val isOval = (getWhiteoutShape(i) == 1)
+                                                            if (isOval) {
+                                                                drawOval(
+                                                                    color = Color.White,
+                                                                    topLeft = Offset(rect.left, rect.top),
+                                                                    size = Size(rect.width, rect.height),
+                                                                    style = Fill
                                                                 )
+                                                            } else {
+                                                                drawRect(
+                                                                    color = Color.White,
+                                                                    topLeft = Offset(rect.left, rect.top),
+                                                                    size = Size(rect.width, rect.height),
+                                                                    style = Fill
+                                                                )
+                                                            }
+                                                            val textPadding = if (isOval) 0.15f else 0f
+                                                            val textLeft = rect.left + rect.width * textPadding
+                                                            val textTop = rect.top + rect.height * textPadding
+                                                            val textWidth = rect.width * (1 - 2 * textPadding)
+                                                            val textHeight = rect.height * (1 - 2 * textPadding)
+                                                            drawText(
+                                                                text = block.text,
+                                                                x = textLeft,
+                                                                y = textTop,
+                                                                width = textWidth,
+                                                                height = textHeight,
+                                                                color = if (i == draggingIndex) Color.Red else Color.Black,
+                                                                fontSize = fontSize,
+                                                                isVertical = block.isVertical
+                                                            )
+                                                            if (editTranslationMode) {
                                                                 if (isOval) {
                                                                     drawOval(
                                                                         color = if (i == selectedIndex) Color.Red else Color.Blue,
@@ -1233,8 +1264,8 @@ fun ViewerScreen(
                                                     }
                                                 }
                                             }
-                                    ) {}
-                                }
+                                        }
+                                ) {}
                             }
                         }
                     }

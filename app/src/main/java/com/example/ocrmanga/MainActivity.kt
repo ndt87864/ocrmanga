@@ -12,7 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.ocrmanga.ui.screens.api.ApiKeyManagementScreen
 import com.example.ocrmanga.ui.screens.GalleryScreen
-import com.example.ocrmanga.ui.screens.ViewerScreen
+import com.example.ocrmanga.ui.screens.view.ViewerScreen
 import com.example.ocrmanga.ui.theme.OCRMangaTheme
 
 class MainActivity : ComponentActivity() {
