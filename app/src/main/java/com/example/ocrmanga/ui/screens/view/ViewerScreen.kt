@@ -340,18 +340,18 @@ fun ViewerScreen(
                                 }
                             },
                             onClick = {
-                        dragBlocksMap.forEach { (uri, blocks) ->
-                            if (uri is android.net.Uri) {
-                                viewModel.updateTranslatedBlocks(
-                                    uri,
-                                    blocks.map { dragBlock ->
-                                        dragBlock.block.copy(rotation = dragBlock.rotation)
+                                dragBlocksMap.forEach { (uri, blocks) ->
+                                    if (uri is android.net.Uri) {
+                                        viewModel.updateTranslatedBlocks(
+                                            uri,
+                                            blocks.map { dragBlock ->
+                                                dragBlock.block.copy(rotation = dragBlock.rotation)
+                                            }
+                                        )
                                     }
-                                )
-                            }
-                        }
-                        viewModel.saveCurrentRoom()
-                        showMainMenu = false
+                                }
+                                viewModel.saveCurrentRoom()
+                                showMainMenu = false
                             }
                         )
                         DropdownMenuItem(
@@ -867,7 +867,7 @@ fun ViewerScreen(
                                                         }
                                                         2 -> {
                                                             bounds.left += 10
-                                                            bounds.right -= 10
+                                                            bounds.right += 10
                                                         }
                                                     }
                                                     it[idx] = old.copy(block = b.copy(bounds = bounds))
@@ -976,7 +976,8 @@ fun ViewerScreen(
                                         enabled = isBlockSelected
                                     ) { Icon(Icons.Default.TextDecrease, contentDescription = "Giảm cỡ chữ") }
                                     Spacer(Modifier.width(16.dp))
-                                    var isRotating by remember { mutableStateOf(false) }
+                                    var isRotatingClockwise by remember { mutableStateOf(false) }
+                                    var isRotatingCounterClockwise by remember { mutableStateOf(false) }
                                     val rotationSpeed = 2f
                                     val rotationInterval = 16L
                                     val coroutineScope = rememberCoroutineScope()
@@ -987,9 +988,9 @@ fun ViewerScreen(
                                                 if (isBlockSelected) {
                                                     awaitEachGesture {
                                                         val down = awaitFirstDown()
-                                                        isRotating = true
+                                                        isRotatingClockwise = true
                                                         val job = coroutineScope.launch {
-                                                            while (isRotating) {
+                                                            while (isRotatingClockwise) {
                                                                 selectedIndex?.let { idx ->
                                                                     dragBlocks = dragBlocks.toMutableList().also {
                                                                         val old = it[idx]
@@ -1001,7 +1002,7 @@ fun ViewerScreen(
                                                             }
                                                         }
                                                         waitForUpOrCancellation()
-                                                        isRotating = false
+                                                        isRotatingClockwise = false
                                                         job.cancel()
                                                     }
                                                 }
@@ -1010,7 +1011,49 @@ fun ViewerScreen(
                                     ) {
                                         Icon(
                                             Icons.Default.RotateRight,
-                                            contentDescription = "Xoay tự động",
+                                            contentDescription = "Xoay theo chiều kim đồng hồ",
+                                            tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                                        )
+                                        if (isBlockSelected) {
+                                            val rot = selectedIndex?.let { dragBlocks[it].rotation } ?: 0f
+                                            Text(
+                                                text = "${rot.toInt()}°",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.align(Alignment.BottomCenter)
+                                            )
+                                        }
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .pointerInput(isBlockSelected) {
+                                                if (isBlockSelected) {
+                                                    awaitEachGesture {
+                                                        val down = awaitFirstDown()
+                                                        isRotatingCounterClockwise = true
+                                                        val job = coroutineScope.launch {
+                                                            while (isRotatingCounterClockwise) {
+                                                                selectedIndex?.let { idx ->
+                                                                    dragBlocks = dragBlocks.toMutableList().also {
+                                                                        val old = it[idx]
+                                                                        val newRot = (old.rotation - rotationSpeed) % 360f
+                                                                        it[idx] = old.copy(rotation = newRot)
+                                                                    }
+                                                                }
+                                                                delay(rotationInterval)
+                                                            }
+                                                        }
+                                                        waitForUpOrCancellation()
+                                                        isRotatingCounterClockwise = false
+                                                        job.cancel()
+                                                    }
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.RotateLeft,
+                                            contentDescription = "Xoay ngược chiều kim đồng hồ",
                                             tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray
                                         )
                                         if (isBlockSelected) {
