@@ -192,6 +192,18 @@ fun ViewerScreen(
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Edit, null, modifier = Modifier.padding(end = 8.dp))
+                                    Text("Chỉnh sửa bản dịch")
+                                }
+                            },
+                            onClick = {
+                                editTranslationMode = !editTranslationMode
+                                showMainMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Save, null, modifier = Modifier.padding(end = 8.dp))
                                     Text("Lưu bộ ảnh")
                                 }
@@ -272,13 +284,6 @@ fun ViewerScreen(
                             text = { Text("Tắt") },
                             onClick = {
                                 viewModel.setTranslationMode(TranslationMode.OFF)
-                                showTranslationMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Chỉnh sửa bản dịch") },
-                            onClick = {
-                                editTranslationMode = !editTranslationMode
                                 showTranslationMenu = false
                             }
                         )
