@@ -142,7 +142,12 @@ fun ImageViewer(
                         onWhiteoutShapesChange = { newShapes -> whiteoutShapes =
                             newShapes as MutableMap<Int, Int>
                         },
-                        onSelectedIndexChange = { newIndex -> selectedIndex = newIndex }
+                        onSelectedIndexChange = { newIndex -> selectedIndex = newIndex },
+                        onSave = {
+                            // Lưu thay đổi và chuyển về chế độ xem
+                            onSaveTranslation(uri, dragBlocks)
+                            onEditTranslationModeToggle(false)
+                        }
                     )
                 }
                 Box(

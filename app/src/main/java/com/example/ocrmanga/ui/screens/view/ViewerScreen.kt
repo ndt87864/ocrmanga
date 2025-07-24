@@ -71,6 +71,17 @@ fun ViewerScreen(
         }
     }
 
+    // Hiển thị Toast một lần khi bắt đầu dịch, sau đó dùng Text component để theo dõi
+    LaunchedEffect(uiState.currentTranslatingImage) {
+        if (uiState.currentTranslatingImage != null) {
+            Toast.makeText(
+                context, 
+                "Bắt đầu dịch ảnh...", 
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     val pickImagesAtStartLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 1000),
         onResult = { uris ->
@@ -315,6 +326,46 @@ fun ViewerScreen(
             onSpeedChange = { scrollSpeed = it },
             showSpeedSlider = showSpeedSlider
         )
+        
+        // Hiển thị bộ đếm thời gian khi đang dịch
+        if (uiState.translationTimer > 0 && uiState.currentTranslatingImage != null) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Translate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    val minutes = uiState.translationTimer / 60
+                    val seconds = uiState.translationTimer % 60
+                    val timeString = if (minutes > 0) {
+                        "${minutes}m ${seconds}s"
+                    } else {
+                        "${seconds}s"
+                    }
+                    val imageProgress = "${uiState.currentTranslatingImageIndex}/${uiState.imageUris.size}"
+                    Text(
+                        text = "Đang dịch ảnh $imageProgress... ($timeString)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
         
         ImageViewer(
             imageUris = uiState.imageUris,

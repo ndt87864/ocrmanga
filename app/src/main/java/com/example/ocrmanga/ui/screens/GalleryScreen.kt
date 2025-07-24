@@ -87,6 +87,18 @@ fun GalleryScreen(
     // Google Sign-In state
     var googleAccount by remember { mutableStateOf<GoogleSignInAccount?>(null) }
 
+    // Progress tracking for backup/restore
+    var isBackupInProgress by remember { mutableStateOf(false) }
+    var isRestoreInProgress by remember { mutableStateOf(false) }
+    var backupProgress by remember { mutableStateOf(0f) }
+    var restoreProgress by remember { mutableStateOf(0f) }
+
+    // Timer effect for backup progress - no longer needed as we use real progress
+    // LaunchedEffect removed since we now get real progress from backup operation
+
+    // Timer effect for restore progress - no longer needed as we use real progress  
+    // LaunchedEffect removed since we now get real progress from restore operation
+
     // On first launch, check if already signed in
     LaunchedEffect(Unit) {
         val lastAccount = GoogleSignIn.getLastSignedInAccount(context)
@@ -325,14 +337,41 @@ fun GalleryScreen(
                                 modifier = Modifier.align(Alignment.TopEnd)
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("Sao lưu") },
+                                    text = { 
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("Sao lưu")
+                                            if (isBackupInProgress) {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "${(backupProgress * 100).toInt()}%",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                CircularProgressIndicator(
+                                                    progress = backupProgress,
+                                                    modifier = Modifier.size(16.dp),
+                                                    strokeWidth = 2.dp
+                                                )
+                                            }
+                                        }
+                                    },
                                     onClick = {
                                         showDriveMenu = false
-                                        if (googleAccount != null) {
+                                        if (googleAccount != null && !isBackupInProgress) {
+                                            isBackupInProgress = true
+                                            backupProgress = 0f
                                             coroutineScope.launch {
                                                 val backupResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                    com.example.ocrmanga.backup.BackupManager(context, googleAccount!!).backupAppData()
+                                                    com.example.ocrmanga.backup.BackupManager(context, googleAccount!!).backupAppData { progress ->
+                                                        // Cập nhật trực tiếp vì Compose state tự động handle UI thread
+                                                        backupProgress = progress
+                                                    }
                                                 }
+                                                isBackupInProgress = false
+                                                backupProgress = 0f
                                                 if (backupResult) {
                                                     Toast.makeText(context, "Sao lưu thành công lên Google Drive", Toast.LENGTH_LONG).show()
                                                 } else {
@@ -341,21 +380,50 @@ fun GalleryScreen(
                                                 // Cập nhật lại trạng thái backup sau khi sao lưu
                                                 hasBackup = hasBackupOnDrive(context, googleAccount!!)
                                             }
+                                        } else if (isBackupInProgress) {
+                                            Toast.makeText(context, "Đang thực hiện sao lưu, vui lòng đợi...", Toast.LENGTH_SHORT).show()
                                         } else {
                                             Toast.makeText(context, "Bạn cần đăng nhập Google Drive trước", Toast.LENGTH_SHORT).show()
-                                        }
+                        }
                                     }
                                 )
                                 if (hasBackup == true) {
                                     DropdownMenuItem(
-                                        text = { Text("Khôi phục    ") },
+                                        text = { 
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("Khôi phục")
+                                                if (isRestoreInProgress) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = "${(restoreProgress * 100).toInt()}%",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    CircularProgressIndicator(
+                                                        progress = restoreProgress,
+                                                        modifier = Modifier.size(16.dp),
+                                                        strokeWidth = 2.dp
+                                                    )
+                                                }
+                                            }
+                                        },
                                         onClick = {
                                             showDriveMenu = false
-                                            if (googleAccount != null) {
+                                            if (googleAccount != null && !isRestoreInProgress) {
+                                                isRestoreInProgress = true
+                                                restoreProgress = 0f
                                                 coroutineScope.launch {
                                                     val restoreResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                        com.example.ocrmanga.backup.RestoreManager(context, googleAccount!!).restoreAppData()
+                                                        com.example.ocrmanga.backup.RestoreManager(context, googleAccount!!).restoreAppData { progress ->
+                                                            // Cập nhật trực tiếp vì Compose state tự động handle UI thread
+                                                            restoreProgress = progress
+                                                        }
                                                     }
+                                                    isRestoreInProgress = false
+                                                    restoreProgress = 0f
                                                     if (restoreResult) {
                                                         Toast.makeText(context, "Khôi phục dữ liệu thành công!", Toast.LENGTH_LONG).show()
                                                         viewModel.loadSavedRooms() // reload lại dữ liệu phòng
@@ -363,6 +431,8 @@ fun GalleryScreen(
                                                         Toast.makeText(context, "Khôi phục dữ liệu thất bại!", Toast.LENGTH_LONG).show()
                                                     }
                                                 }
+                                            } else if (isRestoreInProgress) {
+                                                Toast.makeText(context, "Đang thực hiện khôi phục, vui lòng đợi...", Toast.LENGTH_SHORT).show()
                                             } else {
                                                 Toast.makeText(context, "Bạn cần đăng nhập Google Drive trước", Toast.LENGTH_SHORT).show()
                                             }

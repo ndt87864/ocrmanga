@@ -20,7 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun AutoScroll(
+fun AutoScrollFixed(
     lazyListState: LazyListState,
     autoScrollEnabled: Boolean,
     scrollSpeed: Float,
@@ -98,7 +98,7 @@ fun AutoScroll(
 }
 
 @Composable 
-fun AutoScrollSpeedSlider(
+fun AutoScrollSpeedSliderFixed(
     scrollSpeed: Float,
     onSpeedChange: (Float) -> Unit,
     showSpeedSlider: Boolean

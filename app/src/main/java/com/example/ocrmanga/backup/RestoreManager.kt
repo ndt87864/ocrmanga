@@ -31,9 +31,10 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
 
     /**
      * Download the latest backup zip from Google Drive and restore app data.
+     * @param onProgress callback to report download progress (0.0 to 1.0)
      * @return true if restore succeeded, false otherwise
      */
-    fun restoreAppData(): Boolean {
+    fun restoreAppData(onProgress: ((Float) -> Unit)? = null): Boolean {
         return try {
             // 1. Tìm file backup mới nhất trên Drive
             val backupFileId = findLatestBackupFileId()
@@ -42,13 +43,44 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                 Toast.makeText(context, "Chưa có dữ liệu sao lưu trên Google Drive!", Toast.LENGTH_LONG).show()
                 return false
             }
+
+            // Get file size for progress tracking
+            val fileMetadata = driveService.files().get(backupFileId).setFields("size").execute()
+            val fileSize = fileMetadata.size?.toLong() ?: 0L
+            
             val localZip = java.io.File(context.cacheDir, "ocrmanga_restore.zip")
-            // 2. Tải file zip về máy
-            java.io.FileOutputStream(localZip.absolutePath).use { outputStream: java.io.OutputStream ->
-                driveService.files().get(backupFileId).executeMediaAndDownloadTo(outputStream)
+            
+            // 2. Tải file zip về máy với progress tracking dựa trên dung lượng thực tế
+            if (fileSize > 0) {
+                var downloadedBytes = 0L
+                val buffer = ByteArray(8192)
+                
+                driveService.files().get(backupFileId).executeMediaAsInputStream().use { inputStream: java.io.InputStream ->
+                    java.io.FileOutputStream(localZip.absolutePath).use { outputStream: java.io.OutputStream ->
+                        var bytesRead: Int
+                        while (inputStream.read(buffer).also { bytes -> bytesRead = bytes } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
+                            downloadedBytes += bytesRead
+                            
+                            // Progress = (bytes tải xuống / tổng dung lượng file) * 100
+                            // Download chiếm 90% của toàn bộ quá trình restore
+                            val downloadProgress = (downloadedBytes.toFloat() / fileSize.toFloat()) * 0.9f
+                            onProgress?.invoke(downloadProgress)
+                        }
+                    }
+                }
+            } else {
+                // Fallback if file size is unknown
+                java.io.FileOutputStream(localZip.absolutePath).use { outputStream: java.io.OutputStream ->
+                    driveService.files().get(backupFileId).executeMediaAndDownloadTo(outputStream)
+                }
+                onProgress?.invoke(0.9f)
             }
-            // 3. Giải nén vào app data
+            
+            // 3. Giải nén vào app data (remaining 10% of progress)
+            onProgress?.invoke(0.95f)
             unzipToAppData(localZip)
+            onProgress?.invoke(1.0f)
             localZip.delete()
             true
         } catch (e: Exception) {

@@ -6,6 +6,7 @@ import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
 import com.google.api.client.http.FileContent
+import com.google.api.client.http.AbstractInputStreamContent
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
@@ -13,6 +14,65 @@ import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File as GDriveFile
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.io.FileInputStream
+import java.io.OutputStream
+
+// Custom FileContent class để theo dõi progress upload
+class ProgressFileContent(
+    type: String,
+    private val file: File,
+    private val onProgress: (Long) -> Unit
+) : AbstractInputStreamContent(type) {
+    
+    override fun getLength(): Long = file.length()
+    
+    override fun retrySupported(): Boolean = true
+    
+    override fun getInputStream(): InputStream {
+        return ProgressInputStream(FileInputStream(file), onProgress)
+    }
+}
+
+// Custom InputStream để theo dõi bytes đã đọc
+class ProgressInputStream(
+    private val inputStream: InputStream,
+    private val onProgress: (Long) -> Unit
+) : InputStream() {
+    
+    private var totalBytesRead = 0L
+    
+    override fun read(): Int {
+        val result = inputStream.read()
+        if (result != -1) {
+            totalBytesRead++
+            onProgress(totalBytesRead)
+        }
+        return result
+    }
+    
+    override fun read(b: ByteArray): Int {
+        val result = inputStream.read(b)
+        if (result > 0) {
+            totalBytesRead += result
+            onProgress(totalBytesRead)
+        }
+        return result
+    }
+    
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        val result = inputStream.read(b, off, len)
+        if (result > 0) {
+            totalBytesRead += result
+            onProgress(totalBytesRead)
+        }
+        return result
+    }
+    
+    override fun close() {
+        inputStream.close()
+    }
+}
 
 class BackupManager(private val context: Context, private val googleAccount: GoogleSignInAccount) {
     private val credential: GoogleAccountCredential = GoogleAccountCredential.usingOAuth2(
@@ -28,9 +88,10 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
 
     /**
      * Backup all app data to Google Drive. This will zip the app's data directory and upload it.
+     * @param onProgress callback to report backup progress (0.0 to 1.0)
      * @return true if backup succeeded, false otherwise
      */
-    fun backupAppData(): Boolean {
+    fun backupAppData(onProgress: ((Float) -> Unit)? = null): Boolean {
         return try {
             val appDataDir: java.io.File = context.filesDir.parentFile!! // /data/data/<package>
             val backupFile = java.io.File(context.cacheDir, "ocrmanga_backup.zip")
@@ -39,7 +100,8 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
             val imagesDir = java.io.File(filesDir, "images")
             // Thư mục external storage
             val externalFilesDir = context.getExternalFilesDir(null)
-            val externalImagesDir = if (externalFilesDir != null) java.io.File(externalFilesDir, "images") else null
+            val externalImagesDir =
+                if (externalFilesDir != null) java.io.File(externalFilesDir, "images") else null
             val safeDirs = mutableListOf<java.io.File>(
                 filesDir,
                 java.io.File(appDataDir, "databases"),
@@ -55,6 +117,7 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
             }
 
             // Xóa các file backup cũ trên Google Drive trước khi upload mới
+            onProgress?.invoke(0.1f)
             try {
                 val oldBackups = driveService.files().list()
                     .setQ("mimeType='application/zip' and name contains 'ocrmanga_backup_'")
@@ -71,18 +134,41 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
                 Log.w("BackupManager", "Failed to list/delete old backups", e)
             }
 
-            if (!zipSafeDirectories(appDataDir, safeDirs, backupFile)) {
+            onProgress?.invoke(0.2f)
+            if (!zipSafeDirectories(appDataDir, safeDirs, backupFile, onProgress)) {
                 Log.e("BackupManager", "Failed to zip safe app data")
                 return false
             }
+
+            // Lấy kích thước file zip để tính progress upload
+            val zipFileSize = backupFile.length()
+            onProgress?.invoke(0.8f)
+
             val gFile = GDriveFile().apply {
                 name = "ocrmanga_backup_${System.currentTimeMillis()}.zip"
                 mimeType = "application/zip"
             }
-            val mediaContent = FileContent("application/zip", backupFile)
-            driveService.files().create(gFile, mediaContent)
-                .setFields("id, name")
-                .execute()
+
+            // Upload với progress tracking dựa trên dung lượng
+            if (zipFileSize > 0) {
+                val mediaContent =
+                    ProgressFileContent("application/zip", backupFile) { uploadedBytes ->
+                        // Upload chiếm 20% cuối của toàn bộ quá trình (từ 80% đến 100%)
+                        val uploadProgress =
+                            0.8f + (uploadedBytes.toFloat() / zipFileSize.toFloat()) * 0.2f
+                        onProgress?.invoke(uploadProgress)
+                    }
+                driveService.files().create(gFile, mediaContent)
+                    .setFields("id, name")
+                    .execute()
+            } else {
+                val mediaContent = FileContent("application/zip", backupFile)
+                driveService.files().create(gFile, mediaContent)
+                    .setFields("id, name")
+                    .execute()
+            }
+
+            onProgress?.invoke(1.0f)
             backupFile.delete()
             true
         } catch (e: Exception) {
@@ -94,17 +180,47 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
     /**
      * Zip only safe directories (files, databases, shared_prefs)
      */
-    private fun zipSafeDirectories(rootDir: File, safeDirs: List<File>, zipFile: File): Boolean {
+    private fun zipSafeDirectories(
+        rootDir: File,
+        safeDirs: List<File>,
+        zipFile: File,
+        onProgress: ((Float) -> Unit)? = null
+    ): Boolean {
         return try {
+            // Đếm tổng số files để có progress chính xác hơn
+            val totalFiles = safeDirs.sumOf { dir ->
+                if (dir.exists()) countFilesRecursively(dir) else 0
+            }
+            var processedFiles = 0
+
             java.util.zip.ZipOutputStream(zipFile.outputStream()).use { zos ->
-                for (dir in safeDirs) {
+                safeDirs.forEach { dir ->
                     if (dir.exists()) {
                         // Nếu là external images, zip với entryName tương đối từ images/
                         val externalFilesDir = context.getExternalFilesDir(null)
-                        if (externalFilesDir != null && dir.absolutePath == java.io.File(externalFilesDir.absolutePath, "images").absolutePath) {
-                            zipFileRecursivelyCustomRoot(dir, dir, zos, "images")
+                        if (externalFilesDir != null && dir.absolutePath == java.io.File(
+                                externalFilesDir.absolutePath,
+                                "images"
+                            ).absolutePath
+                        ) {
+                            processedFiles += zipFileRecursivelyCustomRoot(
+                                dir,
+                                dir,
+                                zos,
+                                "images",
+                                totalFiles,
+                                processedFiles,
+                                onProgress
+                            )
                         } else {
-                            zipFileRecursively(rootDir, dir, zos)
+                            processedFiles += zipFileRecursively(
+                                rootDir,
+                                dir,
+                                zos,
+                                totalFiles,
+                                processedFiles,
+                                onProgress
+                            )
                         }
                     }
                 }
@@ -116,12 +232,40 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
         }
     }
 
+    // Đếm tổng số files trong thư mục
+    private fun countFilesRecursively(dir: File): Int {
+        var count = 0
+        if (dir.isDirectory) {
+            dir.listFiles()?.forEach { child ->
+                if (child.isDirectory) {
+                    count += countFilesRecursively(child)
+                } else {
+                    count++
+                }
+            }
+        } else {
+            count = 1
+        }
+        return count
+    }
+
     // Zip thư mục, entryName luôn bắt đầu từ images/... (tương đối từ customRoot)
-    private fun zipFileRecursivelyCustomRoot(customRoot: File, srcFile: File, zos: java.util.zip.ZipOutputStream, entryRoot: String) {
+    private fun zipFileRecursivelyCustomRoot(
+        customRoot: File,
+        srcFile: File,
+        zos: java.util.zip.ZipOutputStream,
+        entryRoot: String,
+        totalFiles: Int = 0,
+        processedFiles: Int = 0,
+        onProgress: ((Float) -> Unit)? = null
+    ): Int {
+        var filesProcessed = 0
         // Luôn tạo entryName là images/... (không có dấu .., không absolutePath)
-        val relPath = if (srcFile == customRoot) "" else srcFile.relativeTo(customRoot).invariantSeparatorsPath
+        val relPath =
+            if (srcFile == customRoot) "" else srcFile.relativeTo(customRoot).invariantSeparatorsPath
         val entryName = if (relPath.isEmpty()) entryRoot else "$entryRoot/$relPath"
-        if (entryName.contains("..")) return // Bỏ qua entryName không hợp lệ
+        if (entryName.contains("..")) return 0 // Bỏ qua entryName không hợp lệ
+
         if (srcFile.isDirectory) {
             val files = srcFile.listFiles()
             if (files == null || files.isEmpty()) {
@@ -135,7 +279,15 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
                 }
             } else {
                 files.forEach { child ->
-                    zipFileRecursivelyCustomRoot(customRoot, child, zos, entryRoot)
+                    filesProcessed += zipFileRecursivelyCustomRoot(
+                        customRoot,
+                        child,
+                        zos,
+                        entryRoot,
+                        totalFiles,
+                        processedFiles + filesProcessed,
+                        onProgress
+                    )
                 }
             }
         } else {
@@ -144,10 +296,19 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
                 zos.putNextEntry(entry)
                 srcFile.inputStream().use { it.copyTo(zos) }
                 zos.closeEntry()
+                filesProcessed = 1
+
+                // Update progress (zip is from 20% to 80%)
+                if (totalFiles > 0) {
+                    val zipProgress =
+                        0.2f + ((processedFiles + filesProcessed).toFloat() / totalFiles.toFloat()) * 0.6f
+                    onProgress?.invoke(zipProgress.coerceAtMost(0.8f))
+                }
             } catch (e: Exception) {
                 Log.w("BackupManager", "Skip file: ${srcFile.absolutePath} (${e.message})")
             }
         }
+        return filesProcessed
     }
 
     /**
@@ -166,8 +327,17 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
         }
     }
 
-    private fun zipFileRecursively(rootDir: File, srcFile: File, zos: java.util.zip.ZipOutputStream) {
+    private fun zipFileRecursively(
+        rootDir: File,
+        srcFile: File,
+        zos: java.util.zip.ZipOutputStream,
+        totalFiles: Int = 0,
+        processedFiles: Int = 0,
+        onProgress: ((Float) -> Unit)? = null
+    ): Int {
+        var filesProcessed = 0
         val entryName = srcFile.relativeTo(rootDir).path.replace("\\", "/")
+
         if (srcFile.isDirectory) {
             // Đảm bảo thêm entry cho thư mục rỗng
             val files = srcFile.listFiles()
@@ -182,7 +352,14 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
                 }
             } else {
                 files.forEach { child ->
-                    zipFileRecursively(rootDir, child, zos)
+                    filesProcessed += zipFileRecursively(
+                        rootDir,
+                        child,
+                        zos,
+                        totalFiles,
+                        processedFiles + filesProcessed,
+                        onProgress
+                    )
                 }
             }
         } else {
@@ -191,9 +368,18 @@ class BackupManager(private val context: Context, private val googleAccount: Goo
                 zos.putNextEntry(entry)
                 srcFile.inputStream().use { it.copyTo(zos) }
                 zos.closeEntry()
+                filesProcessed = 1
+
+                // Update progress (zip is from 20% to 80%)
+                if (totalFiles > 0) {
+                    val zipProgress =
+                        0.2f + ((processedFiles + filesProcessed).toFloat() / totalFiles.toFloat()) * 0.6f
+                    onProgress?.invoke(zipProgress.coerceAtMost(0.8f))
+                }
             } catch (e: Exception) {
                 Log.w("BackupManager", "Skip file: ${srcFile.absolutePath} (${e.message})")
             }
         }
+        return filesProcessed
     }
 }

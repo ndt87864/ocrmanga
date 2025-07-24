@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.launch
 
 @Composable
 fun TranslationEditor(
@@ -32,7 +33,8 @@ fun TranslationEditor(
     selectedIndex: Int?,
     onDragBlocksChange: (List<DragBlockState>) -> Unit,
     onWhiteoutShapesChange: (MutableMap<Int, Int>) -> Unit,
-    onSelectedIndexChange: (Int?) -> Unit
+    onSelectedIndexChange: (Int?) -> Unit,
+    onSave: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -52,6 +54,20 @@ fun TranslationEditor(
                 .wrapContentWidth(unbounded = true)
                 .padding(horizontal = 8.dp)
         ) {
+            // Save button - chuyển về chế độ view
+            IconButton(
+                onClick = onSave,
+                modifier = Modifier
+            ) {
+                Icon(
+                    Icons.Default.Save,
+                    contentDescription = "Lưu và chuyển về chế độ xem",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            
+            Spacer(Modifier.width(8.dp))
+            
             Box {
                 IconButton(
                     onClick = { showShapeMenu = true },
@@ -281,32 +297,54 @@ fun TranslationEditor(
             var isRotatingClockwise by remember { mutableStateOf(false) }
             var isRotatingCounterClockwise by remember { mutableStateOf(false) }
             val rotationSpeed = 2f
-            val rotationInterval = 16L
-            val coroutineScope = rememberCoroutineScope()
+            val rotationInterval = 5L 
+            LaunchedEffect(isRotatingClockwise, selectedIndex) {
+                println("DEBUG: LaunchedEffect clockwise triggered, isRotating=$isRotatingClockwise, selectedIndex=$selectedIndex")
+                while (isRotatingClockwise && selectedIndex != null && isBlockSelected) {
+                    selectedIndex?.let { idx ->
+                        if (idx < dragBlocks.size) {
+                            println("DEBUG: Rotating clockwise, idx=$idx, current rotation=${dragBlocks[idx].rotation}")
+                            onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                val old = list[idx]
+                                val newRot = (old.rotation + rotationSpeed) % 360f
+                                list[idx] = old.copy(rotation = newRot)
+                            })
+                        }
+                    }
+                    delay(rotationInterval)
+                }
+            }
+
+// Auto rotation effect for counter-clockwise
+            LaunchedEffect(isRotatingCounterClockwise, selectedIndex) {
+                println("DEBUG: LaunchedEffect counter-clockwise triggered, isRotating=$isRotatingCounterClockwise, selectedIndex=$selectedIndex")
+                while (isRotatingCounterClockwise && selectedIndex != null && isBlockSelected) {
+                    selectedIndex?.let { idx ->
+                        if (idx < dragBlocks.size) {
+                            println("DEBUG: Rotating counter-clockwise, idx=$idx, current rotation=${dragBlocks[idx].rotation}")
+                            onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                val old = list[idx]
+                                val newRot = (old.rotation - rotationSpeed) % 360f
+                                list[idx] = old.copy(rotation = newRot)
+                            })
+                        }
+                    }
+                    delay(rotationInterval)
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .pointerInput(isBlockSelected) {
-                        if (isBlockSelected) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown()
-                                down.consume()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            if (isBlockSelected) {
+                                println("DEBUG: Clockwise button pressed")
                                 isRotatingClockwise = true
-                                val job = coroutineScope.launch {
-                                    while (isRotatingClockwise) {
-                                        selectedIndex?.let { idx ->
-                                            onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                                val old = list[idx]
-                                                val newRot = (old.rotation + rotationSpeed) % 360f
-                                                list[idx] = old.copy(rotation = newRot)
-                                            })
-                                        }
-                                        delay(rotationInterval)
-                                    }
-                                }
-                                waitForUpOrCancellation()?.consume()
+                                val up = waitForUpOrCancellation()
                                 isRotatingClockwise = false
-                                job.cancel()
+                                println("DEBUG: Clockwise button released, up=$up")
                             }
                         }
                     },
@@ -326,30 +364,19 @@ fun TranslationEditor(
                     )
                 }
             }
+
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .pointerInput(isBlockSelected) {
-                        if (isBlockSelected) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown()
-                                down.consume()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            if (isBlockSelected) {
+                                println("DEBUG: Counter-clockwise button pressed")
                                 isRotatingCounterClockwise = true
-                                val job = coroutineScope.launch {
-                                    while (isRotatingCounterClockwise) {
-                                        selectedIndex?.let { idx ->
-                                            onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                                val old = list[idx]
-                                                val newRot = (old.rotation - rotationSpeed) % 360f
-                                                list[idx] = old.copy(rotation = newRot)
-                                            })
-                                        }
-                                        delay(rotationInterval)
-                                    }
-                                }
-                                waitForUpOrCancellation()?.consume()
+                                val up = waitForUpOrCancellation()
                                 isRotatingCounterClockwise = false
-                                job.cancel()
+                                println("DEBUG: Counter-clockwise button released, up=$up")
                             }
                         }
                     },

@@ -35,6 +35,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     // Dịch lại 1 ảnh (re-translate single image)
     fun retranslateImage(uri: Uri, mode: TranslationMode) {
         viewModelScope.launch {
+            startTranslationTimer(uri)
             _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
             if (mode != TranslationMode.OFF) {
                 val result = translationRepository.translateImage(uri, mode)
@@ -46,6 +47,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
             }
+            stopTranslationTimer()
         }
     }
 
@@ -82,12 +84,49 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private val newImageUris = mutableListOf<Uri>()
     private val translationQueue = ConcurrentLinkedQueue<Uri>()
     private var translationJob: Job? = null
+    private var timerJob: Job? = null
     companion object {
         const val BATCH_SIZE = 10 // Số ảnh tải mỗi lần
     }
 
     init {
         loadAllRoomIds()
+    }
+
+    // Bắt đầu bộ đếm thời gian dịch
+    private fun startTranslationTimer(uri: Uri) {
+        timerJob?.cancel()
+        val imageIndex = uiState.value.imageUris.indexOf(uri) + 1 // 1-based index
+        _uiState.update { 
+            it.copy(
+                translationTimer = 0,
+                currentTranslatingImage = uri,
+                currentTranslatingImageIndex = imageIndex
+            ) 
+        }
+        timerJob = viewModelScope.launch(Dispatchers.IO) {
+            while (currentCoroutineContext().isActive && uiState.value.currentTranslatingImage == uri) {
+                delay(1000) // Đợi 1 giây
+                _uiState.update { 
+                    it.copy(translationTimer = it.translationTimer + 1) 
+                }
+            }
+        }
+        Log.i(TAG, "Bắt đầu đếm thời gian dịch cho ảnh $imageIndex: $uri")
+    }
+
+    // Dừng và reset bộ đếm thời gian dịch
+    private fun stopTranslationTimer() {
+        timerJob?.cancel()
+        timerJob = null
+        _uiState.update { 
+            it.copy(
+                translationTimer = 0,
+                currentTranslatingImage = null,
+                currentTranslatingImageIndex = 0
+            ) 
+        }
+        Log.i(TAG, "Dừng bộ đếm thời gian dịch")
     }
 
     private fun loadAllRoomIds() {
@@ -509,13 +548,26 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 batch.map { uri ->
                     async(Dispatchers.IO) {
                         try {
+                            // Bắt đầu timer cho ảnh này
+                            startTranslationTimer(uri)
+                            
                             val (original, translatedBlocks, sourceLang) = translationRepository.recognizeAndTranslateText(
                                 uri,
                                 uiState.value.translationMode
                             )
+                            
+                            // Dừng timer sau khi dịch xong
+                            if (uiState.value.currentTranslatingImage == uri) {
+                                stopTranslationTimer()
+                            }
+                            
                             Triple(uri, original, translatedBlocks to sourceLang)
                         } catch (e: Exception) {
                             Log.e(TAG, "Lỗi khi dịch ảnh $uri", e)
+                            // Dừng timer nếu có lỗi
+                            if (uiState.value.currentTranslatingImage == uri) {
+                                stopTranslationTimer()
+                            }
                             Triple(uri, "", Pair(emptyList<TextBlockInfo>(), ""))
                         }
                     }
@@ -566,6 +618,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      * Xóa toàn bộ session, ảnh, trạng thái dịch, trạng thái phòng, v.v. (reset sạch ViewModel)
      */
     fun clearSessionAndImages() {
+        stopTranslationTimer()
         _uiState.update {
             it.copy(
                 imageUris = emptyList(),
@@ -578,7 +631,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 isTranslating = false,
                 translationProgress = 0,
                 totalImagesToTranslate = 0,
-                remainingImages = emptyList()
+                remainingImages = emptyList(),
+                translationTimer = 0,
+                currentTranslatingImage = null,
+                currentTranslatingImageIndex = 0
             )
         }
         newImageUris.clear()
@@ -638,5 +694,8 @@ data class ViewerUiState(
     val translationProgress: Int = 0,
     val totalImagesToTranslate: Int = 0,
     val sourceLanguages: Map<Uri, String> = emptyMap(),
-    val remainingImages: List<Uri> = emptyList()
+    val remainingImages: List<Uri> = emptyList(),
+    val translationTimer: Int = 0, // Bộ đếm thời gian dịch (giây)
+    val currentTranslatingImage: Uri? = null, // Ảnh đang được dịch
+    val currentTranslatingImageIndex: Int = 0 // Số thứ tự ảnh đang được dịch (1-based)
 )
