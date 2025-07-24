@@ -112,11 +112,10 @@ fun ImageViewer(
             LaunchedEffect(dragBlocks) {
                 dragBlocksMap[uri] = dragBlocks
             }
-            var whiteoutShapes by remember(uri, translationVersion) { mutableStateOf(mutableMapOf<Int, Int>()) }
-            fun getWhiteoutShape(idx: Int) = whiteoutShapes[idx] ?: 0
+            var selectedIndex by remember(uri, editTranslationMode) { mutableStateOf<Int?>(null) }
+            fun getWhiteoutShape(idx: Int) = if (idx < dragBlocks.size) dragBlocks[idx].block.shapeType else 0
             var draggingIndex by remember { mutableStateOf<Int?>(null) }
             var lastDragPos by remember { mutableStateOf(Offset.Zero) }
-            var selectedIndex by remember(uri, editTranslationMode) { mutableStateOf<Int?>(null) }
             val shrinkedBlocks = splitNonOverlappingBoxes(dragBlocks.map { it.block })
 
             Column(
@@ -136,12 +135,8 @@ fun ImageViewer(
                 if (editTranslationMode) {
                     TranslationEditor(
                         dragBlocks = dragBlocks,
-                        whiteoutShapes = whiteoutShapes,
                         selectedIndex = selectedIndex,
                         onDragBlocksChange = { newBlocks -> dragBlocks = newBlocks },
-                        onWhiteoutShapesChange = { newShapes -> whiteoutShapes =
-                            newShapes as MutableMap<Int, Int>
-                        },
                         onSelectedIndexChange = { newIndex -> selectedIndex = newIndex },
                         onSave = {
                             // Lưu thay đổi và chuyển về chế độ xem
@@ -311,7 +306,7 @@ fun ImageViewer(
                                                 withTransform({
                                                     rotate(rotation, Offset(rect.left + rect.width/2, rect.top + rect.height/2))
                                                 }) {
-                                                    val isOval = (getWhiteoutShape(i) == 1)
+                                                    val isOval = (block.shapeType == 1)
                                                     if (isOval) {
                                                         drawOval(
                                                             color = Color.White,

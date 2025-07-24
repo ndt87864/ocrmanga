@@ -29,10 +29,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun TranslationEditor(
     dragBlocks: List<DragBlockState>,
-    whiteoutShapes: MutableMap<Int, Int>,
     selectedIndex: Int?,
     onDragBlocksChange: (List<DragBlockState>) -> Unit,
-    onWhiteoutShapesChange: (MutableMap<Int, Int>) -> Unit,
     onSelectedIndexChange: (Int?) -> Unit,
     onSave: () -> Unit
 ) {
@@ -74,7 +72,7 @@ fun TranslationEditor(
                     modifier = Modifier
                 ) {
                     Icon(
-                        imageVector = shapeIcons[selectedIndex?.let { whiteoutShapes[it] ?: 0 } ?: 0],
+                        imageVector = shapeIcons[selectedIndex?.let { dragBlocks[it].block.shapeType } ?: 0],
                         contentDescription = "Chọn hình dạng bôi trắng",
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -91,7 +89,12 @@ fun TranslationEditor(
                             },
                             onClick = {
                                 selectedIndex?.let { idx ->
-                                    onWhiteoutShapesChange(whiteoutShapes.also { it[idx] = index })
+                                    val updatedBlocks = dragBlocks.toMutableList()
+                                    val currentBlock = updatedBlocks[idx]
+                                    updatedBlocks[idx] = currentBlock.copy(
+                                        block = currentBlock.block.copy(shapeType = index)
+                                    )
+                                    onDragBlocksChange(updatedBlocks)
                                 }
                                 showShapeMenu = false
                             }

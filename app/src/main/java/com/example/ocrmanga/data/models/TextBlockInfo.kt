@@ -15,5 +15,6 @@ data class TextBlockInfo(
     val wordCountsPerLine: List<Int>? = null, // New field to store word counts per line
     val originalImageWidth: Int? = null, // Width of the image when OCR was performed
     val originalImageHeight: Int? = null, // Height of the image when OCR was performed
-    val bubbleId: Int? = null // ID của khung thoại (bubble) mà block này thuộc về
+    val bubbleId: Int? = null, // ID của khung thoại (bubble) mà block này thuộc về
+    val shapeType: Int = 0 // 0 = rectangle (default), 1 = oval
 )

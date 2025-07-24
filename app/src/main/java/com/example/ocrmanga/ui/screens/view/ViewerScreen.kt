@@ -213,7 +213,10 @@ fun ViewerScreen(
                                     viewModel.updateTranslatedBlocks(
                                         uri,
                                         blocks.map { dragBlock ->
-                                            dragBlock.block.copy(rotation = dragBlock.rotation)
+                                            dragBlock.block.copy(
+                                                rotation = dragBlock.rotation,
+                                                shapeType = dragBlock.block.shapeType
+                                            )
                                         }
                                     )
                                 }
@@ -380,7 +383,12 @@ fun ViewerScreen(
             dragBlocksMap = dragBlocksMap,
             onEditTranslationModeToggle = { editTranslationMode = it },
             onSaveTranslation = { uri, blocks ->
-                viewModel.updateTranslatedBlocks(uri, blocks.map { it.block.copy(rotation = it.rotation) })
+                viewModel.updateTranslatedBlocks(uri, blocks.map { 
+                    it.block.copy(
+                        rotation = it.rotation,
+                        shapeType = it.block.shapeType
+                    ) 
+                })
             },
             onRetranslateImage = { uri, mode ->
                 viewModel.retranslateImage(uri, mode)

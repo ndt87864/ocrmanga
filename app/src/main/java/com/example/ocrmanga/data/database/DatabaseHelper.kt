@@ -50,25 +50,38 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val db = writableDatabase
             val cursor = db.rawQuery("PRAGMA table_info(translations)", null)
             var hasRotation = false
+            var hasShapeType = false
             while (cursor.moveToNext()) {
                 val columnName = cursor.getString(cursor.getColumnIndexOrThrow("name"))
                 if (columnName == "rotation") {
                     hasRotation = true
-                    break
+                }
+                if (columnName == "shape_type") {
+                    hasShapeType = true
                 }
             }
             cursor.close()
             if (!hasRotation) {
                 db.execSQL("ALTER TABLE translations ADD COLUMN rotation REAL DEFAULT 0")
             }
+            if (!hasShapeType) {
+                db.execSQL("ALTER TABLE translations ADD COLUMN shape_type INTEGER DEFAULT 0")
+                // Cập nhật tất cả dữ liệu cũ có shape_type NULL hoặc chưa có giá trị về 0 (hình chữ nhật)
+                try {
+                    db.execSQL("UPDATE translations SET shape_type = 0 WHERE shape_type IS NULL")
+                    Log.i(TAG, "Đã cập nhật shape_type = 0 cho tất cả dữ liệu cũ")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Không thể cập nhật shape_type cho dữ liệu cũ", e)
+                }
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "Không thể tự động thêm cột rotation vào bảng translations", e)
+            Log.w(TAG, "Không thể tự động thêm cột vào bảng translations", e)
         }
     }
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-        private const val DATABASE_VERSION = 4
+        private const val DATABASE_VERSION = 5
         private const val TAG = "DatabaseHelper"
 
         // Manga Rooms table
@@ -128,6 +141,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 rotation REAL DEFAULT 0,
                 original_image_width INTEGER, -- New column
                 original_image_height INTEGER, -- New column
+                shape_type INTEGER DEFAULT 0, -- New column: 0 = rectangle, 1 = oval
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
@@ -188,6 +202,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 db.execSQL("ALTER TABLE $TABLE_API_KEYS ADD COLUMN $COLUMN_API_KEY_TYPE TEXT NOT NULL DEFAULT 'default'")
             } catch (e: Exception) {
                 // Có thể cột đã tồn tại
+            }
+            
+            // Thêm cột shape_type cho bảng translations
+            try {
+                db.execSQL("ALTER TABLE translations ADD COLUMN shape_type INTEGER DEFAULT 0")
+                // Cập nhật tất cả dữ liệu cũ có shape_type NULL về 0 (hình chữ nhật)
+                db.execSQL("UPDATE translations SET shape_type = 0 WHERE shape_type IS NULL")
+                Log.i(TAG, "Đã thêm cột shape_type và cập nhật dữ liệu cũ = 0")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm cột shape_type vào bảng translations", e)
             }
         }
     }
@@ -275,6 +299,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("rotation", textBlock.rotation ?: 0f)
                                 put("original_image_width", savedWidth)
                                 put("original_image_height", savedHeight)
+                                put("shape_type", textBlock.shapeType)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -395,6 +420,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("rotation", textBlock.rotation ?: 0f)
                                     put("original_image_width", savedWidth)
                                     put("original_image_height", savedHeight)
+                                    put("shape_type", textBlock.shapeType)
                                 }
                                 db.insert("translations", null, textValues)
                             }
@@ -441,9 +467,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("bounds_right", scaledRect.right)
                                     put("bounds_bottom", scaledRect.bottom)
                                     put("font_size", textBlock.fontSize)
-                                   put("rotation", textBlock.rotation ?: 0f)
+                                    put("rotation", textBlock.rotation ?: 0f)
                                     put("original_image_width", savedWidth)
                                     put("original_image_height", savedHeight)
+                                    put("shape_type", textBlock.shapeType)
                                 }
                                 db.insert("translations", null, textValues)
                             }
@@ -571,7 +598,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             orders.add(order)
 
             val textCursor = db.rawQuery("""
-                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height
+                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type
                 FROM translations 
                 WHERE $COLUMN_IMAGE_ID = ?
             """, arrayOf(imageId.toString()))
@@ -591,7 +618,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val rotation = if (textCursor.columnCount > 7) textCursor.getFloat(7) else 0f
                 val originalImageWidth = if (textCursor.columnCount > 8) textCursor.getInt(8) else null
                 val originalImageHeight = if (textCursor.columnCount > 9) textCursor.getInt(9) else null
-                textBlocks.add(TextBlockInfo(translatedText, bounds, fontSize, rotation = rotation, originalImageWidth = originalImageWidth, originalImageHeight = originalImageHeight))
+                val shapeType = if (textCursor.columnCount > 10) textCursor.getInt(10) else 0
+                textBlocks.add(TextBlockInfo(translatedText, bounds, fontSize, rotation = rotation, originalImageWidth = originalImageWidth, originalImageHeight = originalImageHeight, shapeType = shapeType))
             }
             textCursor.close()
             if (textBlocks.isNotEmpty()) {
