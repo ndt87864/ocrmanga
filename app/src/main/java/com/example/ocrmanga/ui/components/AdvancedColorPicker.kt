@@ -206,7 +206,7 @@ private fun ColorWheel(
         modifier = modifier
             .clip(CircleShape)
             .pointerInput(Unit) {
-                detectDragGestures { change ->
+                detectDragGestures { change,_ ->
                     val center = Offset(size.width / 2f, size.height / 2f)
                     val radius = minOf(size.width, size.height) / 2f
                     val offset = change.position - center
