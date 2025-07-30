@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -328,5 +329,3 @@ private fun Color.isSimilarTo(other: Color, threshold: Float = 0.1f): Boolean {
     return rDiff < threshold && gDiff < threshold && bDiff < threshold && aDiff < threshold
 }
 
-// Import for gesture detection
-import androidx.compose.foundation.gestures.detectDragGestures
