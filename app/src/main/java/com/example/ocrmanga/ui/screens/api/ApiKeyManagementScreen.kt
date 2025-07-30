@@ -163,7 +163,7 @@ fun ApiKeyManagementScreen(
                                 ),
                             elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
                             shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F5F1))
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                         ) {
                             Column(
                                 modifier = Modifier
@@ -173,14 +173,14 @@ fun ApiKeyManagementScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color(0xFFEDE7DF), RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
                                         .padding(horizontal = 16.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         text = "${index + 1}",
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = Color(0xFF2D2D2D),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.weight(1f)
                                     )
                                     // Nút edit
@@ -188,7 +188,7 @@ fun ApiKeyManagementScreen(
                                         modifier = Modifier
                                             .size(28.dp)
                                             .background(
-                                                color = Color(0xFFF3ECE3),
+                                                color = MaterialTheme.colorScheme.surface,
                                                 shape = RoundedCornerShape(6.dp)
                                             )
                                             .clickable {
@@ -213,7 +213,7 @@ fun ApiKeyManagementScreen(
                                         modifier = Modifier
                                             .size(28.dp)
                                             .background(
-                                                color = Color(0xFFF3ECE3),
+                                                color = MaterialTheme.colorScheme.surface,
                                                 shape = RoundedCornerShape(6.dp)
                                             )
                                             .clickable {
@@ -241,7 +241,7 @@ fun ApiKeyManagementScreen(
                                             modifier = Modifier
                                                 .size(24.dp)
                                                 .background(
-                                                    color = Color(0xFFF3ECE3),
+                                                    color = MaterialTheme.colorScheme.surface,
                                                     shape = RoundedCornerShape(6.dp)
                                                 )
                                                 .clickable {
@@ -254,7 +254,7 @@ fun ApiKeyManagementScreen(
                                                 Icon(
                                                     imageVector = Icons.Default.Check,
                                                     contentDescription = "Đã chọn",
-                                                    tint = Color(0xFF2D2D2D),
+                                                    tint = MaterialTheme.colorScheme.onSurface,
                                                     modifier = Modifier.size(14.dp)
                                                 )
                                             }
@@ -263,11 +263,13 @@ fun ApiKeyManagementScreen(
                                     }
                                     Text(
                                         "Key: ${apiKey.key}",
-                                        style = MaterialTheme.typography.bodyMedium
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
                                         "Loại: ${if (apiKey.type == "gemini") "Gemini" else if (apiKey.type == "mistral") "Mistral" else apiKey.type}",
-                                        style = MaterialTheme.typography.bodySmall
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -275,7 +277,8 @@ fun ApiKeyManagementScreen(
                                     ) {
                                         Text(
                                             text = "Trạng thái:",
-                                            style = MaterialTheme.typography.bodySmall
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
                                             text = if (apiKey.isActive) "Hoạt động" else "Tắt",
@@ -299,11 +302,13 @@ fun ApiKeyManagementScreen(
                                     ) {
                                         Text(
                                             "Ngày thêm: ${apiKey.createdDate}",
-                                            style = MaterialTheme.typography.bodySmall
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
                                             "Ngày cập nhật: ${apiKey.updatedDate}",
-                                            style = MaterialTheme.typography.bodySmall
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
                                 }
