@@ -49,6 +49,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 // ...existing code...
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
+import com.example.ocrmanga.ui.components.*
 import kotlinx.coroutines.launch
 
 // Google Drive API imports
@@ -632,40 +633,20 @@ fun GalleryScreen(
                     }
                 }
                 // Nút settings
-                IconButton(
+                ModernIconButton(
                     onClick = { onNavigateToApiKeyManagement() },
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = MaterialTheme.shapes.medium
-                        )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Quản lý API Key",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
+                    icon = Icons.Default.Settings,
+                    contentDescription = "Quản lý API Key",
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 // Nút theme settings
-                IconButton(
+                ModernIconButton(
                     onClick = { onNavigateToThemeSettings() },
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.secondary,
-                            shape = MaterialTheme.shapes.medium
-                        )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Palette,
-                        contentDescription = "Cài đặt giao diện",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
+                    icon = Icons.Default.Palette,
+                    contentDescription = "Cài đặt giao diện",
+                    containerColor = MaterialTheme.colorScheme.secondary
+                )
             }
         }
 
