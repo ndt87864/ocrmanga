@@ -10,31 +10,24 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+// Legacy color schemes for compatibility
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = MaterialColors.Purple80,
+    secondary = MaterialColors.PurpleGrey80,
+    tertiary = MaterialColors.Pink80
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    primary = MaterialColors.Purple40,
+    secondary = MaterialColors.PurpleGrey40,
+    tertiary = MaterialColors.Pink40
 )
 
 @Composable
@@ -44,24 +37,66 @@ fun OCRMangaTheme(
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
+    val themePreferences = ThemePreferences(context)
+    
+    // Collect theme preferences
+    val themeVariant by themePreferences.themeVariant.collectAsState(initial = ThemeVariant.DEFAULT_PURPLE)
+    val isDarkModePreferred by themePreferences.isDarkMode.collectAsState(initial = false)
+    val isDynamicColorEnabled by themePreferences.isDynamicColorEnabled.collectAsState(initial = true)
+    val customPrimaryColor by themePreferences.customPrimaryColor.collectAsState(initial = null)
+    val useCustomColor by themePreferences.useCustomColor.collectAsState(initial = false)
+    
+    // Determine actual dark theme based on preference or system
+    val actualDarkTheme = isDarkModePreferred ?: darkTheme
+    
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        // Use dynamic colors if enabled and available (Android 12+)
+        isDynamicColorEnabled && dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            if (actualDarkTheme) {
+                dynamicDarkColorScheme(context)
+            } else {
+                dynamicLightColorScheme(context)
+            }
         }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+        
+        // Use custom color if enabled and available
+        useCustomColor && customPrimaryColor != null -> {
+            val baseScheme = ThemeColorSchemes.getColorScheme(themeVariant, actualDarkTheme)
+            customPrimaryColor.toColor()?.let { customColor ->
+                ThemeColorSchemes.createCustomColorScheme(baseScheme, customColor)
+            } ?: baseScheme
+        }
+        
+        // Use theme variant
+        else -> ThemeColorSchemes.getColorScheme(themeVariant, actualDarkTheme)
     }
+    
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = darkTheme
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !actualDarkTheme
         }
     }
 
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = Typography,
+        content = content
+    )
+}
+
+// Simple theme variant for testing without preferences
+@Composable
+fun OCRMangaThemePreview(
+    themeVariant: ThemeVariant = ThemeVariant.DEFAULT_PURPLE,
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) {
+    val colorScheme = ThemeColorSchemes.getColorScheme(themeVariant, darkTheme)
+    
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,

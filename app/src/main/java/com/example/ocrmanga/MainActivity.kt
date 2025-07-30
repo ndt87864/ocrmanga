@@ -14,6 +14,7 @@ import com.example.ocrmanga.ui.screens.api.ApiKeyManagementScreen
 import com.example.ocrmanga.ui.screens.GalleryScreen
 import com.example.ocrmanga.ui.screens.view.ViewerScreen
 import com.example.ocrmanga.ui.theme.OCRMangaTheme
+import com.example.ocrmanga.ui.screens.settings.ThemeSettingsScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +41,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNavigateToApiKeyManagement = {
                                     navController.navigate("apiKeyManagement")
+                                },
+                                onNavigateToThemeSettings = {
+                                    navController.navigate("themeSettings")
                                 }
                             )
                         }
@@ -54,6 +58,11 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("apiKeyManagement") {
                             ApiKeyManagementScreen()
+                        }
+                        composable("themeSettings") {
+                            ThemeSettingsScreen(
+                                onNavigateBack = { navController.popBackStack() }
+                            )
                         }
                     }
                 }

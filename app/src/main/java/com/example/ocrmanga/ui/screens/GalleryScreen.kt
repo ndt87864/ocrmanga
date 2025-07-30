@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Palette
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -69,6 +70,7 @@ fun GalleryScreen(
     onNavigateToViewer: (List<String>) -> Unit,
     onNavigateToRoom: (Long) -> Unit,
     onNavigateToApiKeyManagement: () -> Unit,
+    onNavigateToThemeSettings: () -> Unit,
     viewModel: GalleryViewModel = viewModel()
 ) {
     // Khi quay lại gallery, luôn xóa dữ liệu session (selectedImages)
@@ -642,6 +644,24 @@ fun GalleryScreen(
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "Quản lý API Key",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                // Nút theme settings
+                IconButton(
+                    onClick = { onNavigateToThemeSettings() },
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.secondary,
+                            shape = MaterialTheme.shapes.medium
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Palette,
+                        contentDescription = "Cài đặt giao diện",
                         tint = Color.White,
                         modifier = Modifier.size(32.dp)
                     )
