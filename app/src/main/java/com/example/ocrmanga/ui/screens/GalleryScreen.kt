@@ -427,6 +427,8 @@ fun GalleryScreen(
                                                     if (restoreResult) {
                                                         Toast.makeText(context, "Khôi phục dữ liệu thành công!", Toast.LENGTH_LONG).show()
                                                         viewModel.loadSavedRooms() // reload lại dữ liệu phòng
+                                                        // Debug database để kiểm tra dữ liệu
+                                                        viewModel.debugDatabase()
                                                     } else {
                                                         Toast.makeText(context, "Khôi phục dữ liệu thất bại!", Toast.LENGTH_LONG).show()
                                                     }

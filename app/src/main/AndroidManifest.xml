@@ -4,12 +4,16 @@
     <!-- Quyền Internet để tải ảnh từ web -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"
         tools:ignore="ScopedStorage" />
     <!-- Quyền đọc bộ nhớ ngoài để chọn ảnh từ thư viện -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <!-- Quyền đọc media cho Android 13+ -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Quyền truy cập storage cho Android 9 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -19,6 +23,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"        
         android:supportsRtl="true"
         android:theme="@style/Theme.OCRManga"
+        android:requestLegacyExternalStorage="true"
         tools:targetApi="31">
         <activity
             android:name=".MainActivity"
