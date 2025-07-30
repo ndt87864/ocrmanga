@@ -48,7 +48,7 @@ fun OCRMangaTheme(
     val useCustomColor by themePreferences.useCustomColor.collectAsState(initial = false)
     
     // Determine actual dark theme based on preference or system
-    val actualDarkTheme = isDarkModePreferred ?: darkTheme
+    val actualDarkTheme = isDarkModePreferred
     
     val colorScheme = when {
         // Use dynamic colors if enabled and available (Android 12+)
