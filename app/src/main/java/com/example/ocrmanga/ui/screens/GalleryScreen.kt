@@ -632,21 +632,61 @@ fun GalleryScreen(
                         )
                     }
                 }
-                // Nút settings
-                ModernIconButton(
-                    onClick = { onNavigateToApiKeyManagement() },
-                    icon = Icons.Default.Settings,
-                    contentDescription = "Quản lý API Key",
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                // Nút theme settings
-                ModernIconButton(
-                    onClick = { onNavigateToThemeSettings() },
-                    icon = Icons.Default.Palette,
-                    contentDescription = "Cài đặt giao diện",
-                    containerColor = MaterialTheme.colorScheme.secondary
-                )
+                // Combined settings button with dropdown menu
+                Box {
+                    var showSettingsMenu by remember { mutableStateOf(false) }
+                    
+                    ModernIconButton(
+                        onClick = { showSettingsMenu = true },
+                        icon = Icons.Default.Settings,
+                        contentDescription = "Cài đặt",
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    DropdownMenu(
+                        expanded = showSettingsMenu,
+                        onDismissRequest = { showSettingsMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { 
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Palette,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text("Cài đặt giao diện")
+                                }
+                            },
+                            onClick = {
+                                onNavigateToThemeSettings()
+                                showSettingsMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { 
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Settings,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text("Quản lý API Key")
+                                }
+                            },
+                            onClick = {
+                                onNavigateToApiKeyManagement()
+                                showSettingsMenu = false
+                            }
+                        )
+                    }
+                }
             }
         }
 
