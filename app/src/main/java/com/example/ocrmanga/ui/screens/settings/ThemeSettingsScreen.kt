@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ocrmanga.ui.theme.*
 import com.example.ocrmanga.ui.components.*
+import com.example.ocrmanga.ui.components.AdvancedColorPicker
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -161,7 +162,7 @@ fun ThemeSettingsScreen(
                     
                     if (themeState.useCustomColor) {
                         Spacer(modifier = Modifier.height(16.dp))
-                        CustomColorPicker(
+                        AdvancedColorPicker(
                             selectedColor = themeState.customPrimaryColor?.toColor(),
                             onColorSelected = { color ->
                                 scope.launch {
@@ -271,61 +272,7 @@ private fun ThemeVariantItem(
     }
 }
 
-@Composable
-private fun CustomColorPicker(
-    selectedColor: Color?,
-    onColorSelected: (Color?) -> Unit
-) {
-    val customColors = listOf(
-        Color(0xFFE91E63), // Pink
-        Color(0xFF9C27B0), // Purple
-        Color(0xFF673AB7), // Deep Purple
-        Color(0xFF3F51B5), // Indigo
-        Color(0xFF2196F3), // Blue
-        Color(0xFF03A9F4), // Light Blue
-        Color(0xFF00BCD4), // Cyan
-        Color(0xFF009688), // Teal
-        Color(0xFF4CAF50), // Green
-        Color(0xFF8BC34A), // Light Green
-        Color(0xFFCDDC39), // Lime
-        Color(0xFFFFEB3B), // Yellow
-        Color(0xFFFFC107), // Amber
-        Color(0xFFFF9800), // Orange
-        Color(0xFFFF5722), // Deep Orange
-        Color(0xFF795548), // Brown
-    )
-    
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(customColors) { color ->
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(color)
-                    .clickable { onColorSelected(color) }
-                    .then(
-                        if (selectedColor == color) {
-                            Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                        } else {
-                            Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (selectedColor == color) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-    }
-}
+
 
 @Composable
 private fun ThemePreviewCard() {
