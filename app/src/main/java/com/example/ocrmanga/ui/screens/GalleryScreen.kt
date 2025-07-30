@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -218,6 +219,33 @@ fun GalleryScreen(
                     Toast.LENGTH_SHORT
                 ).show()
                 onNavigateToViewer(sortedUris.map { it.toString() })
+            }
+        }
+    )
+    
+    // Launcher để chọn file PDF
+    val pdfFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri ->
+            uri?.let { pdfUri ->
+                Toast.makeText(context, "Đang xử lý file PDF...", Toast.LENGTH_SHORT).show()
+                viewModel.processPdfFile(pdfUri) { imageUris ->
+                    if (!imageUris.isNullOrEmpty()) {
+                        viewModel.updateSelectedImages(imageUris)
+                        Toast.makeText(
+                            context,
+                            "Đã trích xuất ${imageUris.size} trang từ PDF",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        onNavigateToViewer(imageUris.map { it.toString() })
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "Không thể xử lý file PDF",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
             }
         }
     )
@@ -556,22 +584,62 @@ fun GalleryScreen(
                                             maxLines = 1,
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                         )
-                                        Box(
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .background(
-                                                    color = Color(0xFFF3ECE3), // màu nhạt hơn màu bottom card
-                                                    shape = RoundedCornerShape(6.dp)
-                                                )
-                                                .clickable { showDeleteDialog = roomId },
-                                            contentAlignment = Alignment.Center
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = "Xóa phòng",
-                                                tint = Color.Red,
-                                                modifier = Modifier.size(10.dp)
-                                            )
+                                            // PDF Export button
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .background(
+                                                        color = Color(0xFFF3ECE3),
+                                                        shape = RoundedCornerShape(6.dp)
+                                                    )
+                                                    .clickable { 
+                                                        viewModel.exportRoomToPdf(roomId) { pdfFile ->
+                                                            if (pdfFile != null) {
+                                                                Toast.makeText(
+                                                                    context,
+                                                                    "PDF đã xuất: ${pdfFile.name}",
+                                                                    Toast.LENGTH_LONG
+                                                                ).show()
+                                                            } else {
+                                                                Toast.makeText(
+                                                                    context,
+                                                                    "Lỗi khi xuất PDF",
+                                                                    Toast.LENGTH_SHORT
+                                                                ).show()
+                                                            }
+                                                        }
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "PDF",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color(0xFF2D2D2D),
+                                                    fontSize = 8.sp
+                                                )
+                                            }
+                                            // Delete button
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .background(
+                                                        color = Color(0xFFF3ECE3),
+                                                        shape = RoundedCornerShape(6.dp)
+                                                    )
+                                                    .clickable { showDeleteDialog = roomId },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "Xóa phòng",
+                                                    tint = Color.Red,
+                                                    modifier = Modifier.size(10.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -627,6 +695,13 @@ fun GalleryScreen(
                             text = { Text("Chọn ảnh từ file") },
                             onClick = {
                                 multipleFilePickerLauncher.launch(arrayOf("image/*"))
+                                showCreateMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Chọn file PDF") },
+                            onClick = {
+                                pdfFilePickerLauncher.launch("application/pdf")
                                 showCreateMenu = false
                             }
                         )

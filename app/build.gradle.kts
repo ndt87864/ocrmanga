@@ -123,4 +123,8 @@ dependencies {
     implementation("com.google.apis:google-api-services-drive:v3-rev20230815-2.0.0")
     implementation("com.google.http-client:google-http-client-gson:1.43.3")
 
+    // PDF handling libraries
+    implementation("com.itextpdf:itext7-core:7.2.5")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
 }

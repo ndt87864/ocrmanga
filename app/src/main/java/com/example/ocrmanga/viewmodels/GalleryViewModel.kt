@@ -6,11 +6,13 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ocrmanga.data.database.DatabaseHelper
+import com.example.ocrmanga.utils.PdfUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 class GalleryViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -122,6 +124,86 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 
             } catch (e: Exception) {
                 Log.e("GalleryViewModel", "Error in database debug", e)
+            }
+        }
+    }
+
+    // Xuất phòng thành PDF
+    fun exportRoomToPdf(roomId: Long, onResult: (File?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val context = getApplication<Application>()
+                
+                // Lấy dữ liệu phòng
+                val (imageUris, _, translations) = databaseHelper.getMangaRoom(roomId)
+                val room = databaseHelper.getAllRooms().find { it.first == roomId }
+                val roomTitle = room?.second ?: "Room_$roomId"
+                
+                if (imageUris.isEmpty()) {
+                    Log.w("GalleryViewModel", "No images found in room $roomId")
+                    onResult(null)
+                    return@launch
+                }
+                
+                // Tạo thư mục PDF trong Documents
+                val documentsDir = File(context.getExternalFilesDir(null), "PDFs")
+                if (!documentsDir.exists()) {
+                    documentsDir.mkdirs()
+                }
+                
+                Log.d("GalleryViewModel", "Exporting room $roomId with ${imageUris.size} images to PDF")
+                
+                // Xuất PDF
+                val pdfFile = PdfUtils.exportRoomToPdf(
+                    context,
+                    roomTitle,
+                    imageUris,
+                    translations,
+                    documentsDir
+                )
+                
+                onResult(pdfFile)
+                Log.d("GalleryViewModel", "PDF export completed: ${pdfFile?.absolutePath}")
+                
+            } catch (e: Exception) {
+                Log.e("GalleryViewModel", "Error exporting room to PDF", e)
+                onResult(null)
+            }
+        }
+    }
+
+    // Xử lý file PDF được chọn
+    fun processPdfFile(pdfUri: Uri, onResult: (List<Uri>?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val context = getApplication<Application>()
+                
+                Log.d("GalleryViewModel", "Processing PDF file: $pdfUri")
+                
+                // Trích xuất trang từ PDF
+                val bitmaps = PdfUtils.extractPagesFromPdf(context, pdfUri)
+                if (bitmaps.isNullOrEmpty()) {
+                    Log.w("GalleryViewModel", "No pages extracted from PDF")
+                    onResult(null)
+                    return@launch
+                }
+                
+                // Tạo thư mục tạm cho ảnh PDF
+                val tempDir = File(context.getExternalFilesDir(null), "temp_pdf_${System.currentTimeMillis()}")
+                tempDir.mkdirs()
+                
+                // Lưu các trang thành ảnh
+                val imageUris = PdfUtils.saveBitmapsAsImages(context, bitmaps, tempDir)
+                
+                // Dọn dẹp bitmaps
+                bitmaps.forEach { it.recycle() }
+                
+                Log.d("GalleryViewModel", "PDF processed: ${imageUris.size} pages converted to images")
+                onResult(imageUris)
+                
+            } catch (e: Exception) {
+                Log.e("GalleryViewModel", "Error processing PDF file", e)
+                onResult(null)
             }
         }
     }
