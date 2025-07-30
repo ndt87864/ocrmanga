@@ -248,17 +248,144 @@ object ThemeColorSchemes {
         baseScheme: ColorScheme,
         customPrimaryColor: Color
     ): ColorScheme {
+        val isDark = isColorSchemeDark(baseScheme)
+        val adjustedColor = enforceColorConstraint(customPrimaryColor, isDark)
+        
         return baseScheme.copy(
-            primary = customPrimaryColor,
-            primaryContainer = customPrimaryColor.copy(alpha = 0.3f),
-            inversePrimary = if (baseScheme == DarkPurple || baseScheme == DarkBlue || 
-                               baseScheme == DarkGreen || baseScheme == DarkOrange || 
-                               baseScheme == DarkRed) {
-                customPrimaryColor.copy(alpha = 0.8f)
+            primary = adjustedColor,
+            primaryContainer = adjustedColor.copy(alpha = 0.3f),
+            inversePrimary = if (isDark) {
+                adjustedColor.copy(alpha = 0.8f)
             } else {
-                customPrimaryColor
+                adjustedColor
             }
         )
+    }
+    
+    /**
+     * Enforces the 100-unit constraint between light and dark mode colors
+     * Colors in light/dark mode should only differ by 100 units in luminance
+     */
+    private fun enforceColorConstraint(color: Color, isDarkMode: Boolean): Color {
+        val luminance = getColorLuminance(color)
+        
+        // Target luminance ranges to ensure 100-unit difference
+        val targetLuminance = if (isDarkMode) {
+            // Dark mode: prefer darker colors (luminance 0.1 to 0.4)
+            luminance.coerceIn(0.1f, 0.4f)
+        } else {
+            // Light mode: prefer lighter colors (luminance 0.6 to 0.9)
+            luminance.coerceIn(0.6f, 0.9f)
+        }
+        
+        // Adjust color to target luminance while preserving hue and saturation
+        return adjustColorLuminance(color, targetLuminance)
+    }
+    
+    /**
+     * Calculate relative luminance of a color
+     */
+    private fun getColorLuminance(color: Color): Float {
+        // Convert to linear RGB
+        val r = if (color.red <= 0.03928f) color.red / 12.92f else kotlin.math.pow((color.red + 0.055f) / 1.055f, 2.4f).toFloat()
+        val g = if (color.green <= 0.03928f) color.green / 12.92f else kotlin.math.pow((color.green + 0.055f) / 1.055f, 2.4f).toFloat()
+        val b = if (color.blue <= 0.03928f) color.blue / 12.92f else kotlin.math.pow((color.blue + 0.055f) / 1.055f, 2.4f).toFloat()
+        
+        // Calculate relative luminance
+        return 0.2126f * r + 0.7152f * g + 0.0722f * b
+    }
+    
+    /**
+     * Adjust color luminance while preserving hue and saturation
+     */
+    private fun adjustColorLuminance(color: Color, targetLuminance: Float): Color {
+        // Convert to HSL
+        val hsl = rgbToHsl(color.red, color.green, color.blue)
+        
+        // Binary search for lightness value that achieves target luminance
+        var minL = 0f
+        var maxL = 1f
+        var currentL = hsl[2]
+        
+        repeat(20) { // 20 iterations should be sufficient for convergence
+            val testColor = hslToRgb(hsl[0], hsl[1], currentL)
+            val testLuminance = getColorLuminance(Color(testColor[0], testColor[1], testColor[2], color.alpha))
+            
+            if (kotlin.math.abs(testLuminance - targetLuminance) < 0.01f) {
+                // Close enough
+                return@repeat
+            }
+            
+            if (testLuminance < targetLuminance) {
+                minL = currentL
+                currentL = (currentL + maxL) / 2f
+            } else {
+                maxL = currentL
+                currentL = (minL + currentL) / 2f
+            }
+        }
+        
+        val finalRgb = hslToRgb(hsl[0], hsl[1], currentL)
+        return Color(finalRgb[0], finalRgb[1], finalRgb[2], color.alpha)
+    }
+    
+    /**
+     * Convert RGB to HSL
+     */
+    private fun rgbToHsl(r: Float, g: Float, b: Float): FloatArray {
+        val max = maxOf(r, g, b)
+        val min = minOf(r, g, b)
+        val delta = max - min
+        
+        val lightness = (max + min) / 2f
+        
+        val saturation = if (delta == 0f) 0f else {
+            if (lightness < 0.5f) delta / (max + min) else delta / (2f - max - min)
+        }
+        
+        val hue = when {
+            delta == 0f -> 0f
+            max == r -> ((g - b) / delta + if (g < b) 6f else 0f) * 60f
+            max == g -> ((b - r) / delta + 2f) * 60f
+            else -> ((r - g) / delta + 4f) * 60f
+        }
+        
+        return floatArrayOf(hue, saturation, lightness)
+    }
+    
+    /**
+     * Convert HSL to RGB
+     */
+    private fun hslToRgb(h: Float, s: Float, l: Float): FloatArray {
+        val hue = h / 360f
+        val saturation = s.coerceIn(0f, 1f)
+        val lightness = l.coerceIn(0f, 1f)
+        
+        val c = (1f - kotlin.math.abs(2f * lightness - 1f)) * saturation
+        val x = c * (1f - kotlin.math.abs((hue * 6f) % 2f - 1f))
+        val m = lightness - c / 2f
+        
+        val (r, g, b) = when {
+            hue < 1f/6f -> Triple(c, x, 0f)
+            hue < 2f/6f -> Triple(x, c, 0f)
+            hue < 3f/6f -> Triple(0f, c, x)
+            hue < 4f/6f -> Triple(0f, x, c)
+            hue < 5f/6f -> Triple(x, 0f, c)
+            else -> Triple(c, 0f, x)
+        }
+        
+        return floatArrayOf(
+            (r + m).coerceIn(0f, 1f),
+            (g + m).coerceIn(0f, 1f),
+            (b + m).coerceIn(0f, 1f)
+        )
+    }
+    
+    /**
+     * Check if a color scheme represents dark mode
+     */
+    private fun isColorSchemeDark(colorScheme: ColorScheme): Boolean {
+        return getColorLuminance(colorScheme.background) < 0.5f
     }
 }
 
