@@ -166,7 +166,7 @@ fun ThemeSettingsScreen(
                             onColorSelected = { color ->
                                 scope.launch {
                                     viewModel.setCustomPrimaryColor(
-                                        color?.let { "#${Integer.toHexString(it.toArgb()).substring(2)}" }
+                                        color?.let { "#${String.format("%08X", it.toArgb())}" }
                                     )
                                 }
                             }
