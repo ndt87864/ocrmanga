@@ -5,6 +5,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import java.lang.Math.pow
 
 object ThemeColorSchemes {
     
@@ -287,9 +288,15 @@ object ThemeColorSchemes {
      */
     private fun getColorLuminance(color: Color): Float {
         // Convert to linear RGB
-        val r = if (color.red <= 0.03928f) color.red / 12.92f else kotlin.math.pow((color.red + 0.055f) / 1.055f, 2.4f).toFloat()
-        val g = if (color.green <= 0.03928f) color.green / 12.92f else kotlin.math.pow((color.green + 0.055f) / 1.055f, 2.4f).toFloat()
-        val b = if (color.blue <= 0.03928f) color.blue / 12.92f else kotlin.math.pow((color.blue + 0.055f) / 1.055f, 2.4f).toFloat()
+        val r = if (color.red <= 0.03928f) color.red / 12.92f else pow(((color.red + 0.055f) / 1.055f).toDouble(),
+            2.4
+        ).toFloat()
+        val g = if (color.green <= 0.03928f) color.green / 12.92f else pow(((color.green + 0.055f) / 1.055f).toDouble(),
+            2.4
+        ).toFloat()
+        val b = if (color.blue <= 0.03928f) color.blue / 12.92f else pow(((color.blue + 0.055f) / 1.055f).toDouble(),
+            2.4
+        ).toFloat()
         
         // Calculate relative luminance
         return 0.2126f * r + 0.7152f * g + 0.0722f * b
