@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.ocrmanga.ui.screens.api.ApiKeyManagementScreen
 import com.example.ocrmanga.ui.screens.GalleryScreen
+import com.example.ocrmanga.ui.screens.ScreenTranslationScreen
 import com.example.ocrmanga.ui.screens.view.ViewerScreen
 import com.example.ocrmanga.ui.theme.OCRMangaTheme
 import com.example.ocrmanga.ui.screens.settings.ThemeSettingsScreen
@@ -44,6 +45,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNavigateToThemeSettings = {
                                     navController.navigate("themeSettings")
+                                },
+                                onNavigateToScreenTranslation = {
+                                    navController.navigate("screenTranslation")
                                 }
                             )
                         }
@@ -61,6 +65,11 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("themeSettings") {
                             ThemeSettingsScreen(
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
+                        composable("screenTranslation") {
+                            ScreenTranslationScreen(
                                 onNavigateBack = { navController.popBackStack() }
                             )
                         }

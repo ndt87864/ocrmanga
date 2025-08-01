@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -72,6 +73,7 @@ fun GalleryScreen(
     onNavigateToRoom: (Long) -> Unit,
     onNavigateToApiKeyManagement: () -> Unit,
     onNavigateToThemeSettings: () -> Unit,
+    onNavigateToScreenTranslation: () -> Unit,
     viewModel: GalleryViewModel = viewModel()
 ) {
     // Khi quay lại gallery, luôn xóa dữ liệu session (selectedImages)
@@ -647,6 +649,25 @@ fun GalleryScreen(
                         expanded = showSettingsMenu,
                         onDismissRequest = { showSettingsMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { 
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.ScreenShare,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text("Screen Translation")
+                                }
+                            },
+                            onClick = {
+                                onNavigateToScreenTranslation()
+                                showSettingsMenu = false
+                            }
+                        )
                         DropdownMenuItem(
                             text = { 
                                 Row(
