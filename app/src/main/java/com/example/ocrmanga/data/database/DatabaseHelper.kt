@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
@@ -83,6 +84,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         private const val DATABASE_NAME = "MangaDownloader.db"
         private const val DATABASE_VERSION = 5
         private const val TAG = "DatabaseHelper"
+        
+            /**
+             * Hàm tạo Intent chọn ảnh, hỗ trợ cả webp
+             */
+            fun createImagePickerIntent(): android.content.Intent {
+                val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT)
+                intent.addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                intent.type = "image/*"
+                // Thêm MIME type cho webp
+                intent.putExtra(android.content.Intent.EXTRA_MIME_TYPES, arrayOf("image/jpeg", "image/png", "image/webp"))
+                return intent
+            }
 
         // Manga Rooms table
         const val TABLE_ROOMS = "manga_rooms"
@@ -501,36 +514,19 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val newFile = File(directory, fileName)
             val inputStream = appContext.contentResolver.openInputStream(originalUri)
             if (inputStream != null) {
-                // Decode bitmap
                 val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
                 inputStream.close()
-                if (bitmap != null) {
-                    // Resize nếu lớn hơn maxWidth
-                    val maxWidth = 1200
-                    val scale = if (bitmap.width > maxWidth) maxWidth.toFloat() / bitmap.width else 1f
-                    val resizedBitmap = if (scale < 1f) {
-                        android.graphics.Bitmap.createScaledBitmap(
-                            bitmap,
-                            (bitmap.width * scale).toInt(),
-                            (bitmap.height * scale).toInt(),
-                            true
-                        )
-                    } else bitmap
-                    // Nén JPEG chất lượng 75%
-                    val outputStream = FileOutputStream(newFile)
-                    resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, outputStream)
-                    outputStream.flush()
-                    outputStream.close()
-                    if (resizedBitmap != bitmap) bitmap.recycle()
-                    resizedBitmap.recycle()
-                    Log.i(TAG, "Nén và lưu ảnh từ $originalUri vào ${newFile.absolutePath}")
-                    newFile
-                } else {
-                    Log.e(TAG, "Không decode được bitmap từ $originalUri")
-                    null
+                // Xác định định dạng từ đuôi file
+                val format = when {
+                    fileName.endsWith(".webp", true) -> Bitmap.CompressFormat.WEBP
+                    fileName.endsWith(".png", true) -> Bitmap.CompressFormat.PNG
+                    else -> Bitmap.CompressFormat.JPEG
                 }
+                val outStream = FileOutputStream(newFile)
+                bitmap.compress(format, 100, outStream)
+                outStream.close()
+                newFile
             } else {
-                Log.e(TAG, "Không mở được inputStream từ $originalUri")
                 null
             }
         } catch (e: Exception) {
