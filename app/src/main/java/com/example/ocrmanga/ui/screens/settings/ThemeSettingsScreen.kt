@@ -162,16 +162,34 @@ fun ThemeSettingsScreen(
                     
                     if (themeState.useCustomColor) {
                         Spacer(modifier = Modifier.height(16.dp))
+                        // State tạm thời cho màu custom, chỉ lưu khi nhấn xác nhận
+                        var tempColor by remember(themeState.customPrimaryColor) {
+                            mutableStateOf(themeState.customPrimaryColor?.toColor())
+                        }
                         AdvancedColorPicker(
-                            selectedColor = themeState.customPrimaryColor?.toColor(),
+                            selectedColor = tempColor,
                             onColorSelected = { color ->
-                                scope.launch {
-                                    viewModel.setCustomPrimaryColor(
-                                        color?.let { "#${String.format("%08X", it.toArgb())}" }
-                                    )
-                                }
+                                tempColor = color
                             }
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.End,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        viewModel.setCustomPrimaryColor(
+                                            tempColor?.let { "#${String.format("%08X", it.toArgb())}" }
+                                        )
+                                    }
+                                },
+                                enabled = tempColor != null && "#${String.format("%08X", tempColor?.toArgb() ?: 0)}" != themeState.customPrimaryColor
+                            ) {
+                                Text("Xác nhận màu")
+                            }
+                        }
                     }
                 }
             }
