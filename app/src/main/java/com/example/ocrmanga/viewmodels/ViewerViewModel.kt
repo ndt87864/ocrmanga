@@ -67,9 +67,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translatedStatus = it.translatedStatus + (uri to true)
             )
         }
-        Log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${updatedBlocks.size} blocks")
+        //log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${updatedBlocks.size} blocks")
         updatedBlocks.forEachIndexed { idx, block ->
-            Log.i(TAG, "[UPDATE] Block[$idx] rotation=${block.rotation} text='${block.text}' uri=$uri")
+            //log.i(TAG, "[UPDATE] Block[$idx] rotation=${block.rotation} text='${block.text}' uri=$uri")
         }
     }
 
@@ -112,7 +112,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
-        Log.i(TAG, "Bắt đầu đếm thời gian dịch cho ảnh $imageIndex: $uri")
+        //log.i(TAG, "Bắt đầu đếm thời gian dịch cho ảnh $imageIndex: $uri")
     }
 
     // Dừng và reset bộ đếm thời gian dịch
@@ -126,7 +126,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 currentTranslatingImageIndex = 0
             ) 
         }
-        Log.i(TAG, "Dừng bộ đếm thời gian dịch")
+        //log.i(TAG, "Dừng bộ đếm thời gian dịch")
     }
 
     private fun loadAllRoomIds() {
@@ -140,7 +140,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 cursor.close()
                 _allRoomIds.value = roomIds.sorted()
-                Log.i(TAG, "Đã tải ${roomIds.size} ID phòng")
+                //log.i(TAG, "Đã tải ${roomIds.size} ID phòng")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi tải room IDs", e)
             }
@@ -166,7 +166,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         if (isNew) {
             newImageUris.addAll(uris)
         }
-        Log.i(TAG, "Đã đặt ${uris.size} URI ảnh, isNew: $isNew")
+        //log.i(TAG, "Đã đặt ${uris.size} URI ảnh, isNew: $isNew")
     }
 
     fun addNewImageUris(uris: List<Uri>) {
@@ -181,7 +181,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         newImageUris.clear()
         newImageUris.addAll(uris)
-        Log.i(TAG, "Đã thêm ${uris.size} URI ảnh mới vào cuối")
+        //log.i(TAG, "Đã thêm ${uris.size} URI ảnh mới vào cuối")
 
         if (uiState.value.translationEnabled && uiState.value.translationMode != TranslationMode.OFF) {
             enqueueTranslation(uris)
@@ -200,7 +200,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         newImageUris.clear()
         newImageUris.addAll(uris)
-        Log.i(TAG, "Đã thêm ${uris.size} URI ảnh mới vào đầu")
+        //log.i(TAG, "Đã thêm ${uris.size} URI ảnh mới vào đầu")
 
         if (uiState.value.translationEnabled && uiState.value.translationMode != TranslationMode.OFF) {
             enqueueTranslation(uris)
@@ -220,7 +220,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         newImageUris.clear()
         newImageUris.addAll(uris)
-        Log.i(TAG, "Đã thêm ${uris.size} URI ảnh mới vào vị trí $insertIndex")
+        //log.i(TAG, "Đã thêm ${uris.size} URI ảnh mới vào vị trí $insertIndex")
 
         if (uiState.value.translationEnabled && uiState.value.translationMode != TranslationMode.OFF) {
             enqueueTranslation(uris)
@@ -230,7 +230,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun loadRoom(roomId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                Log.i(TAG, "Đang tải phòng $roomId")
+                //log.i(TAG, "Đang tải phòng $roomId")
                 val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
                 val translatedStatus = mutableMapOf<Uri, Boolean>()
                 val initialBatch = allImages.take(BATCH_SIZE)
@@ -276,12 +276,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         remainingImages = remainingImages
                     )
                 }
-                Log.i(TAG, "Đã tải batch đầu tiên của phòng $roomId với ${initialBatch.size} ảnh")
+                //log.i(TAG, "Đã tải batch đầu tiên của phòng $roomId với ${initialBatch.size} ảnh")
                 // Log độ nghiêng (rotation) cho từng block bản dịch
                 fixedTranslations.forEach { (uri, pair) ->
                     val blocks = pair.second
                     blocks.forEachIndexed { idx, block ->
-                        Log.i(TAG, "[LOAD] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
+                        //log.i(TAG, "[LOAD] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
                     }
                 }
             } catch (e: Exception) {
@@ -356,7 +356,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         remainingImages = newRemaining
                     )
                 }
-                Log.i(TAG, "Đã tải thêm ${batch.size} ảnh, còn lại ${newRemaining.size}")
+                //log.i(TAG, "Đã tải thêm ${batch.size} ảnh, còn lại ${newRemaining.size}")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi tải thêm ảnh", e)
             }
@@ -372,7 +372,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationEnabled = mode != TranslationMode.OFF
             )
         }
-        Log.i(TAG, "Chế độ dịch được đặt thành $mode")
+        //log.i(TAG, "Chế độ dịch được đặt thành $mode")
 
         if (mode != TranslationMode.OFF) {
             // If switching between different translation modes (OFFLINE <-> ONLINE <-> GEMINI)
@@ -401,7 +401,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationJob = viewModelScope.launch(Dispatchers.IO) {
                     processTranslationQueue()
                 }
-                Log.i(TAG, "Đang dịch lại tất cả ${imagesToRetranslate.size} ảnh với chế độ $mode")
+                //log.i(TAG, "Đang dịch lại tất cả ${imagesToRetranslate.size} ảnh với chế độ $mode")
             } else {
                 // Only translate new images that haven't been translated yet
                 val imagesToTranslate = uiState.value.imageUris.filter { uri ->
@@ -410,7 +410,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 if (imagesToTranslate.isNotEmpty()) {
                     enqueueTranslation(imagesToTranslate)
                 } else {
-                    Log.i(TAG, "Không có ảnh mới để dịch")
+                    //log.i(TAG, "Không có ảnh mới để dịch")
                 }
             }
         } else { // TranslationMode.OFF
@@ -425,14 +425,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             newImageUris.clear()
             translationQueue.clear()
             translationJob?.cancel()
-            Log.i(TAG, "Đã tắt dịch và reset trạng thái")
+            //log.i(TAG, "Đã tắt dịch và reset trạng thái")
         }
     }
 
     fun saveCurrentRoom() {
         viewModelScope.launch(Dispatchers.IO) {
             val imageCount = uiState.value.imageUris.size
-            Log.i(TAG, "Đang lưu phòng hiện tại với $imageCount ảnh")
+            //log.i(TAG, "Đang lưu phòng hiện tại với $imageCount ảnh")
             if (imageCount == 0) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Không có ảnh để lưu!", Toast.LENGTH_SHORT).show()
@@ -444,7 +444,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // Log all rotation values before saving
                 uiState.value.translatedTexts.forEach { (uri, pair) ->
                     pair.second.forEachIndexed { idx, block ->
-                        Log.i(TAG, "[SAVE ROOM] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
+                        //log.i(TAG, "[SAVE ROOM] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
                     }
                 }
                 val roomId: Long = if (currentRoomId != null) {
@@ -471,7 +471,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     _uiState.update { it.copy(roomId = roomId) }
                     galleryViewModel.notifyDataSaved()
                     loadAllRoomIds()
-                    Log.i(TAG, "Phòng đã được lưu với ID: $roomId")
+                    //log.i(TAG, "Phòng đã được lưu với ID: $roomId")
                 } else {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Lưu thất bại!", Toast.LENGTH_SHORT).show()
@@ -590,7 +590,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 translationProgress = completedCount
                             )
                         }
-                        Log.i(TAG, "Đã dịch ảnh $uri")
+                        //log.i(TAG, "Đã dịch ảnh $uri")
                     } else {
                         Log.w(TAG, "Không nhận diện được văn bản trong ảnh $uri")
                     }
