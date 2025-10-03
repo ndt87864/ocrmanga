@@ -143,8 +143,23 @@ fun TranslationEditor(
                                             selectedIndex?.let { idx ->
                                                 val updatedBlocks = dragBlocks.toMutableList()
                                                 val currentBlock = updatedBlocks[idx]
+                                                val newShapeType = index
+                                                
+                                                // Tính lại font size cho shape mới
+                                                val bounds = currentBlock.block.bounds
+                                                val width = bounds.width().toFloat()
+                                                val height = bounds.height().toFloat()
+                                                val newFontSize = calculateOptimalFontSize(
+                                                    text = currentBlock.block.text,
+                                                    width = width,
+                                                    height = height,
+                                                    minFontSize = 12f,
+                                                    shapeType = newShapeType
+                                                )
+                                                
                                                 updatedBlocks[idx] = currentBlock.copy(
-                                                    block = currentBlock.block.copy(shapeType = index)
+                                                    block = currentBlock.block.copy(shapeType = newShapeType),
+                                                    fontSize = newFontSize
                                                 )
                                                 onDragBlocksChange(updatedBlocks)
                                             }

@@ -172,7 +172,8 @@ fun mergeOverlappingRegions(
                     text = mergedText,
                     width = if (currentBlock.isVertical) mergedHeight else mergedWidth,
                     height = if (currentBlock.isVertical) mergedWidth else mergedHeight,
-                    minFontSize = minFontSize
+                    minFontSize = minFontSize,
+                    shapeType = currentBlock.shapeType
                 )
 
                 currentBlock = primaryBlock.copy(
@@ -284,7 +285,8 @@ fun calculateOptimalFontSize(
     width: Float,
     height: Float,
     minFontSize: Float = 12f,
-    maxFontSize: Float = 100f
+    maxFontSize: Float = 100f,
+    shapeType: Int = 0 // 0 = rectangle, 1 = oval
 ): Float {
     if (text.isBlank() || width <= 0 || height <= 0) return minFontSize
 
@@ -296,11 +298,15 @@ fun calculateOptimalFontSize(
     var high = maxFontSize
     var optimalFontSize = minFontSize
 
+    // Điều chỉnh hệ số scale cho hình oval để text vừa vặn
+    val widthScale = if (shapeType == 1) 0.70f else 0.98f // Oval cần padding nhiều hơn
+    val heightScale = if (shapeType == 1) 0.70f else 0.98f
+
     // Nhị phân để tìm fontSize lớn nhất mà text vẫn vừa vùng bôi trắng
     repeat(12) {
         val mid = (low + high) / 2
         paint.textSize = mid
-        val wrappedLines = wrapText(text, width * 0.98f, mid)
+        val wrappedLines = wrapText(text, width * widthScale, mid)
         val fontMetrics = paint.fontMetrics
         val lineHeight = fontMetrics.descent - fontMetrics.ascent
         val textHeight = wrappedLines.size * lineHeight
@@ -310,7 +316,7 @@ fun calculateOptimalFontSize(
             bounds.width().toFloat()
         } ?: 0f
 
-        if (maxLineWidth <= width * 0.98f && textHeight <= height * 0.98f) {
+        if (maxLineWidth <= width * widthScale && textHeight <= height * heightScale) {
             optimalFontSize = mid
             low = mid + 0.2f
         } else {
