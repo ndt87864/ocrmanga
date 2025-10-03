@@ -105,10 +105,11 @@ fun TranslationEditor(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Nút chuyển trang trái
+            // Nút chuyển trang trái (với cuộn vô hạn)
             IconButton(
-                onClick = { currentPage = (currentPage - 1).coerceAtLeast(0) },
-                enabled = currentPage > 0
+                onClick = { 
+                    currentPage = if (currentPage == 0) totalPages - 1 else currentPage - 1
+                }
             ) {
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowLeft,
@@ -392,10 +393,11 @@ fun TranslationEditor(
                 }
             }
 
-            // Nút chuyển trang phải
+            // Nút chuyển trang phải (với cuộn vô hạn)
             IconButton(
-                onClick = { currentPage = (currentPage + 1).coerceAtMost(totalPages - 1) },
-                enabled = currentPage < totalPages - 1
+                onClick = { 
+                    currentPage = if (currentPage == totalPages - 1) 0 else currentPage + 1
+                }
             ) {
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowRight,
