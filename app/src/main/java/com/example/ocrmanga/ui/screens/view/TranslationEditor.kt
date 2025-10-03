@@ -41,7 +41,7 @@ fun TranslationEditor(
     // --- STATE MANAGEMENT ---
     val isBlockSelected = selectedIndex != null
     var currentPage by remember { mutableStateOf(0) }
-    val totalPages = 4 // Tăng lên 4 trang để thêm trang màu sắc
+    val totalPages = 4 // 4 trang: Lưu+Hình dạng, Sửa+Xóa, Xoay, Màu sắc
 
     // Hoist state variables to the top level to prevent them from resetting on page change
     var showShapeMenu by remember { mutableStateOf(false) }
@@ -334,50 +334,59 @@ fun TranslationEditor(
 
                     // --- TRANG 4: MÀU SẮC ---
                     3 -> {
-                        // Nút chọn màu overlay
-                        IconButton(
-                            onClick = { if (isBlockSelected) showOverlayColorPicker = true },
-                            enabled = isBlockSelected
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val currentOverlayColor = selectedIndex?.let { dragBlocks[it].whiteoutColor } ?: Color.White
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .background(currentOverlayColor, CircleShape)
-                                    .border(1.dp, Color.Gray, CircleShape)
-                            )
-                        }
+                            // Nút chọn màu overlay
+                            IconButton(
+                                onClick = { if (isBlockSelected) showOverlayColorPicker = true },
+                                enabled = isBlockSelected
+                            ) {
+                                val currentOverlayColor = selectedIndex?.let { dragBlocks[it].whiteoutColor } ?: Color.White
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(currentOverlayColor, CircleShape)
+                                        .border(1.dp, Color.Gray, CircleShape)
+                                )
+                            }
 
-                        // Nút chọn màu text
-                        IconButton(
-                            onClick = { if (isBlockSelected) showTextColorPicker = true },
-                            enabled = isBlockSelected
-                        ) {
-                            val currentTextColor = selectedIndex?.let { dragBlocks[it].textColor } ?: Color.Black
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .background(currentTextColor, CircleShape)
-                                    .border(1.dp, Color.Gray, CircleShape)
-                            )
-                        }
+                            // Nút chọn màu text
+                            IconButton(
+                                onClick = { if (isBlockSelected) showTextColorPicker = true },
+                                enabled = isBlockSelected
+                            ) {
+                                val currentTextColor = selectedIndex?.let { dragBlocks[it].textColor } ?: Color.Black
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(currentTextColor, CircleShape)
+                                        .border(1.dp, Color.Gray, CircleShape)
+                                )
+                            }
 
-                        // Nút reset màu về mặc định
-                        IconButton(
-                            onClick = {
-                                selectedIndex?.let { idx ->
-                                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                        val old = list[idx]
-                                        list[idx] = old.copy(
-                                            whiteoutColor = null,
-                                            textColor = null
-                                        )
-                                    })
-                                }
-                            },
-                            enabled = isBlockSelected
-                        ) {
-                            Icon(Icons.Default.Refresh, "Reset màu mặc định", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                            // Nút reset màu về mặc định
+                            IconButton(
+                                onClick = {
+                                    selectedIndex?.let { idx ->
+                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                            val old = list[idx]
+                                            list[idx] = old.copy(
+                                                whiteoutColor = null,
+                                                textColor = null,
+                                                overlayAlpha = 1.0f,
+                                                textBoldness = 1.0f,
+                                                overlaySaturation = 1.0f,
+                                                textSaturation = 1.0f
+                                            )
+                                        })
+                                    }
+                                },
+                                enabled = isBlockSelected
+                            ) {
+                                Icon(Icons.Default.Refresh, "Reset màu mặc định", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                            }
                         }
                     }
                 }
@@ -452,15 +461,32 @@ fun TranslationEditor(
         if (showOverlayColorPicker && isBlockSelected && selectedIndex != null) {
             val idx = selectedIndex
             val currentColor = dragBlocks[idx].whiteoutColor ?: Color.White
+            val currentAlpha = dragBlocks[idx].overlayAlpha
+            val currentSaturation = dragBlocks[idx].overlaySaturation
             ColorPickerDialog(
                 title = "Chọn màu nền overlay",
                 initialColor = currentColor,
+                initialAlpha = currentAlpha,
+                initialSaturation = currentSaturation,
+                isOverlayDialog = true,
                 onColorSelected = { color ->
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
                         list[idx] = old.copy(whiteoutColor = color)
                     })
                     showOverlayColorPicker = false
+                },
+                onAlphaChanged = { alpha ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(overlayAlpha = alpha)
+                    })
+                },
+                onSaturationChanged = { saturation ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(overlaySaturation = saturation)
+                    })
                 },
                 onDismiss = { showOverlayColorPicker = false }
             )
@@ -470,15 +496,32 @@ fun TranslationEditor(
         if (showTextColorPicker && isBlockSelected && selectedIndex != null) {
             val idx = selectedIndex
             val currentColor = dragBlocks[idx].textColor ?: Color.Black
+            val currentBoldness = dragBlocks[idx].textBoldness
+            val currentSaturation = dragBlocks[idx].textSaturation
             ColorPickerDialog(
                 title = "Chọn màu chữ",
                 initialColor = currentColor,
+                initialBoldness = currentBoldness,
+                initialSaturation = currentSaturation,
+                isOverlayDialog = false,
                 onColorSelected = { color ->
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
                         list[idx] = old.copy(textColor = color)
                     })
                     showTextColorPicker = false
+                },
+                onBoldnessChanged = { boldness ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(textBoldness = boldness)
+                    })
+                },
+                onSaturationChanged = { saturation ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(textSaturation = saturation)
+                    })
                 },
                 onDismiss = { showTextColorPicker = false }
             )
@@ -490,10 +533,20 @@ fun TranslationEditor(
 fun ColorPickerDialog(
     title: String,
     initialColor: Color,
+    initialAlpha: Float = 1.0f,
+    initialBoldness: Float = 1.0f,
+    initialSaturation: Float = 1.0f,
+    isOverlayDialog: Boolean = false, // true nếu là dialog chọn màu overlay
     onColorSelected: (Color) -> Unit,
+    onAlphaChanged: ((Float) -> Unit)? = null,
+    onBoldnessChanged: ((Float) -> Unit)? = null,
+    onSaturationChanged: ((Float) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     var selectedColor by remember { mutableStateOf(initialColor) }
+    var currentAlpha by remember { mutableStateOf(initialAlpha) }
+    var currentBoldness by remember { mutableStateOf(initialBoldness) }
+    var currentSaturation by remember { mutableStateOf(initialSaturation) }
     
     // Các màu preset phổ biến
     val presetColors = listOf(
@@ -507,17 +560,74 @@ fun ColorPickerDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                // Hiển thị màu hiện tại với preview thời gian thực
                 Text("Màu hiện tại:", style = MaterialTheme.typography.bodyMedium)
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(selectedColor, RoundedCornerShape(8.dp))
-                        .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
-                )
+                
+                // Tính toán màu preview với saturation
+                val previewColor = remember(selectedColor, currentSaturation) {
+                    if (currentSaturation != 1.0f) {
+                        // Chuyển đổi sang HSV để điều chỉnh saturation
+                        val red = selectedColor.red
+                        val green = selectedColor.green  
+                        val blue = selectedColor.blue
+                        
+                        // Tính HSV đơn giản
+                        val max = maxOf(red, green, blue)
+                        val min = minOf(red, green, blue)
+                        val delta = max - min
+                        
+                        val saturation = if (max == 0f) 0f else delta / max
+                        val newSaturation = saturation * currentSaturation
+                        
+                        // Áp dụng saturation mới
+                        val factor = if (saturation == 0f) 1f else newSaturation / saturation
+                        val newRed = min + (red - min) * factor
+                        val newGreen = min + (green - min) * factor
+                        val newBlue = min + (blue - min) * factor
+                        
+                        Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
+                    } else {
+                        selectedColor
+                    }
+                }
+                
+                val displayColor = if (isOverlayDialog) previewColor.copy(alpha = currentAlpha) else previewColor
+                
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Preview màu gốc
+                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text("Gốc", style = MaterialTheme.typography.bodySmall)
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(
+                                    if (isOverlayDialog) selectedColor.copy(alpha = 1f) else selectedColor,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
+                        )
+                    }
+                    
+                    // Preview màu đã chỉnh sửa
+                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text("Preview", style = MaterialTheme.typography.bodySmall)
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(displayColor, RoundedCornerShape(8.dp))
+                                .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
+                        )
+                    }
+                }
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
+                // Grid chọn màu
                 Text("Chọn màu:", style = MaterialTheme.typography.bodyMedium)
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(6),
@@ -539,6 +649,56 @@ fun ColorPickerDialog(
                         )
                     }
                 }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Slider độ trong suốt cho overlay
+                if (isOverlayDialog && onAlphaChanged != null) {
+                    Text("Độ trong suốt: ${(currentAlpha * 100).toInt()}%", 
+                         style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentAlpha,
+                        onValueChange = { newAlpha ->
+                            currentAlpha = newAlpha
+                            onAlphaChanged(newAlpha)
+                        },
+                        valueRange = 0.1f..1.0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                
+                // Slider độ đậm cho text
+                if (!isOverlayDialog && onBoldnessChanged != null) {
+                    Text("Độ đậm chữ: ${(currentBoldness * 100).toInt()}%", 
+                         style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentBoldness,
+                        onValueChange = { newBoldness ->
+                            currentBoldness = newBoldness
+                            onBoldnessChanged(newBoldness)
+                        },
+                        valueRange = 0.5f..2.0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                
+                // Slider độ bão hòa
+                if (onSaturationChanged != null) {
+                    Text("Độ bão hòa: ${(currentSaturation * 100).toInt()}%", 
+                         style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentSaturation,
+                        onValueChange = { newSaturation ->
+                            currentSaturation = newSaturation
+                            onSaturationChanged(newSaturation)
+                        },
+                        valueRange = 0f..1f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
             }
         },
         confirmButton = {
@@ -546,7 +706,7 @@ fun ColorPickerDialog(
                 Text("Chọn")
             }
         },
-        dismissButton = {
+        dismissButton = {       
             TextButton(onClick = onDismiss) {
                 Text("Hủy")
             }

@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -43,7 +44,11 @@ data class DragBlockState(
     val fontSize: Float? = null,
     val rotation: Float = 0f,
     val whiteoutColor: Color? = null,
-    val textColor: Color? = null
+    val textColor: Color? = null,
+    val overlayAlpha: Float = 1.0f, // Độ trong suốt của overlay (0.0 - 1.0)
+    val textBoldness: Float = 1.0f, // Độ đậm của text (0.5 - 2.0)
+    val overlaySaturation: Float = 1.0f, // Độ đậm màu overlay (0.0 - 2.0)
+    val textSaturation: Float = 1.0f // Độ đậm màu text (0.0 - 2.0)
 )
 
 @Composable
@@ -267,7 +272,11 @@ fun ImageViewer(
                                         val fontSize: Float,
                                         val rotation: Float,
                                         val whiteoutColor: Color? = null,
-                                        val textColor: Color? = null
+                                        val textColor: Color? = null,
+                                        val overlayAlpha: Float = 1.0f,
+                                        val textBoldness: Float = 1.0f,
+                                        val overlaySaturation: Float = 1.0f,
+                                        val textSaturation: Float = 1.0f
                                     )
                                     val regions = dragBlocks.mapIndexedNotNull { i, dragBlock ->
                                         val block = dragBlock.block
@@ -297,7 +306,11 @@ fun ImageViewer(
                                                 fontSize = fontSize,
                                                 rotation = dragBlock.rotation,
                                                 whiteoutColor = dragBlock.whiteoutColor,
-                                                textColor = dragBlock.textColor
+                                                textColor = dragBlock.textColor,
+                                                overlayAlpha = dragBlock.overlayAlpha,
+                                                textBoldness = dragBlock.textBoldness,
+                                                overlaySaturation = dragBlock.overlaySaturation,
+                                                textSaturation = dragBlock.textSaturation
                                             )
                                         } else null
                                     }
@@ -315,17 +328,44 @@ fun ImageViewer(
                                                 }) {
                                                     // Sử dụng màu tùy chỉnh nếu có, không thì dùng overlay mặc định
                                                     if (customWhiteoutColor != null) {
-                                                        // Vẽ overlay với màu tùy chỉnh
+                                                        // Vẽ overlay với màu tùy chỉnh, độ trong suốt và saturation
+                                                        val overlayAlpha = region.overlayAlpha
+                                                        val overlaySaturation = region.overlaySaturation
+                                                        
+                                                        // Áp dụng saturation cho màu
+                                                        val saturatedColor = if (overlaySaturation != 1.0f) {
+                                                            val red = customWhiteoutColor.red
+                                                            val green = customWhiteoutColor.green  
+                                                            val blue = customWhiteoutColor.blue
+                                                            
+                                                            val max = maxOf(red, green, blue)
+                                                            val min = minOf(red, green, blue)
+                                                            val delta = max - min
+                                                            
+                                                            val saturation = if (max == 0f) 0f else delta / max
+                                                            val newSaturation = saturation * overlaySaturation
+                                                            
+                                                            val factor = if (saturation == 0f) 1f else newSaturation / saturation
+                                                            val newRed = min + (red - min) * factor
+                                                            val newGreen = min + (green - min) * factor
+                                                            val newBlue = min + (blue - min) * factor
+                                                            
+                                                            Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
+                                                        } else {
+                                                            customWhiteoutColor
+                                                        }
+                                                        
+                                                        val finalOverlayColor = saturatedColor.copy(alpha = overlayAlpha)
                                                         val isOval = (block.shapeType == 1)
                                                         if (isOval) {
                                                             drawOval(
-                                                                color = customWhiteoutColor,
+                                                                color = finalOverlayColor,
                                                                 topLeft = Offset(rect.left, rect.top),
                                                                 size = Size(rect.width, rect.height)
                                                             )
                                                         } else {
                                                             drawRect(
-                                                                color = customWhiteoutColor,
+                                                                color = finalOverlayColor,
                                                                 topLeft = Offset(rect.left, rect.top),
                                                                 size = Size(rect.width, rect.height)
                                                             )
@@ -346,8 +386,8 @@ fun ImageViewer(
                                                     val textTop = rect.top + rect.height * textPadding
                                                     val textWidth = rect.width * (1 - 2 * textPadding)
                                                     val textHeight = rect.height * (1 - 2 * textPadding)
-                                                    // Xác định màu text - ưu tiên màu tùy chỉnh
-                                                    val textColor = when {
+                                                    // Xác định màu text - ưu tiên màu tùy chỉnh với saturation
+                                                    val baseTextColor = when {
                                                         i == draggingIndex -> Color.Red
                                                         customTextColor != null -> customTextColor
                                                         else -> {
@@ -370,6 +410,29 @@ fun ImageViewer(
                                                             }
                                                         }
                                                     }
+                                                    
+                                                    // Áp dụng saturation cho màu text nếu có
+                                                    val textColor = if (customTextColor != null && region.textSaturation != 1.0f) {
+                                                        val red = baseTextColor.red
+                                                        val green = baseTextColor.green  
+                                                        val blue = baseTextColor.blue
+                                                        
+                                                        val max = maxOf(red, green, blue)
+                                                        val min = minOf(red, green, blue)
+                                                        val delta = max - min
+                                                        
+                                                        val saturation = if (max == 0f) 0f else delta / max
+                                                        val newSaturation = saturation * region.textSaturation
+                                                        
+                                                        val factor = if (saturation == 0f) 1f else newSaturation / saturation
+                                                        val newRed = min + (red - min) * factor
+                                                        val newGreen = min + (green - min) * factor
+                                                        val newBlue = min + (blue - min) * factor
+                                                        
+                                                        Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
+                                                    } else {
+                                                        baseTextColor
+                                                    }
                                                     drawText(
                                                         text = block.text,
                                                         x = textLeft,
@@ -378,7 +441,8 @@ fun ImageViewer(
                                                         height = textHeight,
                                                         color = textColor,
                                                         fontSize = fontSize,
-                                                        isVertical = block.isVertical
+                                                        isVertical = block.isVertical,
+                                                        boldness = region.textBoldness
                                                     )
                                                     if (editTranslationMode) {
                                                         if (isOval) {
@@ -408,4 +472,12 @@ fun ImageViewer(
             }
         }
     }
+}
+
+// Helper function để áp dụng saturation cho màu
+private fun Color.applySaturation(saturation: Float): Color {
+    val hsv = FloatArray(3)
+    ColorUtils.colorToHSL(this.toArgb(), hsv)
+    hsv[1] = (hsv[1] * saturation).coerceIn(0f, 1f) // Adjust saturation
+    return Color(ColorUtils.HSLToColor(hsv))
 }
