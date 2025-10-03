@@ -336,12 +336,22 @@ fun DrawScope.drawText(
     height: Float,
     color: Color,
     fontSize: Float,
-    isVertical: Boolean
+    isVertical: Boolean,
+    boldness: Float = 1.0f // Độ đậm của text (0.5 - 2.0)
 ) {
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.color = color.toArgb()
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.LEFT
+        // Điều chỉnh stroke width để tạo hiệu ứng đậm nhạt
+        if (boldness > 1.0f) {
+            this.style = android.graphics.Paint.Style.FILL_AND_STROKE
+            this.strokeWidth = (boldness - 1.0f) * 2.0f
+        } else if (boldness < 1.0f) {
+            // Làm nhạt bằng cách giảm alpha
+            val alpha = (255 * boldness).toInt().coerceIn(50, 255)
+            this.alpha = alpha
+        }
     }
 
     val lines = wrapText(text, width, fontSize)
