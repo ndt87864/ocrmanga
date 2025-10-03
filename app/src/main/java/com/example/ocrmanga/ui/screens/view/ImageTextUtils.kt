@@ -778,9 +778,9 @@ fun splitNonOverlappingBoxes(blocks: List<TextBlockInfo>): List<TextBlockInfo> {
 // val limitedRect = limitRectToBackground(rect, bgRect)
 // drawRect(..., topLeft = Offset(limitedRect.left, limitedRect.top), size = Size(limitedRect.width, limitedRect.height))
 
-// Phân tích màu nền của text block từ bitmap gốc
-fun analyzeBackgroundColor(bitmap: Bitmap?, bounds: android.graphics.Rect): Pair<com.example.ocrmanga.data.models.BackgroundType, Int?> {
-    if (bitmap == null) return Pair(com.example.ocrmanga.data.models.BackgroundType.WHITE, null)
+// Phân tích màu nền và màu text của text block từ bitmap gốc
+fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect): Triple<com.example.ocrmanga.data.models.BackgroundType, Int?, Int?> {
+    if (bitmap == null) return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
     
     try {
         // Lấy mẫu màu từ các điểm xung quanh text bounds
@@ -806,7 +806,7 @@ fun analyzeBackgroundColor(bitmap: Bitmap?, bounds: android.graphics.Rect): Pair
             }
         }
         
-        if (samplePoints.isEmpty()) return Pair(com.example.ocrmanga.data.models.BackgroundType.WHITE, null)
+        if (samplePoints.isEmpty()) return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
         
         // Tính màu trung bình
         var totalR = 0
@@ -842,6 +842,52 @@ fun analyzeBackgroundColor(bitmap: Bitmap?, bounds: android.graphics.Rect): Pair
         }
         colorVariance /= samplePoints.size
         
+        // Phân tích màu text từ vùng bên trong bounds
+        val textSamples = mutableListOf<Int>()
+        val textMargin = 2 // margin nhỏ hơn để lấy mẫu text
+        
+        // Lấy mẫu từ vùng bên trong text bounds
+        val innerSamples = listOf(
+            Pair(bounds.left + textMargin, bounds.top + textMargin),
+            Pair(bounds.right - textMargin, bounds.top + textMargin),
+            Pair(bounds.left + textMargin, bounds.bottom - textMargin),
+            Pair(bounds.right - textMargin, bounds.bottom - textMargin),
+            Pair(bounds.centerX(), bounds.centerY()),
+            Pair(bounds.centerX(), bounds.top + textMargin),
+            Pair(bounds.centerX(), bounds.bottom - textMargin),
+            Pair(bounds.left + textMargin, bounds.centerY()),
+            Pair(bounds.right - textMargin, bounds.centerY())
+        )
+        
+        innerSamples.forEach { (x, y) ->
+            if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
+                textSamples.add(bitmap.getPixel(x, y))
+            }
+        }
+        
+        // Tính màu text trung bình
+        var textColor: Int? = null
+        if (textSamples.isNotEmpty()) {
+            var textTotalR = 0
+            var textTotalG = 0
+            var textTotalB = 0
+            var textTotalA = 0
+            
+            textSamples.forEach { color ->
+                textTotalR += (color shr 16) and 0xFF
+                textTotalG += (color shr 8) and 0xFF
+                textTotalB += color and 0xFF 
+                textTotalA += (color shr 24) and 0xFF
+            }
+            
+            val textAvgR = textTotalR / textSamples.size
+            val textAvgG = textTotalG / textSamples.size
+            val textAvgB = textTotalB / textSamples.size
+            val textAvgA = textTotalA / textSamples.size
+            
+            textColor = (textAvgA shl 24) or (textAvgR shl 16) or (textAvgG shl 8) or textAvgB
+        }
+
         val backgroundType = when {
             // Nền trắng: sáng và ít biến thiên
             brightness >= 235 && colorVariance <= 15 -> com.example.ocrmanga.data.models.BackgroundType.WHITE
@@ -853,18 +899,25 @@ fun analyzeBackgroundColor(bitmap: Bitmap?, bounds: android.graphics.Rect): Pair
             else -> com.example.ocrmanga.data.models.BackgroundType.WHITE
         }
         
-        return Pair(backgroundType, if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor else null)
+        return Triple(backgroundType, if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor else null, textColor)
         
     } catch (e: Exception) {
-        return Pair(com.example.ocrmanga.data.models.BackgroundType.WHITE, null)
+        return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
     }
 }
 
-// Vẽ overlay bán trong suốt cho text trên nền có màu
+// Hàm wrapper để tương thích với code cũ
+fun analyzeBackgroundColor(bitmap: Bitmap?, bounds: android.graphics.Rect): Pair<com.example.ocrmanga.data.models.BackgroundType, Int?> {
+    val (backgroundType, avgColor, _) = analyzeBackgroundAndTextColor(bitmap, bounds)
+    return Pair(backgroundType, avgColor)
+}
+
+// Vẽ overlay bán trong suốt cho text trên nền có màu với màu nền gốc
 fun DrawScope.drawTranslucentOverlay(
     rect: Rect,
     backgroundType: com.example.ocrmanga.data.models.BackgroundType,
     averageBackgroundColor: Int?,
+    originalTextColor: Int? = null,
     shapeType: Int = 0
 ) {
     when (backgroundType) {
@@ -885,49 +938,22 @@ fun DrawScope.drawTranslucentOverlay(
             }
         }
         com.example.ocrmanga.data.models.BackgroundType.COLORED -> {
-            // Nền có màu - tạo hiệu ứng kính mờ với nhiều lớp
+            // Nền có màu - sử dụng màu nền gốc làm overlay
             if (averageBackgroundColor != null) {
-                val baseColor = Color(averageBackgroundColor)
+                val overlayColor = Color(averageBackgroundColor)
                 
-                // Lớp 1: Làm sáng nền một chút (giống kính mờ)
-                val lightenedColor = Color(
-                    red = kotlin.math.min(1f, baseColor.red + 0.3f),
-                    green = kotlin.math.min(1f, baseColor.green + 0.3f),
-                    blue = kotlin.math.min(1f, baseColor.blue + 0.3f),
-                    alpha = 0.85f // Độ mờ cao để che văn bản gốc
-                )
-                
-                // Lớp 2: Thêm một chút màu trắng để tạo hiệu ứng kính mờ
-                val frostColor = Color.White.copy(alpha = 0.4f)
-                
-                // Vẽ lớp nền được làm sáng
+                // Vẽ overlay với màu nền gốc, độ mờ vừa đủ để che text cũ
                 when (shapeType) {
-                    1 -> {
-                        drawOval(
-                            color = lightenedColor,
-                            topLeft = Offset(rect.left, rect.top),
-                            size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
-                        )
-                        // Vẽ lớp kính mờ
-                        drawOval(
-                            color = frostColor,
-                            topLeft = Offset(rect.left, rect.top),
-                            size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
-                        )
-                    }
-                    else -> {
-                        drawRect(
-                            color = lightenedColor,
-                            topLeft = Offset(rect.left, rect.top),
-                            size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
-                        )
-                        // Vẽ lớp kính mờ
-                        drawRect(
-                            color = frostColor,
-                            topLeft = Offset(rect.left, rect.top),
-                            size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
-                        )
-                    }
+                    1 -> drawOval(
+                        color = overlayColor.copy(alpha = 0.95f),
+                        topLeft = Offset(rect.left, rect.top),
+                        size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                    )
+                    else -> drawRect(
+                        color = overlayColor.copy(alpha = 0.95f),
+                        topLeft = Offset(rect.left, rect.top),
+                        size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                    )
                 }
             } else {
                 // Fallback - màu trắng với độ mờ cao

@@ -44,7 +44,7 @@ import com.google.ai.client.generativeai.type.BlockThreshold
 import com.google.gson.stream.JsonReader
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.io.StringReader
-import com.example.ocrmanga.ui.screens.view.analyzeBackgroundColor
+import com.example.ocrmanga.ui.screens.view.analyzeBackgroundAndTextColor
 
 class TranslationRepository(private val application: Application) {
 
@@ -632,8 +632,8 @@ class TranslationRepository(private val application: Application) {
                             alternativeAvgFontSize
                         }
                         val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                        // Phân tích màu nền
-                        val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, scaledBounds)
+                        // Phân tích màu nền và màu text
+                        val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
                         TextBlockInfo(
                             text = line.text, 
                             bounds = scaledBounds, 
@@ -642,7 +642,8 @@ class TranslationRepository(private val application: Application) {
                             originalImageWidth = bitmap.width, 
                             originalImageHeight = bitmap.height,
                             backgroundType = backgroundType,
-                            averageBackgroundColor = avgColor
+                            averageBackgroundColor = avgColor,
+                            originalTextColor = textColor
                         )
                     }
                 }
@@ -698,8 +699,8 @@ class TranslationRepository(private val application: Application) {
                     bestAvgFontSize
                 }
                 val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                // Phân tích màu nền
-                val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, scaledBounds)
+                // Phân tích màu nền và màu text
+                val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
                 TextBlockInfo(
                     text = line.text, 
                     bounds = scaledBounds, 
@@ -708,7 +709,8 @@ class TranslationRepository(private val application: Application) {
                     originalImageWidth = bitmap.width, 
                     originalImageHeight = bitmap.height,
                     backgroundType = backgroundType,
-                    averageBackgroundColor = avgColor
+                    averageBackgroundColor = avgColor,
+                    originalTextColor = textColor
                 )
             }
         }
@@ -989,8 +991,8 @@ class TranslationRepository(private val application: Application) {
                 blockCount++
             }
 
-            // Phân tích màu nền cho merged block
-            val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, mergedBounds)
+            // Phân tích màu nền và màu text cho merged block
+            val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
             val mergedBlock = TextBlockInfo(
                 text = mergedText.toString(),
                 bounds = Rect(mergedBounds),
@@ -999,7 +1001,8 @@ class TranslationRepository(private val application: Application) {
                 originalImageWidth = sortedBlocks.firstOrNull()?.originalImageWidth,
                 originalImageHeight = sortedBlocks.firstOrNull()?.originalImageHeight,
                 backgroundType = backgroundType,
-                averageBackgroundColor = avgColor
+                averageBackgroundColor = avgColor,
+                originalTextColor = textColor
             )
 
             Log.i(
@@ -1100,8 +1103,8 @@ class TranslationRepository(private val application: Application) {
                     blockCount++
                 }
 
-                // Phân tích màu nền cho merged block
-                val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, mergedBounds)
+                // Phân tích màu nền và màu text cho merged block
+                val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
                 val mergedBlock = TextBlockInfo(
                     text = mergedText.toString(),
                     bounds = mergedBounds,
@@ -1110,7 +1113,8 @@ class TranslationRepository(private val application: Application) {
                     originalImageWidth = sortedBlocks.firstOrNull()?.originalImageWidth,
                     originalImageHeight = sortedBlocks.firstOrNull()?.originalImageHeight,
                     backgroundType = backgroundType,
-                    averageBackgroundColor = avgColor
+                    averageBackgroundColor = avgColor,
+                    originalTextColor = textColor
                 )
 
                 Log.i("TranslationRepository", "Column #$columnIndex, Merged Region #$regionIndex: text=${mergedBlock.text}, left=${mergedBlock.bounds.left}, top=${mergedBlock.bounds.top}, right=${mergedBlock.bounds.right}, bottom=${mergedBlock.bounds.bottom}")
@@ -1444,8 +1448,8 @@ class TranslationRepository(private val application: Application) {
                         acc
                     }
                     val minFontSize = group.minOf { it.fontSize }
-                    // Phân tích màu nền cho merged block
-                    val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, mergedBounds)
+                    // Phân tích màu nền và màu chữ cho merged block
+                    val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
                     merged.add(
                         TextBlockInfo(
                             text = mergedText,
@@ -1457,7 +1461,8 @@ class TranslationRepository(private val application: Application) {
                             originalImageHeight = group.first().originalImageHeight,
                             bubbleId = bubbleId,
                             backgroundType = backgroundType,
-                            averageBackgroundColor = avgColor
+                            averageBackgroundColor = avgColor,
+                            originalTextColor = textColor
                         )
                     )
                 }
