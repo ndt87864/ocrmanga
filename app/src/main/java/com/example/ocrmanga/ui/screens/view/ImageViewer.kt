@@ -281,7 +281,7 @@ fun ImageViewer(
                                             val scaledWidth = (bounds.width() * scale).toFloat()
                                             val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
                                             val fontSize = dragBlock.fontSize ?: calculateOptimalFontSize(
-                                                block.text, scaledWidth, scaledBlockHeight2, 12f
+                                                block.text, scaledWidth, scaledBlockHeight2, 12f, shapeType = block.shapeType
                                             )
                                             RegionInfo(
                                                 block = block,
