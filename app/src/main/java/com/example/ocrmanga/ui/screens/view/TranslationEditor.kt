@@ -2,11 +2,17 @@ package com.example.ocrmanga.ui.screens.view
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -35,7 +41,7 @@ fun TranslationEditor(
     // --- STATE MANAGEMENT ---
     val isBlockSelected = selectedIndex != null
     var currentPage by remember { mutableStateOf(0) }
-    val totalPages = 3
+    val totalPages = 4 // Tăng lên 4 trang để thêm trang màu sắc
 
     // Hoist state variables to the top level to prevent them from resetting on page change
     var showShapeMenu by remember { mutableStateOf(false) }
@@ -44,6 +50,10 @@ fun TranslationEditor(
     var showEditBlockDialog by remember { mutableStateOf(false) }
     var isRotatingClockwise by remember { mutableStateOf(false) }
     var isRotatingCounterClockwise by remember { mutableStateOf(false) }
+    
+    // State cho màu sắc
+    var showOverlayColorPicker by remember { mutableStateOf(false) }
+    var showTextColorPicker by remember { mutableStateOf(false) }
 
     // --- EFFECTS ---
     // Hoist LaunchedEffects to the top level so they are always active
@@ -321,6 +331,55 @@ fun TranslationEditor(
                             }
                         }
                     }
+
+                    // --- TRANG 4: MÀU SẮC ---
+                    3 -> {
+                        // Nút chọn màu overlay
+                        IconButton(
+                            onClick = { if (isBlockSelected) showOverlayColorPicker = true },
+                            enabled = isBlockSelected
+                        ) {
+                            val currentOverlayColor = selectedIndex?.let { dragBlocks[it].whiteoutColor } ?: Color.White
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .background(currentOverlayColor, CircleShape)
+                                    .border(1.dp, Color.Gray, CircleShape)
+                            )
+                        }
+
+                        // Nút chọn màu text
+                        IconButton(
+                            onClick = { if (isBlockSelected) showTextColorPicker = true },
+                            enabled = isBlockSelected
+                        ) {
+                            val currentTextColor = selectedIndex?.let { dragBlocks[it].textColor } ?: Color.Black
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .background(currentTextColor, CircleShape)
+                                    .border(1.dp, Color.Gray, CircleShape)
+                            )
+                        }
+
+                        // Nút reset màu về mặc định
+                        IconButton(
+                            onClick = {
+                                selectedIndex?.let { idx ->
+                                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                        val old = list[idx]
+                                        list[idx] = old.copy(
+                                            whiteoutColor = null,
+                                            textColor = null
+                                        )
+                                    })
+                                }
+                            },
+                            enabled = isBlockSelected
+                        ) {
+                            Icon(Icons.Default.Refresh, "Reset màu mặc định", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                        }
+                    }
                 }
             }
 
@@ -388,5 +447,109 @@ fun TranslationEditor(
                 }
             )
         }
+
+        // Dialog chọn màu overlay
+        if (showOverlayColorPicker && isBlockSelected && selectedIndex != null) {
+            val idx = selectedIndex
+            val currentColor = dragBlocks[idx].whiteoutColor ?: Color.White
+            ColorPickerDialog(
+                title = "Chọn màu nền overlay",
+                initialColor = currentColor,
+                onColorSelected = { color ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(whiteoutColor = color)
+                    })
+                    showOverlayColorPicker = false
+                },
+                onDismiss = { showOverlayColorPicker = false }
+            )
+        }
+
+        // Dialog chọn màu text
+        if (showTextColorPicker && isBlockSelected && selectedIndex != null) {
+            val idx = selectedIndex
+            val currentColor = dragBlocks[idx].textColor ?: Color.Black
+            ColorPickerDialog(
+                title = "Chọn màu chữ",
+                initialColor = currentColor,
+                onColorSelected = { color ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(textColor = color)
+                    })
+                    showTextColorPicker = false
+                },
+                onDismiss = { showTextColorPicker = false }
+            )
+        }
     }
+}
+
+@Composable
+fun ColorPickerDialog(
+    title: String,
+    initialColor: Color,
+    onColorSelected: (Color) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedColor by remember { mutableStateOf(initialColor) }
+    
+    // Các màu preset phổ biến
+    val presetColors = listOf(
+        Color.White, Color.Black, Color.Red, Color.Green, Color.Blue,
+        Color.Yellow, Color.Cyan, Color.Magenta, Color.Gray,
+        Color(0xFFFFE0B2), Color(0xFFE1F5FE), Color(0xFFF3E5F5),
+        Color(0xFFE8F5E8), Color(0xFFFFF3E0), Color(0xFFE3F2FD)
+    )
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text("Màu hiện tại:", style = MaterialTheme.typography.bodyMedium)
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(selectedColor, RoundedCornerShape(8.dp))
+                        .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text("Chọn màu:", style = MaterialTheme.typography.bodyMedium)
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(6),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.height(120.dp)
+                ) {
+                    items(presetColors) { color ->
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(color, CircleShape)
+                                .border(
+                                    width = if (color == selectedColor) 3.dp else 1.dp,
+                                    color = if (color == selectedColor) MaterialTheme.colorScheme.primary else Color.Gray,
+                                    shape = CircleShape
+                                )
+                                .clickable { selectedColor = color }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onColorSelected(selectedColor) }) {
+                Text("Chọn")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Hủy")
+            }
+        }
+    )
 }
