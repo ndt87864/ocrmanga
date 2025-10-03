@@ -101,7 +101,7 @@ class TranslationRepository(private val application: Application) {
         if (geminiApiKeys.isEmpty()) {
             Log.w("TranslationRepository", "Không tìm thấy API key Gemini nào trong cơ sở dữ liệu.")
         } else {
-            Log.i("TranslationRepository", "Đã tải ${geminiApiKeys.size} API key Gemini.")
+            //Log.i("TranslationRepository", "Đã tải ${geminiApiKeys.size} API key Gemini.")
         }
     }
 
@@ -113,7 +113,7 @@ class TranslationRepository(private val application: Application) {
         if (mistralApiKeys.isEmpty()) {
             Log.w("TranslationRepository", "Không tìm thấy API key Mistral nào trong cơ sở dữ liệu.")
         } else {
-            Log.i("TranslationRepository", "Đã tải ${mistralApiKeys.size} API key Mistral.")
+            //log.i("TranslationRepository", "Đã tải ${mistralApiKeys.size} API key Mistral.")
         }
     }
     // Hàm lấy API key Mistral tiếp theo: mỗi key chỉ dùng 1 lần/lượt, hết danh sách mới quay lại đầu
@@ -226,7 +226,7 @@ class TranslationRepository(private val application: Application) {
         if (currentGeminiKeyIndex == 0) {
             // Cycle through models when all keys have been used once
             currentGeminiModelIndex = (currentGeminiModelIndex + 1) % geminiModels.size
-            Log.i("TranslationRepository", "Đã sử dụng hết các API key, chuyển sang model: ${geminiModels[currentGeminiModelIndex]}")
+            //log.i("TranslationRepository", "Đã sử dụng hết các API key, chuyển sang model: ${geminiModels[currentGeminiModelIndex]}")
         }
         return key
     }
@@ -283,7 +283,7 @@ class TranslationRepository(private val application: Application) {
 
     suspend fun recognizeAndTranslateText(imageUri: Uri, mode: TranslationMode): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
         if (mode == TranslationMode.OFF) {
-            Log.i("TranslationRepository", "Chế độ dịch đã tắt, bỏ qua việc dịch cho $imageUri")
+            //log.i("TranslationRepository", "Chế độ dịch đã tắt, bỏ qua việc dịch cho $imageUri")
             return@withContext Triple("", emptyList(), "zh")
         }
 
@@ -294,7 +294,7 @@ class TranslationRepository(private val application: Application) {
 
         val cacheKey = "$imageUri-$mode"
         cache[cacheKey]?.let {
-            Log.i("TranslationRepository", "Tìm thấy kết quả trong cache cho $imageUri: ${it.first}")
+            //log.i("TranslationRepository", "Tìm thấy kết quả trong cache cho $imageUri: ${it.first}")
             // Lưu vào session nếu lấy từ cache
             lastTranslationSession.add(Pair(imageUri, Pair("(cache)", it.first)))
             return@withContext Triple(it.first, it.second, detectLanguage(it.first) ?: "zh")
@@ -309,7 +309,7 @@ class TranslationRepository(private val application: Application) {
         try {
             bitmap = MediaStore.Images.Media.getBitmap(application.contentResolver, imageUri)
             val rotationDegrees = getRotationDegrees(imageUri)
-            Log.i("TranslationRepository", "[INPUT] Đang xử lý ảnh: $imageUri với góc xoay: $rotationDegrees")
+            //log.i("TranslationRepository", "[INPUT] Đang xử lý ảnh: $imageUri với góc xoay: $rotationDegrees")
 
             // Phát hiện loại ngôn ngữ trước khi quét (dựa trên bitmap)
             val previewText = try {
@@ -319,12 +319,12 @@ class TranslationRepository(private val application: Application) {
                 ""
             }
             detectedScript = detectLanguage(previewText) ?: "zh"
-            Log.i("TranslationRepository", "[PREVIEW] Phát hiện script: $detectedScript")
+            //log.i("TranslationRepository", "[PREVIEW] Phát hiện script: $detectedScript")
 
             // Quét chính xác với recognizer phù hợp
             val (rawText, textBlocks) = recognizeText(bitmap, rotationDegrees, forceScript = detectedScript)
             fullText = rawText
-            Log.i("TranslationRepository", "[INPUT] Văn bản gốc: $fullText, số khối: ${textBlocks.size}")
+            //log.i("TranslationRepository", "[INPUT] Văn bản gốc: $fullText, số khối: ${textBlocks.size}")
 
             if (fullText.isEmpty()) {
                 Log.w("TranslationRepository", "Không nhận diện được văn bản trong $imageUri")
@@ -334,7 +334,7 @@ class TranslationRepository(private val application: Application) {
             }
 
             sourceLanguage = detectLanguage(fullText) ?: "zh"
-            Log.i("TranslationRepository", "Ngôn ngữ nguồn được phát hiện: $sourceLanguage")
+            //log.i("TranslationRepository", "Ngôn ngữ nguồn được phát hiện: $sourceLanguage")
 
             // --- TỰ ĐỘNG GÁN BUBBLE, MERGE, VÀ DỊCH ---
             val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
@@ -357,7 +357,7 @@ class TranslationRepository(private val application: Application) {
                         if (translatedText != null && translatedText.length > 5) {
                             val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
                             if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
-                                Log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
+                                //log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
                                 translatedText = when (mode) {
                                     TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
                                     TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
@@ -391,7 +391,7 @@ class TranslationRepository(private val application: Application) {
                         } else {
                             naturalText
                         }
-                        Log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
+                        //log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
                         val newBounds = adjustBoundsForTranslatedText(reformattedText.orEmpty(), block.bounds, block.fontSize, 1.0f)
                         block.copy(text = reformattedText.orEmpty(), bounds = newBounds)
                     }
@@ -458,14 +458,14 @@ class TranslationRepository(private val application: Application) {
                 if (detectedFinal2 == "vi") {
                     resultText = resultText2
                     translatedBlocks = blocks2
-                    Log.i("TranslationRepository", "Dịch lại thành công ra tiếng Việt.")
+                    //log.i("TranslationRepository", "Dịch lại thành công ra tiếng Việt.")
                 } else {
                     Log.w("TranslationRepository", "Dịch lại vẫn không ra tiếng Việt, trả về kết quả tốt nhất.")
                 }
             }
             val result = Triple(resultText, translatedBlocks, sourceLanguage)
             cache[cacheKey] = resultText to translatedBlocks
-            Log.i("TranslationRepository", "[OUTPUT] Kết quả cuối cùng: $resultText")
+            //log.i("TranslationRepository", "[OUTPUT] Kết quả cuối cùng: $resultText")
             // Kiểm tra lại các block chưa dịch ra tiếng Việt, thử lại với model khác nếu cần
             val finalBlocks = translatedBlocks.map { block ->
                 val lang = detectLanguage(block.text) ?: ""
@@ -541,11 +541,11 @@ class TranslationRepository(private val application: Application) {
                             }
                         }
                         val avgFontSize = if (fontSizes.isNotEmpty()) fontSizes.average().toFloat() else 16f
-                        Log.i(
-                            "TranslationRepository",
-                            "Kết quả quét với scaleFactor=$scale, recognizer=${recognizer.javaClass.simpleName}: " +
-                                    "textLength=$textLength, averageConfidence=$confidence, avgFontSize=$avgFontSize, text=${result.text.take(100)}[...]"
-                        )
+//                        //log.i(
+//                            "TranslationRepository",
+//                            "Kết quả quét với scaleFactor=$scale, recognizer=${recognizer.javaClass.simpleName}: " +
+//                                    "textLength=$textLength, averageConfidence=$confidence, avgFontSize=$avgFontSize, text=${result.text.take(100)}[...]"
+//                        )
                         RecognitionResult(scale, recognizer, result, avgFontSize)
                     } catch (e: Exception) {
                         Log.e("TranslationRepository", "Nhận diện thất bại cho scale $scale và recognizer ${recognizer.javaClass.simpleName}", e)
@@ -587,7 +587,7 @@ class TranslationRepository(private val application: Application) {
         val bestScaleFactor = bestResult.scale
         val bestTextResult = bestResult.textResult
         val bestAvgFontSize = bestResult.avgFontSize
-        Log.i("TranslationRepository", "Chọn scaleFactor tốt nhất: $bestScaleFactor với recognizer ${bestResult.recognizer.javaClass.simpleName}, avgFontSize=$bestAvgFontSize")
+        //log.i("TranslationRepository", "Chọn scaleFactor tốt nhất: $bestScaleFactor với recognizer ${bestResult.recognizer.javaClass.simpleName}, avgFontSize=$bestAvgFontSize")
 
         // Additional validation: Check for common errors in Chinese text
         val bestText = bestTextResult.text
@@ -602,11 +602,11 @@ class TranslationRepository(private val application: Application) {
                     averageConfidence
                 }
             if (alternativeResult != null) {
-                Log.i("TranslationRepository", "Chuyển sang kết quả thay thế với scaleFactor=${alternativeResult.scale}")
+                //log.i("TranslationRepository", "Chuyển sang kết quả thay thế với scaleFactor=${alternativeResult.scale}")
                 val alternativeTextResult = alternativeResult.textResult
                 val alternativeAvgFontSize = alternativeResult.avgFontSize
                 val alternativeScaleFactor = alternativeResult.scale
-                Log.i("TranslationRepository", "Kết quả thay thế: scaleFactor=$alternativeScaleFactor, avgFontSize=$alternativeAvgFontSize")
+                //log.i("TranslationRepository", "Kết quả thay thế: scaleFactor=$alternativeScaleFactor, avgFontSize=$alternativeAvgFontSize")
 
                 val textBlocks = alternativeTextResult.textBlocks.flatMap { block ->
                     block.lines.map { line ->
@@ -667,11 +667,11 @@ class TranslationRepository(private val application: Application) {
                 }
 
                 processedTextBlocks.forEachIndexed { index, block ->
-                    Log.i("TranslationRepository", "Khối #$index: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, bottom=${block.bounds.bottom}, fontSize=${block.fontSize}")
+                    //log.i("TranslationRepository", "Khối #$index: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, bottom=${block.bounds.bottom}, fontSize=${block.fontSize}")
                 }
 
                 val fullText = processedTextBlocks.joinToString("\n") { it.text }
-                Log.i("TranslationRepository", "Hướng văn bản: ${if (isVertical) "Dọc" else "Ngang"}, Toàn bộ văn bản: $fullText")
+                //log.i("TranslationRepository", "Hướng văn bản: ${if (isVertical) "Dọc" else "Ngang"}, Toàn bộ văn bản: $fullText")
                 return@withContext fullText to processedTextBlocks
             }
         }
@@ -735,11 +735,11 @@ class TranslationRepository(private val application: Application) {
         }
 
         processedTextBlocks.forEachIndexed { index, block ->
-            Log.i("TranslationRepository", "Khối #$index: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, bottom=${block.bounds.bottom}, fontSize=${block.fontSize}")
+            //log.i("TranslationRepository", "Khối #$index: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, bottom=${block.bounds.bottom}, fontSize=${block.fontSize}")
         }
 
         val fullText = processedTextBlocks.joinToString("\n") { it.text }
-        Log.i("TranslationRepository", "Hướng văn bản: ${if (isVertical) "Dọc" else "Ngang"}, Toàn bộ văn bản: $fullText")
+        //log.i("TranslationRepository", "Hướng văn bản: ${if (isVertical) "Dọc" else "Ngang"}, Toàn bộ văn bản: $fullText")
         fullText to processedTextBlocks
     }
 
@@ -879,10 +879,10 @@ class TranslationRepository(private val application: Application) {
 
         rows.forEachIndexed { rowIndex, rowBlocks ->
             rowBlocks.forEach { block ->
-                Log.i(
-                    "TranslationRepository",
-                    "Row #$rowIndex, Block: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, right=${block.bounds.right}, bottom=${block.bounds.bottom}"
-                )
+//                //log.i(
+//                    "TranslationRepository",
+//                    "Row #$rowIndex, Block: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, right=${block.bounds.right}, bottom=${block.bounds.bottom}"
+//                )
             }
         }
 
@@ -999,10 +999,10 @@ class TranslationRepository(private val application: Application) {
                 originalTextColor = textColor
             )
 
-            Log.i(
-                "TranslationRepository",
-                "Cluster #$clusterIndex: text=${mergedBlock.text}, left=${mergedBlock.bounds.left}, top=${mergedBlock.bounds.top}, right=${mergedBlock.bounds.right}, bottom=${mergedBlock.bounds.bottom}, fontSize=${mergedBlock.fontSize}"
-            )
+//            Log.i(
+//                "TranslationRepository",
+//                "Cluster #$clusterIndex: text=${mergedBlock.text}, left=${mergedBlock.bounds.left}, top=${mergedBlock.bounds.top}, right=${mergedBlock.bounds.right}, bottom=${mergedBlock.bounds.bottom}, fontSize=${mergedBlock.fontSize}"
+//            )
 
             mergedBlocks.add(mergedBlock)
         }
@@ -1258,7 +1258,7 @@ class TranslationRepository(private val application: Application) {
 
                 // Nếu dịch thành công và khác với gốc thì trả về luôn
                 if (!translatedText.equals(originalText, ignoreCase = true)) {
-                    Log.i("TranslationRepository", "Gemini translated: $originalText -> $translatedText (model=$modelName, key=${apiKey.take(5)}...)")
+                    //Log.i("TranslationRepository", "Gemini translated: $originalText -> $translatedText (model=$modelName, key=${apiKey.take(5)}...)")
                     return@withContext translatedText
                 }
             } catch (e: Exception) {
