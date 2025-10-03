@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
@@ -776,3 +777,190 @@ fun splitNonOverlappingBoxes(blocks: List<TextBlockInfo>): List<TextBlockInfo> {
 // val bgRect = findBackgroundRegion(rect, bitmap)
 // val limitedRect = limitRectToBackground(rect, bgRect)
 // drawRect(..., topLeft = Offset(limitedRect.left, limitedRect.top), size = Size(limitedRect.width, limitedRect.height))
+
+// Phân tích màu nền của text block từ bitmap gốc
+fun analyzeBackgroundColor(bitmap: Bitmap?, bounds: android.graphics.Rect): Pair<com.example.ocrmanga.data.models.BackgroundType, Int?> {
+    if (bitmap == null) return Pair(com.example.ocrmanga.data.models.BackgroundType.WHITE, null)
+    
+    try {
+        // Lấy mẫu màu từ các điểm xung quanh text bounds
+        val samplePoints = mutableListOf<Int>()
+        val margin = 5 // pixel margin around text
+        
+        // Lấy mẫu từ 4 góc mở rộng
+        val samples = listOf(
+            Pair(bounds.left - margin, bounds.top - margin),
+            Pair(bounds.right + margin, bounds.top - margin),
+            Pair(bounds.left - margin, bounds.bottom + margin),
+            Pair(bounds.right + margin, bounds.bottom + margin),
+            // Thêm mẫu từ các cạnh
+            Pair(bounds.centerX(), bounds.top - margin),
+            Pair(bounds.centerX(), bounds.bottom + margin),
+            Pair(bounds.left - margin, bounds.centerY()),
+            Pair(bounds.right + margin, bounds.centerY())
+        )
+        
+        samples.forEach { (x, y) ->
+            if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
+                samplePoints.add(bitmap.getPixel(x, y))
+            }
+        }
+        
+        if (samplePoints.isEmpty()) return Pair(com.example.ocrmanga.data.models.BackgroundType.WHITE, null)
+        
+        // Tính màu trung bình
+        var totalR = 0
+        var totalG = 0
+        var totalB = 0
+        var totalA = 0
+        
+        samplePoints.forEach { color ->
+            totalR += (color shr 16) and 0xFF
+            totalG += (color shr 8) and 0xFF
+            totalB += color and 0xFF
+            totalA += (color shr 24) and 0xFF
+        }
+        
+        val avgR = totalR / samplePoints.size
+        val avgG = totalG / samplePoints.size
+        val avgB = totalB / samplePoints.size
+        val avgA = totalA / samplePoints.size
+        
+        val avgColor = (avgA shl 24) or (avgR shl 16) or (avgG shl 8) or avgB
+        
+        // Xác định loại nền dựa trên brightness và color variance
+        val brightness = (avgR + avgG + avgB) / 3
+        
+        // Tính độ biến thiên màu sắc để phát hiện nền có màu
+        var colorVariance = 0
+        samplePoints.forEach { color ->
+            val r = (color shr 16) and 0xFF
+            val g = (color shr 8) and 0xFF
+            val b = color and 0xFF
+            val pixelBrightness = (r + g + b) / 3
+            colorVariance += kotlin.math.abs(pixelBrightness - brightness)
+        }
+        colorVariance /= samplePoints.size
+        
+        val backgroundType = when {
+            // Nền trắng: sáng và ít biến thiên
+            brightness >= 235 && colorVariance <= 15 -> com.example.ocrmanga.data.models.BackgroundType.WHITE
+            // Nền trong suốt: alpha thấp
+            avgA < 200 -> com.example.ocrmanga.data.models.BackgroundType.TRANSPARENT
+            // Nền có màu: có độ biến thiên hoặc không quá sáng
+            colorVariance > 15 || brightness < 235 -> com.example.ocrmanga.data.models.BackgroundType.COLORED
+            // Default
+            else -> com.example.ocrmanga.data.models.BackgroundType.WHITE
+        }
+        
+        return Pair(backgroundType, if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor else null)
+        
+    } catch (e: Exception) {
+        return Pair(com.example.ocrmanga.data.models.BackgroundType.WHITE, null)
+    }
+}
+
+// Vẽ overlay bán trong suốt cho text trên nền có màu
+fun DrawScope.drawTranslucentOverlay(
+    rect: Rect,
+    backgroundType: com.example.ocrmanga.data.models.BackgroundType,
+    averageBackgroundColor: Int?,
+    shapeType: Int = 0
+) {
+    when (backgroundType) {
+        com.example.ocrmanga.data.models.BackgroundType.WHITE -> {
+            // Nền trắng - sử dụng màu trắng bình thường
+            val overlayColor = Color.White
+            when (shapeType) {
+                1 -> drawOval(
+                    color = overlayColor,
+                    topLeft = Offset(rect.left, rect.top),
+                    size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                )
+                else -> drawRect(
+                    color = overlayColor,
+                    topLeft = Offset(rect.left, rect.top),
+                    size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                )
+            }
+        }
+        com.example.ocrmanga.data.models.BackgroundType.COLORED -> {
+            // Nền có màu - tạo hiệu ứng kính mờ với nhiều lớp
+            if (averageBackgroundColor != null) {
+                val baseColor = Color(averageBackgroundColor)
+                
+                // Lớp 1: Làm sáng nền một chút (giống kính mờ)
+                val lightenedColor = Color(
+                    red = kotlin.math.min(1f, baseColor.red + 0.3f),
+                    green = kotlin.math.min(1f, baseColor.green + 0.3f),
+                    blue = kotlin.math.min(1f, baseColor.blue + 0.3f),
+                    alpha = 0.85f // Độ mờ cao để che văn bản gốc
+                )
+                
+                // Lớp 2: Thêm một chút màu trắng để tạo hiệu ứng kính mờ
+                val frostColor = Color.White.copy(alpha = 0.4f)
+                
+                // Vẽ lớp nền được làm sáng
+                when (shapeType) {
+                    1 -> {
+                        drawOval(
+                            color = lightenedColor,
+                            topLeft = Offset(rect.left, rect.top),
+                            size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                        )
+                        // Vẽ lớp kính mờ
+                        drawOval(
+                            color = frostColor,
+                            topLeft = Offset(rect.left, rect.top),
+                            size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                        )
+                    }
+                    else -> {
+                        drawRect(
+                            color = lightenedColor,
+                            topLeft = Offset(rect.left, rect.top),
+                            size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                        )
+                        // Vẽ lớp kính mờ
+                        drawRect(
+                            color = frostColor,
+                            topLeft = Offset(rect.left, rect.top),
+                            size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                        )
+                    }
+                }
+            } else {
+                // Fallback - màu trắng với độ mờ cao
+                val overlayColor = Color.White.copy(alpha = 0.9f)
+                when (shapeType) {
+                    1 -> drawOval(
+                        color = overlayColor,
+                        topLeft = Offset(rect.left, rect.top),
+                        size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                    )
+                    else -> drawRect(
+                        color = overlayColor,
+                        topLeft = Offset(rect.left, rect.top),
+                        size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                    )
+                }
+            }
+        }
+        com.example.ocrmanga.data.models.BackgroundType.TRANSPARENT -> {
+            // Nền trong suốt - sử dụng màu trắng với độ mờ cao
+            val overlayColor = Color.White.copy(alpha = 0.95f)
+            when (shapeType) {
+                1 -> drawOval(
+                    color = overlayColor,
+                    topLeft = Offset(rect.left, rect.top),
+                    size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                )
+                else -> drawRect(
+                    color = overlayColor,
+                    topLeft = Offset(rect.left, rect.top),
+                    size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                )
+            }
+        }
+    }
+}

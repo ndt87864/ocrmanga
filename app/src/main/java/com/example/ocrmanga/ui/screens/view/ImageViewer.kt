@@ -306,22 +306,14 @@ fun ImageViewer(
                                                 withTransform({
                                                     rotate(rotation, Offset(rect.left + rect.width/2, rect.top + rect.height/2))
                                                 }) {
+                                                    // Sử dụng overlay bán trong suốt cho nền có màu
+                                                    drawTranslucentOverlay(
+                                                        rect = rect,
+                                                        backgroundType = block.backgroundType,
+                                                        averageBackgroundColor = block.averageBackgroundColor,
+                                                        shapeType = block.shapeType
+                                                    )
                                                     val isOval = (block.shapeType == 1)
-                                                    if (isOval) {
-                                                        drawOval(
-                                                            color = Color.White,
-                                                            topLeft = Offset(rect.left, rect.top),
-                                                            size = Size(rect.width, rect.height),
-                                                            style = Fill
-                                                        )
-                                                    } else {
-                                                        drawRect(
-                                                            color = Color.White,
-                                                            topLeft = Offset(rect.left, rect.top),
-                                                            size = Size(rect.width, rect.height),
-                                                            style = Fill
-                                                        )
-                                                    }
                                                     val textPadding = if (isOval) 0.15f else 0f
                                                     val textLeft = rect.left + rect.width * textPadding
                                                     val textTop = rect.top + rect.height * textPadding

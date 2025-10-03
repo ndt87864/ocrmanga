@@ -13,6 +13,7 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
 import com.example.ocrmanga.data.models.TextBlockInfo
+import com.example.ocrmanga.data.models.BackgroundType
 import java.io.File
 import java.io.FileOutputStream
 
@@ -82,7 +83,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-        private const val DATABASE_VERSION = 5
+        private const val DATABASE_VERSION = 6
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -155,6 +156,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 original_image_width INTEGER, -- New column
                 original_image_height INTEGER, -- New column
                 shape_type INTEGER DEFAULT 0, -- New column: 0 = rectangle, 1 = oval
+                background_type INTEGER DEFAULT 0, -- New column: 0 = WHITE, 1 = COLORED, 2 = TRANSPARENT
+                average_background_color INTEGER, -- New column: màu nền trung bình (nullable)
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
@@ -225,6 +228,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.i(TAG, "Đã thêm cột shape_type và cập nhật dữ liệu cũ = 0")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm cột shape_type vào bảng translations", e)
+            }
+        }
+        
+        // Thêm cột background_type và average_background_color cho bảng translations (version 6)
+        if (oldVersion < 6) {
+            try {
+                db.execSQL("ALTER TABLE translations ADD COLUMN background_type INTEGER DEFAULT 0")
+                db.execSQL("ALTER TABLE translations ADD COLUMN average_background_color INTEGER")
+                Log.i(TAG, "Đã thêm các cột background_type và average_background_color vào bảng translations")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm các cột màu nền vào bảng translations", e)
             }
         }
     }
@@ -313,6 +327,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("original_image_width", savedWidth)
                                 put("original_image_height", savedHeight)
                                 put("shape_type", textBlock.shapeType)
+                                put("background_type", textBlock.backgroundType.ordinal)
+                                put("average_background_color", textBlock.averageBackgroundColor)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -594,7 +610,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             orders.add(order)
 
             val textCursor = db.rawQuery("""
-                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type
+                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type, background_type, average_background_color
                 FROM translations 
                 WHERE $COLUMN_IMAGE_ID = ?
             """, arrayOf(imageId.toString()))
@@ -615,7 +631,23 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val originalImageWidth = if (textCursor.columnCount > 8) textCursor.getInt(8) else null
                 val originalImageHeight = if (textCursor.columnCount > 9) textCursor.getInt(9) else null
                 val shapeType = if (textCursor.columnCount > 10) textCursor.getInt(10) else 0
-                textBlocks.add(TextBlockInfo(translatedText, bounds, fontSize, rotation = rotation, originalImageWidth = originalImageWidth, originalImageHeight = originalImageHeight, shapeType = shapeType))
+                val backgroundTypeOrdinal = if (textCursor.columnCount > 11) textCursor.getInt(11) else 0
+                val averageBackgroundColor = if (textCursor.columnCount > 12) {
+                    val value = textCursor.getInt(12)
+                    if (textCursor.isNull(12)) null else value
+                } else null
+                val backgroundType = BackgroundType.values().getOrNull(backgroundTypeOrdinal) ?: BackgroundType.WHITE
+                textBlocks.add(TextBlockInfo(
+                    text = translatedText, 
+                    bounds = bounds, 
+                    fontSize = fontSize, 
+                    rotation = rotation, 
+                    originalImageWidth = originalImageWidth, 
+                    originalImageHeight = originalImageHeight, 
+                    shapeType = shapeType,
+                    backgroundType = backgroundType,
+                    averageBackgroundColor = averageBackgroundColor
+                ))
             }
             textCursor.close()
             if (textBlocks.isNotEmpty()) {

@@ -16,5 +16,13 @@ data class TextBlockInfo(
     val originalImageWidth: Int? = null, // Width of the image when OCR was performed
     val originalImageHeight: Int? = null, // Height of the image when OCR was performed
     val bubbleId: Int? = null, // ID của khung thoại (bubble) mà block này thuộc về
-    val shapeType: Int = 0 // 0 = rectangle (default), 1 = oval
+    val shapeType: Int = 0, // 0 = rectangle (default), 1 = oval
+    val backgroundType: BackgroundType = BackgroundType.WHITE, // Loại nền của văn bản gốc
+    val averageBackgroundColor: Int? = null // Màu nền trung bình nếu không phải nền trắng
 )
+
+enum class BackgroundType {
+    WHITE,      // Nền trắng - sử dụng bôi đen bình thường
+    COLORED,    // Nền có màu - sử dụng overlay bán trong suốt
+    TRANSPARENT // Nền trong suốt - sử dụng overlay với độ mờ cao
+}
