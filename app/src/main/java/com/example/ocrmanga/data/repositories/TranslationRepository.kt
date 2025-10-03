@@ -344,7 +344,7 @@ class TranslationRepository(private val application: Application) {
             kotlinx.coroutines.coroutineScope {
                 val deferredBlocks = mergedBlocks.map { block ->
                     async {
-                        Log.i("TranslationRepository", "Khối văn bản gốc: ${block.text}, tọa độ: left=${block.bounds.left}, top=${block.bounds.top}")
+                        // Log.i("TranslationRepository", "Khối văn bản gốc: ${block.text}, tọa độ: left=${block.bounds.left}, top=${block.bounds.top}") // Tắt log để tăng tốc
                         var translatedText = when (mode) {
                             TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
                             TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
@@ -352,29 +352,23 @@ class TranslationRepository(private val application: Application) {
                             TranslationMode.OFF -> block.text
                             TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
                         }
-                        Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText")
-                        val detectedAfterTranslation = translatedText?.let { detectLanguage(it) } ?: "vi"
-                        if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
-                            Log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
-                            translatedText = when (mode) {
-                                TranslationMode.OFFLINE -> translatedText?.let {
-                                    translateTextOffline(
-                                        it, detectedAfterTranslation)
-                                }.toString()
-                                TranslationMode.ONLINE -> translatedText?.let {
-                                    translateTextOnline(
-                                        it, detectedAfterTranslation)
-                                }.toString()
-                                TranslationMode.GEMINI -> translatedText?.let {
-                                    translateTextWithGemini(
-                                        it, detectedAfterTranslation)
-                                }.toString()
-                                else -> translatedText
+                        // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
+                        // Tối ưu: chỉ kiểm tra lần 2 nếu text quá ngắn (có thể bị dịch sai)
+                        if (translatedText != null && translatedText.length > 5) {
+                            val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
+                            if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
+                                Log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
+                                translatedText = when (mode) {
+                                    TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
+                                    TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
+                                    TranslationMode.GEMINI -> translateTextWithGemini(translatedText, detectedAfterTranslation)
+                                    else -> translatedText
+                                }
                             }
                         }
-                        Log.i("TranslationRepository", "Văn bản sau kiểm tra lần 2: $translatedText")
+                        // Log.i("TranslationRepository", "Văn bản sau kiểm tra lần 2: $translatedText") // Tắt log để tăng tốc
                         val naturalText = translatedText?.let { postProcessTranslation(it) }
-                        Log.i("TranslationRepository", "Văn bản tự nhiên sau xử lý: $naturalText")
+                        // Log.i("TranslationRepository", "Văn bản tự nhiên sau xử lý: $naturalText") // Tắt log để tăng tốc
                         val isVertical = block.isVertical
                         val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
                             val words = naturalText?.split(Regex("\\s+")).orEmpty().filter { it.isNotEmpty() }
@@ -518,14 +512,14 @@ class TranslationRepository(private val application: Application) {
         onlyPreview: Boolean = false,
         forceScript: String? = null
     ): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
-        // Tăng số lượng scale thử nghiệm để tăng độ chính xác
-        val scaleFactors = if (onlyPreview) listOf(0.95f, 1.003f, 1.08f, 1.12f) else listOf(0.95f, 1.003f, 1.08f, 1.12f, 1.18f)
+        // Tối ưu tốc độ: giảm số scale factors và ưu tiên recognizer chính xác
+        val scaleFactors = if (onlyPreview) listOf(1.003f) else listOf(1.003f, 1.08f) // Giảm từ 4-5 xuống 1-2 scale
         val recognizers = when (forceScript) {
             "zh" -> listOf(chineseRecognizer)
             "ja" -> listOf(japaneseRecognizer)
             "ko" -> listOf(koreanRecognizer)
             "en" -> listOf(latinRecognizer)
-            else -> listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer, latinRecognizer)
+            else -> listOf(chineseRecognizer, japaneseRecognizer) // Giảm từ 4 xuống 2 recognizer
         }
         val deferredResults = scaleFactors.flatMap { scale ->
             recognizers.map { recognizer ->
@@ -1448,8 +1442,13 @@ class TranslationRepository(private val application: Application) {
                         acc
                     }
                     val minFontSize = group.minOf { it.fontSize }
-                    // Phân tích màu nền và màu chữ cho merged block
-                    val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
+                    // Tối ưu: sử dụng màu của block đầu tiên thay vì phân tích lại để tăng tốc
+                    val firstBlock = group.first()
+                    val (backgroundType, avgColor, textColor) = if (bitmap != null) {
+                        analyzeBackgroundAndTextColor(bitmap, mergedBounds)
+                    } else {
+                        Triple(firstBlock.backgroundType, firstBlock.averageBackgroundColor, firstBlock.originalTextColor)
+                    }
                     merged.add(
                         TextBlockInfo(
                             text = mergedText,

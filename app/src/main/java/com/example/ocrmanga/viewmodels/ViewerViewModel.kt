@@ -525,7 +525,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun processTranslationQueue() {
-        val maxBatchSize = 2 // Dịch song song 2 trang mỗi lượt
+        val maxBatchSize = 4 // Dịch song song 4 trang mỗi lượt để tăng tốc
         val translatedTexts = mutableMapOf<Uri, Pair<String, List<TextBlockInfo>>>()
         val sourceLanguages = mutableMapOf<Uri, String>()
         var completedCount = 0
@@ -596,9 +596,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 } // Nếu ảnh đã bị xóa thì bỏ qua
             }
-            // Sau mỗi đợt, delay 2 giây trước khi tiếp tục đợt mới nếu còn ảnh
+            // Sau mỗi đợt, delay ngắn hơn để tăng tốc
             if (translationQueue.isNotEmpty()) {
-                delay(2000)
+                delay(500) // Giảm từ 2s xuống 0.5s
             }
         }
         _uiState.update {
