@@ -83,7 +83,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-        private const val DATABASE_VERSION = 7
+        private const val DATABASE_VERSION = 8
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -159,6 +159,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 background_type INTEGER DEFAULT 0, -- New column: 0 = WHITE, 1 = COLORED, 2 = TRANSPARENT
                 average_background_color INTEGER, -- New column: màu nền trung bình (nullable)
                 original_text_color INTEGER, -- New column: màu chữ gốc (nullable)
+                custom_overlay_color INTEGER, -- New column: màu overlay tùy chỉnh (nullable)
+                custom_text_color INTEGER, -- New column: màu text tùy chỉnh (nullable)
+                overlay_alpha REAL DEFAULT 1.0, -- New column: độ trong suốt overlay
+                text_boldness REAL DEFAULT 1.0, -- New column: độ đậm text
+                overlay_saturation REAL DEFAULT 1.0, -- New column: độ bão hòa overlay
+                text_saturation REAL DEFAULT 1.0, -- New column: độ bão hòa text
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
@@ -252,6 +258,21 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.w(TAG, "Không thể thêm cột original_text_color vào bảng translations", e)
             }
         }
+        
+        // Thêm các cột màu sắc tùy chỉnh cho bảng translations (version 8)
+        if (oldVersion < 8) {
+            try {
+                db.execSQL("ALTER TABLE translations ADD COLUMN custom_overlay_color INTEGER")
+                db.execSQL("ALTER TABLE translations ADD COLUMN custom_text_color INTEGER")
+                db.execSQL("ALTER TABLE translations ADD COLUMN overlay_alpha REAL DEFAULT 1.0")
+                db.execSQL("ALTER TABLE translations ADD COLUMN text_boldness REAL DEFAULT 1.0")
+                db.execSQL("ALTER TABLE translations ADD COLUMN overlay_saturation REAL DEFAULT 1.0")
+                db.execSQL("ALTER TABLE translations ADD COLUMN text_saturation REAL DEFAULT 1.0")
+                Log.i(TAG, "Đã thêm các cột màu sắc tùy chỉnh vào bảng translations")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm các cột màu sắc tùy chỉnh vào bảng translations", e)
+            }
+        }
     }
 
     fun saveMangaRoom(imageUris: List<Uri>, translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>, title: String? = null): Long {
@@ -341,6 +362,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("background_type", textBlock.backgroundType.ordinal)
                                 put("average_background_color", textBlock.averageBackgroundColor)
                                 put("original_text_color", textBlock.originalTextColor)
+                                put("custom_overlay_color", textBlock.customOverlayColor)
+                                put("custom_text_color", textBlock.customTextColor)
+                                put("overlay_alpha", textBlock.overlayAlpha)
+                                put("text_boldness", textBlock.textBoldness)
+                                put("overlay_saturation", textBlock.overlaySaturation)
+                                put("text_saturation", textBlock.textSaturation)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -512,6 +539,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("original_image_width", savedWidth)
                                     put("original_image_height", savedHeight)
                                     put("shape_type", textBlock.shapeType)
+                                    put("background_type", textBlock.backgroundType.ordinal)
+                                    put("average_background_color", textBlock.averageBackgroundColor)
+                                    put("original_text_color", textBlock.originalTextColor)
+                                    put("custom_overlay_color", textBlock.customOverlayColor)
+                                    put("custom_text_color", textBlock.customTextColor)
+                                    put("overlay_alpha", textBlock.overlayAlpha)
+                                    put("text_boldness", textBlock.textBoldness)
+                                    put("overlay_saturation", textBlock.overlaySaturation)
+                                    put("text_saturation", textBlock.textSaturation)
                                 }
                                 db.insert("translations", null, textValues)
                             }
@@ -622,7 +658,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             orders.add(order)
 
             val textCursor = db.rawQuery("""
-                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type, background_type, average_background_color
+                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type, background_type, average_background_color, original_text_color, custom_overlay_color, custom_text_color, overlay_alpha, text_boldness, overlay_saturation, text_saturation
                 FROM translations 
                 WHERE $COLUMN_IMAGE_ID = ?
             """, arrayOf(imageId.toString()))
@@ -652,6 +688,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     val value = textCursor.getInt(13)
                     if (textCursor.isNull(13)) null else value
                 } else null
+                val customOverlayColor = if (textCursor.columnCount > 14) {
+                    val value = textCursor.getInt(14)
+                    if (textCursor.isNull(14)) null else value
+                } else null
+                val customTextColor = if (textCursor.columnCount > 15) {
+                    val value = textCursor.getInt(15)
+                    if (textCursor.isNull(15)) null else value
+                } else null
+                val overlayAlpha = if (textCursor.columnCount > 16) textCursor.getFloat(16) else 1.0f
+                val textBoldness = if (textCursor.columnCount > 17) textCursor.getFloat(17) else 1.0f
+                val overlaySaturation = if (textCursor.columnCount > 18) textCursor.getFloat(18) else 1.0f
+                val textSaturation = if (textCursor.columnCount > 19) textCursor.getFloat(19) else 1.0f
                 val backgroundType = BackgroundType.values().getOrNull(backgroundTypeOrdinal) ?: BackgroundType.WHITE
                 textBlocks.add(TextBlockInfo(
                     text = translatedText, 
@@ -663,7 +711,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     shapeType = shapeType,
                     backgroundType = backgroundType,
                     averageBackgroundColor = averageBackgroundColor,
-                    originalTextColor = originalTextColor
+                    originalTextColor = originalTextColor,
+                    customOverlayColor = customOverlayColor,
+                    customTextColor = customTextColor,
+                    overlayAlpha = overlayAlpha,
+                    textBoldness = textBoldness,
+                    overlaySaturation = overlaySaturation,
+                    textSaturation = textSaturation
                 ))
             }
             textCursor.close()

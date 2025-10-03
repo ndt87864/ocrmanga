@@ -19,7 +19,14 @@ data class TextBlockInfo(
     val shapeType: Int = 0, // 0 = rectangle (default), 1 = oval
     val backgroundType: BackgroundType = BackgroundType.WHITE, // Loại nền của văn bản gốc
     val averageBackgroundColor: Int? = null, // Màu nền trung bình nếu không phải nền trắng
-    val originalTextColor: Int? = null // Màu của văn bản gốc
+    val originalTextColor: Int? = null, // Màu của văn bản gốc
+    // Custom color properties from TranslationEditor
+    val customOverlayColor: Int? = null, // Màu overlay tùy chỉnh
+    val customTextColor: Int? = null, // Màu text tùy chỉnh
+    val overlayAlpha: Float = 1.0f, // Độ trong suốt overlay (0.0 - 1.0)
+    val textBoldness: Float = 1.0f, // Độ đậm text (0.5 - 2.0)
+    val overlaySaturation: Float = 1.0f, // Độ bão hòa overlay (0.0 - 2.0)
+    val textSaturation: Float = 1.0f // Độ bão hòa text (0.0 - 2.0)
 )
 
 enum class BackgroundType {

@@ -97,7 +97,13 @@ fun ImageViewer(
                 ?: translatedTexts[uri]?.second?.map { block ->
                     DragBlockState(
                         block = block,
-                        rotation = block.rotation ?: 0f
+                        rotation = block.rotation ?: 0f,
+                        whiteoutColor = block.customOverlayColor?.let { androidx.compose.ui.graphics.Color(it) },
+                        textColor = block.customTextColor?.let { androidx.compose.ui.graphics.Color(it) },
+                        overlayAlpha = block.overlayAlpha,
+                        textBoldness = block.textBoldness,
+                        overlaySaturation = block.overlaySaturation,
+                        textSaturation = block.textSaturation
                     )
                 } ?: emptyList()
             var dragBlocks by remember(uri, translationVersion, translatedTexts[uri]) {
@@ -108,7 +114,13 @@ fun ImageViewer(
                     val newBlocks = translatedTexts[uri]?.second?.map {
                         DragBlockState(
                             block = it,
-                            rotation = it.rotation ?: 0f
+                            rotation = it.rotation ?: 0f,
+                            whiteoutColor = it.customOverlayColor?.let { color -> androidx.compose.ui.graphics.Color(color) },
+                            textColor = it.customTextColor?.let { color -> androidx.compose.ui.graphics.Color(color) },
+                            overlayAlpha = it.overlayAlpha,
+                            textBoldness = it.textBoldness,
+                            overlaySaturation = it.overlaySaturation,
+                            textSaturation = it.textSaturation
                         )
                     } ?: emptyList()
                     dragBlocks = newBlocks
