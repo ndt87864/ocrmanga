@@ -83,7 +83,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-        private const val DATABASE_VERSION = 6
+        private const val DATABASE_VERSION = 7
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -158,6 +158,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 shape_type INTEGER DEFAULT 0, -- New column: 0 = rectangle, 1 = oval
                 background_type INTEGER DEFAULT 0, -- New column: 0 = WHITE, 1 = COLORED, 2 = TRANSPARENT
                 average_background_color INTEGER, -- New column: màu nền trung bình (nullable)
+                original_text_color INTEGER, -- New column: màu chữ gốc (nullable)
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
@@ -239,6 +240,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.i(TAG, "Đã thêm các cột background_type và average_background_color vào bảng translations")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm các cột màu nền vào bảng translations", e)
+            }
+        }
+        
+        // Thêm cột original_text_color cho bảng translations (version 7)
+        if (oldVersion < 7) {
+            try {
+                db.execSQL("ALTER TABLE translations ADD COLUMN original_text_color INTEGER")
+                Log.i(TAG, "Đã thêm cột original_text_color vào bảng translations")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm cột original_text_color vào bảng translations", e)
             }
         }
     }
@@ -329,6 +340,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("shape_type", textBlock.shapeType)
                                 put("background_type", textBlock.backgroundType.ordinal)
                                 put("average_background_color", textBlock.averageBackgroundColor)
+                                put("original_text_color", textBlock.originalTextColor)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -636,6 +648,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     val value = textCursor.getInt(12)
                     if (textCursor.isNull(12)) null else value
                 } else null
+                val originalTextColor = if (textCursor.columnCount > 13) {
+                    val value = textCursor.getInt(13)
+                    if (textCursor.isNull(13)) null else value
+                } else null
                 val backgroundType = BackgroundType.values().getOrNull(backgroundTypeOrdinal) ?: BackgroundType.WHITE
                 textBlocks.add(TextBlockInfo(
                     text = translatedText, 
@@ -646,7 +662,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     originalImageHeight = originalImageHeight, 
                     shapeType = shapeType,
                     backgroundType = backgroundType,
-                    averageBackgroundColor = averageBackgroundColor
+                    averageBackgroundColor = averageBackgroundColor,
+                    originalTextColor = originalTextColor
                 ))
             }
             textCursor.close()

@@ -18,7 +18,8 @@ data class TextBlockInfo(
     val bubbleId: Int? = null, // ID của khung thoại (bubble) mà block này thuộc về
     val shapeType: Int = 0, // 0 = rectangle (default), 1 = oval
     val backgroundType: BackgroundType = BackgroundType.WHITE, // Loại nền của văn bản gốc
-    val averageBackgroundColor: Int? = null // Màu nền trung bình nếu không phải nền trắng
+    val averageBackgroundColor: Int? = null, // Màu nền trung bình nếu không phải nền trắng
+    val originalTextColor: Int? = null // Màu của văn bản gốc
 )
 
 enum class BackgroundType {

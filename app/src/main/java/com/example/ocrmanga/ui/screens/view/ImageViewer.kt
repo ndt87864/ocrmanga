@@ -311,6 +311,7 @@ fun ImageViewer(
                                                         rect = rect,
                                                         backgroundType = block.backgroundType,
                                                         averageBackgroundColor = block.averageBackgroundColor,
+                                                        originalTextColor = block.originalTextColor,
                                                         shapeType = block.shapeType
                                                     )
                                                     val isOval = (block.shapeType == 1)
@@ -319,13 +320,32 @@ fun ImageViewer(
                                                     val textTop = rect.top + rect.height * textPadding
                                                     val textWidth = rect.width * (1 - 2 * textPadding)
                                                     val textHeight = rect.height * (1 - 2 * textPadding)
+                                                    // Xác định màu text dựa trên độ sáng của overlay
+                                                    val textColor = when {
+                                                        i == draggingIndex -> Color.Red
+                                                        else -> {
+                                                            // Tính độ sáng của overlay background
+                                                            val overlayColor = block.averageBackgroundColor
+                                                            if (overlayColor != null) {
+                                                                val r = (overlayColor shr 16) and 0xFF
+                                                                val g = (overlayColor shr 8) and 0xFF
+                                                                val b = overlayColor and 0xFF
+                                                                val brightness = (r + g + b) / 3
+                                                                // Sử dụng text đen nếu nền sáng, text trắng nếu nền tối
+                                                                if (brightness > 127) Color.Black else Color.White
+                                                            } else {
+                                                                // Mặc định cho nền trắng
+                                                                Color.Black
+                                                            }
+                                                        }
+                                                    }
                                                     drawText(
                                                         text = block.text,
                                                         x = textLeft,
                                                         y = textTop,
                                                         width = textWidth,
                                                         height = textHeight,
-                                                        color = if (i == draggingIndex) Color.Red else Color.Black,
+                                                        color = textColor,
                                                         fontSize = fontSize,
                                                         isVertical = block.isVertical
                                                     )
