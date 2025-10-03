@@ -44,6 +44,7 @@ import com.google.ai.client.generativeai.type.BlockThreshold
 import com.google.gson.stream.JsonReader
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.io.StringReader
+import com.example.ocrmanga.ui.screens.view.analyzeBackgroundColor
 
 class TranslationRepository(private val application: Application) {
 
@@ -337,7 +338,7 @@ class TranslationRepository(private val application: Application) {
 
             // --- TỰ ĐỘNG GÁN BUBBLE, MERGE, VÀ DỊCH ---
             val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
-            val mergedBlocks = mergeBlocksByBubble(blocksWithBubble)
+            val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
             val blocks = mutableListOf<TextBlockInfo>()
             // Sử dụng coroutineScope để dịch song song các block
             kotlinx.coroutines.coroutineScope {
@@ -413,7 +414,7 @@ class TranslationRepository(private val application: Application) {
                 val (rawText2, textBlocks2) = recognizeText(bitmap, rotationDegrees)
                 val blocks2 = mutableListOf<TextBlockInfo>()
                 val blocksWithBubble2 = assignSpeechBubblesToBlocks(textBlocks2)
-                val mergedBlocks2 = mergeBlocksByBubble(blocksWithBubble2)
+                val mergedBlocks2 = mergeBlocksByBubble(blocksWithBubble2, bitmap!!)
                 for (block in mergedBlocks2) {
                     var translatedText = when (mode) {
                         TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
@@ -631,7 +632,18 @@ class TranslationRepository(private val application: Application) {
                             alternativeAvgFontSize
                         }
                         val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                        TextBlockInfo(line.text, scaledBounds, fontSize, wordCountsPerLine = listOf(wordCount), originalImageWidth = bitmap.width, originalImageHeight = bitmap.height)
+                        // Phân tích màu nền
+                        val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, scaledBounds)
+                        TextBlockInfo(
+                            text = line.text, 
+                            bounds = scaledBounds, 
+                            fontSize = fontSize, 
+                            wordCountsPerLine = listOf(wordCount), 
+                            originalImageWidth = bitmap.width, 
+                            originalImageHeight = bitmap.height,
+                            backgroundType = backgroundType,
+                            averageBackgroundColor = avgColor
+                        )
                     }
                 }
 
@@ -654,9 +666,9 @@ class TranslationRepository(private val application: Application) {
 
                 val isVertical = determineTextOrientation(normalizedTextBlocks, alternativeTextResult.text)
                 val processedTextBlocks = if (isVertical) {
-                    sortVerticalTextBlocks(normalizedTextBlocks)
+                    sortVerticalTextBlocks(normalizedTextBlocks, bitmap)
                 } else {
-                    sortHorizontalTextBlocks(normalizedTextBlocks)
+                    sortHorizontalTextBlocks(normalizedTextBlocks, bitmap)
                 }
 
                 processedTextBlocks.forEachIndexed { index, block ->
@@ -686,7 +698,18 @@ class TranslationRepository(private val application: Application) {
                     bestAvgFontSize
                 }
                 val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                TextBlockInfo(line.text, scaledBounds, fontSize, wordCountsPerLine = listOf(wordCount), originalImageWidth = bitmap.width, originalImageHeight = bitmap.height)
+                // Phân tích màu nền
+                val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, scaledBounds)
+                TextBlockInfo(
+                    text = line.text, 
+                    bounds = scaledBounds, 
+                    fontSize = fontSize, 
+                    wordCountsPerLine = listOf(wordCount), 
+                    originalImageWidth = bitmap.width, 
+                    originalImageHeight = bitmap.height,
+                    backgroundType = backgroundType,
+                    averageBackgroundColor = avgColor
+                )
             }
         }
 
@@ -710,9 +733,9 @@ class TranslationRepository(private val application: Application) {
 
         val isVertical = determineTextOrientation(normalizedTextBlocks, bestTextResult.text)
         val processedTextBlocks = if (isVertical) {
-            sortVerticalTextBlocks(normalizedTextBlocks)
+            sortVerticalTextBlocks(normalizedTextBlocks, bitmap)
         } else {
-            sortHorizontalTextBlocks(normalizedTextBlocks)
+            sortHorizontalTextBlocks(normalizedTextBlocks, bitmap)
         }
 
         processedTextBlocks.forEachIndexed { index, block ->
@@ -825,7 +848,7 @@ class TranslationRepository(private val application: Application) {
         return clusters
     }
 
-    private fun sortHorizontalTextBlocks(textBlocks: List<TextBlockInfo>): List<TextBlockInfo> {
+    private fun sortHorizontalTextBlocks(textBlocks: List<TextBlockInfo>, bitmap: Bitmap?): List<TextBlockInfo> {
         if (textBlocks.isEmpty()) return emptyList()
 
         val sortedByTopThenLeft = textBlocks.sortedWith(
@@ -966,11 +989,17 @@ class TranslationRepository(private val application: Application) {
                 blockCount++
             }
 
+            // Phân tích màu nền cho merged block
+            val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, mergedBounds)
             val mergedBlock = TextBlockInfo(
                 text = mergedText.toString(),
                 bounds = Rect(mergedBounds),
                 fontSize = minFontSize,
-                wordCountsPerLine = null // Reset wordCountsPerLine after merging
+                wordCountsPerLine = null, // Reset wordCountsPerLine after merging
+                originalImageWidth = sortedBlocks.firstOrNull()?.originalImageWidth,
+                originalImageHeight = sortedBlocks.firstOrNull()?.originalImageHeight,
+                backgroundType = backgroundType,
+                averageBackgroundColor = avgColor
             )
 
             Log.i(
@@ -986,7 +1015,7 @@ class TranslationRepository(private val application: Application) {
         )
     }
 
-    private fun sortVerticalTextBlocks(textBlocks: List<TextBlockInfo>): List<TextBlockInfo> {
+    private fun sortVerticalTextBlocks(textBlocks: List<TextBlockInfo>, bitmap: Bitmap?): List<TextBlockInfo> {
         if (textBlocks.isEmpty()) return emptyList()
 
         val sortedByLeft = textBlocks.sortedBy { it.bounds.left }
@@ -1071,11 +1100,17 @@ class TranslationRepository(private val application: Application) {
                     blockCount++
                 }
 
+                // Phân tích màu nền cho merged block
+                val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, mergedBounds)
                 val mergedBlock = TextBlockInfo(
                     text = mergedText.toString(),
                     bounds = mergedBounds,
                     fontSize = minFontSize,
-                    wordCountsPerLine = null // Reset wordCountsPerLine after merging
+                    wordCountsPerLine = null, // Reset wordCountsPerLine after merging
+                    originalImageWidth = sortedBlocks.firstOrNull()?.originalImageWidth,
+                    originalImageHeight = sortedBlocks.firstOrNull()?.originalImageHeight,
+                    backgroundType = backgroundType,
+                    averageBackgroundColor = avgColor
                 )
 
                 Log.i("TranslationRepository", "Column #$columnIndex, Merged Region #$regionIndex: text=${mergedBlock.text}, left=${mergedBlock.bounds.left}, top=${mergedBlock.bounds.top}, right=${mergedBlock.bounds.right}, bottom=${mergedBlock.bounds.bottom}")
@@ -1356,7 +1391,7 @@ class TranslationRepository(private val application: Application) {
     }
 
     // Merge các block theo bubbleId, chỉ merge block thực sự cùng dòng (ngang) hoặc cùng cột (dọc) trong từng bubble
-    private fun mergeBlocksByBubble(blocks: List<TextBlockInfo>): List<TextBlockInfo> {
+    private fun mergeBlocksByBubble(blocks: List<TextBlockInfo>, bitmap: Bitmap?): List<TextBlockInfo> {
         if (blocks.isEmpty()) return emptyList()
         val grouped = blocks.groupBy { it.bubbleId ?: -1 }
         val merged = mutableListOf<TextBlockInfo>()
@@ -1409,6 +1444,8 @@ class TranslationRepository(private val application: Application) {
                         acc
                     }
                     val minFontSize = group.minOf { it.fontSize }
+                    // Phân tích màu nền cho merged block
+                    val (backgroundType, avgColor) = analyzeBackgroundColor(bitmap, mergedBounds)
                     merged.add(
                         TextBlockInfo(
                             text = mergedText,
@@ -1418,7 +1455,9 @@ class TranslationRepository(private val application: Application) {
                             wordCountsPerLine = null,
                             originalImageWidth = group.first().originalImageWidth,
                             originalImageHeight = group.first().originalImageHeight,
-                            bubbleId = bubbleId
+                            bubbleId = bubbleId,
+                            backgroundType = backgroundType,
+                            averageBackgroundColor = avgColor
                         )
                     )
                 }
