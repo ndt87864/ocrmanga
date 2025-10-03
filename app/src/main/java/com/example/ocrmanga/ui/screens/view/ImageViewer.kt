@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -264,7 +265,9 @@ fun ImageViewer(
                                         val block: TextBlockInfo,
                                         val rect: Rect,
                                         val fontSize: Float,
-                                        val rotation: Float
+                                        val rotation: Float,
+                                        val whiteoutColor: Color? = null,
+                                        val textColor: Color? = null
                                     )
                                     val regions = dragBlocks.mapIndexedNotNull { i, dragBlock ->
                                         val block = dragBlock.block
@@ -292,7 +295,9 @@ fun ImageViewer(
                                                     scaledTop + scaledBlockHeight2
                                                 ),
                                                 fontSize = fontSize,
-                                                rotation = dragBlock.rotation
+                                                rotation = dragBlock.rotation,
+                                                whiteoutColor = dragBlock.whiteoutColor,
+                                                textColor = dragBlock.textColor
                                             )
                                         } else null
                                     }
@@ -302,30 +307,56 @@ fun ImageViewer(
                                             val rect = region.rect
                                             val fontSize = region.fontSize
                                             val rotation = region.rotation
+                                            val customWhiteoutColor = region.whiteoutColor
+                                            val customTextColor = region.textColor
                                             if (block.text.isNotBlank()) {
                                                 withTransform({
                                                     rotate(rotation, Offset(rect.left + rect.width/2, rect.top + rect.height/2))
                                                 }) {
-                                                    // Sử dụng overlay bán trong suốt cho nền có màu
-                                                    drawTranslucentOverlay(
-                                                        rect = rect,
-                                                        backgroundType = block.backgroundType,
-                                                        averageBackgroundColor = block.averageBackgroundColor,
-                                                        originalTextColor = block.originalTextColor,
-                                                        shapeType = block.shapeType
-                                                    )
+                                                    // Sử dụng màu tùy chỉnh nếu có, không thì dùng overlay mặc định
+                                                    if (customWhiteoutColor != null) {
+                                                        // Vẽ overlay với màu tùy chỉnh
+                                                        val isOval = (block.shapeType == 1)
+                                                        if (isOval) {
+                                                            drawOval(
+                                                                color = customWhiteoutColor,
+                                                                topLeft = Offset(rect.left, rect.top),
+                                                                size = Size(rect.width, rect.height)
+                                                            )
+                                                        } else {
+                                                            drawRect(
+                                                                color = customWhiteoutColor,
+                                                                topLeft = Offset(rect.left, rect.top),
+                                                                size = Size(rect.width, rect.height)
+                                                            )
+                                                        }
+                                                    } else {
+                                                        // Sử dụng overlay bán trong suốt cho nền có màu
+                                                        drawTranslucentOverlay(
+                                                            rect = rect,
+                                                            backgroundType = block.backgroundType,
+                                                            averageBackgroundColor = block.averageBackgroundColor,
+                                                            originalTextColor = block.originalTextColor,
+                                                            shapeType = block.shapeType
+                                                        )
+                                                    }
                                                     val isOval = (block.shapeType == 1)
                                                     val textPadding = if (isOval) 0.15f else 0f
                                                     val textLeft = rect.left + rect.width * textPadding
                                                     val textTop = rect.top + rect.height * textPadding
                                                     val textWidth = rect.width * (1 - 2 * textPadding)
                                                     val textHeight = rect.height * (1 - 2 * textPadding)
-                                                    // Xác định màu text dựa trên độ sáng của overlay
+                                                    // Xác định màu text - ưu tiên màu tùy chỉnh
                                                     val textColor = when {
                                                         i == draggingIndex -> Color.Red
+                                                        customTextColor != null -> customTextColor
                                                         else -> {
                                                             // Tính độ sáng của overlay background
-                                                            val overlayColor = block.averageBackgroundColor
+                                                            val overlayColor = if (customWhiteoutColor != null) {
+                                                                customWhiteoutColor.toArgb()
+                                                            } else {
+                                                                block.averageBackgroundColor
+                                                            }
                                                             if (overlayColor != null) {
                                                                 val r = (overlayColor shr 16) and 0xFF
                                                                 val g = (overlayColor shr 8) and 0xFF
