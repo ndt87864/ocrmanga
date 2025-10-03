@@ -513,13 +513,13 @@ class TranslationRepository(private val application: Application) {
         forceScript: String? = null
     ): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
         // Tối ưu tốc độ: giảm số scale factors và ưu tiên recognizer chính xác
-        val scaleFactors = if (onlyPreview) listOf(1.003f) else listOf(1.003f, 1.08f) // Giảm từ 4-5 xuống 1-2 scale
+        val scaleFactors = if (onlyPreview) listOf(0.95f, 1.003f, 1.08f, 1.12f) else listOf(0.95f, 1.003f, 1.08f, 1.12f, 1.18f)
         val recognizers = when (forceScript) {
             "zh" -> listOf(chineseRecognizer)
             "ja" -> listOf(japaneseRecognizer)
             "ko" -> listOf(koreanRecognizer)
             "en" -> listOf(latinRecognizer)
-            else -> listOf(chineseRecognizer, japaneseRecognizer) // Giảm từ 4 xuống 2 recognizer
+            else -> listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer, latinRecognizer)
         }
         val deferredResults = scaleFactors.flatMap { scale ->
             recognizers.map { recognizer ->
