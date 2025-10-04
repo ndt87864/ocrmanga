@@ -145,7 +145,18 @@ class TranslationRepository(private val application: Application) {
         val maxTries = mistralApiKeys.size.coerceAtLeast(1)
         for (i in 0 until maxTries) {
             val mistralKey = getNextMistralApiKey() ?: return null
-            val prompt = "Dịch đoạn sau từ $sourceLang sang $targetLang. Chỉ trả về kết quả dịch, không giải thích, không thêm bất kỳ văn bản nào khác. Nếu không dịch được, trả về nguyên văn bản gốc:\n$text"
+            val prompt = "\n" +
+                    "                    Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .\n" +
+                    "                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác nhất sang tiếng Việt: $text\n" +
+                    "                    Yêu cầu khi dịch :1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.\n" +
+                    "                           2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .\n" +
+                    "                           3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .\n" +
+                    "                           4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được ( ghi nguyên gốc  từ không dịch được và dịch các từ còn lại).\n" +
+                    "                           5. không trả về nhiều bản dịch khác nhau cho cùng một văn bản .VD:Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả?\n" +
+                    "                            -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?\n" +
+                    "                           6. Không trả về lí do không dịch được hoặc lí do dịch không chính xác , hãy chỉ trả về văn bản gốc trong 2 trường hợp này .\n" +
+                    "                           7.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .\n" +
+                    "                    Chỉ trả về 1 bản dịch chính xác duy nhất ."
 
             // Build JSON body using Gson to avoid invalid JSON
             val gson = com.google.gson.Gson()
