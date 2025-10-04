@@ -298,6 +298,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         if (remainingImages.isEmpty()) return
 
         viewModelScope.launch(Dispatchers.IO) {
+            // Bắt đầu trạng thái loading
+            _uiState.update { it.copy(isLoadingMoreImages = true) }
+            
             val batch = remainingImages.take(BATCH_SIZE)
             val newRemaining = remainingImages.drop(BATCH_SIZE)
             val translatedStatus = mutableMapOf<Uri, Boolean>()
@@ -353,12 +356,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         imageUris = it.imageUris + batch,
                         translatedTexts = it.translatedTexts + translations,
                         translatedStatus = it.translatedStatus + translatedStatus,
-                        remainingImages = newRemaining
+                        remainingImages = newRemaining,
+                        isLoadingMoreImages = false // Kết thúc trạng thái loading
                     )
                 }
                 //log.i(TAG, "Đã tải thêm ${batch.size} ảnh, còn lại ${newRemaining.size}")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi tải thêm ảnh", e)
+                // Tắt loading ngay cả khi có lỗi
+                _uiState.update { it.copy(isLoadingMoreImages = false) }
             }
         }
     }
@@ -634,7 +640,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 remainingImages = emptyList(),
                 translationTimer = 0,
                 currentTranslatingImage = null,
-                currentTranslatingImageIndex = 0
+                currentTranslatingImageIndex = 0,
+                isLoadingMoreImages = false
             )
         }
         newImageUris.clear()
@@ -697,5 +704,6 @@ data class ViewerUiState(
     val remainingImages: List<Uri> = emptyList(),
     val translationTimer: Int = 0, // Bộ đếm thời gian dịch (giây)
     val currentTranslatingImage: Uri? = null, // Ảnh đang được dịch
-    val currentTranslatingImageIndex: Int = 0 // Số thứ tự ảnh đang được dịch (1-based)
+    val currentTranslatingImageIndex: Int = 0, // Số thứ tự ảnh đang được dịch (1-based)
+    val isLoadingMoreImages: Boolean = false // Trạng thái đang tải thêm ảnh
 )

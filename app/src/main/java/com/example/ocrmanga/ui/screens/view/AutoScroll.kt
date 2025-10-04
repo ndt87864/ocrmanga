@@ -4,8 +4,10 @@ import android.net.Uri
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.ui.unit.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -28,7 +30,8 @@ fun AutoScroll(
     onSpeedChange: (Float) -> Unit,
     imageUris: List<Uri>,
     onLoadMoreImages: () -> Unit,
-    onShowSpeedSliderChange: (() -> Unit)? = null
+    onShowSpeedSliderChange: (() -> Unit)? = null,
+    isLoadingMoreImages: Boolean = false
 ) {
     val coroutineScope = rememberCoroutineScope()
     
@@ -73,27 +76,41 @@ fun AutoScroll(
     }
 
     // Auto scroll icon/button
-    Box(
-        modifier = Modifier.pointerInput(autoScrollEnabled) {
-            detectTapGestures(
-                onLongPress = { 
-                    onShowSpeedSliderChange?.invoke()
-                },
-                onTap = { 
-                    if (autoScrollEnabled) {
-                        onAutoScrollToggle(false)
-                    } else {
-                        onAutoScrollToggle(true)
-                    }
-                }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Loading indicator khi đang tải thêm ảnh
+        if (isLoadingMoreImages) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary
             )
         }
-    ) {
-        Icon(
-            Icons.Default.ArrowDownward,
-            contentDescription = if (autoScrollEnabled) "Dừng cuộn" else "Tự động cuộn",
-            tint = if (autoScrollEnabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-        )
+        
+        Box(
+            modifier = Modifier.pointerInput(autoScrollEnabled) {
+                detectTapGestures(
+                    onLongPress = { 
+                        onShowSpeedSliderChange?.invoke()
+                    },
+                    onTap = { 
+                        if (autoScrollEnabled) {
+                            onAutoScrollToggle(false)
+                        } else {
+                            onAutoScrollToggle(true)
+                        }
+                    }
+                )
+            }
+        ) {
+            Icon(
+                Icons.Default.ArrowDownward,
+                contentDescription = if (autoScrollEnabled) "Dừng cuộn" else "Tự động cuộn",
+                tint = if (autoScrollEnabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+            )
+        }
     }
 }
 
