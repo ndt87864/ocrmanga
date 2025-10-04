@@ -489,6 +489,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("original_image_width", savedWidth)
                                     put("original_image_height", savedHeight)
                                     put("shape_type", textBlock.shapeType)
+                                    put("background_type", textBlock.backgroundType.ordinal)
+                                    put("average_background_color", textBlock.averageBackgroundColor)
+                                    put("original_text_color", textBlock.originalTextColor)
+                                    put("custom_overlay_color", textBlock.customOverlayColor)
+                                    put("custom_text_color", textBlock.customTextColor)
+                                    put("overlay_alpha", textBlock.overlayAlpha)
+                                    put("text_boldness", textBlock.textBoldness)
+                                    put("overlay_saturation", textBlock.overlaySaturation)
+                                    put("text_saturation", textBlock.textSaturation)
                                 }
                                 db.insert("translations", null, textValues)
                             }
