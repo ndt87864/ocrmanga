@@ -12,12 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -99,7 +100,7 @@ fun ImageViewer(
             ),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        items(items = imageUris, key = { uri -> uri.toString() + "-$translationVersion" }) { uri ->
+        itemsIndexed(items = imageUris, key = { index, uri -> uri.toString() + "-$index" }) { index, uri ->
             val initialBlocks = dragBlocksMap[uri]
                 ?: translatedTexts[uri]?.second?.map { block ->
                     DragBlockState(
