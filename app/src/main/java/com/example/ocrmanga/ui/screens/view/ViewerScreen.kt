@@ -161,7 +161,8 @@ fun ViewerScreen(
                     onSpeedChange = { scrollSpeed = it },
                     imageUris = uiState.imageUris,
                     onLoadMoreImages = { viewModel.loadMoreImages() },
-                    onShowSpeedSliderChange = { showSpeedSlider = !showSpeedSlider }
+                    onShowSpeedSliderChange = { showSpeedSlider = !showSpeedSlider },
+                    isLoadingMoreImages = uiState.isLoadingMoreImages
                 )
                 IconButton(onClick = { showRoomNav = !showRoomNav }) {
                     Icon(
@@ -408,7 +409,9 @@ fun ViewerScreen(
             },
             onShowImageMenuChange = { showImageMenu = it },
             onImageMenuUriChange = { imageMenuUri = it },
-            lazyListState = lazyListState
+            lazyListState = lazyListState,
+            isLoadingMoreImages = uiState.isLoadingMoreImages,
+            remainingImagesCount = uiState.remainingImages.size
         )
         Dialogs(
             showInsertAtIndexDialog = showInsertAtIndexDialog,

@@ -9,7 +9,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -67,7 +72,9 @@ fun ImageViewer(
     onShowImageMenuChange: (Boolean) -> Unit,
     onImageMenuUriChange: (Uri?) -> Unit,
     onRemoveImage: (Uri) -> Unit,
-    lazyListState: LazyListState = rememberLazyListState()
+    lazyListState: LazyListState = rememberLazyListState(),
+    isLoadingMoreImages: Boolean = false,
+    remainingImagesCount: Int = 0
 ) {
     val context = LocalContext.current
     var translationVersion by remember { mutableStateOf(0) }
@@ -479,6 +486,32 @@ fun ImageViewer(
                                     }
                                 }
                         ) {}
+                    }
+                }
+            }
+        }
+        
+        // Loading indicator ở cuối danh sách khi đang tải thêm ảnh
+        if (isLoadingMoreImages && remainingImagesCount > 0) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Đang tải thêm $remainingImagesCount ảnh...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             }
