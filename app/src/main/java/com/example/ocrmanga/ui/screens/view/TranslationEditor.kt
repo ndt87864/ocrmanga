@@ -339,6 +339,12 @@ fun TranslationEditor(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            IconButton(onClick = { onSelectedIndexChange(selectedIndex?.let { maxOf(0, it - 1) } ?: 0) }) {
+                                Icon(Icons.Default.ArrowBack, "Block trước")
+                            }
+                            IconButton(onClick = { onSelectedIndexChange(selectedIndex?.let { minOf(dragBlocks.size - 1, it + 1) } ?: 0) }) {
+                                Icon(Icons.Default.ArrowForward, "Block tiếp theo")
+                            }
                             // Nút chọn màu overlay
                             IconButton(
                                 onClick = { if (isBlockSelected) showOverlayColorPicker = true },
