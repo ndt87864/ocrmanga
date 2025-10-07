@@ -171,59 +171,65 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun addNewImageUris(uris: List<Uri>) {
         val currentUris = uiState.value.imageUris.toMutableList()
-        currentUris.addAll(uris)
+        // Lọc uris mới để loại bỏ những cái đã có trong currentUris
+        val newUris = uris.filter { newUri -> currentUris.none { it.toString() == newUri.toString() } }
+        currentUris.addAll(newUris)
         _uiState.update {
             it.copy(
                 imageUris = currentUris,
                 translatedTexts = it.translatedTexts.filterKeys { uri -> uri in currentUris },
-                translatedStatus = it.translatedStatus + uris.associateWith { false }
+                translatedStatus = it.translatedStatus + newUris.associateWith { false }
             )
         }
         newImageUris.clear()
-        newImageUris.addAll(uris)
-        //log.i(TAG, "Đã thêm ${uris.size} URI ảnh mới vào cuối")
+        newImageUris.addAll(newUris)
+        //log.i(TAG, "Đã thêm ${newUris.size} URI ảnh mới vào cuối")
 
         if (uiState.value.translationEnabled && uiState.value.translationMode != TranslationMode.OFF) {
-            enqueueTranslation(uris)
+            enqueueTranslation(newUris)
         }
     }
 
     fun addNewImageUrisAtStart(uris: List<Uri>) {
         val currentUris = uiState.value.imageUris.toMutableList()
-        currentUris.addAll(0, uris)
+        // Lọc uris mới để loại bỏ những cái đã có trong currentUris
+        val newUris = uris.filter { newUri -> currentUris.none { it.toString() == newUri.toString() } }
+        currentUris.addAll(0, newUris)
         _uiState.update {
             it.copy(
                 imageUris = currentUris,
                 translatedTexts = it.translatedTexts.filterKeys { uri -> uri in currentUris },
-                translatedStatus = it.translatedStatus + uris.associateWith { false }
+                translatedStatus = it.translatedStatus + newUris.associateWith { false }
             )
         }
         newImageUris.clear()
-        newImageUris.addAll(uris)
-        //log.i(TAG, "Đã thêm ${uris.size} URI ảnh mới vào đầu")
+        newImageUris.addAll(newUris)
+        //log.i(TAG, "Đã thêm ${newUris.size} URI ảnh mới vào đầu")
 
         if (uiState.value.translationEnabled && uiState.value.translationMode != TranslationMode.OFF) {
-            enqueueTranslation(uris)
+            enqueueTranslation(newUris)
         }
     }
 
     fun addNewImageUrisAtIndex(uris: List<Uri>, index: Int) {
         val currentUris = uiState.value.imageUris.toMutableList()
         val insertIndex = index.coerceIn(0, currentUris.size)
-        currentUris.addAll(insertIndex, uris)
+        // Lọc uris mới để loại bỏ những cái đã có trong currentUris
+        val newUris = uris.filter { newUri -> currentUris.none { it.toString() == newUri.toString() } }
+        currentUris.addAll(insertIndex, newUris)
         _uiState.update {
             it.copy(
                 imageUris = currentUris,
                 translatedTexts = it.translatedTexts.filterKeys { uri -> uri in currentUris },
-                translatedStatus = it.translatedStatus + uris.associateWith { false }
+                translatedStatus = it.translatedStatus + newUris.associateWith { false }
             )
         }
         newImageUris.clear()
-        newImageUris.addAll(uris)
-        //log.i(TAG, "Đã thêm ${uris.size} URI ảnh mới vào vị trí $insertIndex")
+        newImageUris.addAll(newUris)
+        //log.i(TAG, "Đã thêm ${newUris.size} URI ảnh mới vào vị trí $insertIndex")
 
         if (uiState.value.translationEnabled && uiState.value.translationMode != TranslationMode.OFF) {
-            enqueueTranslation(uris)
+            enqueueTranslation(newUris)
         }
     }
 
@@ -446,9 +452,31 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
             try {
+                // Loại bỏ duplicate URIs trước khi lưu
+                val uniqueImageUris = uiState.value.imageUris.distinctBy { it.toString() }
+                val uniqueTranslatedTexts = uiState.value.translatedTexts.filterKeys { uri ->
+                    uniqueImageUris.contains(uri)
+                }
+                val uniqueTranslatedStatus = uiState.value.translatedStatus.filterKeys { uri ->
+                    uniqueImageUris.contains(uri)
+                }
+                val uniqueSourceLanguages = uiState.value.sourceLanguages.filterKeys { uri ->
+                    uniqueImageUris.contains(uri)
+                }
+
+                // Update UI state với unique lists
+                _uiState.update { currentState ->
+                    currentState.copy(
+                        imageUris = uniqueImageUris,
+                        translatedTexts = uniqueTranslatedTexts,
+                        translatedStatus = uniqueTranslatedStatus,
+                        sourceLanguages = uniqueSourceLanguages
+                    )
+                }
+
                 val currentRoomId = uiState.value.roomId
                 // Log all rotation values before saving
-                uiState.value.translatedTexts.forEach { (uri, pair) ->
+                uniqueTranslatedTexts.forEach { (uri, pair) ->
                     pair.second.forEachIndexed { idx, block ->
                         //log.i(TAG, "[SAVE ROOM] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
                     }
@@ -457,15 +485,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     // Nếu đã có roomId, update phòng
                     val updated = databaseHelper.updateMangaRoom(
                         currentRoomId,
-                        uiState.value.imageUris,
-                        uiState.value.translatedTexts
+                        uniqueImageUris,
+                        uniqueTranslatedTexts
                     )
                     if (updated) currentRoomId else -1L
                 } else {
                     // Nếu chưa có roomId, tạo phòng mới
                     databaseHelper.saveMangaRoom(
-                        uiState.value.imageUris,
-                        uiState.value.translatedTexts
+                        uniqueImageUris,
+                        uniqueTranslatedTexts
                     )
                 }
                 if (roomId != -1L) {
