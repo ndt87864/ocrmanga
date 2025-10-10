@@ -473,7 +473,8 @@ fun TranslationEditor(
             val currentSaturation = dragBlocks[idx].overlaySaturation
             ColorPickerDialog(
                 title = "Chọn màu nền overlay",
-                initialColor = currentColor,
+                // Truyền màu với alpha = 1.0 vì alpha sẽ được quản lý riêng
+                initialColor = currentColor.copy(alpha = 1f),
                 initialAlpha = currentAlpha,
                 initialSaturation = currentSaturation,
                 isOverlayDialog = true,
@@ -508,7 +509,9 @@ fun TranslationEditor(
             val currentSaturation = dragBlocks[idx].textSaturation
             ColorPickerDialog(
                 title = "Chọn màu chữ",
-                initialColor = currentColor,
+                // Text không cần alpha, luôn set về 1.0 (không trong suốt)
+                initialColor = currentColor.copy(alpha = 1f),
+                initialAlpha = 1f, // Text luôn không trong suốt
                 initialBoldness = currentBoldness,
                 initialSaturation = currentSaturation,
                 isOverlayDialog = false,
@@ -556,128 +559,58 @@ fun ColorPickerDialog(
     var currentBoldness by remember { mutableStateOf(initialBoldness) }
     var currentSaturation by remember { mutableStateOf(initialSaturation) }
     
-    // Các màu preset phổ biến
-    val presetColors = listOf(
-        Color.White, Color.Black, Color.Red, Color.Green, Color.Blue,
-        Color.Yellow, Color.Cyan, Color.Magenta, Color.Gray,
-        Color(0xFFFFE0B2), Color(0xFFE1F5FE), Color(0xFFF3E5F5),
-        Color(0xFFE8F5E8), Color(0xFFFFF3E0), Color(0xFFE3F2FD)
-    )
-    
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState())
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .fillMaxWidth()
             ) {
-                // Hiển thị màu hiện tại với preview thời gian thực
-                Text("Màu hiện tại:", style = MaterialTheme.typography.bodyMedium)
-                
-                // Tính toán màu preview với saturation
-                val previewColor = remember(selectedColor, currentSaturation) {
-                    if (currentSaturation != 1.0f) {
-                        // Chuyển đổi sang HSV để điều chỉnh saturation
-                        val red = selectedColor.red
-                        val green = selectedColor.green  
-                        val blue = selectedColor.blue
-                        
-                        // Tính HSV đơn giản
-                        val max = maxOf(red, green, blue)
-                        val min = minOf(red, green, blue)
-                        val delta = max - min
-                        
-                        val saturation = if (max == 0f) 0f else delta / max
-                        val newSaturation = saturation * currentSaturation
-                        
-                        // Áp dụng saturation mới
-                        val factor = if (saturation == 0f) 1f else newSaturation / saturation
-                        val newRed = min + (red - min) * factor
-                        val newGreen = min + (green - min) * factor
-                        val newBlue = min + (blue - min) * factor
-                        
-                        Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
-                    } else {
-                        selectedColor
-                    }
-                }
-                
-                val displayColor = if (isOverlayDialog) previewColor.copy(alpha = currentAlpha) else previewColor
-                
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Preview màu gốc
-                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-                        Text("Gốc", style = MaterialTheme.typography.bodySmall)
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(
-                                    if (isOverlayDialog) selectedColor.copy(alpha = 1f) else selectedColor,
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
-                        )
-                    }
-                    
-                    // Preview màu đã chỉnh sửa
-                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-                        Text("Preview", style = MaterialTheme.typography.bodySmall)
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(displayColor, RoundedCornerShape(8.dp))
-                                .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
-                        )
-                    }
-                }
+                // Sử dụng AdvancedColorPicker giống như trong ThemeSettingsScreen
+                // Cấu hình theo loại dialog: overlay hoặc text
+                com.example.ocrmanga.ui.components.AdvancedColorPicker(
+                    selectedColor = selectedColor,
+                    onColorSelected = { color ->
+                        color?.let { 
+                            selectedColor = if (isOverlayDialog) {
+                                // Giữ nguyên alpha hiện tại cho overlay
+                                it.copy(alpha = currentAlpha)
+                            } else {
+                                // Text không cần alpha, luôn set về 1.0
+                                it.copy(alpha = 1f)
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    showAlphaSlider = false, // Ẩn slider alpha cho cả overlay và text
+                    showPredefinedColors = !isOverlayDialog // Chỉ hiện màu có sẵn cho text
+                )
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // Grid chọn màu
-                Text("Chọn màu:", style = MaterialTheme.typography.bodyMedium)
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(6),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.height(120.dp)
-                ) {
-                    items(presetColors) { color ->
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(color, CircleShape)
-                                .border(
-                                    width = if (color == selectedColor) 3.dp else 1.dp,
-                                    color = if (color == selectedColor) MaterialTheme.colorScheme.primary else Color.Gray,
-                                    shape = CircleShape
-                                )
-                                .clickable { selectedColor = color }
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Slider độ trong suốt cho overlay
+                // Slider độ trong suốt cho overlay - quản lý riêng alpha
                 if (isOverlayDialog && onAlphaChanged != null) {
-                    Text("Độ trong suốt: ${(currentAlpha * 100).toInt()}%", 
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Độ trong suốt overlay: ${(currentAlpha * 100).toInt()}%", 
                          style = MaterialTheme.typography.bodyMedium)
                     Slider(
                         value = currentAlpha,
                         onValueChange = { newAlpha ->
                             currentAlpha = newAlpha
+                            // Cập nhật màu với alpha mới
+                            selectedColor = selectedColor.copy(alpha = newAlpha)
                             onAlphaChanged(newAlpha)
                         },
                         valueRange = 0.1f..1.0f,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
                 
                 // Slider độ đậm cho text
                 if (!isOverlayDialog && onBoldnessChanged != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     Text("Độ đậm chữ: ${(currentBoldness * 100).toInt()}%", 
                          style = MaterialTheme.typography.bodyMedium)
                     Slider(
@@ -689,12 +622,12 @@ fun ColorPickerDialog(
                         valueRange = 0.5f..2.0f,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
                 
                 // Slider độ bão hòa
                 if (onSaturationChanged != null) {
-                    Text("Độ bão hòa: ${(currentSaturation * 100).toInt()}%", 
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Độ bão hòa màu: ${(currentSaturation * 100).toInt()}%", 
                          style = MaterialTheme.typography.bodyMedium)
                     Slider(
                         value = currentSaturation,
@@ -702,16 +635,24 @@ fun ColorPickerDialog(
                             currentSaturation = newSaturation
                             onSaturationChanged(newSaturation)
                         },
-                        valueRange = 0f..1f,
+                        valueRange = 0f..2f,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onColorSelected(selectedColor) }) {
-                Text("Chọn")
+            TextButton(onClick = { 
+                // Sử dụng màu với alpha hiện tại cho overlay
+                val finalColor = if (isOverlayDialog) {
+                    selectedColor.copy(alpha = currentAlpha)
+                } else {
+                    selectedColor
+                }
+                onColorSelected(finalColor)
+                onDismiss()
+            }) {
+                Text("Áp dụng")
             }
         },
         dismissButton = {       
