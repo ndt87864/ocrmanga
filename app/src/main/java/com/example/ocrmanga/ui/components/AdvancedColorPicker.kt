@@ -28,7 +28,9 @@ import kotlin.math.*
 fun AdvancedColorPicker(
     selectedColor: Color?,
     onColorSelected: (Color?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showAlphaSlider: Boolean = true, // Tham số để hiển thị/ẩn slider alpha
+    showPredefinedColors: Boolean = true // Tham số để hiển thị/ẩn màu có sẵn
 ) {
     var hue by remember { mutableStateOf(0f) }
     var saturation by remember { mutableStateOf(1f) }
@@ -47,8 +49,10 @@ fun AdvancedColorPicker(
     }
     
     // Update color when any component changes
-    LaunchedEffect(hue, saturation, lightness, alpha) {
-        val color = hslaToColor(hue, saturation, lightness, alpha)
+    // Nếu không hiển thị alpha slider, luôn dùng alpha từ selectedColor
+    LaunchedEffect(hue, saturation, lightness, alpha, showAlphaSlider) {
+        val finalAlpha = if (showAlphaSlider) alpha else (selectedColor?.alpha ?: 1f)
+        val color = hslaToColor(hue, saturation, lightness, finalAlpha)
         onColorSelected(color)
     }
     
@@ -87,18 +91,20 @@ fun AdvancedColorPicker(
             )
         }
         
-        // Alpha slider
-        Column {
-            Text(
-                text = "Độ trong suốt: ${(alpha * 100).toInt()}%",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Slider(
-                value = alpha,
-                onValueChange = { alpha = it },
-                valueRange = 0f..1f,
-                modifier = Modifier.fillMaxWidth()
-            )
+        // Alpha slider - chỉ hiển thị nếu showAlphaSlider = true
+        if (showAlphaSlider) {
+            Column {
+                Text(
+                    text = "Độ trong suốt: ${(alpha * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Slider(
+                    value = alpha,
+                    onValueChange = { alpha = it },
+                    valueRange = 0f..1f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
         
         // Color preview
@@ -124,67 +130,69 @@ fun AdvancedColorPicker(
             }
         }
         
-        // Predefined colors row for quick selection
-        Column {
-            Text(
-                text = "Màu có sẵn",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val predefinedColors = listOf(
-                    Color(0xFFE91E63), // Pink
-                    Color(0xFF9C27B0), // Purple
-                    Color(0xFF673AB7), // Deep Purple
-                    Color(0xFF3F51B5), // Indigo
-                    Color(0xFF2196F3), // Blue
-                    Color(0xFF03A9F4), // Light Blue
-                    Color(0xFF00BCD4), // Cyan
-                    Color(0xFF009688), // Teal
-                    Color(0xFF4CAF50), // Green
-                    Color(0xFF8BC34A), // Light Green
-                    Color(0xFFCDDC39), // Lime
-                    Color(0xFFFFEB3B), // Yellow
-                    Color(0xFFFFC107), // Amber
-                    Color(0xFFFF9800), // Orange
-                    Color(0xFFFF5722), // Deep Orange
-                    Color(0xFF795548), // Brown
+        // Predefined colors row for quick selection - chỉ hiển thị nếu showPredefinedColors = true
+        if (showPredefinedColors) {
+            Column {
+                Text(
+                    text = "Màu có sẵn",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
                 )
                 
-                predefinedColors.chunked(8).forEach { colorRow ->
-                    Column {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            colorRow.forEach { color ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(color)
-                                        .clickable { 
-                                            val hsla = color.toHsla()
-                                            hue = hsla[0]
-                                            saturation = hsla[1]
-                                            lightness = hsla[2]
-                                            alpha = hsla[3]
-                                        }
-                                        .border(
-                                            width = if (currentColor.isSimilarTo(color)) 2.dp else 0.dp,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            shape = CircleShape
-                                        )
-                                )
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val predefinedColors = listOf(
+                        Color.White,       // Trắng
+                        Color.Black,       // Đen
+                        Color.Red,         // Đỏ
+                        Color.Blue,        // Xanh dương
+                        Color.Green,       // Xanh lá
+                        Color.Yellow,      // Vàng
+                        Color.Cyan,        // Xanh lơ
+                        Color.Magenta,     // Hồng tím
+                        Color(0xFF808080), // Xám
+                        Color(0xFFFFA500), // Cam
+                        Color(0xFF800080), // Tím
+                        Color(0xFF8B4513), // Nâu
+                        Color(0xFFFFC0CB), // Hồng nhạt
+                        Color(0xFF87CEEB), // Xanh sky
+                        Color(0xFF90EE90), // Xanh lá nhạt
+                        Color(0xFFFFD700)  // Vàng gold
+                    )
+                    
+                    predefinedColors.chunked(8).forEach { colorRow ->
+                        Column {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                colorRow.forEach { color ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(color)
+                                            .clickable { 
+                                                val hsla = color.toHsla()
+                                                hue = hsla[0]
+                                                saturation = hsla[1]
+                                                lightness = hsla[2]
+                                                alpha = hsla[3]
+                                            }
+                                            .border(
+                                                width = if (currentColor.isSimilarTo(color)) 2.dp else 0.dp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                shape = CircleShape
+                                            )
+                                    )
+                                }
                             }
-                        }
-                        if (colorRow != predefinedColors.chunked(8).last()) {
-                            Spacer(modifier = Modifier.height(4.dp))
+                            if (colorRow != predefinedColors.chunked(8).last()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
                         }
                     }
                 }
