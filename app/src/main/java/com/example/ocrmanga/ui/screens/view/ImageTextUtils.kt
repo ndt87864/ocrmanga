@@ -342,7 +342,7 @@ fun DrawScope.drawText(
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.color = color.toArgb()
         this.textSize = fontSize
-        this.textAlign = android.graphics.Paint.Align.LEFT
+        this.textAlign = android.graphics.Paint.Align.CENTER // Đổi từ LEFT sang CENTER để căn giữa
         // Điều chỉnh stroke width để tạo hiệu ứng đậm nhạt
         if (boldness > 1.0f) {
             this.style = android.graphics.Paint.Style.FILL_AND_STROKE
@@ -366,7 +366,10 @@ fun DrawScope.drawText(
                     canvas.nativeCanvas.save()
                     canvas.nativeCanvas.translate(currentX, y)
                     canvas.nativeCanvas.rotate(90f)
-                    canvas.nativeCanvas.drawText(line, 0f, -fontMetrics.ascent, paint)
+                    // Căn giữa theo chiều dọc khi xoay 90 độ
+                    val lineWidth = paint.measureText(line)
+                    val centeredY = (height - lineWidth) / 2
+                    canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, paint)
                     canvas.nativeCanvas.restore()
                     currentX -= lineHeight
                 }
@@ -375,7 +378,8 @@ fun DrawScope.drawText(
             var currentY = y - fontMetrics.ascent
             for (line in lines) {
                 if (line.isNotBlank() && currentY + fontMetrics.descent <= y + height) {
-                    canvas.nativeCanvas.drawText(line, x, currentY, paint)
+                    // Căn giữa text theo chiều ngang (x + width/2 là tâm của overlay)
+                    canvas.nativeCanvas.drawText(line, x + width / 2, currentY, paint)
                     currentY += lineHeight
                 }
             }
