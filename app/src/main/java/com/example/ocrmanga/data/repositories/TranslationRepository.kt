@@ -320,6 +320,7 @@ class TranslationRepository(private val application: Application) {
         var translatedBlocks: List<TextBlockInfo> = emptyList()
         var sourceLanguage: String = "zh"
         var detectedScript: String? = null
+        var hasOCR = false
         try {
             bitmap = MediaStore.Images.Media.getBitmap(application.contentResolver, imageUri)
             val rotationDegrees = getRotationDegrees(imageUri)
@@ -338,6 +339,7 @@ class TranslationRepository(private val application: Application) {
             // Quét chính xác với recognizer phù hợp
             val (rawText, textBlocks) = recognizeText(bitmap, rotationDegrees, forceScript = detectedScript)
             fullText = rawText
+            hasOCR = true
             //log.i("TranslationRepository", "[INPUT] Văn bản gốc: $fullText, số khối: ${textBlocks.size}")
 
             if (fullText.isEmpty()) {

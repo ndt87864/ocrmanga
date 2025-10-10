@@ -8,6 +8,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ocrmanga.data.database.DatabaseHelper
@@ -715,6 +716,28 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
+    }
+
+    fun saveRoom(dragBlocksMap: Map<Uri, List<com.example.ocrmanga.ui.screens.view.DragBlockState>>) {
+        val roomId = uiState.value.roomId ?: return
+        val currentState = uiState.value
+        val updatedTranslatedTexts = currentState.translatedTexts.toMutableMap()
+        dragBlocksMap.forEach { (uri, blocks) ->
+            updatedTranslatedTexts[uri] = Pair(
+                updatedTranslatedTexts[uri]?.first ?: "",
+                blocks.map { it.block.copy(
+                    rotation = it.rotation,
+                    shapeType = it.block.shapeType,
+                    customOverlayColor = it.whiteoutColor?.toArgb(),
+                    customTextColor = it.textColor?.toArgb(),
+                    overlayAlpha = it.overlayAlpha,
+                    textBoldness = it.textBoldness,
+                    overlaySaturation = it.overlaySaturation,
+                    textSaturation = it.textSaturation
+                ) }
+            )
+        }
+        databaseHelper.updateMangaRoom(roomId, currentState.imageUris, updatedTranslatedTexts)
     }
 }
 

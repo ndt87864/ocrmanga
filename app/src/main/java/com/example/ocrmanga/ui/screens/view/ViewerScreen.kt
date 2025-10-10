@@ -72,6 +72,49 @@ fun ViewerScreen(
         }
     }
 
+    // Save all dragBlocksMap to translatedTexts when exiting edit mode
+    LaunchedEffect(editTranslationMode) {
+        if (!editTranslationMode) {
+            dragBlocksMap.forEach { (uri, blocks) ->
+                viewModel.updateTranslatedBlocks(uri, blocks.map { 
+                    it.block.copy(
+                        rotation = it.rotation,
+                        shapeType = it.block.shapeType,
+                        customOverlayColor = it.whiteoutColor?.toArgb(),
+                        customTextColor = it.textColor?.toArgb(),
+                        overlayAlpha = it.overlayAlpha,
+                        textBoldness = it.textBoldness,
+                        overlaySaturation = it.overlaySaturation,
+                        textSaturation = it.textSaturation
+                    ) 
+                })
+            }
+        }
+    }
+
+    // Initialize dragBlocksMap for all uris from translatedTexts
+    LaunchedEffect(uiState.imageUris, uiState.translatedTexts) {
+        uiState.imageUris.forEach { uri ->
+            if (!dragBlocksMap.containsKey(uri)) {
+                val blocks = uiState.translatedTexts[uri]?.second?.map { block ->
+                    DragBlockState(
+                        block = block,
+                        offset = androidx.compose.ui.geometry.Offset.Zero,
+                        fontSize = block.fontSize,
+                        rotation = block.rotation ?: 0f,
+                        whiteoutColor = block.customOverlayColor?.let { androidx.compose.ui.graphics.Color(it) },
+                        textColor = block.customTextColor?.let { androidx.compose.ui.graphics.Color(it) },
+                        overlayAlpha = block.overlayAlpha,
+                        textBoldness = block.textBoldness,
+                        overlaySaturation = block.overlaySaturation,
+                        textSaturation = block.textSaturation
+                    )
+                } ?: emptyList()
+                dragBlocksMap[uri] = blocks
+            }
+        }
+    }
+
     // Hiển thị Toast một lần khi bắt đầu dịch, sau đó dùng Text component để theo dõi
     LaunchedEffect(uiState.currentTranslatingImage) {
         if (uiState.currentTranslatingImage != null) {
@@ -120,6 +163,9 @@ fun ViewerScreen(
             showExitConfirmDialog = true
             pendingBack = true
         } else {
+            if (uiState.roomId != null) {
+                viewModel.saveRoom(dragBlocksMap)  
+            }
             onNavigateBack()
         }
     }
