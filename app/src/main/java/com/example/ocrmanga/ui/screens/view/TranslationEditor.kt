@@ -680,7 +680,7 @@ fun ColorPickerDialog(
                             selectedColor = selectedColor.copy(alpha = newAlpha)
                             onAlphaChanged(newAlpha)
                         },
-                        valueRange = 0.1f..1.0f,
+                        valueRange = 0f..1.0f, // Đặt giá trị thấp nhất là 0% thay vì 10%
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
