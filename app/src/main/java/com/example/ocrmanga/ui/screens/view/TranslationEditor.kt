@@ -454,7 +454,7 @@ fun TranslationEditor(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Nút chọn màu viền
+                            // Nút chọn màu viền (mở dialog chỉnh màu + alpha + thickness)
                             IconButton(
                                 onClick = { if (isBlockSelected) showBorderColorPicker = true },
                                 enabled = isBlockSelected
@@ -472,91 +472,8 @@ fun TranslationEditor(
                                     modifier = Modifier.padding(top = 26.dp)
                                 )
                             }
-
-                            // Tăng độ dày viền
-                            IconButton(
-                                onClick = {
-                                    selectedIndex?.let { idx ->
-                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                            val old = list[idx]
-                                            val newThickness = (old.textBorderThickness + 0.5f).coerceAtMost(5.0f)
-                                            list[idx] = old.copy(textBorderThickness = newThickness)
-                                        })
-                                    }
-                                },
-                                enabled = isBlockSelected
-                            ) {
-                                Icon(Icons.Default.Add, "Tăng độ dày viền", tint = MaterialTheme.colorScheme.primary)
-                                val currentThickness = selectedIndex?.let { dragBlocks[it].textBorderThickness } ?: 0f
-                                Text(
-                                    "Viền\n+",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(top = 26.dp)
-                                )
-                            }
-
-                            // Giảm độ dày viền
-                            IconButton(
-                                onClick = {
-                                    selectedIndex?.let { idx ->
-                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                            val old = list[idx]
-                                            val newThickness = (old.textBorderThickness - 0.5f).coerceAtLeast(0.0f)
-                                            list[idx] = old.copy(textBorderThickness = newThickness)
-                                        })
-                                    }
-                                },
-                                enabled = isBlockSelected
-                            ) {
-                                Icon(Icons.Default.Remove, "Giảm độ dày viền", tint = MaterialTheme.colorScheme.primary)
-                                Text(
-                                    "Viền\n-",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(top = 26.dp)
-                                )
-                            }
-
-                            // Tăng độ đậm viền (alpha)
-                            IconButton(
-                                onClick = {
-                                    selectedIndex?.let { idx ->
-                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                            val old = list[idx]
-                                            val newAlpha = (old.textBorderAlpha + 0.1f).coerceAtMost(1.0f)
-                                            list[idx] = old.copy(textBorderAlpha = newAlpha)
-                                        })
-                                    }
-                                },
-                                enabled = isBlockSelected
-                            ) {
-                                Icon(Icons.Default.Opacity, "Tăng độ đậm viền", tint = MaterialTheme.colorScheme.primary)
-                                Text(
-                                    "Đậm\n+",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(top = 26.dp)
-                                )
-                            }
-
-                            // Giảm độ đậm viền (alpha)
-                            IconButton(
-                                onClick = {
-                                    selectedIndex?.let { idx ->
-                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                            val old = list[idx]
-                                            val newAlpha = (old.textBorderAlpha - 0.1f).coerceAtLeast(0.0f)
-                                            list[idx] = old.copy(textBorderAlpha = newAlpha)
-                                        })
-                                    }
-                                },
-                                enabled = isBlockSelected
-                            ) {
-                                Icon(Icons.Default.Opacity, "Giảm độ đậm viền", tint = MaterialTheme.colorScheme.primary)
-                                Text(
-                                    "Đậm\n-",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(top = 26.dp)
-                                )
-                            }
+                            // Các nút tăng/giảm độ dày, alpha... XÓA hoặc ẨN đi vì đã chuyển vào dialog
+                            // (Có thể xóa các IconButton tăng/giảm viền, alpha ở đây)
                         }
                     }
                 }
@@ -737,10 +654,13 @@ fun TranslationEditor(
         if (showBorderColorPicker && isBlockSelected && selectedIndex != null) {
             val idx = selectedIndex
             val currentColor = dragBlocks[idx].textBorderColor ?: Color.Black
+            val currentAlpha = dragBlocks[idx].textBorderAlpha
+            val currentThickness = dragBlocks[idx].textBorderThickness
             ColorPickerDialog(
                 title = "Chọn màu viền chữ",
                 initialColor = currentColor.copy(alpha = 1f),
-                initialAlpha = dragBlocks[idx].textBorderAlpha,
+                initialAlpha = currentAlpha,
+                initialThickness = currentThickness,
                 isOverlayDialog = false,
                 onColorSelected = { color ->
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
@@ -753,6 +673,12 @@ fun TranslationEditor(
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
                         list[idx] = old.copy(textBorderAlpha = alpha)
+                    })
+                },
+                onThicknessChanged = { thickness ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(textBorderThickness = thickness)
                     })
                 },
                 onDismiss = { showBorderColorPicker = false }
@@ -768,18 +694,21 @@ fun ColorPickerDialog(
     initialAlpha: Float = 1.0f,
     initialBoldness: Float = 1.0f,
     initialSaturation: Float = 1.0f,
-    isOverlayDialog: Boolean = false, // true nếu là dialog chọn màu overlay
+    initialThickness: Float = 0.0f, // Thêm tham số này
+    isOverlayDialog: Boolean = false,
     onColorSelected: (Color) -> Unit,
     onAlphaChanged: ((Float) -> Unit)? = null,
     onBoldnessChanged: ((Float) -> Unit)? = null,
     onSaturationChanged: ((Float) -> Unit)? = null,
+    onThicknessChanged: ((Float) -> Unit)? = null, // Thêm callback này
     onDismiss: () -> Unit
 ) {
     var selectedColor by remember { mutableStateOf(initialColor) }
     var currentAlpha by remember { mutableStateOf(initialAlpha) }
     var currentBoldness by remember { mutableStateOf(initialBoldness) }
     var currentSaturation by remember { mutableStateOf(initialSaturation) }
-    
+    var currentThickness by remember { mutableStateOf(initialThickness) } // Thêm state này
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -857,6 +786,38 @@ fun ColorPickerDialog(
                             onSaturationChanged(newSaturation)
                         },
                         valueRange = 0f..2f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Slider độ đậm viền (alpha)
+                if (!isOverlayDialog && onAlphaChanged != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Độ đậm viền: ${(currentAlpha * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentAlpha,
+                        onValueChange = { newAlpha ->
+                            currentAlpha = newAlpha
+                            onAlphaChanged(newAlpha)
+                        },
+                        valueRange = 0f..1.0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Slider độ dày viền
+                if (!isOverlayDialog && onThicknessChanged != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Độ dày viền: ${"%.1f".format(currentThickness)}",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentThickness,
+                        onValueChange = { newThickness ->
+                            currentThickness = newThickness
+                            onThicknessChanged(newThickness)
+                        },
+                        valueRange = 0f..5f,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
