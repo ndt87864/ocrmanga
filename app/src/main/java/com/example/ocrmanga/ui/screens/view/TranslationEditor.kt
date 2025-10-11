@@ -326,8 +326,8 @@ fun TranslationEditor(
                                 selectedIndex?.let { idx ->
                                     onDragBlocksChange(dragBlocks.toMutableList().also {
                                         val old = it[idx]
-                                        val newFont = (old.fontSize ?: 16f) + 2f
-                                        it[idx] = old.copy(fontSize = newFont)
+                                        val newFont = (old.fontSize ?: 16f) - 1f
+                                        it[idx] = old.copy(fontSize = newFont.coerceAtLeast(8f))
                                     })
                                 }
                             },
@@ -339,8 +339,8 @@ fun TranslationEditor(
                                 selectedIndex?.let { idx ->
                                     onDragBlocksChange(dragBlocks.toMutableList().also {
                                         val old = it[idx]
-                                        val newFont = (old.fontSize ?: 16f) - 2f
-                                        it[idx] = old.copy(fontSize = newFont.coerceAtLeast(8f))
+                                        val newFont = (old.fontSize ?: 16f) + 1f
+                                        it[idx] = old.copy(fontSize = newFont)
                                     })
                                 }
                             },
