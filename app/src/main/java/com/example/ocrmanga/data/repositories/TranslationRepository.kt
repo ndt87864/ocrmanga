@@ -360,7 +360,6 @@ class TranslationRepository(private val application: Application) {
             kotlinx.coroutines.coroutineScope {
                 val deferredBlocks = mergedBlocks.map { block ->
                     async {
-                        // Log.i("TranslationRepository", "Khối văn bản gốc: ${block.text}, tọa độ: left=${block.bounds.left}, top=${block.bounds.top}") // Tắt log để tăng tốc
                         var translatedText = when (mode) {
                             TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
                             TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
@@ -368,12 +367,9 @@ class TranslationRepository(private val application: Application) {
                             TranslationMode.OFF -> block.text
                             TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
                         }
-                        // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
-                        // Tối ưu: chỉ kiểm tra lần 2 nếu text quá ngắn (có thể bị dịch sai)
                         if (translatedText != null && translatedText.length > 5) {
                             val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
                             if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
-                                //log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
                                 translatedText = when (mode) {
                                     TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
                                     TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
@@ -382,9 +378,7 @@ class TranslationRepository(private val application: Application) {
                                 }
                             }
                         }
-                        // Log.i("TranslationRepository", "Văn bản sau kiểm tra lần 2: $translatedText") // Tắt log để tăng tốc
                         val naturalText = translatedText?.let { postProcessTranslation(it) }
-                        // Log.i("TranslationRepository", "Văn bản tự nhiên sau xử lý: $naturalText") // Tắt log để tăng tốc
                         val isVertical = block.isVertical
                         val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
                             val words = naturalText?.split(Regex("\\s+")).orEmpty().filter { it.isNotEmpty() }
@@ -407,9 +401,9 @@ class TranslationRepository(private val application: Application) {
                         } else {
                             naturalText
                         }
-                        //log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
-                        val newBounds = adjustBoundsForTranslatedText(reformattedText.orEmpty(), block.bounds, block.fontSize, 1.0f)
-                        block.copy(text = reformattedText.orEmpty(), bounds = newBounds)
+                        val cleanedText = reformattedText.orEmpty().replace("**", "")
+                        val newBounds = adjustBoundsForTranslatedText(cleanedText, block.bounds, block.fontSize, 1.0f)
+                        block.copy(text = cleanedText, bounds = newBounds, fontFamily = "Anime Ace BB")
                     }
                 }
                 blocks.addAll(deferredBlocks.awaitAll())
@@ -485,23 +479,23 @@ class TranslationRepository(private val application: Application) {
             // Kiểm tra lại các block chưa dịch ra tiếng Việt, thử lại với model khác nếu cần
             val finalBlocks = translatedBlocks.map { block ->
                 val lang = detectLanguage(block.text) ?: ""
+                val cleanedText = block.text.replace("**", "")
                 if (lang != "vi" && mode != TranslationMode.OFF) {
-                    // Thử lại với model khác
                     val retryText = when (mode) {
-                        TranslationMode.OFFLINE -> translateTextOnline(block.text, sourceLanguage)
-                        TranslationMode.ONLINE -> translateTextWithGemini(block.text, sourceLanguage)
-                        TranslationMode.GEMINI -> translateTextOffline(block.text, sourceLanguage)
-                        TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: block.text
-                        else -> block.text
+                        TranslationMode.OFFLINE -> translateTextOnline(cleanedText, sourceLanguage)
+                        TranslationMode.ONLINE -> translateTextWithGemini(cleanedText, sourceLanguage)
+                        TranslationMode.GEMINI -> translateTextOffline(cleanedText, sourceLanguage)
+                        TranslationMode.MISTRAL -> translateWithMistral(cleanedText, sourceLanguage, "vi") ?: cleanedText
+                        else -> cleanedText
                     }
                     val retryLang = detectLanguage(retryText) ?: ""
                     if (retryLang == "vi") {
-                        block.copy(text = postProcessTranslation(retryText))
+                        block.copy(text = postProcessTranslation(retryText).replace("**", ""), fontFamily = "Anime Ace BB")
                     } else {
-                        block
+                        block.copy(text = cleanedText, fontFamily = "Anime Ace BB")
                     }
                 } else {
-                    block
+                    block.copy(text = cleanedText, fontFamily = "Anime Ace BB")
                 }
             }
             val finalResultText = finalBlocks.joinToString("\n") { it.text }

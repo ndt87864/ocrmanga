@@ -313,7 +313,7 @@ fun ImageViewer(
                                             val scaledWidth = (bounds.width() * scale).toFloat()
                                             val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
                                             val fontSize = dragBlock.fontSize ?: calculateOptimalFontSize(
-                                                block.text, scaledWidth, scaledBlockHeight2, 12f, shapeType = block.shapeType
+                                                block.text, scaledWidth, scaledBlockHeight2, 12f, shapeType = block.shapeType, context = context, fontFamilyName = block.fontFamily
                                             )
                                             RegionInfo(
                                                 block = block,
@@ -453,6 +453,7 @@ fun ImageViewer(
                                                     } else {
                                                         baseTextColor
                                                     }
+                                                    android.util.Log.d("ImageViewer", "Rendering block with font: ${block.fontFamily}")
                                                     drawText(
                                                         text = block.text,
                                                         x = textLeft,
@@ -462,7 +463,9 @@ fun ImageViewer(
                                                         color = textColor,
                                                         fontSize = fontSize,
                                                         isVertical = block.isVertical,
-                                                        boldness = region.textBoldness
+                                                        boldness = region.textBoldness,
+                                                        context = context,
+                                                        fontFamilyName = block.fontFamily
                                                     )
                                                     if (editTranslationMode) {
                                                         if (isOval) {

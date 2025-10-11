@@ -1,7 +1,8 @@
 
+
 package com.example.ocrmanga.ui.screens.view
 
-import android.content.Context
+// import android.content.Context (removed duplicate)
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -21,6 +22,7 @@ import com.example.ocrmanga.data.models.TextBlockInfo
 import java.io.IOException
 import kotlin.math.max
 import kotlin.math.min
+import android.content.Context
 
 // Image and text region utilities extracted from ViewerScreen.kt
 
@@ -286,12 +288,23 @@ fun calculateOptimalFontSize(
     height: Float,
     minFontSize: Float = 12f,
     maxFontSize: Float = 100f,
-    shapeType: Int = 0 // 0 = rectangle, 1 = oval
+    shapeType: Int = 0, // 0 = rectangle, 1 = oval
+    context: Context? = null,
+    fontFamilyName: String? = null
 ): Float {
     if (text.isBlank() || width <= 0 || height <= 0) return minFontSize
 
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
+        // Load font để tính toán chính xác
+        context?.let {
+            try {
+                val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/sf_toontime_b.ttf")
+                if (typeface != null) this.typeface = typeface
+            } catch (e: Exception) {
+                // Use default typeface
+            }
+        }
     }
 
     var low = minFontSize
@@ -306,7 +319,7 @@ fun calculateOptimalFontSize(
     repeat(12) {
         val mid = (low + high) / 2
         paint.textSize = mid
-        val wrappedLines = wrapText(text, width * widthScale, mid)
+        val wrappedLines = wrapText(text, width * widthScale, mid, context, fontFamilyName)
         val fontMetrics = paint.fontMetrics
         val lineHeight = fontMetrics.descent - fontMetrics.ascent
         val textHeight = wrappedLines.size * lineHeight
@@ -337,12 +350,37 @@ fun DrawScope.drawText(
     color: Color,
     fontSize: Float,
     isVertical: Boolean,
-    boldness: Float = 1.0f // Độ đậm của text (0.5 - 2.0)
+    boldness: Float = 1.0f, // Độ đậm của text (0.5 - 2.0)
+    context: Context,
+    fontFamilyName: String? = null
 ) {
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.color = color.toArgb()
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.CENTER // Đổi từ LEFT sang CENTER để căn giữa
+        // Set font from assets/tessdata/font using createFromAsset
+        // Font mặc định cho overlay là Anime Ace BB
+        try {
+            val fontFile = when (fontFamilyName) {
+                "SF Toontime B" -> "SF_Toontime_Blotch.ttf" // SF Toontime B (font mặc định)
+                "SF Toontime B Italic" -> "SF_Toontime_B_Italic.ttf"
+                "SF Toontime Blotch Bold" -> "SF_Toontime_Blotch_Bold.ttf"
+                "SF Toontime Blotch Bold Italic" -> "SF_Toontime_Blotch_Bold_Italic.ttf"
+                "SF Toontime Extended" -> "SF_Toontime_Extended.ttf"
+                "SF Toontime Extended Italic" -> "SF_Toontime_Extended_Italic.ttf"
+                "SF Toontime Extended Bold" -> "SF_Toontime_Extended_Bold.ttf"
+                "SF Toontime Extended Bold Italic" -> "SF_Toontime_Extended_Bold_Italic.ttf"
+                else -> "SF Toontime B.ttf" // Fallback: SF Toontime B
+            }
+            val typeface = android.graphics.Typeface.createFromAsset(context.assets, "tessdata/font/$fontFile")
+            if (typeface != null) {
+                this.typeface = typeface
+                android.util.Log.d("ImageTextUtils", "Font loaded successfully: $fontFile for fontFamily: $fontFamilyName")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ImageTextUtils", "Error loading font from tessdata/font/$fontFamilyName: ${e.message}")
+            // Fallback to default typeface if not found
+        }
         // Điều chỉnh stroke width để tạo hiệu ứng đậm nhạt
         if (boldness > 1.0f) {
             this.style = android.graphics.Paint.Style.FILL_AND_STROKE
@@ -354,7 +392,7 @@ fun DrawScope.drawText(
         }
     }
 
-    val lines = wrapText(text, width, fontSize)
+    val lines = wrapText(text, width, fontSize, context, fontFamilyName)
     val fontMetrics = paint.fontMetrics
     val lineHeight = fontMetrics.descent - fontMetrics.ascent
 
@@ -392,16 +430,38 @@ fun DrawScope.drawText(
     initialWidth: Float,
     initialHeight: Float,
     fontSize: Float,
-    isVertical: Boolean
+    isVertical: Boolean,
+    context: Context? = null,
+    fontFamilyName: String? = null
 ): Pair<String, Float> {
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
         this.textSize = fontSize
+        // Sử dụng font Anime Ace BB để đo text chính xác
+        context?.let {
+            try {
+                val fontFile = when (fontFamilyName) {
+                    "SF Toontime B" -> "SF Toontime B.ttf"
+                    "SF Toontime B Italic" -> "SF Toontime B Italic.ttf"
+                    "SF Toontime Blotch Bold" -> "SF Toontime Blotch Bold.ttf"
+                    "SF Toontime Blotch Bold Italic" -> "SF Toontime Blotch Bold Italic.ttf"
+                    "SF Toontime Extended" -> "SF Toontime Extended.ttf"
+                    "SF Toontime Extended Italic" -> "SF Toontime Extended Italic.ttf"
+                    "SF Toontime Extended Bold" -> "SF Toontime Extended Bold.ttf"
+                    "SF Toontime Extended Bold Italic" -> "SF Toontime Extended Bold Italic.ttf"
+                    else -> "SF Toontime B.ttf"
+                }
+                val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/$fontFile")
+                if (typeface != null) this.typeface = typeface
+            } catch (e: Exception) {
+                // Use default typeface
+            }
+        }
     }
 
     val effectiveWidth = if (isVertical) initialHeight else initialWidth
     val effectiveHeight = if (isVertical) initialWidth else initialHeight
-    val wrappedLines = wrapText(text, effectiveWidth * 0.95f, fontSize)
+    val wrappedLines = wrapText(text, effectiveWidth * 0.95f, fontSize, context, fontFamilyName)
     val fontMetrics = paint.fontMetrics
     val lineHeight = fontMetrics.descent - fontMetrics.ascent
     val textHeight = wrappedLines.size * lineHeight
@@ -413,14 +473,34 @@ fun DrawScope.drawText(
     }
 
     paint.textSize = finalFontSize
-    val finalWrappedLines = wrapText(text, effectiveWidth * 0.95f, finalFontSize)
+    val finalWrappedLines = wrapText(text, effectiveWidth * 0.95f, finalFontSize, context, fontFamilyName)
     return finalWrappedLines.joinToString("\n") to finalFontSize
 }
 
- fun wrapText(text: String, width: Float, fontSize: Float): List<String> {
+ fun wrapText(text: String, width: Float, fontSize: Float, context: Context? = null, fontFamilyName: String? = null): List<String> {
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.LEFT
+        // Sử dụng font Anime Ace BB để đo text chính xác
+        context?.let {
+            try {
+                val fontFile = when (fontFamilyName) {
+                    "SF Toontime B" -> "SF Toontime B.ttf"
+                    "SF Toontime B Italic" -> "SF Toontime B Italic.ttf"
+                    "SF Toontime Blotch Bold" -> "SF Toontime Blotch Bold.ttf"
+                    "SF Toontime Blotch Bold Italic" -> "SF Toontime Blotch Bold Italic.ttf"
+                    "SF Toontime Extended" -> "SF Toontime Extended.ttf"
+                    "SF Toontime Extended Italic" -> "SF Toontime Extended Italic.ttf"
+                    "SF Toontime Extended Bold" -> "SF Toontime Extended Bold.ttf"
+                    "SF Toontime Extended Bold Italic" -> "SF Toontime Extended Bold Italic.ttf"
+                    else -> "SF Toontime B.ttf"
+                }
+                val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/$fontFile")
+                if (typeface != null) this.typeface = typeface
+            } catch (e: Exception) {
+                // Use default typeface
+            }
+        }
     }
 
     val lines = mutableListOf<String>()

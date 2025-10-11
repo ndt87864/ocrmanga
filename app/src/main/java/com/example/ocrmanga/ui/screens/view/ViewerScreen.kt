@@ -435,6 +435,7 @@ fun ViewerScreen(
                     it.block.copy(
                         rotation = it.rotation,
                         shapeType = it.block.shapeType,
+                        fontFamily = it.block.fontFamily, // Lưu font family khi save translation
                         customOverlayColor = it.whiteoutColor?.toArgb(),
                         customTextColor = it.textColor?.toArgb(),
                         overlayAlpha = it.overlayAlpha,

@@ -26,7 +26,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.res.fontResource
 import androidx.compose.ui.unit.dp
+import com.example.ocrmanga.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -38,6 +43,27 @@ fun TranslationEditor(
     onSelectedIndexChange: (Int?) -> Unit,
     onSave: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    // Load fonts safely with remember to avoid reloading and potential crashes
+    val fontOptions = remember {
+        try {
+            listOf(
+                "SF Toontime B" to FontFamily(Font(R.font.sf_toontime_b)),
+                "SF Toontime B Italic" to FontFamily(Font(R.font.sf_toontime_b_italic)),
+                "SF Toontime Blotch Bold" to FontFamily(Font(R.font.sf_toontime_blotch_bold)),
+                "SF Toontime Blotch Bold Italic" to FontFamily(Font(R.font.sf_toontime_blotch_bold_italic)),
+                "SF Toontime Extended" to FontFamily(Font(R.font.sf_toontime_extended)),
+                "SF Toontime Extended Italic" to FontFamily(Font(R.font.sf_toontime_extended_italic)),
+                "SF Toontime Extended Bold" to FontFamily(Font(R.font.sf_toontime_extended_bold)),
+                "SF Toontime Extended Bold Italic" to FontFamily(Font(R.font.sf_toontime_extended_bold_italic))
+            )
+        } catch (e: Exception) {
+            // Fallback to default font if loading fails
+            android.util.Log.e("TranslationEditor", "Failed to load fonts", e)
+            listOf("Default" to FontFamily.Default)
+        }
+    }
     // --- STATE MANAGEMENT ---
     val isBlockSelected = selectedIndex != null
     var currentPage by remember { mutableStateOf(0) }
@@ -96,6 +122,7 @@ fun TranslationEditor(
             .background(Color(0xFFF0F0F0))
             .padding(8.dp)
     ) {
+
         val shapeLabels = listOf("Hình chữ nhật", "Hình oval")
         val shapeIcons = listOf(Icons.Default.CropSquare, Icons.Default.Circle)
         val resizeOptions = listOf("Tất cả", "Chiều cao", "Chiều rộng")
@@ -165,7 +192,9 @@ fun TranslationEditor(
                                                     width = width,
                                                     height = height,
                                                     minFontSize = 12f,
-                                                    shapeType = newShapeType
+                                                    shapeType = newShapeType,
+                                                    context = context,
+                                                    fontFamilyName = currentBlock.block.fontFamily
                                                 )
                                                 
                                                 updatedBlocks[idx] = currentBlock.copy(
@@ -265,10 +294,26 @@ fun TranslationEditor(
                         }
 
                         IconButton(
-                            onClick = { if (isBlockSelected) showEditBlockDialog = true },
-                            enabled = isBlockSelected
+                            onClick = {
+                                if (isBlockSelected) {
+                                    showEditBlockDialog = true
+                                } else {
+                                    // Thêm block mới và chuyển sang chế độ sửa luôn
+                                    val newBlock = DragBlockState(
+                                        block = com.example.ocrmanga.data.models.TextBlockInfo(
+                                            text = "",
+                                            bounds = android.graphics.Rect(100, 100, 400, 200),
+                                            fontSize = 32f
+                                        )
+                                    )
+                                    onDragBlocksChange(dragBlocks + newBlock)
+                                    onSelectedIndexChange(dragBlocks.size)
+                                    showEditBlockDialog = true
+                                }
+                            },
+                            enabled = true
                         ) {
-                            Icon(Icons.Default.Edit, "Sửa bản dịch", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                            Icon(Icons.Default.Edit, "Sửa/Thêm bản dịch", tint = MaterialTheme.colorScheme.primary)
                         }
 
                         IconButton(
@@ -418,14 +463,34 @@ fun TranslationEditor(
             val block = dragBlocks[idx].block
             val parts = remember(block.text) { block.text.split("\n") }
             var editedParts by remember(block.text) { mutableStateOf(parts.toMutableList()) }
+            var selectedFontName by remember { mutableStateOf(block.fontFamily) }
+            var fontDropdownExpanded by remember { mutableStateOf(false) }
+            val selectedFontFamily = fontOptions.find { it.first == selectedFontName }?.second ?: fontOptions.firstOrNull()?.second ?: FontFamily.Default
             AlertDialog(
                 onDismissRequest = { showEditBlockDialog = false },
                 title = { Text("Sửa bản dịch") },
                 text = {
                     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        // Font selection dropdown
+                        Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                            OutlinedButton(onClick = { fontDropdownExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Font: $selectedFontName")
+                            }
+                            DropdownMenu(expanded = fontDropdownExpanded, onDismissRequest = { fontDropdownExpanded = false }) {
+                                fontOptions.forEach { (name, family) ->
+                                    DropdownMenuItem(
+                                        text = { Text(name) },
+                                        onClick = {
+                                            selectedFontName = name
+                                            fontDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
                         editedParts.forEachIndexed { i, part ->
                             OutlinedTextField(
-                                value = part,
+                                value = part.replace("*", ""),
                                 onValueChange = { newText ->
                                     editedParts = editedParts.toMutableList().also { it[i] = newText }
                                 },
@@ -435,23 +500,19 @@ fun TranslationEditor(
                             )
                         }
                         Spacer(Modifier.height(8.dp))
-                        Button(
-                            onClick = { editedParts = editedParts.toMutableList().also { it.add("") } },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Icon(Icons.Default.Add, null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Thêm phần")
-                        }
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = {
                         val nonBlankParts = editedParts.map { it.trim() }.filter { it.isNotEmpty() }
                         if (nonBlankParts.isNotEmpty()) {
+                            android.util.Log.d("TranslationEditor", "Saving with font: $selectedFontName")
                             onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                                 val old = list[idx]
-                                val newBlocks = nonBlankParts.map { part -> old.copy(block = old.block.copy(text = part)) }
+                                val newBlocks = nonBlankParts.map { part -> 
+                                    old.copy(block = old.block.copy(text = part, fontFamily = selectedFontName))
+                                }
+                                android.util.Log.d("TranslationEditor", "Created ${newBlocks.size} blocks with font: ${newBlocks.firstOrNull()?.block?.fontFamily}")
                                 list.removeAt(idx)
                                 list.addAll(idx, newBlocks)
                             })
