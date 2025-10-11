@@ -502,7 +502,8 @@ fun ImageViewer(
                                                 fontFamilyName = block.fontFamily,
                                                 borderColor = region.textBorderColor,
                                                 borderThickness = region.textBorderThickness,
-                                                borderAlpha = region.textBorderAlpha
+                                                borderAlpha = region.textBorderAlpha,
+                                                editMode = editTranslationMode // Cho phép font size tự do trong edit mode
                                             )
                                         }
                                     }
