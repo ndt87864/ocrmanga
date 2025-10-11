@@ -468,7 +468,7 @@ fun TranslationEditor(
             val selectedFontFamily = fontOptions.find { it.first == selectedFontName }?.second ?: fontOptions.firstOrNull()?.second ?: FontFamily.Default
             AlertDialog(
                 onDismissRequest = { showEditBlockDialog = false },
-                title = { Text("Sửa bản dịch") },
+                title = { Text("Sửa/Thêm bản dịch") },
                 text = {
                     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                         // Font selection dropdown
@@ -488,17 +488,29 @@ fun TranslationEditor(
                                 }
                             }
                         }
+
+                        // Existing translation parts
                         editedParts.forEachIndexed { i, part ->
                             OutlinedTextField(
                                 value = part.replace("*", ""),
                                 onValueChange = { newText ->
                                     editedParts = editedParts.toMutableList().also { it[i] = newText }
                                 },
-                                label = { Text("Phần ${i + 1}") },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                                label = { Text("Phần dịch ${i + 1}") },
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                             )
                         }
+
+                        // Add new translation part
+                        Button(
+                            onClick = {
+                                editedParts = editedParts.toMutableList().also { it.add("") }
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            Text("Thêm phần dịch mới")
+                        }
+
                         Spacer(Modifier.height(8.dp))
                     }
                 },
@@ -508,11 +520,15 @@ fun TranslationEditor(
                         if (nonBlankParts.isNotEmpty()) {
                             android.util.Log.d("TranslationEditor", "Saving with font: $selectedFontName")
                             onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                val old = list[idx]
-                                val newBlocks = nonBlankParts.map { part -> 
-                                    old.copy(block = old.block.copy(text = part, fontFamily = selectedFontName))
+                                val oldBlock = list[idx]
+                                val newBlocks = nonBlankParts.mapIndexed { index, text ->
+                                    oldBlock.copy(
+                                        block = oldBlock.block.copy(
+                                            text = text,
+                                            fontFamily = selectedFontName
+                                        )
+                                    )
                                 }
-                                android.util.Log.d("TranslationEditor", "Created ${newBlocks.size} blocks with font: ${newBlocks.firstOrNull()?.block?.fontFamily}")
                                 list.removeAt(idx)
                                 list.addAll(idx, newBlocks)
                             })
