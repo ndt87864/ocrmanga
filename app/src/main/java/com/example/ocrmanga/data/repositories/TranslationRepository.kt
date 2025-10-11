@@ -149,7 +149,7 @@ class TranslationRepository(private val application: Application) {
             val prompt = buildString {
                 append("\n")
                 append("                    Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .\n")
-                append("                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác và đồng bộ nhất sang tiếng Việt: $text\n")
+                append("                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại với kiểu chữ hoa cho chính xác và đồng bộ nhất sang tiếng Việt: $text\n")
                 append("                    Yêu cầu khi dịch :")
                 append("                           1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.\n")
                 append("                           2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .\n")
@@ -1258,7 +1258,7 @@ class TranslationRepository(private val application: Application) {
 
                 val prompt = """
                     Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .
-                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác nhất sang tiếng Việt: $originalText
+                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại với kiểu chữ hoa cho chính xác nhất sang tiếng Việt: $originalText
                     Yêu cầu khi dịch :1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
                            2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .
                            3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .

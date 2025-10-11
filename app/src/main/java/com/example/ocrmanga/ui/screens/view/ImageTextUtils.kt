@@ -426,7 +426,19 @@ fun DrawScope.drawText(
         }
     }
 
-    val lines = wrapText(text, width, fontSize, context, fontFamilyName)
+    // Đảm bảo text luôn nằm gọn trong overlay bằng cách tự động wrap và giảm font size nếu cần
+    val (wrappedText, optimalFontSize) = adjustWhiteoutBounds(
+        text = text,
+        initialWidth = width,
+        initialHeight = height,
+        fontSize = fontSize,
+        isVertical = isVertical,
+        context = context,
+        fontFamilyName = fontFamilyName
+    )
+    paint.textSize = optimalFontSize
+    borderPaint?.textSize = optimalFontSize
+    val lines = wrappedText.split("\n")
     val fontMetrics = paint.fontMetrics
     val lineHeight = fontMetrics.descent - fontMetrics.ascent
 
@@ -438,16 +450,11 @@ fun DrawScope.drawText(
                     canvas.nativeCanvas.save()
                     canvas.nativeCanvas.translate(currentX, y)
                     canvas.nativeCanvas.rotate(90f)
-                    // Căn giữa theo chiều dọc khi xoay 90 độ
                     val lineWidth = paint.measureText(line)
                     val centeredY = (height - lineWidth) / 2
-                    
-                    // Vẽ viền trước (nếu có)
                     borderPaint?.let {
                         canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, it)
                     }
-                    
-                    // Vẽ text chính sau
                     canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, paint)
                     canvas.nativeCanvas.restore()
                     currentX -= lineHeight
@@ -458,13 +465,9 @@ fun DrawScope.drawText(
             for (line in lines) {
                 if (line.isNotBlank() && currentY + fontMetrics.descent <= y + height) {
                     val centerX = x + width / 2
-                    
-                    // Vẽ viền trước (nếu có)
                     borderPaint?.let {
                         canvas.nativeCanvas.drawText(line, centerX, currentY, it)
                     }
-                    
-                    // Vẽ text chính sau
                     canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
                     currentY += lineHeight
                 }
