@@ -456,34 +456,22 @@ fun TranslationEditor(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Nút chọn màu viền (mở dialog chỉnh màu + alpha + thickness)
+                            // Nút chọn màu viền (giống overlay/text)
                             IconButton(
                                 onClick = { if (isBlockSelected) showBorderColorPicker = true },
                                 enabled = isBlockSelected
                             ) {
                                 val currentBorderColor = selectedIndex?.let { dragBlocks[it].textBorderColor } ?: Color.Black
                                 val currentBorderAlpha = selectedIndex?.let { dragBlocks[it].textBorderAlpha } ?: 1f
-                                val currentBorderThickness = selectedIndex?.let { dragBlocks[it].textBorderThickness } ?: 0f
-                                val currentTextColor = selectedIndex?.let { dragBlocks[it].textColor } ?: Color.Black
-                                val previewText = selectedIndex?.let { dragBlocks[it].block.text.takeIf { it.isNotBlank() }?.split("\n")?.firstOrNull() } ?: "AaBb"
-                                // Preview text với viền
                                 Box(
                                     modifier = Modifier
-                                        .size(width = 48.dp, height = 32.dp)
-                                        .padding(2.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    OutlinedTextPreview(
-                                        text = previewText,
-                                        textColor = currentTextColor,
-                                        borderColor = currentBorderColor.copy(alpha = currentBorderAlpha),
-                                        borderThickness = currentBorderThickness
-                                    )
-                                }
-                                Text(
-                                    "Màu\nviền",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(top = 26.dp)
+                                        .size(24.dp)
+                                        .background(Color.Transparent, CircleShape)
+                                        .border(
+                                            width = 3.dp,
+                                            color = currentBorderColor.copy(alpha = currentBorderAlpha),
+                                            shape = CircleShape
+                                        )
                                 )
                             }
                         }
