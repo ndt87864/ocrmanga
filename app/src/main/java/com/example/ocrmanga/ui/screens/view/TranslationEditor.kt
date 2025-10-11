@@ -528,7 +528,7 @@ fun TranslationEditor(
                         // Existing translation parts
                         editedParts.forEachIndexed { i, part ->
                             OutlinedTextField(
-                                value = part.replace("*", ""),
+                                value = part,
                                 onValueChange = { newText ->
                                     editedParts = editedParts.toMutableList().also { it[i] = newText }
                                 },
