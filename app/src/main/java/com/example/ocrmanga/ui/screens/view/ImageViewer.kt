@@ -108,13 +108,17 @@ fun ImageViewer(
                 ?: translatedTexts[uri]?.second?.map { block ->
                     DragBlockState(
                         block = block,
+                        fontSize = block.fontSize, // Sử dụng fontSize đã lưu từ database
                         rotation = block.rotation ?: 0f,
                         whiteoutColor = block.customOverlayColor?.let { androidx.compose.ui.graphics.Color(it) },
                         textColor = block.customTextColor?.let { androidx.compose.ui.graphics.Color(it) },
                         overlayAlpha = block.overlayAlpha,
                         textBoldness = block.textBoldness,
                         overlaySaturation = block.overlaySaturation,
-                        textSaturation = block.textSaturation
+                        textSaturation = block.textSaturation,
+                        textBorderColor = block.customBorderColor?.let { androidx.compose.ui.graphics.Color(it) },
+                        textBorderThickness = block.borderThickness,
+                        textBorderAlpha = block.borderAlpha
                     )
                 } ?: emptyList()
             var dragBlocks by remember(uri, translationVersion, translatedTexts[uri]) {
@@ -125,13 +129,17 @@ fun ImageViewer(
                     val newBlocks = translatedTexts[uri]?.second?.map {
                         DragBlockState(
                             block = it,
+                            fontSize = it.fontSize, // Sử dụng fontSize đã lưu từ database
                             rotation = it.rotation ?: 0f,
                             whiteoutColor = it.customOverlayColor?.let { color -> androidx.compose.ui.graphics.Color(color) },
                             textColor = it.customTextColor?.let { color -> androidx.compose.ui.graphics.Color(color) },
                             overlayAlpha = it.overlayAlpha,
                             textBoldness = it.textBoldness,
                             overlaySaturation = it.overlaySaturation,
-                            textSaturation = it.textSaturation
+                            textSaturation = it.textSaturation,
+                            textBorderColor = it.customBorderColor?.let { color -> androidx.compose.ui.graphics.Color(color) },
+                            textBorderThickness = it.borderThickness,
+                            textBorderAlpha = it.borderAlpha
                         )
                     } ?: emptyList()
                     dragBlocks = newBlocks
