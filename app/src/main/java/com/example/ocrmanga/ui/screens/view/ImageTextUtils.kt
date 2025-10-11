@@ -352,14 +352,49 @@ fun DrawScope.drawText(
     isVertical: Boolean,
     boldness: Float = 1.0f, // Độ đậm của text (0.5 - 2.0)
     context: Context,
-    fontFamilyName: String? = null
+    fontFamilyName: String? = null,
+    borderColor: Color? = null, // Màu viền chữ
+    borderThickness: Float = 0.0f, // Độ dày viền (0.0 - 5.0)
+    borderAlpha: Float = 1.0f // Độ trong suốt của viền (0.0 - 1.0)
 ) {
+    // Tạo paint cho viền text (nếu có yêu cầu viền)
+    val borderPaint = if (borderColor != null && borderThickness > 0) {
+        androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+            this.color = borderColor.copy(alpha = borderAlpha).toArgb()
+            this.textSize = fontSize
+            this.textAlign = android.graphics.Paint.Align.CENTER
+            this.style = android.graphics.Paint.Style.STROKE
+            this.strokeWidth = borderThickness
+            
+            // Set typeface giống với paint chính để đảm bảo đồng nhất
+            try {
+                val fontFile = when (fontFamilyName) {
+                    "SF Toontime B" -> "SF_Toontime_Blotch.ttf"
+                    "SF Toontime B Italic" -> "SF_Toontime_B_Italic.ttf"
+                    "SF Toontime Blotch Bold" -> "SF_Toontime_Blotch_Bold.ttf"
+                    "SF Toontime Blotch Bold Italic" -> "SF_Toontime_Blotch_Bold_Italic.ttf"
+                    "SF Toontime Extended" -> "SF_Toontime_Extended.ttf"
+                    "SF Toontime Extended Italic" -> "SF_Toontime_Extended_Italic.ttf"
+                    "SF Toontime Extended Bold" -> "SF_Toontime_Extended_Bold.ttf"
+                    "SF Toontime Extended Bold Italic" -> "SF_Toontime_Extended_Bold_Italic.ttf"
+                    else -> "SF Toontime B.ttf"
+                }
+                val typeface = android.graphics.Typeface.createFromAsset(context.assets, "tessdata/font/$fontFile")
+                if (typeface != null) {
+                    this.typeface = typeface
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ImageTextUtils", "Error loading font for border: ${e.message}")
+            }
+        }
+    } else null
+
+    // Tạo paint cho text chính
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.color = color.toArgb()
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.CENTER // Đổi từ LEFT sang CENTER để căn giữa
         // Set font from assets/tessdata/font using createFromAsset
-        // Font mặc định cho overlay là Anime Ace BB
         try {
             val fontFile = when (fontFamilyName) {
                 "SF Toontime B" -> "SF_Toontime_Blotch.ttf" // SF Toontime B (font mặc định)
@@ -407,6 +442,13 @@ fun DrawScope.drawText(
                     // Căn giữa theo chiều dọc khi xoay 90 độ
                     val lineWidth = paint.measureText(line)
                     val centeredY = (height - lineWidth) / 2
+                    
+                    // Vẽ viền trước (nếu có)
+                    borderPaint?.let {
+                        canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, it)
+                    }
+                    
+                    // Vẽ text chính sau
                     canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, paint)
                     canvas.nativeCanvas.restore()
                     currentX -= lineHeight
@@ -416,8 +458,15 @@ fun DrawScope.drawText(
             var currentY = y - fontMetrics.ascent
             for (line in lines) {
                 if (line.isNotBlank() && currentY + fontMetrics.descent <= y + height) {
-                    // Căn giữa text theo chiều ngang (x + width/2 là tâm của overlay)
-                    canvas.nativeCanvas.drawText(line, x + width / 2, currentY, paint)
+                    val centerX = x + width / 2
+                    
+                    // Vẽ viền trước (nếu có)
+                    borderPaint?.let {
+                        canvas.nativeCanvas.drawText(line, centerX, currentY, it)
+                    }
+                    
+                    // Vẽ text chính sau
+                    canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
                     currentY += lineHeight
                 }
             }
