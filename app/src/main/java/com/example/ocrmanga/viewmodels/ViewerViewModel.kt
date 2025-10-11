@@ -350,7 +350,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             textCursor.getInt(5)
                         )
                         val fontSize = textCursor.getFloat(6)
-                        textBlocks.add(TextBlockInfo(translatedText, bounds, fontSize))
+                        textBlocks.add(TextBlockInfo(
+                            text = translatedText,
+                            bounds = bounds,
+                            fontSize = fontSize
+                        ))
                     }
                     textCursor.close()
                     if (textBlocks.isNotEmpty()) {
