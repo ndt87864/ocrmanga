@@ -78,6 +78,7 @@ fun ViewerScreen(
             dragBlocksMap.forEach { (uri, blocks) ->
                 viewModel.updateTranslatedBlocks(uri, blocks.map { 
                     it.block.copy(
+                        fontSize = it.fontSize ?: it.block.fontSize, // Lưu fontSize đã chỉnh sửa
                         rotation = it.rotation,
                         shapeType = it.block.shapeType,
                         customOverlayColor = it.whiteoutColor?.toArgb(),
@@ -85,7 +86,10 @@ fun ViewerScreen(
                         overlayAlpha = it.overlayAlpha,
                         textBoldness = it.textBoldness,
                         overlaySaturation = it.overlaySaturation,
-                        textSaturation = it.textSaturation
+                        textSaturation = it.textSaturation,
+                        customBorderColor = it.textBorderColor?.toArgb(),
+                        borderThickness = it.textBorderThickness,
+                        borderAlpha = it.textBorderAlpha
                     ) 
                 })
             }
@@ -107,7 +111,10 @@ fun ViewerScreen(
                         overlayAlpha = block.overlayAlpha,
                         textBoldness = block.textBoldness,
                         overlaySaturation = block.overlaySaturation,
-                        textSaturation = block.textSaturation
+                        textSaturation = block.textSaturation,
+                        textBorderColor = block.customBorderColor?.let { androidx.compose.ui.graphics.Color(it) },
+                        textBorderThickness = block.borderThickness,
+                        textBorderAlpha = block.borderAlpha
                     )
                 } ?: emptyList()
                 dragBlocksMap[uri] = blocks
@@ -262,8 +269,18 @@ fun ViewerScreen(
                                         uri,
                                         blocks.map { dragBlock ->
                                             dragBlock.block.copy(
+                                                fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
                                                 rotation = dragBlock.rotation,
-                                                shapeType = dragBlock.block.shapeType
+                                                shapeType = dragBlock.block.shapeType,
+                                                customOverlayColor = dragBlock.whiteoutColor?.toArgb(),
+                                                customTextColor = dragBlock.textColor?.toArgb(),
+                                                overlayAlpha = dragBlock.overlayAlpha,
+                                                textBoldness = dragBlock.textBoldness,
+                                                overlaySaturation = dragBlock.overlaySaturation,
+                                                textSaturation = dragBlock.textSaturation,
+                                                customBorderColor = dragBlock.textBorderColor?.toArgb(),
+                                                borderThickness = dragBlock.textBorderThickness,
+                                                borderAlpha = dragBlock.textBorderAlpha
                                             )
                                         }
                                     )
@@ -433,6 +450,7 @@ fun ViewerScreen(
             onSaveTranslation = { uri, blocks ->
                 viewModel.updateTranslatedBlocks(uri, blocks.map { 
                     it.block.copy(
+                        fontSize = it.fontSize ?: it.block.fontSize, // Lưu fontSize đã chỉnh sửa
                         rotation = it.rotation,
                         shapeType = it.block.shapeType,
                         fontFamily = it.block.fontFamily, // Lưu font family khi save translation
@@ -441,7 +459,10 @@ fun ViewerScreen(
                         overlayAlpha = it.overlayAlpha,
                         textBoldness = it.textBoldness,
                         overlaySaturation = it.overlaySaturation,
-                        textSaturation = it.textSaturation
+                        textSaturation = it.textSaturation,
+                        customBorderColor = it.textBorderColor?.toArgb(),
+                        borderThickness = it.textBorderThickness,
+                        borderAlpha = it.textBorderAlpha
                     ) 
                 })
             },
