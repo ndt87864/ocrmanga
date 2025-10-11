@@ -347,157 +347,156 @@ fun ImageViewer(
                                         regions.forEachIndexed { i, region ->
                                             val block = region.block
                                             val rect = region.rect
+                                            val isOval = block.shapeType == 1
+
+                                            // Xác định block đang được chọn bằng so sánh object hoặc thuộc tính duy nhất
+                                            val isSelected = selectedIndex != null
+                                                && selectedIndex!! < dragBlocks.size
+                                                && dragBlocks[selectedIndex!!].block == block
+
+                                            // Vẽ overlay với màu tùy chỉnh, độ trong suốt và saturation
+                                            if (region.whiteoutColor != null) {
+                                                val overlayAlpha = region.overlayAlpha
+                                                val overlaySaturation = region.overlaySaturation
+                                                
+                                                // Áp dụng saturation cho màu
+                                                val saturatedColor = if (overlaySaturation != 1.0f) {
+                                                    val red = region.whiteoutColor.red
+                                                    val green = region.whiteoutColor.green  
+                                                    val blue = region.whiteoutColor.blue
+                                                    
+                                                    val max = maxOf(red, green, blue)
+                                                    val min = minOf(red, green, blue)
+                                                    val delta = max - min
+                                                    
+                                                    val saturation = if (max == 0f) 0f else delta / max
+                                                    val newSaturation = saturation * overlaySaturation
+                                                    
+                                                    val factor = if (saturation == 0f) 1f else newSaturation / saturation
+                                                    val newRed = min + (red - min) * factor
+                                                    val newGreen = min + (green - min) * factor
+                                                    val newBlue = min + (blue - min) * factor
+                                                    
+                                                    Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
+                                                } else {
+                                                    region.whiteoutColor
+                                                }
+                                                
+                                                val finalOverlayColor = saturatedColor.copy(alpha = overlayAlpha)
+                                                if (isOval) {
+                                                    drawOval(
+                                                        color = finalOverlayColor,
+                                                        topLeft = Offset(rect.left, rect.top),
+                                                        size = Size(rect.width, rect.height)
+                                                    )
+                                                } else {
+                                                    drawRect(
+                                                        color = finalOverlayColor,
+                                                        topLeft = Offset(rect.left, rect.top),
+                                                        size = Size(rect.width, rect.height)
+                                                    )
+                                                }
+                                            } else {
+                                                // Sử dụng overlay bán trong suốt cho nền có màu
+                                                drawTranslucentOverlay(
+                                                    rect = rect,
+                                                    backgroundType = block.backgroundType,
+                                                    averageBackgroundColor = block.averageBackgroundColor,
+                                                    originalTextColor = block.originalTextColor,
+                                                    shapeType = block.shapeType
+                                                )
+                                            }
+
+                                            // Vẽ viền cho overlay
+                                            if (editTranslationMode) {
+                                                if (isOval) {
+                                                    drawOval(
+                                                        color = if (isSelected) Color.Red else Color.Blue,
+                                                        topLeft = Offset(rect.left, rect.top),
+                                                        size = Size(rect.width, rect.height),
+                                                        style = Stroke(width = 2f)
+                                                    )
+                                                } else {
+                                                    drawRect(
+                                                        color = if (isSelected) Color.Red else Color.Blue,
+                                                        topLeft = Offset(rect.left, rect.top),
+                                                        size = Size(rect.width, rect.height),
+                                                        style = Stroke(width = 2f)
+                                                    )
+                                                }
+                                            }
                                             val fontSize = region.fontSize
                                             val rotation = region.rotation
-                                            val customWhiteoutColor = region.whiteoutColor
                                             val customTextColor = region.textColor
-                                            if (block.text.isNotBlank()) {
-                                                withTransform({
-                                                    rotate(rotation, Offset(rect.left + rect.width/2, rect.top + rect.height/2))
-                                                }) {
-                                                    // Sử dụng màu tùy chỉnh nếu có, không thì dùng overlay mặc định
-                                                    if (customWhiteoutColor != null) {
-                                                        // Vẽ overlay với màu tùy chỉnh, độ trong suốt và saturation
-                                                        val overlayAlpha = region.overlayAlpha
-                                                        val overlaySaturation = region.overlaySaturation
-                                                        
-                                                        // Áp dụng saturation cho màu
-                                                        val saturatedColor = if (overlaySaturation != 1.0f) {
-                                                            val red = customWhiteoutColor.red
-                                                            val green = customWhiteoutColor.green  
-                                                            val blue = customWhiteoutColor.blue
-                                                            
-                                                            val max = maxOf(red, green, blue)
-                                                            val min = minOf(red, green, blue)
-                                                            val delta = max - min
-                                                            
-                                                            val saturation = if (max == 0f) 0f else delta / max
-                                                            val newSaturation = saturation * overlaySaturation
-                                                            
-                                                            val factor = if (saturation == 0f) 1f else newSaturation / saturation
-                                                            val newRed = min + (red - min) * factor
-                                                            val newGreen = min + (green - min) * factor
-                                                            val newBlue = min + (blue - min) * factor
-                                                            
-                                                            Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
-                                                        } else {
-                                                            customWhiteoutColor
-                                                        }
-                                                        
-                                                        val finalOverlayColor = saturatedColor.copy(alpha = overlayAlpha)
-                                                        val isOval = (block.shapeType == 1)
-                                                        if (isOval) {
-                                                            drawOval(
-                                                                color = finalOverlayColor,
-                                                                topLeft = Offset(rect.left, rect.top),
-                                                                size = Size(rect.width, rect.height)
-                                                            )
-                                                        } else {
-                                                            drawRect(
-                                                                color = finalOverlayColor,
-                                                                topLeft = Offset(rect.left, rect.top),
-                                                                size = Size(rect.width, rect.height)
-                                                            )
-                                                        }
+                                            val textPadding = if (isOval) 0.15f else 0f
+                                            val textLeft = rect.left + rect.width * textPadding
+                                            val textTop = rect.top + rect.height * textPadding
+                                            val textWidth = rect.width * (1 - 2 * textPadding)
+                                            val textHeight = rect.height * (1 - 2 * textPadding)
+                                            // Xác định màu text - ưu tiên màu tùy chỉnh với saturation
+                                            val baseTextColor = when {
+                                                i == draggingIndex -> Color.Red
+                                                customTextColor != null -> customTextColor
+                                                else -> {
+                                                    // Tính độ sáng của overlay background
+                                                    val overlayColor = if (region.whiteoutColor != null) {
+                                                        region.whiteoutColor.toArgb()
                                                     } else {
-                                                        // Sử dụng overlay bán trong suốt cho nền có màu
-                                                        drawTranslucentOverlay(
-                                                            rect = rect,
-                                                            backgroundType = block.backgroundType,
-                                                            averageBackgroundColor = block.averageBackgroundColor,
-                                                            originalTextColor = block.originalTextColor,
-                                                            shapeType = block.shapeType
-                                                        )
+                                                        block.averageBackgroundColor
                                                     }
-                                                    val isOval = (block.shapeType == 1)
-                                                    val textPadding = if (isOval) 0.15f else 0f
-                                                    val textLeft = rect.left + rect.width * textPadding
-                                                    val textTop = rect.top + rect.height * textPadding
-                                                    val textWidth = rect.width * (1 - 2 * textPadding)
-                                                    val textHeight = rect.height * (1 - 2 * textPadding)
-                                                    // Xác định màu text - ưu tiên màu tùy chỉnh với saturation
-                                                    val baseTextColor = when {
-                                                        i == draggingIndex -> Color.Red
-                                                        customTextColor != null -> customTextColor
-                                                        else -> {
-                                                            // Tính độ sáng của overlay background
-                                                            val overlayColor = if (customWhiteoutColor != null) {
-                                                                customWhiteoutColor.toArgb()
-                                                            } else {
-                                                                block.averageBackgroundColor
-                                                            }
-                                                            if (overlayColor != null) {
-                                                                val r = (overlayColor shr 16) and 0xFF
-                                                                val g = (overlayColor shr 8) and 0xFF
-                                                                val b = overlayColor and 0xFF
-                                                                val brightness = (r + g + b) / 3
-                                                                // Sử dụng text đen nếu nền sáng, text trắng nếu nền tối
-                                                                if (brightness > 127) Color.Black else Color.White
-                                                            } else {
-                                                                // Mặc định cho nền trắng
-                                                                Color.Black
-                                                            }
-                                                        }
-                                                    }
-                                                    
-                                                    // Áp dụng saturation cho màu text nếu có
-                                                    val textColor = if (customTextColor != null && region.textSaturation != 1.0f) {
-                                                        val red = baseTextColor.red
-                                                        val green = baseTextColor.green  
-                                                        val blue = baseTextColor.blue
-                                                        
-                                                        val max = maxOf(red, green, blue)
-                                                        val min = minOf(red, green, blue)
-                                                        val delta = max - min
-                                                        
-                                                        val saturation = if (max == 0f) 0f else delta / max
-                                                        val newSaturation = saturation * region.textSaturation
-                                                        
-                                                        val factor = if (saturation == 0f) 1f else newSaturation / saturation
-                                                        val newRed = min + (red - min) * factor
-                                                        val newGreen = min + (green - min) * factor
-                                                        val newBlue = min + (blue - min) * factor
-                                                        
-                                                        Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
+                                                    if (overlayColor != null) {
+                                                        val r = (overlayColor shr 16) and 0xFF
+                                                        val g = (overlayColor shr 8) and 0xFF
+                                                        val b = overlayColor and 0xFF
+                                                        val brightness = (r + g + b) / 3
+                                                        // Sử dụng text đen nếu nền sáng, text trắng nếu nền tối
+                                                        if (brightness > 127) Color.Black else Color.White
                                                     } else {
-                                                        baseTextColor
-                                                    }
-                                                    android.util.Log.d("ImageViewer", "Rendering block with font: ${block.fontFamily}")
-                                                    drawText(
-                                                        text = block.text,
-                                                        x = textLeft,
-                                                        y = textTop,
-                                                        width = textWidth,
-                                                        height = textHeight,
-                                                        color = textColor,
-                                                        fontSize = fontSize,
-                                                        isVertical = block.isVertical,
-                                                        boldness = region.textBoldness,
-                                                        context = context,
-                                                        fontFamilyName = block.fontFamily,
-                                                        borderColor = region.textBorderColor,
-                                                        borderThickness = region.textBorderThickness,
-                                                        borderAlpha = region.textBorderAlpha
-                                                    )
-                                                    if (editTranslationMode) {
-                                                        if (isOval) {
-                                                            drawOval(
-                                                                color = if (i == selectedIndex) Color.Red else Color.Blue,
-                                                                topLeft = Offset(rect.left, rect.top),
-                                                                size = Size(rect.width, rect.height),
-                                                                style = Stroke(width = 2f)
-                                                            )
-                                                        } else {
-                                                            drawRect(
-                                                                color = if (i == selectedIndex) Color.Red else Color.Blue,
-                                                                topLeft = Offset(rect.left, rect.top),
-                                                                size = Size(rect.width, rect.height),
-                                                                style = Stroke(width = 2f)
-                                                            )
-                                                        }
+                                                        // Mặc định cho nền trắng
+                                                        Color.Black
                                                     }
                                                 }
                                             }
+                                            
+                                            // Áp dụng saturation cho màu text nếu có
+                                            val textColor = if (customTextColor != null && region.textSaturation != 1.0f) {
+                                                val red = baseTextColor.red
+                                                val green = baseTextColor.green  
+                                                val blue = baseTextColor.blue
+                                                
+                                                val max = maxOf(red, green, blue)
+                                                val min = minOf(red, green, blue)
+                                                val delta = max - min
+                                                
+                                                val saturation = if (max == 0f) 0f else delta / max
+                                                val newSaturation = saturation * region.textSaturation
+                                                
+                                                val factor = if (saturation == 0f) 1f else newSaturation / saturation
+                                                val newRed = min + (red - min) * factor
+                                                val newGreen = min + (green - min) * factor
+                                                val newBlue = min + (blue - min) * factor
+                                                
+                                                Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
+                                            } else {
+                                                baseTextColor
+                                            }
+                                            android.util.Log.d("ImageViewer", "Rendering block with font: ${block.fontFamily}")
+                                            drawText(
+                                                text = block.text,
+                                                x = textLeft,
+                                                y = textTop,
+                                                width = textWidth,
+                                                height = textHeight,
+                                                color = textColor,
+                                                fontSize = fontSize,
+                                                isVertical = block.isVertical,
+                                                boldness = region.textBoldness,
+                                                context = context,
+                                                fontFamilyName = block.fontFamily,
+                                                borderColor = region.textBorderColor,
+                                                borderThickness = region.textBorderThickness,
+                                                borderAlpha = region.textBorderAlpha
+                                            )
                                         }
                                     }
                                 }
