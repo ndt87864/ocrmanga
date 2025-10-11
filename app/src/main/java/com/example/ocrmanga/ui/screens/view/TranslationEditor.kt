@@ -51,17 +51,18 @@ fun TranslationEditor(
     val fontOptions = remember {
         try {
             listOf(
-                "SF Toontime B" to FontFamily(Font(R.font.sf_toontime_b)),
-                "SF Toontime B Italic" to FontFamily(Font(R.font.sf_toontime_b_italic)),
-                "SF Toontime Blotch Bold" to FontFamily(Font(R.font.sf_toontime_blotch_bold)),
-                "SF Toontime Blotch Bold Italic" to FontFamily(Font(R.font.sf_toontime_blotch_bold_italic)),
-                "SF Toontime Extended" to FontFamily(Font(R.font.sf_toontime_extended)),
-                "SF Toontime Extended Italic" to FontFamily(Font(R.font.sf_toontime_extended_italic)),
-                "SF Toontime Extended Bold" to FontFamily(Font(R.font.sf_toontime_extended_bold)),
-                "SF Toontime Extended Bold Italic" to FontFamily(Font(R.font.sf_toontime_extended_bold_italic))
+                "mto_astro_city" to FontFamily(Font(R.font.mto_astro_city)),
+                "mto_augie" to FontFamily(Font(R.font.mto_augie)),
+                "mto_chancery" to FontFamily(Font(R.font.mto_chancery)),
+                "mto_chranko" to FontFamily(Font(R.font.mto_chranko)),
+                "mto_comic_1" to FontFamily(Font(R.font.mto_comic_1)),
+                "mto_comic_2" to FontFamily(Font(R.font.mto_comic_2)),
+                "mto_dom" to FontFamily(Font(R.font.mto_dom)),
+                "mto_mikes" to FontFamily(Font(R.font.mto_mikes)),
+                "mto_sans" to FontFamily(Font(R.font.mto_sans)),
+                "mto_shadow" to FontFamily(Font(R.font.mto_shadow))
             )
         } catch (e: Exception) {
-            // Fallback to default font if loading fails
             android.util.Log.e("TranslationEditor", "Failed to load fonts", e)
             listOf("Default" to FontFamily.Default)
         }
@@ -332,7 +333,7 @@ fun TranslationEditor(
                                 }
                             },
                             enabled = isBlockSelected
-                        ) { Icon(Icons.Default.TextIncrease, "Tăng cỡ chữ") }
+                        ) { Icon(Icons.Default.TextDecrease, "Giảm cỡ chữ") }
 
                         IconButton(
                             onClick = {
@@ -345,7 +346,7 @@ fun TranslationEditor(
                                 }
                             },
                             enabled = isBlockSelected
-                        ) { Icon(Icons.Default.TextDecrease, "Giảm cỡ chữ") }
+                        ) { Icon(Icons.Default.TextIncrease, "Tăng cỡ chữ") }
                     }
 
                     // --- TRANG 3: XOAY ---

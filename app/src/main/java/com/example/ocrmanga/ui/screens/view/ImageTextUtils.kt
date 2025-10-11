@@ -369,15 +369,17 @@ fun DrawScope.drawText(
             // Set typeface giống với paint chính để đảm bảo đồng nhất
             try {
                 val fontFile = when (fontFamilyName) {
-                    "SF Toontime B" -> "SF_Toontime_Blotch.ttf"
-                    "SF Toontime B Italic" -> "SF_Toontime_B_Italic.ttf"
-                    "SF Toontime Blotch Bold" -> "SF_Toontime_Blotch_Bold.ttf"
-                    "SF Toontime Blotch Bold Italic" -> "SF_Toontime_Blotch_Bold_Italic.ttf"
-                    "SF Toontime Extended" -> "SF_Toontime_Extended.ttf"
-                    "SF Toontime Extended Italic" -> "SF_Toontime_Extended_Italic.ttf"
-                    "SF Toontime Extended Bold" -> "SF_Toontime_Extended_Bold.ttf"
-                    "SF Toontime Extended Bold Italic" -> "SF_Toontime_Extended_Bold_Italic.ttf"
-                    else -> "SF Toontime B.ttf"
+                    "mto_astro_city" -> "mto_astro_city.ttf"
+                    "mto_augie" -> "mto_augie.ttf"
+                    "mto_chancery" -> "mto_chancery.ttf"
+                    "mto_chranko" -> "mto_chranko.ttf"
+                    "mto_comic_1" -> "mto_comic_1.ttf"
+                    "mto_comic_2" -> "mto_comic_2.ttf"
+                    "mto_dom" -> "mto_dom.ttf"
+                    "mto_mikes" -> "mto_mikes.ttf"
+                    "mto_sans" -> "mto_sans.ttf"
+                    "mto_shadow" -> "mto_shadow.ttf"
+                    else -> "mto_astro_city.ttf"
                 }
                 val typeface = android.graphics.Typeface.createFromAsset(context.assets, "tessdata/font/$fontFile")
                 if (typeface != null) {
@@ -397,15 +399,17 @@ fun DrawScope.drawText(
         // Set font from assets/tessdata/font using createFromAsset
         try {
             val fontFile = when (fontFamilyName) {
-                "SF Toontime B" -> "SF_Toontime_Blotch.ttf" // SF Toontime B (font mặc định)
-                "SF Toontime B Italic" -> "SF_Toontime_B_Italic.ttf"
-                "SF Toontime Blotch Bold" -> "SF_Toontime_Blotch_Bold.ttf"
-                "SF Toontime Blotch Bold Italic" -> "SF_Toontime_Blotch_Bold_Italic.ttf"
-                "SF Toontime Extended" -> "SF_Toontime_Extended.ttf"
-                "SF Toontime Extended Italic" -> "SF_Toontime_Extended_Italic.ttf"
-                "SF Toontime Extended Bold" -> "SF_Toontime_Extended_Bold.ttf"
-                "SF Toontime Extended Bold Italic" -> "SF_Toontime_Extended_Bold_Italic.ttf"
-                else -> "SF Toontime B.ttf" // Fallback: SF Toontime B
+                "mto_astro_city" -> "mto_astro_city.ttf"
+                "mto_augie" -> "mto_augie.ttf"
+                "mto_chancery" -> "mto_chancery.ttf"
+                "mto_chranko" -> "mto_chranko.ttf"
+                "mto_comic_1" -> "mto_comic_1.ttf"
+                "mto_comic_2" -> "mto_comic_2.ttf"
+                "mto_dom" -> "mto_dom.ttf"
+                "mto_mikes" -> "mto_mikes.ttf"
+                "mto_sans" -> "mto_sans.ttf"
+                "mto_shadow" -> "mto_shadow.ttf"
+                else -> "mto_astro_city.ttf"
             }
             val typeface = android.graphics.Typeface.createFromAsset(context.assets, "tessdata/font/$fontFile")
             if (typeface != null) {
