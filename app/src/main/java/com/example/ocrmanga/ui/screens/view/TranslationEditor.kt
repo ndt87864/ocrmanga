@@ -22,7 +22,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -460,20 +462,30 @@ fun TranslationEditor(
                                 enabled = isBlockSelected
                             ) {
                                 val currentBorderColor = selectedIndex?.let { dragBlocks[it].textBorderColor } ?: Color.Black
+                                val currentBorderAlpha = selectedIndex?.let { dragBlocks[it].textBorderAlpha } ?: 1f
+                                val currentBorderThickness = selectedIndex?.let { dragBlocks[it].textBorderThickness } ?: 0f
+                                val currentTextColor = selectedIndex?.let { dragBlocks[it].textColor } ?: Color.Black
+                                val previewText = selectedIndex?.let { dragBlocks[it].block.text.takeIf { it.isNotBlank() }?.split("\n")?.firstOrNull() } ?: "AaBb"
+                                // Preview text với viền
                                 Box(
                                     modifier = Modifier
-                                        .size(24.dp)
-                                        .background(currentBorderColor, CircleShape)
-                                        .border(1.dp, Color.Gray, CircleShape)
-                                )
+                                        .size(width = 48.dp, height = 32.dp)
+                                        .padding(2.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    OutlinedTextPreview(
+                                        text = previewText,
+                                        textColor = currentTextColor,
+                                        borderColor = currentBorderColor.copy(alpha = currentBorderAlpha),
+                                        borderThickness = currentBorderThickness
+                                    )
+                                }
                                 Text(
                                     "Màu\nviền",
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(top = 26.dp)
                                 )
                             }
-                            // Các nút tăng/giảm độ dày, alpha... XÓA hoặc ẨN đi vì đã chuyển vào dialog
-                            // (Có thể xóa các IconButton tăng/giảm viền, alpha ở đây)
                         }
                     }
                 }
@@ -718,6 +730,32 @@ fun ColorPickerDialog(
                     .verticalScroll(rememberScrollState())
                     .fillMaxWidth()
             ) {
+                // --- PREVIEW TEXT THAY VÌ BOX MÀU ---
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Lấy text mẫu, màu chữ, màu viền, độ dày từ state hiện tại
+                    val previewText = "AaBb"
+                    if (!isOverlayDialog && onThicknessChanged != null) {
+                        OutlinedTextPreview(
+                            text = previewText,
+                            textColor = Color.Black, // hoặc cho phép truyền vào
+                            borderColor = selectedColor.copy(alpha = currentAlpha),
+                            borderThickness = currentThickness
+                        )
+                    } else {
+                        Text(
+                            text = previewText,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                color = selectedColor
+                            )
+                        )
+                    }
+                }
+
                 // Sử dụng AdvancedColorPicker giống như trong ThemeSettingsScreen
                 // Cấu hình theo loại dialog: overlay hoặc text
                 com.example.ocrmanga.ui.components.AdvancedColorPicker(
@@ -843,4 +881,35 @@ fun ColorPickerDialog(
             }
         }
     )
+}
+
+@Composable
+fun OutlinedTextPreview(
+    text: String,
+    textColor: Color,
+    borderColor: Color,
+    borderThickness: Float
+) {
+    // Nếu borderThickness > 0 thì vẽ viền, ngược lại chỉ vẽ text thường
+    if (borderThickness > 0f) {
+        // Vẽ viền bằng shadow nhiều lần quanh text
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                color = textColor,
+                shadow = Shadow(
+                    color = borderColor,
+                    blurRadius = borderThickness * 2,
+                    offset = Offset(0f, 0f)
+                )
+            ),
+            maxLines = 1
+        )
+    } else {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge.copy(color = textColor),
+            maxLines = 1
+        )
+    }
 }
