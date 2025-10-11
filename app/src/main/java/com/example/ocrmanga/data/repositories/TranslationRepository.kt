@@ -143,23 +143,29 @@ class TranslationRepository(private val application: Application) {
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
         var lastError: Exception? = null
         val maxTries = mistralApiKeys.size.coerceAtLeast(1)
+        val isAllUpper = text.isNotBlank() && text == text.uppercase()
         for (i in 0 until maxTries) {
             val mistralKey = getNextMistralApiKey() ?: return null
-            val prompt = "\n" +
-                    "                    Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .\n" +
-                    "                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác và đồng bộ nhất sang tiếng Việt: $text\n" +
-                    "                    Yêu cầu khi dịch :" +
-                    "                           1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.\n" +
-                    "                           2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .\n" +
-                    "                           3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .\n" +
-                    "                           4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được ( ghi nguyên gốc  từ không dịch được và dịch các từ còn lại).\n" +
-                    "                           5. Khi trả về văn bản gốc do không thể dịch , chỉ trả về văn bản ( giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được .\n" +
-                    "                           6. không trả về nhiều bản dịch khác nhau cho cùng một văn bản .VD:Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả?\n" +
-                    "                            -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?\n" +
-                    "                           7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác , hãy chỉ trả về văn bản gốc trong 2 trường hợp này .\n" +
-                    "                           8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.\n" +
-                    "                           9.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .\n" +
-                    "                    Chỉ trả về 1 bản dịch chính xác duy nhất ."
+            val prompt = buildString {
+                append("\n")
+                append("                    Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .\n")
+                append("                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác và đồng bộ nhất sang tiếng Việt: $text\n")
+                append("                    Yêu cầu khi dịch :")
+                append("                           1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.\n")
+                append("                           2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .\n")
+                append("                           3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .\n")
+                append("                           4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được ( ghi nguyên gốc  từ không dịch được và dịch các từ còn lại).\n")
+                append("                           5. Khi trả về văn bản gốc do không thể dịch , chỉ trả về văn bản ( giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được .\n")
+                append("                           6. không trả về nhiều bản dịch khác nhau cho cùng một văn bản .VD:Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả?\n")
+                append("                            -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?\n")
+                append("                           7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác , hãy chỉ trả về văn bản gốc trong 2 trường hợp này .\n")
+                append("                           8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.\n")
+                append("                           9.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .\n")
+                append("                    Chỉ trả về 1 bản dịch chính xác duy nhất .")
+                if (isAllUpper) {
+                    append("\n10. Nếu toàn bộ văn bản gốc là chữ in hoa, bản dịch cũng phải là chữ in hoa (UPPERCASE, VIẾT HOA TOÀN BỘ). Không được phép trả về bản dịch thường hoặc viết hoa không đồng nhất.")
+                }
+            }
 
             // Build JSON body using Gson to avoid invalid JSON
             val gson = com.google.gson.Gson()
@@ -205,8 +211,12 @@ class TranslationRepository(private val application: Application) {
                 // Parse JSON để lấy phần dịch
                 val json = com.google.gson.JsonParser.parseString(body).asJsonObject
                 val choices = json["choices"]?.asJsonArray
-                val content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
-                return content?.trim()
+                var content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
+                content = content?.trim()
+                if (isAllUpper && content != null) {
+                    content = content.uppercase()
+                }
+                return content
             } catch (e: Exception) {
                 lastError = e
                 Log.e("TranslationRepository", "Mistral API exception: ${e.message}", e)
@@ -403,7 +413,7 @@ class TranslationRepository(private val application: Application) {
                         }
                         val cleanedText = reformattedText.orEmpty().replace("**", "")
                         val newBounds = adjustBoundsForTranslatedText(cleanedText, block.bounds, block.fontSize, 1.0f)
-                        block.copy(text = cleanedText, bounds = newBounds, fontFamily = "Anime Ace BB")
+                        block.copy(text = cleanedText, bounds = newBounds, fontFamily = "SF Toontime Extended")
                     }
                 }
                 blocks.addAll(deferredBlocks.awaitAll())
@@ -490,12 +500,12 @@ class TranslationRepository(private val application: Application) {
                     }
                     val retryLang = detectLanguage(retryText) ?: ""
                     if (retryLang == "vi") {
-                        block.copy(text = postProcessTranslation(retryText).replace("**", ""), fontFamily = "Anime Ace BB")
+                        block.copy(text = postProcessTranslation(retryText).replace("**", ""), fontFamily = "SF Toontime Extended")
                     } else {
-                        block.copy(text = cleanedText, fontFamily = "Anime Ace BB")
+                        block.copy(text = cleanedText, fontFamily = "SF Toontime Extended")
                     }
                 } else {
-                    block.copy(text = cleanedText, fontFamily = "Anime Ace BB")
+                    block.copy(text = cleanedText, fontFamily = "SF Toontime Extended")
                 }
             }
             val finalResultText = finalBlocks.joinToString("\n") { it.text }

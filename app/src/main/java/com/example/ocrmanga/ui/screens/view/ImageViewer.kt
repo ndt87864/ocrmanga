@@ -488,7 +488,6 @@ fun ImageViewer(
                                             } else {
                                                 baseTextColor
                                             }
-                                            android.util.Log.d("ImageViewer", "Rendering block with font: ${block.fontFamily}")
                                             drawText(
                                                 text = block.text,
                                                 x = textLeft,

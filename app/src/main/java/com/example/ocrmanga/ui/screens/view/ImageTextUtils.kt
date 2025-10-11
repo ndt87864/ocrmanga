@@ -410,7 +410,6 @@ fun DrawScope.drawText(
             val typeface = android.graphics.Typeface.createFromAsset(context.assets, "tessdata/font/$fontFile")
             if (typeface != null) {
                 this.typeface = typeface
-                android.util.Log.d("ImageTextUtils", "Font loaded successfully: $fontFile for fontFamily: $fontFamilyName")
             }
         } catch (e: Exception) {
             android.util.Log.e("ImageTextUtils", "Error loading font from tessdata/font/$fontFamilyName: ${e.message}")
@@ -486,7 +485,6 @@ fun DrawScope.drawText(
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
         this.textSize = fontSize
-        // Sử dụng font Anime Ace BB để đo text chính xác
         context?.let {
             try {
                 val fontFile = when (fontFamilyName) {

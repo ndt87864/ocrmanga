@@ -6,7 +6,7 @@ import android.graphics.Rect
 // Thêm bubbleId để phân biệt các block thuộc các khung thoại khác nhau
 
 data class TextBlockInfo(
-    val fontFamily: String = "SF Toontime B", // Font chữ mặc định cho dịch
+    val fontFamily: String = "SF Toontime Extended", // Font chữ mặc định cho dịch
     val text: String,
     val bounds: Rect,
     val fontSize: Float,
