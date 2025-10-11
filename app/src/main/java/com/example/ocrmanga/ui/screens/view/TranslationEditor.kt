@@ -67,7 +67,7 @@ fun TranslationEditor(
     // --- STATE MANAGEMENT ---
     val isBlockSelected = selectedIndex != null
     var currentPage by remember { mutableStateOf(0) }
-    val totalPages = 4 // 4 trang: Lưu+Hình dạng, Sửa+Xóa, Xoay, Màu sắc
+    val totalPages = 5 // 5 trang: Lưu+Hình dạng, Sửa+Xóa, Xoay, Màu sắc, Viền chữ
 
     // Hoist state variables to the top level to prevent them from resetting on page change
     var showShapeMenu by remember { mutableStateOf(false) }
@@ -80,6 +80,9 @@ fun TranslationEditor(
     // State cho màu sắc
     var showOverlayColorPicker by remember { mutableStateOf(false) }
     var showTextColorPicker by remember { mutableStateOf(false) }
+    
+    // State cho viền chữ
+    var showBorderColorPicker by remember { mutableStateOf(false) }
 
     // --- EFFECTS ---
     // Hoist LaunchedEffects to the top level so they are always active
@@ -430,7 +433,10 @@ fun TranslationEditor(
                                                 overlayAlpha = 1.0f,
                                                 textBoldness = 1.0f,
                                                 overlaySaturation = 1.0f,
-                                                textSaturation = 1.0f
+                                                textSaturation = 1.0f,
+                                                textBorderColor = null,
+                                                textBorderThickness = 0.0f,
+                                                textBorderAlpha = 1.0f
                                             )
                                         })
                                     }
@@ -438,6 +444,118 @@ fun TranslationEditor(
                                 enabled = isBlockSelected
                             ) {
                                 Icon(Icons.Default.Refresh, "Reset màu mặc định", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                            }
+                        }
+                    }
+                    
+                    // --- TRANG 5: VIỀN CHỮ ---
+                    4 -> {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Nút chọn màu viền
+                            IconButton(
+                                onClick = { if (isBlockSelected) showBorderColorPicker = true },
+                                enabled = isBlockSelected
+                            ) {
+                                val currentBorderColor = selectedIndex?.let { dragBlocks[it].textBorderColor } ?: Color.Black
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(currentBorderColor, CircleShape)
+                                        .border(1.dp, Color.Gray, CircleShape)
+                                )
+                                Text(
+                                    "Màu\nviền",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(top = 26.dp)
+                                )
+                            }
+
+                            // Tăng độ dày viền
+                            IconButton(
+                                onClick = {
+                                    selectedIndex?.let { idx ->
+                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                            val old = list[idx]
+                                            val newThickness = (old.textBorderThickness + 0.5f).coerceAtMost(5.0f)
+                                            list[idx] = old.copy(textBorderThickness = newThickness)
+                                        })
+                                    }
+                                },
+                                enabled = isBlockSelected
+                            ) {
+                                Icon(Icons.Default.Add, "Tăng độ dày viền", tint = MaterialTheme.colorScheme.primary)
+                                val currentThickness = selectedIndex?.let { dragBlocks[it].textBorderThickness } ?: 0f
+                                Text(
+                                    "Viền\n+",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(top = 26.dp)
+                                )
+                            }
+
+                            // Giảm độ dày viền
+                            IconButton(
+                                onClick = {
+                                    selectedIndex?.let { idx ->
+                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                            val old = list[idx]
+                                            val newThickness = (old.textBorderThickness - 0.5f).coerceAtLeast(0.0f)
+                                            list[idx] = old.copy(textBorderThickness = newThickness)
+                                        })
+                                    }
+                                },
+                                enabled = isBlockSelected
+                            ) {
+                                Icon(Icons.Default.Remove, "Giảm độ dày viền", tint = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    "Viền\n-",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(top = 26.dp)
+                                )
+                            }
+
+                            // Tăng độ đậm viền (alpha)
+                            IconButton(
+                                onClick = {
+                                    selectedIndex?.let { idx ->
+                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                            val old = list[idx]
+                                            val newAlpha = (old.textBorderAlpha + 0.1f).coerceAtMost(1.0f)
+                                            list[idx] = old.copy(textBorderAlpha = newAlpha)
+                                        })
+                                    }
+                                },
+                                enabled = isBlockSelected
+                            ) {
+                                Icon(Icons.Default.Opacity, "Tăng độ đậm viền", tint = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    "Đậm\n+",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(top = 26.dp)
+                                )
+                            }
+
+                            // Giảm độ đậm viền (alpha)
+                            IconButton(
+                                onClick = {
+                                    selectedIndex?.let { idx ->
+                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                            val old = list[idx]
+                                            val newAlpha = (old.textBorderAlpha - 0.1f).coerceAtLeast(0.0f)
+                                            list[idx] = old.copy(textBorderAlpha = newAlpha)
+                                        })
+                                    }
+                                },
+                                enabled = isBlockSelected
+                            ) {
+                                Icon(Icons.Default.Opacity, "Giảm độ đậm viền", tint = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    "Đậm\n-",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(top = 26.dp)
+                                )
                             }
                         }
                     }
@@ -612,6 +730,32 @@ fun TranslationEditor(
                     })
                 },
                 onDismiss = { showTextColorPicker = false }
+            )
+        }
+        
+        // Dialog chọn màu viền
+        if (showBorderColorPicker && isBlockSelected && selectedIndex != null) {
+            val idx = selectedIndex
+            val currentColor = dragBlocks[idx].textBorderColor ?: Color.Black
+            ColorPickerDialog(
+                title = "Chọn màu viền chữ",
+                initialColor = currentColor.copy(alpha = 1f),
+                initialAlpha = dragBlocks[idx].textBorderAlpha,
+                isOverlayDialog = false,
+                onColorSelected = { color ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(textBorderColor = color)
+                    })
+                    showBorderColorPicker = false
+                },
+                onAlphaChanged = { alpha ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(textBorderAlpha = alpha)
+                    })
+                },
+                onDismiss = { showBorderColorPicker = false }
             )
         }
     }

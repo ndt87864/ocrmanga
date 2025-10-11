@@ -54,7 +54,10 @@ data class DragBlockState(
     val overlayAlpha: Float = 1.0f, // Độ trong suốt của overlay (0.0 - 1.0)
     val textBoldness: Float = 1.0f, // Độ đậm của text (0.5 - 2.0)
     val overlaySaturation: Float = 1.0f, // Độ đậm màu overlay (0.0 - 2.0)
-    val textSaturation: Float = 1.0f // Độ đậm màu text (0.0 - 2.0)
+    val textSaturation: Float = 1.0f, // Độ đậm màu text (0.0 - 2.0)
+    val textBorderColor: Color? = null, // Màu viền chữ
+    val textBorderThickness: Float = 0.0f, // Độ dày viền chữ (0.0 - 5.0)
+    val textBorderAlpha: Float = 1.0f // Độ trong suốt của viền chữ (0.0 - 1.0)
 )
 
 @Composable
@@ -296,7 +299,10 @@ fun ImageViewer(
                                         val overlayAlpha: Float = 1.0f,
                                         val textBoldness: Float = 1.0f,
                                         val overlaySaturation: Float = 1.0f,
-                                        val textSaturation: Float = 1.0f
+                                        val textSaturation: Float = 1.0f,
+                                        val textBorderColor: Color? = null,
+                                        val textBorderThickness: Float = 0.0f,
+                                        val textBorderAlpha: Float = 1.0f
                                     )
                                     val regions = dragBlocks.mapIndexedNotNull { i, dragBlock ->
                                         val block = dragBlock.block
@@ -330,7 +336,10 @@ fun ImageViewer(
                                                 overlayAlpha = dragBlock.overlayAlpha,
                                                 textBoldness = dragBlock.textBoldness,
                                                 overlaySaturation = dragBlock.overlaySaturation,
-                                                textSaturation = dragBlock.textSaturation
+                                                textSaturation = dragBlock.textSaturation,
+                                                textBorderColor = dragBlock.textBorderColor,
+                                                textBorderThickness = dragBlock.textBorderThickness,
+                                                textBorderAlpha = dragBlock.textBorderAlpha
                                             )
                                         } else null
                                     }
@@ -465,7 +474,10 @@ fun ImageViewer(
                                                         isVertical = block.isVertical,
                                                         boldness = region.textBoldness,
                                                         context = context,
-                                                        fontFamilyName = block.fontFamily
+                                                        fontFamilyName = block.fontFamily,
+                                                        borderColor = region.textBorderColor,
+                                                        borderThickness = region.textBorderThickness,
+                                                        borderAlpha = region.textBorderAlpha
                                                     )
                                                     if (editTranslationMode) {
                                                         if (isOval) {
