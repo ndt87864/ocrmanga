@@ -488,23 +488,52 @@ fun ImageViewer(
                                             } else {
                                                 baseTextColor
                                             }
-                                            drawText(
-                                                text = block.text,
-                                                x = textLeft,
-                                                y = textTop,
-                                                width = textWidth,
-                                                height = textHeight,
-                                                color = textColor,
-                                                fontSize = fontSize,
-                                                isVertical = block.isVertical,
-                                                boldness = region.textBoldness,
-                                                context = context,
-                                                fontFamilyName = block.fontFamily,
-                                                borderColor = region.textBorderColor,
-                                                borderThickness = region.textBorderThickness,
-                                                borderAlpha = region.textBorderAlpha,
-                                                editMode = editTranslationMode // Cho phép font size tự do trong edit mode
-                                            )
+                                            
+                                            // Áp dụng rotation khi vẽ text
+                                            if (rotation != 0f) {
+                                                withTransform({
+                                                    // Xoay quanh tâm của text rect
+                                                    val centerX = textLeft + textWidth / 2
+                                                    val centerY = textTop + textHeight / 2
+                                                    rotate(rotation, Offset(centerX, centerY))
+                                                }) {
+                                                    drawText(
+                                                        text = block.text,
+                                                        x = textLeft,
+                                                        y = textTop,
+                                                        width = textWidth,
+                                                        height = textHeight,
+                                                        color = textColor,
+                                                        fontSize = fontSize,
+                                                        isVertical = block.isVertical,
+                                                        boldness = region.textBoldness,
+                                                        context = context,
+                                                        fontFamilyName = block.fontFamily,
+                                                        borderColor = region.textBorderColor,
+                                                        borderThickness = region.textBorderThickness,
+                                                        borderAlpha = region.textBorderAlpha,
+                                                        editMode = editTranslationMode
+                                                    )
+                                                }
+                                            } else {
+                                                drawText(
+                                                    text = block.text,
+                                                    x = textLeft,
+                                                    y = textTop,
+                                                    width = textWidth,
+                                                    height = textHeight,
+                                                    color = textColor,
+                                                    fontSize = fontSize,
+                                                    isVertical = block.isVertical,
+                                                    boldness = region.textBoldness,
+                                                    context = context,
+                                                    fontFamilyName = block.fontFamily,
+                                                    borderColor = region.textBorderColor,
+                                                    borderThickness = region.textBorderThickness,
+                                                    borderAlpha = region.textBorderAlpha,
+                                                    editMode = editTranslationMode
+                                                )
+                                            }
                                         }
                                     }
                                 }
