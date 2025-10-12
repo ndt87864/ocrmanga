@@ -143,29 +143,25 @@ class TranslationRepository(private val application: Application) {
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
         var lastError: Exception? = null
         val maxTries = mistralApiKeys.size.coerceAtLeast(1)
-        val isAllUpper = text.isNotBlank() && text == text.uppercase()
         for (i in 0 until maxTries) {
             val mistralKey = getNextMistralApiKey() ?: return null
-            val prompt = buildString {
-                append("\n")
-                append("                    Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .\n")
-                append("                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại với kiểu chữ hoa cho chính xác và đồng bộ nhất sang tiếng Việt: $text\n")
-                append("                    Yêu cầu khi dịch :")
-                append("                           1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.\n")
-                append("                           2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .\n")
-                append("                           3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .\n")
-                append("                           4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được ( ghi nguyên gốc  từ không dịch được và dịch các từ còn lại).\n")
-                append("                           5. Khi trả về văn bản gốc do không thể dịch , chỉ trả về văn bản ( giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được .\n")
-                append("                           6. không trả về nhiều bản dịch khác nhau cho cùng một văn bản .VD:Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả?\n")
-                append("                            -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?\n")
-                append("                           7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác , hãy chỉ trả về văn bản gốc trong 2 trường hợp này .\n")
-                append("                           8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.\n")
-                append("                           9.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .\n")
-                append("                    Chỉ trả về 1 bản dịch chính xác duy nhất .")
-                if (isAllUpper) {
-                    append("\n10. Nếu toàn bộ văn bản gốc là chữ in hoa, bản dịch cũng phải là chữ in hoa (UPPERCASE, VIẾT HOA TOÀN BỘ). Không được phép trả về bản dịch thường hoặc viết hoa không đồng nhất.")
-                }
-            }
+        val prompt = "\n" +
+            "                    Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .\n" +
+            "                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác và đồng bộ nhất sang tiếng Việt: $text\n" +
+            "                    Yêu cầu khi dịch :" +
+            "                           1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.\n" +
+            "                           2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .\n" +
+            "                           3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .\n" +
+            "                           4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được ( ghi nguyên gốc  từ không dịch được và dịch các từ còn lại).\n" +
+            "                           5. Khi trả về văn bản gốc do không thể dịch , chỉ trả về văn bản ( giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được .\n" +
+            "                           6. không trả về nhiều bản dịch khác nhau cho cùng một văn bản .VD:Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả?\n" +
+            "                            -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?\n" +
+            "                           7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác , hãy chỉ trả về văn bản gốc trong 2 trường hợp này .\n" +
+            "                           8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.\n" +
+            "                           9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa .\n"+
+            "                           10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép (\"), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.\n" +
+            "                           11.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .\n" +
+            "                    Chỉ trả về 1 bản dịch chính xác duy nhất ."
 
             // Build JSON body using Gson to avoid invalid JSON
             val gson = com.google.gson.Gson()
@@ -211,12 +207,8 @@ class TranslationRepository(private val application: Application) {
                 // Parse JSON để lấy phần dịch
                 val json = com.google.gson.JsonParser.parseString(body).asJsonObject
                 val choices = json["choices"]?.asJsonArray
-                var content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
-                content = content?.trim()
-                if (isAllUpper && content != null) {
-                    content = content.uppercase()
-                }
-                return content
+                val content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
+                return content?.trim()
             } catch (e: Exception) {
                 lastError = e
                 Log.e("TranslationRepository", "Mistral API exception: ${e.message}", e)
@@ -370,6 +362,7 @@ class TranslationRepository(private val application: Application) {
             kotlinx.coroutines.coroutineScope {
                 val deferredBlocks = mergedBlocks.map { block ->
                     async {
+                        // Log.i("TranslationRepository", "Khối văn bản gốc: ${block.text}, tọa độ: left=${block.bounds.left}, top=${block.bounds.top}") // Tắt log để tăng tốc
                         var translatedText = when (mode) {
                             TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
                             TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
@@ -377,9 +370,12 @@ class TranslationRepository(private val application: Application) {
                             TranslationMode.OFF -> block.text
                             TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
                         }
+                        // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
+                        // Tối ưu: chỉ kiểm tra lần 2 nếu text quá ngắn (có thể bị dịch sai)
                         if (translatedText != null && translatedText.length > 5) {
                             val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
                             if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {
+                                //log.i("TranslationRepository", "Phát hiện cụm không phải tiếng Việt: $translatedText, ngôn ngữ: $detectedAfterTranslation")
                                 translatedText = when (mode) {
                                     TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
                                     TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
@@ -388,7 +384,9 @@ class TranslationRepository(private val application: Application) {
                                 }
                             }
                         }
+                        // Log.i("TranslationRepository", "Văn bản sau kiểm tra lần 2: $translatedText") // Tắt log để tăng tốc
                         val naturalText = translatedText?.let { postProcessTranslation(it) }
+                        // Log.i("TranslationRepository", "Văn bản tự nhiên sau xử lý: $naturalText") // Tắt log để tăng tốc
                         val isVertical = block.isVertical
                         val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
                             val words = naturalText?.split(Regex("\\s+")).orEmpty().filter { it.isNotEmpty() }
@@ -411,9 +409,9 @@ class TranslationRepository(private val application: Application) {
                         } else {
                             naturalText
                         }
-                        val cleanedText = reformattedText.orEmpty().replace("**", "")
-                        val newBounds = adjustBoundsForTranslatedText(cleanedText, block.bounds, block.fontSize, 1.0f)
-                        block.copy(text = cleanedText, bounds = newBounds, fontFamily = "SF Toontime Extended")
+                        //log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
+                        val newBounds = adjustBoundsForTranslatedText(reformattedText.orEmpty(), block.bounds, block.fontSize, 1.0f)
+                        block.copy(text = reformattedText.orEmpty(), bounds = newBounds)
                     }
                 }
                 blocks.addAll(deferredBlocks.awaitAll())
@@ -489,23 +487,23 @@ class TranslationRepository(private val application: Application) {
             // Kiểm tra lại các block chưa dịch ra tiếng Việt, thử lại với model khác nếu cần
             val finalBlocks = translatedBlocks.map { block ->
                 val lang = detectLanguage(block.text) ?: ""
-                val cleanedText = block.text.replace("**", "")
                 if (lang != "vi" && mode != TranslationMode.OFF) {
+                    // Thử lại với model khác
                     val retryText = when (mode) {
-                        TranslationMode.OFFLINE -> translateTextOnline(cleanedText, sourceLanguage)
-                        TranslationMode.ONLINE -> translateTextWithGemini(cleanedText, sourceLanguage)
-                        TranslationMode.GEMINI -> translateTextOffline(cleanedText, sourceLanguage)
-                        TranslationMode.MISTRAL -> translateWithMistral(cleanedText, sourceLanguage, "vi") ?: cleanedText
-                        else -> cleanedText
+                        TranslationMode.OFFLINE -> translateTextOnline(block.text, sourceLanguage)
+                        TranslationMode.ONLINE -> translateTextWithGemini(block.text, sourceLanguage)
+                        TranslationMode.GEMINI -> translateTextOffline(block.text, sourceLanguage)
+                        TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: block.text
+                        else -> block.text
                     }
                     val retryLang = detectLanguage(retryText) ?: ""
                     if (retryLang == "vi") {
-                        block.copy(text = postProcessTranslation(retryText).replace("**", ""), fontFamily = "SF Toontime Extended")
+                        block.copy(text = postProcessTranslation(retryText))
                     } else {
-                        block.copy(text = cleanedText, fontFamily = "SF Toontime Extended")
+                        block
                     }
                 } else {
-                    block.copy(text = cleanedText, fontFamily = "SF Toontime Extended")
+                    block
                 }
             }
             val finalResultText = finalBlocks.joinToString("\n") { it.text }
@@ -520,8 +518,8 @@ class TranslationRepository(private val application: Application) {
             lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
             return@withContext Triple("", emptyList(), "zh")
         } finally {
-                bitmap?.recycle()
-                bitmap = null
+            bitmap?.recycle()
+            bitmap = null
         }
     }
 
@@ -571,7 +569,7 @@ class TranslationRepository(private val application: Application) {
                         Log.e("TranslationRepository", "Nhận diện thất bại cho scale $scale và recognizer ${recognizer.javaClass.simpleName}", e)
                         null
                     } finally {
-                            preprocessedBitmap?.recycle()
+                        preprocessedBitmap?.recycle()
                     }
                 }
             }
@@ -649,11 +647,11 @@ class TranslationRepository(private val application: Application) {
                         // Phân tích màu nền và màu text
                         val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
                         TextBlockInfo(
-                            text = line.text, 
-                            bounds = scaledBounds, 
-                            fontSize = fontSize, 
-                            wordCountsPerLine = listOf(wordCount), 
-                            originalImageWidth = bitmap.width, 
+                            text = line.text,
+                            bounds = scaledBounds,
+                            fontSize = fontSize,
+                            wordCountsPerLine = listOf(wordCount),
+                            originalImageWidth = bitmap.width,
                             originalImageHeight = bitmap.height,
                             backgroundType = backgroundType,
                             averageBackgroundColor = avgColor,
@@ -716,11 +714,11 @@ class TranslationRepository(private val application: Application) {
                 // Phân tích màu nền và màu text
                 val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
                 TextBlockInfo(
-                    text = line.text, 
-                    bounds = scaledBounds, 
-                    fontSize = fontSize, 
-                    wordCountsPerLine = listOf(wordCount), 
-                    originalImageWidth = bitmap.width, 
+                    text = line.text,
+                    bounds = scaledBounds,
+                    fontSize = fontSize,
+                    wordCountsPerLine = listOf(wordCount),
+                    originalImageWidth = bitmap.width,
                     originalImageHeight = bitmap.height,
                     backgroundType = backgroundType,
                     averageBackgroundColor = avgColor,
@@ -1258,7 +1256,7 @@ class TranslationRepository(private val application: Application) {
 
                 val prompt = """
                     Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .
-                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại với kiểu chữ hoa cho chính xác nhất sang tiếng Việt: $originalText
+                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác nhất sang tiếng Việt: $originalText
                     Yêu cầu khi dịch :1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
                            2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .
                            3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .
@@ -1267,7 +1265,9 @@ class TranslationRepository(private val application: Application) {
                             -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
                            6. Không trả về lí do không dịch được hoặc lí do dịch không chính xác , hãy chỉ trả về văn bản gốc trong 2 trường hợp này .
                            7.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .
-                    Chỉ trả về 1 bản dịch chính xác duy nhất .
+                           8. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa .
+                           9. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép (\"), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.\n" +
+                    "Chỉ trả về 1 bản dịch chính xác duy nhất ."
                 """.trimIndent()
 
                 val response = generativeModel.generateContent(prompt)
