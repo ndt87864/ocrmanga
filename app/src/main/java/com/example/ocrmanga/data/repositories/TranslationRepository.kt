@@ -160,7 +160,8 @@ class TranslationRepository(private val application: Application) {
             "                           8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.\n" +
             "                           9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa .\n"+
             "                           10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép (\"), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.\n" +
-            "                           11.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .\n" +
+            "                           11. Các bản dịch trong cùng một ảnh phải có sự thống nhất, liên kết với nhau về xưng hô, ngữ cảnh, tránh trường hợp mỗi câu một kiểu dịch khác nhau. Ví dụ: 1. Mày đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> sai; 1. Cậu đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> đúng.\n" +
+            "                           12.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .\n" +
             "                    Chỉ trả về 1 bản dịch chính xác duy nhất ."
 
             // Build JSON body using Gson to avoid invalid JSON
@@ -211,7 +212,7 @@ class TranslationRepository(private val application: Application) {
                 return content?.trim()
             } catch (e: Exception) {
                 lastError = e
-                Log.e("TranslationRepository", "Mistral API exception: ${e.message}", e)
+                Log.e("TranslationRepository", "Mistral API exception: keyIndex=$i, key=${mistralKey}...: ${e.message}", e)
                 if (!mistralErrorToastShown) {
                     mistralErrorToastShown = true
                     withContext(Dispatchers.Main) {
@@ -1267,6 +1268,7 @@ class TranslationRepository(private val application: Application) {
                            7.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .
                            8. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa .
                            9. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép (\"), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.\n" +
+                           10. Các bản dịch trong cùng một ảnh phải có sự thống nhất, liên kết với nhau về xưng hô, ngữ cảnh, tránh trường hợp mỗi câu một kiểu dịch khác nhau. Ví dụ: 1. Mày đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> sai; 1. Cậu đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> đúng.\n" +
                     "Chỉ trả về 1 bản dịch chính xác duy nhất ."
                 """.trimIndent()
 
@@ -1283,7 +1285,7 @@ class TranslationRepository(private val application: Application) {
                 }
             } catch (e: Exception) {
                 lastError = e
-                Log.e("TranslationRepository", "Dịch bằng Gemini thất bại với model=$modelName, key=${apiKey.take(5)}...: ${e.message}")
+                Log.e("TranslationRepository", "Dịch bằng Gemini thất bại với model=$modelName, keyIndex=$apiKeyIndex, key=${apiKey}...: ${e.message}")
             }
             // Nếu chưa thử hết key/model thì tiếp tục, còn không thì break
         }
