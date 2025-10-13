@@ -355,9 +355,11 @@ fun DrawScope.drawText(
     fontFamilyName: String? = null,
     borderColor: Color? = null, // Màu viền chữ
     borderThickness: Float = 0.0f, // Độ dày viền (0.0 - 5.0)
-    borderAlpha: Float = 1.0f, // Độ trong suốt của viền (0.0 - 1.0)
+    borderAlpha: Float = 1.0f, // Độ trong suốt của viền (0.0 - 1.0),
     editMode: Boolean = false // Nếu true, không giới hạn font size bởi overlay
 ) {
+
+    // ...existing code...
     // Tạo paint cho viền text (nếu có yêu cầu viền)
     val borderPaint = if (borderColor != null && borderThickness > 0) {
         androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
