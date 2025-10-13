@@ -662,6 +662,7 @@ fun TranslationEditor(
                 initialColor = currentColor.copy(alpha = 1f),
                 initialAlpha = currentAlpha,
                 initialThickness = currentThickness,
+                maxThickness = (dragBlocks[idx].fontSize ?: dragBlocks[idx].block.fontSize),
                 isOverlayDialog = false,
                 onColorSelected = { color ->
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
@@ -696,6 +697,7 @@ fun ColorPickerDialog(
     initialBoldness: Float = 1.0f,
     initialSaturation: Float = 1.0f,
     initialThickness: Float = 0.0f, // Thêm tham số này
+    maxThickness: Float = 5.0f,
     isOverlayDialog: Boolean = false,
     onColorSelected: (Color) -> Unit,
     onAlphaChanged: ((Float) -> Unit)? = null,
@@ -844,7 +846,7 @@ fun ColorPickerDialog(
                             currentThickness = newThickness
                             onThicknessChanged(newThickness)
                         },
-                        valueRange = 0f..5f,
+                        valueRange = 0f..maxThickness,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

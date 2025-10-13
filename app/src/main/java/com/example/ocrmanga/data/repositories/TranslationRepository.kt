@@ -280,6 +280,9 @@ class TranslationRepository(private val application: Application) {
         paint.colorFilter = colorFilter
         canvas.drawBitmap(upscaledBitmap, 0f, 0f, paint)
 
+        // Recycle intermediate upscaled bitmap immediately
+        upscaledBitmap.recycle()
+
         val contrastBitmap = Bitmap.createBitmap(newWidth, newHeight, Bitmap.Config.ARGB_8888)
         val contrastCanvas = Canvas(contrastBitmap)
         val contrastPaint = Paint()
@@ -294,6 +297,9 @@ class TranslationRepository(private val application: Application) {
         val contrastFilter = ColorMatrixColorFilter(contrastMatrix)
         contrastPaint.colorFilter = contrastFilter
         contrastCanvas.drawBitmap(grayscaleBitmap, 0f, 0f, contrastPaint)
+
+        // Recycle intermediate grayscale bitmap immediately
+        grayscaleBitmap.recycle()
 
         return Pair(contrastBitmap, scaleFactor)
     }
@@ -521,6 +527,8 @@ class TranslationRepository(private val application: Application) {
         } finally {
             bitmap?.recycle()
             bitmap = null
+            // Gợi ý GC dọn dẹp bộ nhớ sau mỗi ảnh để tránh OOM
+            System.gc()
         }
     }
 
@@ -531,8 +539,8 @@ class TranslationRepository(private val application: Application) {
         onlyPreview: Boolean = false,
         forceScript: String? = null
     ): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
-        // Tối ưu tốc độ: giảm số scale factors và ưu tiên recognizer chính xác
-        val scaleFactors = if (onlyPreview) listOf(0.95f, 1.003f, 1.08f, 1.12f) else listOf(0.95f, 1.003f, 1.08f, 1.12f, 1.18f)
+        // Giảm số scale factors để tránh OOM (từ 5 xuống 3)
+        val scaleFactors = if (onlyPreview) listOf(0.95f, 1.08f) else listOf(0.95f, 1.003f, 1.12f)
         val recognizers = when (forceScript) {
             "zh" -> listOf(chineseRecognizer)
             "ja" -> listOf(japaneseRecognizer)

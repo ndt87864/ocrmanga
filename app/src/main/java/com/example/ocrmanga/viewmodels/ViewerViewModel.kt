@@ -564,7 +564,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun processTranslationQueue() {
-        val maxBatchSize = 2 // Dịch song song 4 trang mỗi lượt để tăng tốc
+        val maxBatchSize = 1 // Giảm xuống 1 để tránh OOM khi xử lý nhiều bitmap cùng lúc
         val translatedTexts = mutableMapOf<Uri, Pair<String, List<TextBlockInfo>>>()
         val sourceLanguages = mutableMapOf<Uri, String>()
         var completedCount = 0
