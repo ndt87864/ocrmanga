@@ -127,25 +127,29 @@ fun ImageViewer(
             }
             LaunchedEffect(uri, translatedTexts[uri]) {
                 if (!editTranslationMode) {
-                    val newBlocks = translatedTexts[uri]?.second?.map {
-                        DragBlockState(
-                            block = it,
-                            fontSize = it.fontSize, // Sử dụng fontSize đã lưu từ database
-                            rotation = it.rotation ?: 0f,
-                            whiteoutColor = it.customOverlayColor?.let { color -> androidx.compose.ui.graphics.Color(color) },
-                            textColor = it.customTextColor?.let { color -> androidx.compose.ui.graphics.Color(color) },
-                            overlayAlpha = it.overlayAlpha,
-                            textBoldness = it.textBoldness,
-                            overlaySaturation = it.overlaySaturation,
-                            textSaturation = it.textSaturation,
-                            textBorderColor = it.customBorderColor?.let { color -> androidx.compose.ui.graphics.Color(color) },
-                            textBorderThickness = it.borderThickness,
-                            textBorderAlpha = it.borderAlpha
-                        )
-                    } ?: emptyList()
-                    dragBlocks = newBlocks
-                    dragBlocksMap[uri] = newBlocks
-                }
+    // 🔹 Chỉ cập nhật khi chưa có dữ liệu trong dragBlocksMap (tránh ghi đè fontSize mới chỉnh)
+    if (dragBlocksMap[uri].isNullOrEmpty()) {
+        val newBlocks = translatedTexts[uri]?.second?.map {
+            DragBlockState(
+                block = it,
+                fontSize = it.fontSize,
+                rotation = it.rotation ?: 0f,
+                whiteoutColor = it.customOverlayColor?.let { c -> Color(c) },
+                textColor = it.customTextColor?.let { c -> Color(c) },
+                overlayAlpha = it.overlayAlpha,
+                textBoldness = it.textBoldness,
+                overlaySaturation = it.overlaySaturation,
+                textSaturation = it.textSaturation,
+                textBorderColor = it.customBorderColor?.let { c -> Color(c) },
+                textBorderThickness = it.borderThickness,
+                textBorderAlpha = it.borderAlpha
+            )
+        } ?: emptyList()
+        dragBlocks = newBlocks
+        dragBlocksMap[uri] = newBlocks
+    }
+}
+
             }
             LaunchedEffect(dragBlocks) {
                 dragBlocksMap[uri] = dragBlocks
