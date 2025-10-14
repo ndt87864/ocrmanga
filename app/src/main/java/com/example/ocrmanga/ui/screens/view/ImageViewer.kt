@@ -327,9 +327,38 @@ fun ImageViewer(
                                             val scaledTop = (bounds.top * scale) + offsetY + dragBlock.offset.y
                                             val scaledWidth = (bounds.width() * scale).toFloat()
                                             val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
-                                            val fontSize = dragBlock.fontSize ?: calculateOptimalFontSize(
-                                                block.text, scaledWidth, scaledBlockHeight2, 12f, shapeType = block.shapeType, context = context, fontFamilyName = block.fontFamily
-                                            )
+                                            val fontSize = if (editTranslationMode) {
+                                                // Khi edit mode, dùng fontSize đã lưu (nếu có)
+                                                dragBlock.fontSize ?: dragBlock.block.fontSize ?: calculateOptimalFontSize(
+                                                    text = dragBlock.block.text,
+                                                    width = scaledWidth,
+                                                    height = scaledBlockHeight2,
+                                                    context = context,
+                                                    fontFamilyName = dragBlock.block.fontFamily
+                                                )
+                                            } else {
+                                                // Khi view mode, tính auto-fit như cũ
+                                                val autoFont = calculateOptimalFontSize(
+                                                    text = dragBlock.block.text,
+                                                    width = scaledWidth,
+                                                    height = scaledBlockHeight2,
+                                                    context = context,
+                                                    fontFamilyName = dragBlock.block.fontFamily
+                                                )
+
+                                                // 🔹 Cập nhật fontSize vào DragBlockState để lưu lại cho edit mode
+                                                if (dragBlock.fontSize == null || dragBlock.fontSize != autoFont) {
+                                                    dragBlocks = dragBlocks.toMutableList().also { list ->
+                                                        val old = list[i]
+                                                        list[i] = old.copy(fontSize = autoFont)
+                                                    }
+                                                }
+
+                                                autoFont
+                                            }
+
+
+
                                             RegionInfo(
                                                 block = block,
                                                 rect = Rect(
