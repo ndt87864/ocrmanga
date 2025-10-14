@@ -651,6 +651,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val orders = mutableListOf<Int>()
         val translations = mutableMapOf<Uri, Pair<String, MutableList<TextBlockInfo>>>()
 
+        val seenUris = mutableSetOf<String>()
         val imageCursor = db.rawQuery("""
             SELECT $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER, $COLUMN_IMAGE_ID 
             FROM $TABLE_IMAGES 
@@ -659,7 +660,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         """, arrayOf(roomId.toString()))
 
         while (imageCursor.moveToNext()) {
-            val uri = Uri.parse(imageCursor.getString(0))
+            val uriStr = imageCursor.getString(0)
+            if (seenUris.contains(uriStr)) continue // Bỏ qua uri đã xuất hiện
+            seenUris.add(uriStr)
+            val uri = Uri.parse(uriStr)
             val order = imageCursor.getInt(1)
             val imageId = imageCursor.getLong(2)
 
