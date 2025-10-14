@@ -290,8 +290,15 @@ fun TranslationEditor(
                         IconButton(
                             onClick = {
                                 selectedIndex?.let { idx ->
-                                    onDragBlocksChange(dragBlocks.toMutableList().also { it.removeAt(idx) })
-                                    onSelectedIndexChange(dragBlocks.indices.minOrNull()?.takeIf { dragBlocks.isNotEmpty() })
+                                    val newList = dragBlocks.toMutableList().also { it.removeAt(idx) }
+                                    onDragBlocksChange(newList)
+                                    if (newList.isEmpty()) {
+                                        onSelectedIndexChange(null)
+                                    } else {
+                                        // Chọn block gần nhất nếu còn, hoặc null nếu hết
+                                        val newIdx = if (idx < newList.size) idx else newList.size - 1
+                                        onSelectedIndexChange(newIdx.takeIf { newList.isNotEmpty() })
+                                    }
                                 }
                             },
                             enabled = isBlockSelected
