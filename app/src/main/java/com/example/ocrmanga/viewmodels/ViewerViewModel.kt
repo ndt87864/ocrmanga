@@ -239,6 +239,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 //log.i(TAG, "Đang tải phòng $roomId")
                 val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
+                // ĐẢM BẢO: KHÔNG loại bỏ ảnh đầu (coverUri) khỏi danh sách ảnh phòng!
+                // Nếu coverUri trùng với ảnh đầu, vẫn giữ nguyên trong danh sách hiển thị.
                 val translatedStatus = mutableMapOf<Uri, Boolean>()
                 val initialBatch = allImages.take(BATCH_SIZE)
                 val remainingImages = allImages.drop(BATCH_SIZE)
@@ -272,7 +274,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 _uiState.update {
                     it.copy(
-                        imageUris = initialBatch,
+                        imageUris = initialBatch, // Ảnh bìa vẫn nằm trong danh sách này
                         translatedTexts = fixedTranslations.filterKeys { it in initialBatch },
                         translationEnabled = fixedTranslations.isNotEmpty(),
                         translationMode = if (fixedTranslations.isNotEmpty()) TranslationMode.OFFLINE else TranslationMode.OFF,
