@@ -106,19 +106,10 @@ fun ImageViewer(
         itemsIndexed(items = imageUris, key = { index, uri -> uri.toString() + "-$index" }) { index, uri ->
             val initialBlocks = dragBlocksMap[uri]
                 ?: translatedTexts[uri]?.second?.map { block ->
-                    // Nếu fontSize null hoặc <= 0 thì tính lại giống view mode
-                    val blockImageWidth = block.originalImageWidth?.toFloat() ?: 1280f
-                    val blockImageHeight = block.originalImageHeight?.toFloat() ?: 1808f
-                    val scale = 1f // Chưa có imageWidth ở đây, tạm thời scale=1 (edit mode sẽ đồng bộ khi vào view)
-                    val bounds = block.bounds
-                    val width = (bounds.width()).toFloat() * scale
-                    val height = (bounds.height()).toFloat() * scale
-                    val fontSize = if (block.fontSize > 0f) block.fontSize else calculateOptimalFontSize(
-                        block.text, width, height, 12f, shapeType = block.shapeType, context = context, fontFamilyName = block.fontFamily
-                    )
+                    // Luôn dùng cỡ chữ gốc khi vào edit mode
                     DragBlockState(
                         block = block,
-                        fontSize = fontSize,
+                        fontSize = block.fontSize,
                         rotation = block.rotation ?: 0f,
                         whiteoutColor = block.customOverlayColor?.let { androidx.compose.ui.graphics.Color(it) },
                         textColor = block.customTextColor?.let { androidx.compose.ui.graphics.Color(it) },
