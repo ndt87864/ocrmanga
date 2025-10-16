@@ -82,6 +82,7 @@ fun ImageViewer(
 ) {
     val context = LocalContext.current
     var translationVersion by remember { mutableStateOf(0) }
+    val newlyTranslated = remember { mutableStateMapOf<Uri, Boolean>() }
 
     LazyColumn(
         state = lazyListState,
@@ -127,28 +128,30 @@ fun ImageViewer(
             }
             LaunchedEffect(uri, translatedTexts[uri]) {
                 if (!editTranslationMode) {
-    // 🔹 Chỉ cập nhật khi chưa có dữ liệu trong dragBlocksMap (tránh ghi đè fontSize mới chỉnh)
-    if (dragBlocksMap[uri].isNullOrEmpty()) {
-        val newBlocks = translatedTexts[uri]?.second?.map {
-            DragBlockState(
-                block = it,
-                fontSize = it.fontSize,
-                rotation = it.rotation ?: 0f,
-                whiteoutColor = it.customOverlayColor?.let { c -> Color(c) },
-                textColor = it.customTextColor?.let { c -> Color(c) },
-                overlayAlpha = it.overlayAlpha,
-                textBoldness = it.textBoldness,
-                overlaySaturation = it.overlaySaturation,
-                textSaturation = it.textSaturation,
-                textBorderColor = it.customBorderColor?.let { c -> Color(c) },
-                textBorderThickness = it.borderThickness,
-                textBorderAlpha = it.borderAlpha
-            )
-        } ?: emptyList()
-        dragBlocks = newBlocks
-        dragBlocksMap[uri] = newBlocks
-    }
-}
+                // 🔹 Chỉ cập nhật khi chưa có dữ liệu trong dragBlocksMap (tránh ghi đè fontSize mới chỉnh)
+                if (dragBlocksMap[uri].isNullOrEmpty()) {
+                    val newBlocks = translatedTexts[uri]?.second?.map {
+                        DragBlockState(
+                            block = it,
+                            fontSize = it.fontSize,
+                            rotation = it.rotation ?: 0f,
+                            whiteoutColor = it.customOverlayColor?.let { c -> Color(c) },
+                            textColor = it.customTextColor?.let { c -> Color(c) },
+                            overlayAlpha = it.overlayAlpha,
+                            textBoldness = it.textBoldness,
+                            overlaySaturation = it.overlaySaturation,
+                            textSaturation = it.textSaturation,
+                            textBorderColor = it.customBorderColor?.let { c -> Color(c) },
+                            textBorderThickness = it.borderThickness,
+                            textBorderAlpha = it.borderAlpha
+                        )
+                    } ?: emptyList()
+                    dragBlocks = newBlocks
+                    dragBlocksMap[uri] = newBlocks
+                    newlyTranslated[uri] = true
+
+                }
+            }
 
             }
             LaunchedEffect(dragBlocks) {
@@ -331,37 +334,31 @@ fun ImageViewer(
                                             val scaledTop = (bounds.top * scale) + offsetY + dragBlock.offset.y
                                             val scaledWidth = (bounds.width() * scale).toFloat()
                                             val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
-                                            val fontSize = if (editTranslationMode) {
-                                                // Khi edit mode, dùng fontSize đã lưu (nếu có)
-                                                dragBlock.fontSize ?: dragBlock.block.fontSize ?: calculateOptimalFontSize(
-                                                    text = dragBlock.block.text,
-                                                    width = scaledWidth,
-                                                    height = scaledBlockHeight2,
-                                                    context = context,
-                                                    fontFamilyName = dragBlock.block.fontFamily
-                                                )
-                                            } else {
-                                                // Khi view mode, tính auto-fit như cũ
-                                                val autoFont = calculateOptimalFontSize(
-                                                    text = dragBlock.block.text,
-                                                    width = scaledWidth,
-                                                    height = scaledBlockHeight2,
-                                                    context = context,
-                                                    fontFamilyName = dragBlock.block.fontFamily
-                                                )
+                                            val fontSize = when {
+                                                editTranslationMode -> {
+                                                    dragBlock.fontSize ?: dragBlock.block.fontSize
+                                                }
 
-                                                // 🔹 Cập nhật fontSize vào DragBlockState để lưu lại cho edit mode
-                                                if (dragBlock.fontSize == null || dragBlock.fontSize != autoFont) {
+                                                newlyTranslated[uri] == true -> {
+                                                    val autoFont = calculateOptimalFontSize(
+                                                        text = dragBlock.block.text,
+                                                        width = scaledWidth,
+                                                        height = scaledBlockHeight2,
+                                                        context = context,
+                                                        fontFamilyName = dragBlock.block.fontFamily
+                                                    )
                                                     dragBlocks = dragBlocks.toMutableList().also { list ->
                                                         val old = list[i]
                                                         list[i] = old.copy(fontSize = autoFont)
                                                     }
+                                                    newlyTranslated[uri] = false //  chỉ scale 1 lần
+                                                    autoFont
                                                 }
 
-                                                autoFont
+                                                else -> {
+                                                    dragBlock.fontSize ?: dragBlock.block.fontSize
+                                                }
                                             }
-
-
 
                                             RegionInfo(
                                                 block = block,
