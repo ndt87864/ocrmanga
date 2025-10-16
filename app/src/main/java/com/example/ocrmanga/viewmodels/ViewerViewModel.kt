@@ -38,13 +38,28 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             startTranslationTimer(uri)
             _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
+
+            if (mode == TranslationMode.OFF) {
+                // Nếu chọn OFF khi retranslate: xóa toàn bộ block / bản dịch cho ảnh này
+                _uiState.update { state ->
+                    state.copy(
+                        translatedTexts = state.translatedTexts - uri,
+                        translatedStatus = state.translatedStatus + (uri to false),
+                        sourceLanguages = state.sourceLanguages - uri
+                    )
+                }
+                stopTranslationTimer()
+                return@launch
+            }
+
+            // Nếu không phải OFF, tiến hành dịch bình thường
             if (mode != TranslationMode.OFF) {
                 val result = translationRepository.translateImage(uri, mode)
                 _uiState.update {
                     it.copy(
                         translatedTexts = it.translatedTexts + (uri to result),
                         translatedStatus = it.translatedStatus + (uri to true),
-                        translationEnabled = true // Bật lại hiển thị dịch cho UI
+                        translationEnabled = true // Bật hiển thị dịch cho UI nếu cần
                     )
                 }
             }
