@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.viewmodels.ViewerViewModel
@@ -82,8 +83,10 @@ fun ViewerScreen(
                         rotation = it.rotation,
                         shapeType = it.block.shapeType,
                         customOverlayColor = it.whiteoutColor?.toArgb() ?: it.block.customOverlayColor,
-                        customTextColor = it.textColor?.toArgb() ?: it.block.customTextColor ?: 0xFF000000.toInt(),
-                        overlayAlpha = it.overlayAlpha,
+                        customTextColor = it.textColor?.toArgb()
+                            ?: it.block.customTextColor
+                            ?: computeDefaultTextColor(it.whiteoutColor?.toArgb() ?: it.block.customOverlayColor, it.block.averageBackgroundColor),
+                            overlayAlpha = it.overlayAlpha,
                         textBoldness = it.textBoldness,
                         overlaySaturation = it.overlaySaturation,
                         textSaturation = it.textSaturation,
@@ -106,22 +109,31 @@ fun ViewerScreen(
             // Nếu không có translatedTexts (mode OFF), xóa blocks
             if (currentTranslatedBlocks != null) {
                 val blocks = currentTranslatedBlocks.map { block ->
+                    val overlayColorInt = block.customOverlayColor ?: 0xFFFFFFFF.toInt()
+                    val opaqueOverlay = overlayColorInt or 0xFF000000.toInt()
+                    val luminance = ColorUtils.calculateLuminance(opaqueOverlay)
+                    val textColorInt = block.customTextColor ?: computeDefaultTextColor(block.customOverlayColor, block.averageBackgroundColor)
+
                     DragBlockState(
-                        block = block,
+                        block = block.copy(
+                            customOverlayColor = overlayColorInt,
+                            customTextColor = textColorInt
+                        ),
                         offset = androidx.compose.ui.geometry.Offset.Zero,
                         fontSize = block.fontSize,
                         rotation = block.rotation ?: 0f,
-                        whiteoutColor = block.customOverlayColor?.let { androidx.compose.ui.graphics.Color(it) },
-                        textColor = block.customTextColor?.let { androidx.compose.ui.graphics.Color(it) },
+                        whiteoutColor = Color(overlayColorInt),
+                        textColor = Color(textColorInt),
                         overlayAlpha = block.overlayAlpha,
                         textBoldness = block.textBoldness,
                         overlaySaturation = block.overlaySaturation,
                         textSaturation = block.textSaturation,
-                        textBorderColor = block.customBorderColor?.let { androidx.compose.ui.graphics.Color(it) },
+                        textBorderColor = block.customBorderColor?.let { Color(it) },
                         textBorderThickness = block.borderThickness,
                         textBorderAlpha = block.borderAlpha
                     )
                 }
+
                 dragBlocksMap[uri] = blocks
             } else {
                 // Xóa blocks khi tắt dịch
@@ -281,7 +293,9 @@ fun ViewerScreen(
                                                 rotation = dragBlock.rotation,
                                                 shapeType = dragBlock.block.shapeType,
                                                 customOverlayColor = dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor,
-                                                customTextColor = dragBlock.textColor?.toArgb() ?: dragBlock.block.customTextColor ?: 0xFF000000.toInt(),
+                                                customTextColor = dragBlock.textColor?.toArgb()
+                                                    ?: dragBlock.block.customTextColor
+                                                    ?: computeDefaultTextColor(dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor, dragBlock.block.averageBackgroundColor),
                                                 overlayAlpha = dragBlock.overlayAlpha,
                                                 textBoldness = dragBlock.textBoldness,
                                                 overlaySaturation = dragBlock.overlaySaturation,

@@ -9,12 +9,14 @@ import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ocrmanga.data.database.DatabaseHelper
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.repositories.TranslationRepository
+import com.example.ocrmanga.ui.screens.view.computeDefaultTextColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -647,7 +649,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val (translatedBlocks, sourceLang) = pair
                 if (uiState.value.imageUris.contains(uri)) {
                     if (original.isNotEmpty() || (translatedBlocks as? List<*>)?.isNotEmpty() == true) {
-                        translatedTexts[uri] = original to (translatedBlocks as List<TextBlockInfo>)
+                        val fixedBlocks = (translatedBlocks as List<TextBlockInfo>).map { block ->
+                                val baseOverlay = block.customOverlayColor ?: 0xFFFFFFFF.toInt() // overlay mặc định trắng
+                                val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
+                                block.copy(
+                                    customOverlayColor = baseOverlay,
+                                    customTextColor = textColor
+                                )
+                        }
+
+                        translatedTexts[uri] = original to fixedBlocks
+
                         sourceLanguages[uri] = sourceLang as String
                         completedCount++
                         _uiState.update {
@@ -767,7 +779,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         rotation = state.rotation,
                         shapeType = b.shapeType,
                         customOverlayColor = state.whiteoutColor?.toArgb() ?: b.customOverlayColor,
-                        customTextColor = state.textColor?.toArgb() ?: b.customTextColor ?: 0xFF000000.toInt(),
+                        customTextColor = state.textColor?.toArgb()
+                            ?: b.customTextColor
+                            ?: computeDefaultTextColor(state.whiteoutColor?.toArgb() ?: b.customOverlayColor, b.averageBackgroundColor),
                         overlayAlpha = state.overlayAlpha,
                         textBoldness = state.textBoldness,
                         overlaySaturation = state.overlaySaturation,
