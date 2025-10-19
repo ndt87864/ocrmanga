@@ -126,6 +126,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val translationRepository = TranslationRepository(application)
     private val databaseHelper = DatabaseHelper(application)
+    // Track active jobs (translation / timer / io) so we can force-cancel them when clearing session
+    private val activeJobs = ConcurrentLinkedQueue<Job>()
+    // Keep the last loaded/saved room id so clear can delete it even if uiState.roomId was cleared
+    private var lastLoadedRoomId: Long? = null
     private val _uiState = MutableStateFlow(ViewerUiState())
     val uiState: StateFlow<ViewerUiState> = _uiState.asStateFlow()
     private val _allRoomIds = MutableStateFlow<List<Long>>(emptyList())
@@ -140,6 +144,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private val uriToImageId = mutableMapOf<Uri, Long>()
     private var translationJob: Job? = null
     private var timerJob: Job? = null
+
+    /**
+     * Register a Job created by this ViewModel so it can be cancelled when clearing session.
+     * Call registerJob(job) right after launching a new Job in this ViewModel.
+     */
+    private fun registerJob(job: Job) {
+        activeJobs.add(job)
+        job.invokeOnCompletion { activeJobs.remove(job) }
+    }
     companion object {
         const val BATCH_SIZE = 10 // Số ảnh tải mỗi lần
     }
@@ -167,6 +180,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
+        // Register timer job so it will be cancelled on clear
+        timerJob?.let { registerJob(it) }
         //log.i(TAG, "Bắt đầu đếm thời gian dịch cho ảnh $imageIndex: $uri")
     }
 
@@ -203,6 +218,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setImageUris(uris: List<Uri>, isNew: Boolean = false) {
+        // Basic UI state reset for the provided URIs
         _uiState.update {
             it.copy(
                 imageUris = uris,
@@ -214,12 +230,27 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationMode = TranslationMode.OFF,
                 isTranslating = false,
                 translationProgress = 0,
-                totalImagesToTranslate = 0
+                totalImagesToTranslate = 0,
+                remainingImages = emptyList(),
+                // Reset translation version so UI clears blocks
+                translationVersion = it.translationVersion + 1
             )
         }
+
+        // Clear in-memory session lists and jobs for a truly new session
         newImageUris.clear()
         if (isNew) {
+            // Cancel any ongoing translation work and timers
+            try { translationJob?.cancel() } catch (e: Throwable) { /* ignore */ }
+            try { stopTranslationTimer() } catch (e: Throwable) { /* ignore */ }
+
+            translationQueue.clear()
+            dirtyUris.clear()
+            uriToImageId.clear()
             newImageUris.addAll(uris)
+            // this is a new session, forget last loaded room id so we don't fall back
+            lastLoadedRoomId = null
+            Log.i(TAG, "setImageUris(isNew=true): cleared translationQueue, dirtyUris, uriToImageId and lastLoadedRoomId")
         }
         //log.i(TAG, "Đã đặt ${uris.size} URI ảnh, isNew: $isNew")
     }
@@ -358,6 +389,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         translationVersion = it.translationVersion + 1
                     )
                 }
+                // record last loaded room id so clear can delete files even if uiState changes later
+                lastLoadedRoomId = roomId
                 //log.i(TAG, "Đã tải batch đầu tiên của phòng $roomId với ${initialBatch.size} ảnh")
                 // Log độ nghiêng (rotation) cho từng block bản dịch
                 fixedTranslations.forEach { (uri, pair) ->
@@ -371,6 +404,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Tải phòng thất bại!", Toast.LENGTH_SHORT).show()
                 }
+                // On failure, ensure we don't keep a stale lastLoadedRoomId
+                lastLoadedRoomId = null
             }
         }
     }
@@ -543,6 +578,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationJob = viewModelScope.launch(Dispatchers.IO) {
                     processTranslationQueue()
                 }
+                translationJob?.let { registerJob(it) }
                 //log.i(TAG, "Đang dịch lại tất cả ${imagesToRetranslate.size} ảnh với chế độ $mode")
             } else {
                 // Only translate new images that haven't been translated yet
@@ -641,6 +677,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         // Chỉ cần cập nhật roomId nếu đây là lần save đầu tiên
                     }
                     _uiState.update { it.copy(roomId = roomId) }
+                    // remember saved room id
+                    lastLoadedRoomId = roomId
                     galleryViewModel.notifyDataSaved()
                     loadAllRoomIds()
                     //log.i(TAG, "Phòng đã được lưu với ID: $roomId")
@@ -693,6 +731,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             translationJob = viewModelScope.launch(Dispatchers.IO) {
                 processTranslationQueue()
             }
+            translationJob?.let { registerJob(it) }
         }
     }
 
@@ -806,8 +845,41 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * Xóa toàn bộ session, ảnh, trạng thái dịch, trạng thái phòng, v.v. (reset sạch ViewModel)
      */
-    fun clearSessionAndImages() {
-        stopTranslationTimer()
+    /**
+     * Clear session and images. If deleteSavedRoom == true and a roomId is loaded,
+     * also delete the room from database and remove its image folder (permanent removal).
+     */
+    fun clearSessionAndImages(deleteSavedRoom: Boolean = false) {
+        // 1) Cancel timer and any tracked jobs
+        try {
+            stopTranslationTimer()
+        } catch (e: Throwable) {
+            Log.w(TAG, "Error stopping timer during clearSessionAndImages", e)
+        }
+
+        // Cancel and clear all active jobs we registered
+        try {
+            while (true) {
+                val j = activeJobs.poll() ?: break
+                try {
+                    if (j.isActive) j.cancel()
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Failed to cancel active job during clear", t)
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Error while cancelling activeJobs", e)
+        }
+
+        // Cancel primary translation job as well
+        try {
+            translationJob?.cancel()
+            translationJob = null
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to cancel translationJob", e)
+        }
+
+        // 2) Reset UI state to an empty session so UI navigators don't accidentally save
         _uiState.update {
             it.copy(
                 imageUris = emptyList(),
@@ -827,9 +899,80 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 isLoadingMoreImages = false
             )
         }
+
+        // 3) Clear queues and local in-memory lists
         newImageUris.clear()
         translationQueue.clear()
-        translationJob?.cancel()
+        dirtyUris.clear()
+        uriToImageId.clear()
+    // Ensure we forget any remembered room id so temporary sessions don't fall back
+    // to a previously loaded room. This fixes cases where selecting images creates
+    // a temporary "room" but the ViewModel later reloads the lastSaved room.
+    lastLoadedRoomId = null
+    Log.i(TAG, "clearSessionAndImages: cleared lastLoadedRoomId")
+
+        // 4) Best-effort remove temporary/cache files created by the app
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // If requested, delete the saved room from DB and remove its files
+                if (deleteSavedRoom) {
+                    try {
+                        val rid = uiState.value.roomId ?: lastLoadedRoomId
+                        if (rid != null) {
+                            Log.i(TAG, "clearSessionAndImages: deleting saved room $rid as requested")
+                            try { databaseHelper.deleteRoom(rid) } catch (e: Throwable) { Log.w(TAG, "Failed to delete room $rid", e) }
+                            // Also remove images folder if exists
+                            val imagesDir = File(getApplication<Application>().getExternalFilesDir(null), "images/$rid")
+                            if (imagesDir.exists()) {
+                                try { imagesDir.deleteRecursively() } catch (e: Throwable) { Log.w(TAG, "Failed to delete images folder for room $rid", e) }
+                            }
+                            // clear remembered id
+                            lastLoadedRoomId = null
+                        }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Error deleting saved room during clearSessionAndImages", e)
+                    }
+                }
+
+                // Clear translationRepository caches/session
+                try {
+                    translationRepository.clearSession()
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Failed to clear translationRepository session", e)
+                }
+                val app = getApplication<Application>()
+                // cacheDir
+                app.cacheDir?.listFiles()?.forEach { f ->
+                    try {
+                        if (f.name.startsWith("ocrmanga") || f.name.endsWith(".tmp") || f.name.endsWith(".ocr_cache")) {
+                            f.deleteRecursively()
+                        }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Failed to delete cache file ${f.name}", e)
+                    }
+                }
+                // externalCacheDir
+                app.externalCacheDir?.listFiles()?.forEach { f ->
+                    try {
+                        if (f.name.startsWith("ocrmanga") || f.name.endsWith(".tmp") || f.name.endsWith(".ocr_cache")) {
+                            f.deleteRecursively()
+                        }
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Failed to delete external cache file ${f.name}", e)
+                    }
+                }
+                // app files/ocrmanga_temp
+                File(app.filesDir, "ocrmanga_temp").takeIf { it.exists() }?.let { tmpDir ->
+                    try {
+                        tmpDir.deleteRecursively()
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Failed to delete ocrmanga_temp folder", e)
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Error clearing temp files during clearSessionAndImages", e)
+            }
+        }
     }
 
     fun updateRoomTitle(roomId: Long, newTitle: String) {
@@ -922,22 +1065,21 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         return translationRepository.hasMistralApiKeys()
     }
 }
-
 data class ViewerUiState(
     val imageUris: List<Uri> = emptyList(),
-    val translationEnabled: Boolean = false,
-    val translationMode: TranslationMode = TranslationMode.OFF,
-    val isTranslating: Boolean = false,
     val translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>> = emptyMap(),
-    val roomId: Long? = null,
+    val sourceLanguages: Map<Uri, String> = emptyMap(),
     val translatedStatus: Map<Uri, Boolean> = emptyMap(),
+    val translationVersion: Int = 0,
+    val translationMode: TranslationMode = TranslationMode.OFF,
+    val translationEnabled: Boolean = false,
+    val isTranslating: Boolean = false,
     val translationProgress: Int = 0,
     val totalImagesToTranslate: Int = 0,
-    val sourceLanguages: Map<Uri, String> = emptyMap(),
+    val currentTranslatingImage: Uri? = null,
+    val currentTranslatingImageIndex: Int = 0,
+    val translationTimer: Int = 0,
+    val isLoadingMoreImages: Boolean = false,
     val remainingImages: List<Uri> = emptyList(),
-    val translationTimer: Int = 0, // Bộ đếm thời gian dịch (giây)
-    val currentTranslatingImage: Uri? = null, // Ảnh đang được dịch
-    val currentTranslatingImageIndex: Int = 0, // Số thứ tự ảnh đang được dịch (1-based)
-    val isLoadingMoreImages: Boolean = false, // Trạng thái đang tải thêm ảnh
-    val translationVersion: Int = 0 // Version tăng lên khi có thay đổi translation mode để force UI update
+    val roomId: Long? = null
 )

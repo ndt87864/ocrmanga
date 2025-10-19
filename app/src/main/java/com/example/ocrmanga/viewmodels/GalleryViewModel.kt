@@ -68,10 +68,6 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Thêm hàm điều hướng đến ApiKeyManagementScreen
-    fun navigateToApiKeyManagement() {
-        // Logic for navigation to ApiKeyManagementScreen
-    }
 
     // Thêm hàm debug để kiểm tra database
     fun debugDatabase() {
