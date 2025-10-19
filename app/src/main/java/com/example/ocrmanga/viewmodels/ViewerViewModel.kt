@@ -38,6 +38,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     // Dịch lại 1 ảnh (re-translate single image)
     fun retranslateImage(uri: Uri, mode: TranslationMode) {
         viewModelScope.launch {
+            // Early validation: if user requests Gemini or Mistral but there are no API keys, notify and skip
+            if (mode == TranslationMode.GEMINI && !hasGeminiApiKeys()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Không có API key Gemini. Vui lòng thêm ít nhất một API key Gemini trong cài đặt để dùng tính năng dịch Gemini.", Toast.LENGTH_LONG).show()
+                }
+                return@launch
+            }
+            if (mode == TranslationMode.MISTRAL && !hasMistralApiKeys()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.", Toast.LENGTH_LONG).show()
+                }
+                return@launch
+            }
             startTranslationTimer(uri)
             _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
@@ -429,6 +442,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setTranslationMode(mode: TranslationMode) {
         val currentMode = uiState.value.translationMode
+
+        // Prevent switching to Gemini or Mistral if API keys are missing
+        if (mode == TranslationMode.GEMINI && !hasGeminiApiKeys()) {
+            viewModelScope.launch(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Không có API key Gemini. Vui lòng thêm ít nhất một API key Gemini trong cài đặt để dùng tính năng dịch Gemini.", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (mode == TranslationMode.MISTRAL && !hasMistralApiKeys()) {
+            viewModelScope.launch(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
 
         _uiState.update {
             it.copy(
@@ -830,6 +857,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         } else {
             databaseHelper.updateMangaRoom(roomId, currentState.imageUris, updatedTranslatedTexts)
         }
+    }
+
+    // Expose API key availability checks for UI
+    fun hasGeminiApiKeys(): Boolean {
+        return translationRepository.hasGeminiApiKeys()
+    }
+
+    fun hasMistralApiKeys(): Boolean {
+        return translationRepository.hasMistralApiKeys()
     }
 }
 
