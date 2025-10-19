@@ -107,12 +107,12 @@ fun ViewerScreen(
             
             // Luôn cập nhật dragBlocksMap từ translatedTexts mới
             // Nếu không có translatedTexts (mode OFF), xóa blocks
-            if (currentTranslatedBlocks != null) {
+                if (currentTranslatedBlocks != null) {
                 val blocks = currentTranslatedBlocks.map { block ->
-                    val overlayColorInt = block.customOverlayColor ?: 0xFFFFFFFF.toInt()
-                    val opaqueOverlay = overlayColorInt or 0xFF000000.toInt()
-                    val luminance = ColorUtils.calculateLuminance(opaqueOverlay)
-                    val textColorInt = block.customTextColor ?: computeDefaultTextColor(block.customOverlayColor, block.averageBackgroundColor)
+                    // Ensure overlay int includes opaque alpha so Color(...) isn't transparent
+                    val rawOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                    val overlayColorInt = rawOverlay or 0xFF000000.toInt()
+                    val textColorInt = block.customTextColor ?: computeDefaultTextColor(overlayColorInt, block.averageBackgroundColor)
 
                     DragBlockState(
                         block = block.copy(
@@ -128,7 +128,7 @@ fun ViewerScreen(
                         textBoldness = block.textBoldness,
                         overlaySaturation = block.overlaySaturation,
                         textSaturation = block.textSaturation,
-                        textBorderColor = block.customBorderColor?.let { Color(it) },
+                        textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
                         textBorderThickness = block.borderThickness,
                         textBorderAlpha = block.borderAlpha
                     )
