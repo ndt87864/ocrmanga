@@ -529,7 +529,9 @@ fun GalleryScreen(
                                 Column(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .clickable { onNavigateToRoom(roomId) }
+                                        .clickable {
+                                            viewModel.clearSelectedImages()
+                                            onNavigateToRoom(roomId) }
                                 ) {
                                     AsyncImage(
                                         model = coverUri,

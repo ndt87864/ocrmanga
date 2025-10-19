@@ -72,6 +72,23 @@ class TranslationRepository(private val application: Application) {
     private val httpClient = OkHttpClient()
     private val databaseHelper = DatabaseHelper(application)
 
+    /**
+     * Clear internal caches and last session data. Best-effort cleanup when leaving a room.
+     */
+    fun clearSession() {
+        try {
+            cache.clear()
+        } catch (e: Throwable) {
+            Log.w("TranslationRepository", "Failed to clear cache", e)
+        }
+        try {
+            lastTranslationSession.clear()
+        } catch (e: Throwable) {
+            Log.w("TranslationRepository", "Failed to clear lastTranslationSession", e)
+        }
+        // Note: translators (MLKit) do not expose a cancel; we don't close them here.
+    }
+
     private var geminiApiKeys: List<String> = emptyList()
     private var currentGeminiKeyIndex = 0
     private var currentGeminiModelIndex = 0

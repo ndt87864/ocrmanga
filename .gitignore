@@ -14,3 +14,8 @@
 .cxx
 local.properties
 app/build
+client_secret_131473745863-bg6vamm27gmgp6e8t5koqaibfoes5i62.apps.googleusercontent.com.json
+app/.gitignore
+my-release-key.jks
+upload_certificate.pem
+app/release/*

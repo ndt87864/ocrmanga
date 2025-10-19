@@ -59,7 +59,11 @@ fun ViewerScreen(
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(key1 = imageUris, key2 = roomId) {
+        // If the gallery passed explicit imageUris, treat this as a new temporary session
+        // and prefer it over any lingering roomId saved in navigation state.
         if (imageUris.isNotEmpty()) {
+            // Ensure ViewModel state is fully reset for a new temporary session
+            viewModel.clearSessionAndImages(false)
             viewModel.setImageUris(imageUris.map { Uri.parse(it) }, isNew = true)
         } else if (roomId != null) {
             viewModel.loadRoom(roomId)
@@ -185,16 +189,12 @@ fun ViewerScreen(
         }
     )
 
+    // Replace existing handleBack implementation so we NEVER persist room data when leaving Viewer
     val handleBack: () -> Unit = {
-        if (uiState.roomId == null && uiState.imageUris.isNotEmpty()) {
-            showExitConfirmDialog = true
-            pendingBack = true
-        } else {
-            if (uiState.roomId != null) {
-                viewModel.saveRoom(dragBlocksMap)  
-            }
-            onNavigateBack()
-        }
+        // Decide whether to delete saved room files too (if we opened a saved room)
+        val deleteSaved = uiState.roomId != null
+        viewModel.clearSessionAndImages(deleteSaved)
+        onNavigateBack()
     }
 
     Column(
@@ -525,7 +525,7 @@ fun ViewerScreen(
             onExitConfirm = {
                 showExitConfirmDialog = false
                 pendingBack = false
-                viewModel.clearSessionAndImages()
+                viewModel.clearSessionAndImages(uiState.roomId != null)
                 shouldNavigateBackAfterClear = true
             },
             onExitDismiss = {

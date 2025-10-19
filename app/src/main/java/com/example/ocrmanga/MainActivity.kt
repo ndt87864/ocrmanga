@@ -48,8 +48,18 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         composable("viewer") {
-                            val imageUris = navController.previousBackStackEntry?.savedStateHandle?.get<List<String>>("imageUris") ?: emptyList()
-                            val roomId = navController.previousBackStackEntry?.savedStateHandle?.get<Long>("roomId")
+                            val prev = navController.previousBackStackEntry
+                            val imageUris = prev?.savedStateHandle?.get<List<String>>("imageUris") ?: emptyList()
+                            val roomId = prev?.savedStateHandle?.get<Long>("roomId")
+                            // Clear savedStateHandle keys so they don't persist and accidentally
+                            // affect subsequent navigations (stale roomId/imageUris reuse).
+                            try {
+                                prev?.savedStateHandle?.remove<List<String>>("imageUris")
+                            } catch (_: Exception) { prev?.savedStateHandle?.set("imageUris", emptyList<String>()) }
+                            try {
+                                prev?.savedStateHandle?.remove<Long>("roomId")
+                            } catch (_: Exception) { prev?.savedStateHandle?.set("roomId", null) }
+
                             ViewerScreen(
                                 imageUris = imageUris,
                                 roomId = roomId,
