@@ -45,7 +45,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     state.copy(
                         translatedTexts = state.translatedTexts - uri,
                         translatedStatus = state.translatedStatus + (uri to false),
-                        sourceLanguages = state.sourceLanguages - uri
+                        sourceLanguages = state.sourceLanguages - uri,
+                        // Tăng translationVersion để force UI xóa blocks
+                        translationVersion = state.translationVersion + 1
                     )
                 }
                 stopTranslationTimer()
@@ -59,7 +61,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     it.copy(
                         translatedTexts = it.translatedTexts + (uri to result),
                         translatedStatus = it.translatedStatus + (uri to true),
-                        translationEnabled = true // Bật hiển thị dịch cho UI nếu cần
+                        translationEnabled = true, // Bật hiển thị dịch cho UI nếu cần
+                        // Tăng translationVersion để force UI update blocks mới
+                        translationVersion = it.translationVersion + 1
                     )
                 }
             }
@@ -297,7 +301,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         roomId = roomId,
                         translatedStatus = translatedStatus,
                         sourceLanguages = fixedTranslations.mapValues { "zh" },
-                        remainingImages = remainingImages
+                        remainingImages = remainingImages,
+                        // Tăng translationVersion để force UI update dragBlocksMap từ DB
+                        translationVersion = it.translationVersion + 1
                     )
                 }
                 //log.i(TAG, "Đã tải batch đầu tiên của phòng $roomId với ${initialBatch.size} ảnh")
@@ -385,7 +391,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         translatedTexts = it.translatedTexts + translations,
                         translatedStatus = it.translatedStatus + translatedStatus,
                         remainingImages = newRemaining,
-                        isLoadingMoreImages = false // Kết thúc trạng thái loading
+                        isLoadingMoreImages = false, // Kết thúc trạng thái loading
+                        // Tăng translationVersion để force UI update blocks mới từ DB
+                        translationVersion = it.translationVersion + 1
                     )
                 }
                 //log.i(TAG, "Đã tải thêm ${batch.size} ảnh, còn lại ${newRemaining.size}")
@@ -425,7 +433,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         translationProgress = 0,
                         translatedTexts = emptyMap(),
                         sourceLanguages = emptyMap(),
-                        translatedStatus = imagesToRetranslate.associateWith { false }.toMutableMap()
+                        translatedStatus = imagesToRetranslate.associateWith { false }.toMutableMap(),
+                        // Tăng translationVersion để force UI update dragBlocksMap
+                        translationVersion = it.translationVersion + 1
                     )
                 }
 
@@ -453,7 +463,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     isTranslating = false,
                     translatedTexts = emptyMap(),
                     sourceLanguages = emptyMap(),
-                    translatedStatus = uiState.value.imageUris.associateWith { false }.toMutableMap()
+                    translatedStatus = uiState.value.imageUris.associateWith { false }.toMutableMap(),
+                    // Tăng translationVersion để force UI xóa tất cả blocks
+                    translationVersion = it.translationVersion + 1
                 )
             }
             newImageUris.clear()
@@ -521,8 +533,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 if (roomId != -1L) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Đã lưu thành công!", Toast.LENGTH_SHORT).show()
-                        // Sau khi lưu xong, reload lại phòng để cập nhật UI
-                        loadRoom(roomId)
+                        // KHÔNG reload lại phòng sau khi save để tránh ghi đè dữ liệu hiện tại
+                        // Chỉ cần cập nhật roomId nếu đây là lần save đầu tiên
                     }
                     _uiState.update { it.copy(roomId = roomId) }
                     galleryViewModel.notifyDataSaved()
@@ -643,7 +655,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 translatedTexts = it.translatedTexts + translatedTexts,
                                 sourceLanguages = it.sourceLanguages + sourceLanguages,
                                 translatedStatus = it.translatedStatus + (uri to true),
-                                translationProgress = completedCount
+                                translationProgress = completedCount,
+                                // Tăng translationVersion để force UI update blocks mới
+                                translationVersion = it.translationVersion + 1
                             )
                         }
                         //log.i(TAG, "Đã dịch ảnh $uri")
@@ -785,5 +799,6 @@ data class ViewerUiState(
     val translationTimer: Int = 0, // Bộ đếm thời gian dịch (giây)
     val currentTranslatingImage: Uri? = null, // Ảnh đang được dịch
     val currentTranslatingImageIndex: Int = 0, // Số thứ tự ảnh đang được dịch (1-based)
-    val isLoadingMoreImages: Boolean = false // Trạng thái đang tải thêm ảnh
+    val isLoadingMoreImages: Boolean = false, // Trạng thái đang tải thêm ảnh
+    val translationVersion: Int = 0 // Version tăng lên khi có thay đổi translation mode để force UI update
 )

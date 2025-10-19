@@ -641,6 +641,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     val blockHeight = scaledRect.bottom - scaledRect.top
                                     val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
                                     val textColor = textBlock.customTextColor ?: textBlock.originalTextColor
+                                    
+                                    // Log để debug màu text khi lưu
+                                    Log.d(TAG, "Lưu vào image_blocks - textColor: $textColor (hex: ${String.format("#%08X", textColor ?: 0)})")
+                                    Log.d(TAG, "  customTextColor: ${textBlock.customTextColor} (hex: ${String.format("#%08X", textBlock.customTextColor ?: 0)})")
+                                    Log.d(TAG, "  originalTextColor: ${textBlock.originalTextColor} (hex: ${String.format("#%08X", textBlock.originalTextColor ?: 0)})")
+                                    
                                         insertImageBlock(
                                             imageId = imageId,
                                             x = scaledRect.left,
@@ -1071,6 +1077,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     val value = textCursor.getInt(15)
                     if (textCursor.isNull(15)) null else value
                 } else null
+                
+                // Log để debug màu text
+                if (customTextColor != null) {
+                    Log.d(TAG, "Load từ translations - customTextColor: $customTextColor (hex: ${String.format("#%08X", customTextColor)})")
+                }
+                if (originalTextColor != null) {
+                    Log.d(TAG, "Load từ translations - originalTextColor: $originalTextColor (hex: ${String.format("#%08X", originalTextColor)})")
+                }
+                
                 val overlayAlpha = if (textCursor.columnCount > 16) textCursor.getFloat(16) else 1.0f
                 val textBoldness = if (textCursor.columnCount > 17) textCursor.getFloat(17) else 1.0f
                 val overlaySaturation = if (textCursor.columnCount > 18) textCursor.getFloat(18) else 1.0f
@@ -1089,7 +1104,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val overlayColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_COLOR)) else customOverlayColor ?: averageBackgroundColor
                         val overlayAlphaBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ALPHA)).toFloat() } catch (e: Exception) { overlayAlpha }
                         val overlaySatBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_SATURATION)).toFloat() } catch (e: Exception) { overlaySaturation }
-                        val textColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR)) else customTextColor ?: originalTextColor
+                        
+                        // Ưu tiên customTextColor từ translations, chỉ dùng textColorBlock từ image_blocks nếu khác null
+                        // QUAN TRỌNG: Nếu cả customTextColor và textColorBlock đều null, 
+                        // hãy giữ null để ImageViewer tính toán màu dựa trên brightness của overlay
+                        // KHÔNG nên dùng originalTextColor làm fallback vì nó là màu từ OCR (ảnh gốc), 
+                        // không phải màu dựa trên overlay hiện tại
+                        val textColorFromImageBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR)) else null
+                        val finalTextColor = customTextColor ?: textColorFromImageBlock
+                        // Lưu ý: Không thêm ?: originalTextColor ở đây!
+                        
+                        // Log để debug màu text từ image_blocks
+                        Log.d(TAG, "Load từ image_blocks - finalTextColor: $finalTextColor (hex: ${String.format("#%08X", finalTextColor ?: 0)})")
+                        Log.d(TAG, "  customTextColor: $customTextColor (hex: ${String.format("#%08X", customTextColor ?: 0)})")
+                        Log.d(TAG, "  textColorFromImageBlock: $textColorFromImageBlock (hex: ${String.format("#%08X", textColorFromImageBlock ?: 0)})")
+                        Log.d(TAG, "  originalTextColor: $originalTextColor (hex: ${String.format("#%08X", originalTextColor ?: 0)})")
+                        
                         val textBoldBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_BOLDNESS)).toFloat() } catch (e: Exception) { textBoldness }
                         val textSatBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_SATURATION)).toFloat() } catch (e: Exception) { textSaturation }
                         val rotationBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_ROTATION)).toFloat() } catch (e: Exception) { rotation }
@@ -1110,7 +1140,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             averageBackgroundColor = averageBackgroundColor,
                             originalTextColor = originalTextColor,
                             customOverlayColor = overlayColorBlock,
-                            customTextColor = textColorBlock,
+                            customTextColor = finalTextColor,
                             overlayAlpha = overlayAlphaBlock,
                             textBoldness = textBoldBlock,
                             overlaySaturation = overlaySatBlock,
