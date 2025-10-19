@@ -1159,3 +1159,15 @@ fun DrawScope.drawTranslucentOverlay(
         }
     }
 }
+
+/**
+ * Compute default text color (black or white) based on overlay or average background color brightness.
+ * If both are null, returns black.
+ */
+fun computeDefaultTextColor(overlayColor: Int?, averageBackgroundColor: Int? = null): Int {
+    val base = overlayColor ?: averageBackgroundColor
+    if (base == null) return 0xFF000000.toInt()
+    val opaque = base or 0xFF000000.toInt()
+    val lum = androidx.core.graphics.ColorUtils.calculateLuminance(opaque)
+    return if (lum <= 0.5) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+}
