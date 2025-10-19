@@ -72,9 +72,23 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             // Nếu không phải OFF, tiến hành dịch bình thường
             if (mode != TranslationMode.OFF) {
                 val result = translationRepository.translateImage(uri, mode)
+                // Ensure blocks have overlay/text colors set similarly to queued translations
+                val (originalText, blocks) = result
+                val fixedBlocks = blocks.map { block ->
+                    val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                    val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
+                    block.copy(
+                        customOverlayColor = baseOverlay,
+                        customTextColor = textColor
+                    )
+                }
+                // Debug log to help verify colors applied for retranslateImage
+                fixedBlocks.forEachIndexed { idx, b ->
+                    Log.d(TAG, "[RETRANSLATE] uri=$uri block#$idx overlay=0x${b.customOverlayColor?.toUInt()?.toString(16)} text=0x${b.customTextColor?.toUInt()?.toString(16)} avgBg=${b.averageBackgroundColor}")
+                }
                 _uiState.update {
                     it.copy(
-                        translatedTexts = it.translatedTexts + (uri to result),
+                        translatedTexts = it.translatedTexts + (uri to (originalText to fixedBlocks)),
                         translatedStatus = it.translatedStatus + (uri to true),
                         translationEnabled = true, // Bật hiển thị dịch cho UI nếu cần
                         // Tăng translationVersion để force UI update blocks mới
@@ -322,7 +336,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val fixedTranslations = translations.mapValues { (uri, pair) ->
                     val (originalText, blocks) = pair
                     val fixedBlocks = blocks.map { block ->
-                        if (block.rotation == null) block.copy(rotation = 0f) else block
+                        val withRotation = if (block.rotation == null) block.copy(rotation = 0f) else block
+                        val baseOverlay = withRotation.customOverlayColor ?: 0xFFFFFFFF.toInt()
+                        val textColor = withRotation.customTextColor ?: computeDefaultTextColor(baseOverlay, withRotation.averageBackgroundColor)
+                        withRotation.copy(customOverlayColor = baseOverlay, customTextColor = textColor)
                     }
                     originalText to fixedBlocks
                 }
@@ -408,10 +425,42 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             textCursor.getInt(5)
                         )
                         val fontSize = textCursor.getFloat(6)
+                        // Try to read optional columns (average_background_color, custom_overlay_color, custom_text_color, overlay_alpha, etc.) if present
+                        fun colInt(name: String): Int? {
+                            return try {
+                                val idx = textCursor.getColumnIndex(name)
+                                if (idx >= 0 && !textCursor.isNull(idx)) textCursor.getInt(idx) else null
+                            } catch (e: Exception) { null }
+                        }
+                        fun colFloat(name: String, default: Float): Float {
+                            return try {
+                                val idx = textCursor.getColumnIndex(name)
+                                if (idx >= 0 && !textCursor.isNull(idx)) textCursor.getFloat(idx) else default
+                            } catch (e: Exception) { default }
+                        }
+
+                        val avgBg = colInt("average_background_color")
+                        val customOverlay = colInt("custom_overlay_color")
+                        val customText = colInt("custom_text_color")
+                        val overlayAlpha = colFloat("overlay_alpha", 1.0f)
+                        val textBoldness = colFloat("text_boldness", 1.0f)
+                        val overlaySat = colFloat("overlay_saturation", 1.0f)
+                        val textSat = colFloat("text_saturation", 1.0f)
+
+                        val baseOverlay = customOverlay ?: avgBg ?: 0xFFFFFFFF.toInt()
+                        val textColor = customText ?: computeDefaultTextColor(baseOverlay, avgBg)
+
                         textBlocks.add(TextBlockInfo(
                             text = translatedText,
                             bounds = bounds,
-                            fontSize = fontSize
+                            fontSize = fontSize,
+                            averageBackgroundColor = avgBg,
+                            customOverlayColor = customOverlay ?: avgBg,
+                            customTextColor = customText ?: textColor,
+                            overlayAlpha = overlayAlpha,
+                            textBoldness = textBoldness,
+                            overlaySaturation = overlaySat,
+                            textSaturation = textSat
                         ))
                     }
                     textCursor.close()
@@ -702,14 +751,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val (translatedBlocks, sourceLang) = pair
                 if (uiState.value.imageUris.contains(uri)) {
                     if (original.isNotEmpty() || (translatedBlocks as? List<*>)?.isNotEmpty() == true) {
-                        val fixedBlocks = (translatedBlocks as List<TextBlockInfo>).map { block ->
-                                val baseOverlay = block.customOverlayColor ?: 0xFFFFFFFF.toInt() // overlay mặc định trắng
-                                val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
-                                block.copy(
-                                    customOverlayColor = baseOverlay,
-                                    customTextColor = textColor
-                                )
-                        }
+                                val fixedBlocks = (translatedBlocks as List<TextBlockInfo>).map { block ->
+                                        // Prefer an explicit custom overlay color; otherwise use detected average background color; fallback to white
+                                        val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                                        val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
+                                        block.copy(
+                                            customOverlayColor = baseOverlay,
+                                            customTextColor = textColor
+                                        )
+                                }
+                                // Debug log for batch translated image
+                                fixedBlocks.forEachIndexed { idx, b ->
+                                    Log.d(TAG, "[BATCH_TRANSLATED] uri=$uri block#$idx overlay=0x${b.customOverlayColor?.toUInt()?.toString(16)} text=0x${b.customTextColor?.toUInt()?.toString(16)} avgBg=${b.averageBackgroundColor}")
+                                }
 
                         translatedTexts[uri] = original to fixedBlocks
 

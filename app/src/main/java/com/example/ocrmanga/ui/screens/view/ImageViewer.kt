@@ -107,17 +107,20 @@ fun ImageViewer(
         itemsIndexed(items = imageUris, key = { index, uri -> uri.toString() + "-$index" }) { index, uri ->
             // Luôn ưu tiên translatedTexts mới từ translation mode
             val currentTranslatedBlocks = translatedTexts[uri]?.second?.map { block ->
+                // Ensure overlay/text ints include alpha when converting to Compose Color
+                val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
+                val textInt = (block.customTextColor ?: computeDefaultTextColor(overlayInt, block.averageBackgroundColor)) or 0xFF000000.toInt()
                 DragBlockState(
-                    block = block,
+                    block = block.copy(customOverlayColor = overlayInt, customTextColor = textInt),
                     fontSize = block.fontSize,
                     rotation = block.rotation ?: 0f,
-                    whiteoutColor = block.customOverlayColor?.let { androidx.compose.ui.graphics.Color(it) },
-                    textColor = block.customTextColor?.let { androidx.compose.ui.graphics.Color(it) },
+                    whiteoutColor = androidx.compose.ui.graphics.Color(overlayInt),
+                    textColor = androidx.compose.ui.graphics.Color(textInt),
                     overlayAlpha = block.overlayAlpha,
                     textBoldness = block.textBoldness,
                     overlaySaturation = block.overlaySaturation,
                     textSaturation = block.textSaturation,
-                    textBorderColor = block.customBorderColor?.let { androidx.compose.ui.graphics.Color(it) },
+                    textBorderColor = block.customBorderColor?.let { androidx.compose.ui.graphics.Color(it or 0xFF000000.toInt()) },
                     textBorderThickness = block.borderThickness,
                     textBorderAlpha = block.borderAlpha
                 )
