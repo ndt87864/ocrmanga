@@ -465,7 +465,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             put(COLUMN_BLOCK_FONT_FAMILY, fontFamily)
             put(COLUMN_BLOCK_FONT_SIZE, fontSize)
         }
-        return db.insert(TABLE_IMAGE_BLOCKS, null, values)
+        val id = db.insert(TABLE_IMAGE_BLOCKS, null, values)
+        Log.i(TAG, "Inserted image_block id=$id imageId=$imageId borderColor=${borderColor?.toString() ?: "null"} borderThickness=$borderThickness fontFamily='$fontFamily'")
+        return id
     }
 
     fun getBlocksForImage(imageId: Long): List<com.example.ocrmanga.data.models.ImageBlock> {
@@ -757,6 +759,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             val savedHeight = savedBitmap?.height
                             val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
                             val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
+                            // Remove any existing blocks for this image so we replace with fresh ones
+                            try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
                             textBlocks.forEach { textBlock ->
                                 val origRect = textBlock.bounds
                                 val scaledRect = if (scaleX != 1f || scaleY != 1f) {
@@ -840,6 +844,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     if (translatedTexts.containsKey(uri)) {
                         db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                         translatedTexts[uri]?.let { (originalText, textBlocks) ->
+                            try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
                             // Lấy lại kích thước ảnh đã lưu
                             val imageFile = File(Uri.parse(uriStr).path ?: "")
                             val savedBitmap = android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath)

@@ -746,16 +746,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         dragBlocksMap.forEach { (uri, blocks) ->
             updatedTranslatedTexts[uri] = Pair(
                 updatedTranslatedTexts[uri]?.first ?: "",
-                blocks.map { it.block.copy(
-                    rotation = it.rotation,
-                    shapeType = it.block.shapeType,
-                    customOverlayColor = it.whiteoutColor?.toArgb(),
-                    customTextColor = it.textColor?.toArgb(),
-                    overlayAlpha = it.overlayAlpha,
-                    textBoldness = it.textBoldness,
-                    overlaySaturation = it.overlaySaturation,
-                    textSaturation = it.textSaturation
-                ) }
+                blocks.map { state ->
+                    // copy visual edits from DragBlockState into TextBlockInfo so they persist
+                    val b = state.block
+                    b.copy(
+                        rotation = state.rotation,
+                        shapeType = b.shapeType,
+                        customOverlayColor = state.whiteoutColor?.toArgb() ?: b.customOverlayColor,
+                        customTextColor = state.textColor?.toArgb() ?: b.customTextColor,
+                        overlayAlpha = state.overlayAlpha,
+                        textBoldness = state.textBoldness,
+                        overlaySaturation = state.overlaySaturation,
+                        textSaturation = state.textSaturation,
+                        customBorderColor = state.textBorderColor?.toArgb() ?: b.customBorderColor,
+                        borderThickness = state.textBorderThickness,
+                        borderAlpha = state.textBorderAlpha,
+                        fontSize = state.fontSize ?: b.fontSize
+                    )
+                }
             )
         }
         databaseHelper.updateMangaRoom(roomId, currentState.imageUris, updatedTranslatedTexts)
