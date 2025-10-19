@@ -77,17 +77,17 @@ fun ViewerScreen(
         if (!editTranslationMode) {
             dragBlocksMap.forEach { (uri, blocks) ->
                 viewModel.updateTranslatedBlocks(uri, blocks.map { 
-                    it.block.copy(
+                        it.block.copy(
                         fontSize = it.fontSize ?: it.block.fontSize, // Lưu fontSize đã chỉnh sửa
                         rotation = it.rotation,
                         shapeType = it.block.shapeType,
-                        customOverlayColor = it.whiteoutColor?.toArgb(),
-                        customTextColor = it.textColor?.toArgb(),
+                        customOverlayColor = it.whiteoutColor?.toArgb() ?: it.block.customOverlayColor,
+                        customTextColor = it.textColor?.toArgb() ?: it.block.customTextColor ?: 0xFF000000.toInt(),
                         overlayAlpha = it.overlayAlpha,
                         textBoldness = it.textBoldness,
                         overlaySaturation = it.overlaySaturation,
                         textSaturation = it.textSaturation,
-                        customBorderColor = it.textBorderColor?.toArgb(),
+                        customBorderColor = it.textBorderColor?.toArgb() ?: it.block.customBorderColor,
                         borderThickness = it.textBorderThickness,
                         borderAlpha = it.textBorderAlpha
                     ) 
@@ -280,8 +280,8 @@ fun ViewerScreen(
                                                 fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
                                                 rotation = dragBlock.rotation,
                                                 shapeType = dragBlock.block.shapeType,
-                                                customOverlayColor = dragBlock.whiteoutColor?.toArgb(),
-                                                customTextColor = dragBlock.textColor?.toArgb(),
+                                                customOverlayColor = dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor,
+                                                customTextColor = dragBlock.textColor?.toArgb() ?: dragBlock.block.customTextColor ?: 0xFF000000.toInt(),
                                                 overlayAlpha = dragBlock.overlayAlpha,
                                                 textBoldness = dragBlock.textBoldness,
                                                 overlaySaturation = dragBlock.overlaySaturation,

@@ -453,7 +453,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             put(COLUMN_BLOCK_OVERLAY_BRIGHTNESS, overlayBrightness)
             put(COLUMN_BLOCK_OVERLAY_ALPHA, overlayAlpha)
             put(COLUMN_BLOCK_OVERLAY_SATURATION, overlaySaturation)
-            textColor?.let { put(COLUMN_BLOCK_TEXT_COLOR, it) }
+            put(COLUMN_BLOCK_TEXT_COLOR, textColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
             put(COLUMN_BLOCK_TEXT_BRIGHTNESS, textBrightness)
             put(COLUMN_BLOCK_TEXT_BOLDNESS, textBoldness)
             put(COLUMN_BLOCK_TEXT_SATURATION, textSaturation)
@@ -622,7 +622,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("shape_type", textBlock.shapeType)
                                 put("background_type", textBlock.backgroundType.ordinal)
                                 put("average_background_color", textBlock.averageBackgroundColor)
-                                put("original_text_color", textBlock.originalTextColor)
+                                put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
                                 put("custom_overlay_color", textBlock.customOverlayColor)
                                 put("custom_text_color", textBlock.customTextColor)
                                 put("overlay_alpha", textBlock.overlayAlpha)
@@ -792,7 +792,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("shape_type", textBlock.shapeType)
                                     put("background_type", textBlock.backgroundType.ordinal)
                                     put("average_background_color", textBlock.averageBackgroundColor)
-                                    put("original_text_color", textBlock.originalTextColor)
+                                    put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
                                     put("custom_overlay_color", textBlock.customOverlayColor)
                                     put("custom_text_color", textBlock.customTextColor)
                                     put("overlay_alpha", textBlock.overlayAlpha)
@@ -885,7 +885,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("shape_type", textBlock.shapeType)
                                     put("background_type", textBlock.backgroundType.ordinal)
                                     put("average_background_color", textBlock.averageBackgroundColor)
-                                    put("original_text_color", textBlock.originalTextColor)
+                                    put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
                                     put("custom_overlay_color", textBlock.customOverlayColor)
                                     put("custom_text_color", textBlock.customTextColor)
                                     put("overlay_alpha", textBlock.overlayAlpha)
@@ -899,7 +899,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                         val blockWidth = scaledRect.right - scaledRect.left
                                         val blockHeight = scaledRect.bottom - scaledRect.top
                                         val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
-                                        val textColor = textBlock.customTextColor ?: textBlock.originalTextColor
+                                        val textColor = textBlock.customTextColor ?: (textBlock.originalTextColor ?: 0xFF000000.toInt())
                                         insertImageBlock(
                                             imageId = imageId,
                                             x = scaledRect.left,
@@ -1110,9 +1110,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         // hãy giữ null để ImageViewer tính toán màu dựa trên brightness của overlay
                         // KHÔNG nên dùng originalTextColor làm fallback vì nó là màu từ OCR (ảnh gốc), 
                         // không phải màu dựa trên overlay hiện tại
-                        val textColorFromImageBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR)) else null
-                        val finalTextColor = customTextColor ?: textColorFromImageBlock
-                        // Lưu ý: Không thêm ?: originalTextColor ở đây!
+                        val textColorFromImageBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR))) {
+                            val color = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR))
+                            if (color != 0) color else null // Nếu là 0, coi là null (không được lưu)
+                        } else null
+                        val finalTextColor = customTextColor ?: textColorFromImageBlock ?: originalTextColor ?: 0xFF000000.toInt() // Mặc định màu đen
                         
                         // Log để debug màu text từ image_blocks
                         Log.d(TAG, "Load từ image_blocks - finalTextColor: $finalTextColor (hex: ${String.format("#%08X", finalTextColor ?: 0)})")
