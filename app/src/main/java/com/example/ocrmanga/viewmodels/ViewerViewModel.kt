@@ -767,7 +767,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         rotation = state.rotation,
                         shapeType = b.shapeType,
                         customOverlayColor = state.whiteoutColor?.toArgb() ?: b.customOverlayColor,
-                        customTextColor = state.textColor?.toArgb() ?: b.customTextColor,
+                        customTextColor = state.textColor?.toArgb() ?: b.customTextColor ?: 0xFF000000.toInt(),
                         overlayAlpha = state.overlayAlpha,
                         textBoldness = state.textBoldness,
                         overlaySaturation = state.overlaySaturation,

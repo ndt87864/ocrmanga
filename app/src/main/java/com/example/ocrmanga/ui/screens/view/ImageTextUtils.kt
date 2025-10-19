@@ -1051,6 +1051,9 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
             val textAvgA = textTotalA / textSamples.size
             
             textColor = (textAvgA shl 24) or (textAvgR shl 16) or (textAvgG shl 8) or textAvgB
+        } else {
+            // Nếu không lấy được mẫu text, mặc định màu đen (0xFF000000)
+            textColor = 0xFF000000.toInt()
         }
 
         val backgroundType = when {
@@ -1067,7 +1070,8 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
         return Triple(backgroundType, if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor else null, textColor)
         
     } catch (e: Exception) {
-        return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
+        // Nếu xảy ra exception, mặc định màu đen (0xFF000000)
+        return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, 0xFF000000.toInt())
     }
 }
 
