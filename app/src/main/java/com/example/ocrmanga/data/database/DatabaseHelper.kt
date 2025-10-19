@@ -950,6 +950,205 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
+    /**
+     * Update only a subset of images (by their URIs) for an existing room.
+     * This avoids reprocessing all images when user only edited some images.
+     * dirtyUris: list of original URIs that were edited (these should match the input imageUris values)
+     */
+    fun updateMangaRoomSelective(
+        roomId: Long,
+        imageUris: List<Uri>,
+        translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>,
+        dirtyUris: List<Uri>,
+        callerUriToImageId: Map<Uri, Long>
+    ): Boolean {
+        if (imageUris.isEmpty()) return false
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            // build map uri->imageId for images belonging to this room
+            val imageIdMap = mutableMapOf<String, Long>()
+            // start with caller-provided mapping (if available) to improve matching
+            callerUriToImageId.forEach { (k, v) -> imageIdMap[k.toString()] = v }
+            val cursor = db.rawQuery("SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
+            while (cursor.moveToNext()) {
+                val imageId = cursor.getLong(0)
+                val uri = cursor.getString(1)
+                imageIdMap[uri] = imageId
+            }
+            cursor.close()
+
+            // Update display order and is_translated flags for all images
+            imageUris.forEachIndexed { index, uri ->
+                val uriStr = uri.toString()
+                val isTranslated = if (translatedTexts.containsKey(uri)) 1 else 0
+                val imageId = imageIdMap[uriStr]
+                if (imageId != null) {
+                    val imageValues = ContentValues().apply {
+                        put(COLUMN_DISPLAY_ORDER, index)
+                        put(COLUMN_IS_TRANSLATED, isTranslated)
+                    }
+                    db.update(TABLE_IMAGES, imageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                }
+            }
+
+            // Prepare images directory reference for potential new images
+            val imagesDir = File(appContext.getExternalFilesDir(null), "images/$roomId")
+            imagesDir.mkdirs()
+
+            // For each dirty uri, delete and re-insert translations + image_blocks
+            dirtyUris.forEach { dirtyUri ->
+                val uriStr = dirtyUri.toString()
+                var imageId = imageIdMap[uriStr]
+                Log.d(TAG, "Selective save: processing dirtyUri=$uriStr initialImageId=$imageId")
+                // Fallback: sometimes UI URI and stored image URI differ (content:// vs file://)
+                // Try to match by lastPathSegment / filename
+                if (imageId == null) {
+                    try {
+                        val fileName = Uri.parse(uriStr).lastPathSegment ?: java.io.File(uriStr).name
+                        val entry = imageIdMap.entries.find { (k, _) ->
+                            val kName = try { Uri.parse(k).lastPathSegment ?: java.io.File(k).name } catch (e: Exception) { java.io.File(k).name }
+                            k == uriStr || kName == fileName || k.endsWith(fileName)
+                        }
+                        if (entry != null) imageId = entry.value
+                    } catch (e: Exception) {
+                        // ignore
+                    }
+                }
+
+                // If imageId is null, treat this as a new image: copy into room folder and insert into images
+                if (imageId == null) {
+                    try {
+                        val index = imageUris.indexOf(dirtyUri).coerceAtLeast(0)
+                        val fileName = "image_${index}.jpg"
+                        val newFile = copyImageToInternalStorage(dirtyUri, imagesDir, fileName)
+                        val newUri = if (newFile != null && newFile.exists()) Uri.fromFile(newFile) else dirtyUri
+                        val imageValues = ContentValues().apply {
+                            put(COLUMN_ROOM_ID, roomId)
+                            put(COLUMN_IMAGE_URI, newUri.toString())
+                            put(COLUMN_DISPLAY_ORDER, index)
+                            put(COLUMN_IS_TRANSLATED, if (translatedTexts.containsKey(dirtyUri)) 1 else 0)
+                        }
+                        val insertedImageId = db.insert(TABLE_IMAGES, null, imageValues)
+                        if (insertedImageId != -1L) {
+                            imageId = insertedImageId
+                            imageIdMap[newUri.toString()] = imageId
+                            Log.i(TAG, "Inserted new image for dirtyUri=$uriStr as imageId=$imageId newUri=$newUri")
+                            // remove original file if necessary
+                            try { deleteOriginalImage(dirtyUri) } catch (e: Exception) { /* ignore */ }
+                        } else {
+                            Log.e(TAG, "Không thể chèn ảnh mới cho uri $uriStr vào phòng $roomId")
+                            // skip processing this dirtyUri
+                            return@forEach
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Lỗi khi chèn ảnh mới cho uri $uriStr", e)
+                        return@forEach
+                    }
+                }
+                Log.d(TAG, "Selective save: resolved imageId=$imageId for dirtyUri=$uriStr")
+
+                // delete existing translations and image_blocks for this imageId
+                db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
+
+                // insert new translations if present
+                translatedTexts[dirtyUri]?.let { (originalText, textBlocks) ->
+                    // find saved file size info if needed
+                    val imageFile = File(Uri.parse((imageIdMap.entries.find { it.value == imageId }?.key) ?: uriStr).path ?: "")
+                    val savedBitmap = android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath)
+                    val savedWidth = savedBitmap?.width
+                    val savedHeight = savedBitmap?.height
+
+                    textBlocks.forEach { textBlock ->
+                        val origRect = textBlock.bounds
+                        // Attempt to scale if original sizes provided
+                        val originalWidth = textBlock.originalImageWidth
+                        val originalHeight = textBlock.originalImageHeight
+                        val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
+                        val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
+                        val scaledRect = if (scaleX != 1f || scaleY != 1f) {
+                            android.graphics.Rect(
+                                (origRect.left * scaleX).toInt(),
+                                (origRect.top * scaleY).toInt(),
+                                (origRect.right * scaleX).toInt(),
+                                (origRect.bottom * scaleY).toInt()
+                            )
+                        } else origRect
+
+                        val textValues = ContentValues().apply {
+                            put(COLUMN_IMAGE_ID, imageId)
+                            put("original_text", originalText)
+                            put("translated_text", textBlock.text)
+                            put("bounds_left", scaledRect.left)
+                            put("bounds_top", scaledRect.top)
+                            put("bounds_right", scaledRect.right)
+                            put("bounds_bottom", scaledRect.bottom)
+                            put("font_size", textBlock.fontSize)
+                            put("rotation", textBlock.rotation ?: 0f)
+                            put("original_image_width", savedWidth)
+                            put("original_image_height", savedHeight)
+                            put("shape_type", textBlock.shapeType)
+                            put("background_type", textBlock.backgroundType.ordinal)
+                            put("average_background_color", textBlock.averageBackgroundColor)
+                            put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt())
+                            put("custom_overlay_color", textBlock.customOverlayColor)
+                            put("custom_text_color", textBlock.customTextColor)
+                            put("overlay_alpha", textBlock.overlayAlpha)
+                            put("text_boldness", textBlock.textBoldness)
+                            put("overlay_saturation", textBlock.overlaySaturation)
+                            put("text_saturation", textBlock.textSaturation)
+                        }
+                        val inserted = db.insert("translations", null, textValues)
+                            if (inserted != -1L) {
+                                Log.d(TAG, "Inserted translation for imageId=$imageId bounds=${scaledRect.left},${scaledRect.top},${scaledRect.right},${scaledRect.bottom}")
+                            try {
+                                val blockWidth = scaledRect.right - scaledRect.left
+                                val blockHeight = scaledRect.bottom - scaledRect.top
+                                val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
+                                val textColor = textBlock.customTextColor ?: textBlock.originalTextColor
+                                insertImageBlock(
+                                    imageId = imageId,
+                                    x = scaledRect.left,
+                                    y = scaledRect.top,
+                                    width = blockWidth,
+                                    height = blockHeight,
+                                    overlayType = textBlock.shapeType,
+                                    overlayColor = overlayColor,
+                                    overlayBrightness = 1.0f,
+                                    overlayAlpha = textBlock.overlayAlpha,
+                                    overlaySaturation = textBlock.overlaySaturation,
+                                    textColor = textColor,
+                                    textBrightness = 1.0f,
+                                    textBoldness = textBlock.textBoldness,
+                                    textSaturation = textBlock.textSaturation,
+                                    borderColor = textBlock.customBorderColor,
+                                    borderBrightness = 1.0f,
+                                    borderBoldness = textBlock.borderAlpha,
+                                    borderThickness = textBlock.borderThickness,
+                                    rotation = textBlock.rotation ?: 0f,
+                                    fontFamily = textBlock.fontFamily,
+                                    fontSize = textBlock.fontSize
+                                )
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
+                            }
+                        }
+                    }
+                    savedBitmap?.recycle()
+                }
+            }
+
+            db.setTransactionSuccessful()
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Lỗi khi cập nhật phòng selective $roomId", e)
+            return false
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     private fun copyImageToInternalStorage(originalUri: Uri, directory: File, fileName: String): File? {
         return try {
             val newFile = File(directory, fileName)

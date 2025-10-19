@@ -89,6 +89,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translatedStatus = it.translatedStatus + (uri to true)
             )
         }
+        // Mark this uri as dirty (edited) so later saveRoom can update only changed images
+        dirtyUris.add(uri)
         //log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${updatedBlocks.size} blocks")
         updatedBlocks.forEachIndexed { idx, block ->
             //log.i(TAG, "[UPDATE] Block[$idx] rotation=${block.rotation} text='${block.text}' uri=$uri")
@@ -105,6 +107,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private val galleryViewModel = GalleryViewModel(application)
     private val newImageUris = mutableListOf<Uri>()
     private val translationQueue = ConcurrentLinkedQueue<Uri>()
+    // Track which image URIs were edited since last save
+    private val dirtyUris = mutableSetOf<Uri>()
+    // Map from URI (string) to image_id in DB for current loaded room
+    private val uriToImageId = mutableMapOf<Uri, Long>()
     private var translationJob: Job? = null
     private var timerJob: Job? = null
     companion object {
@@ -270,7 +276,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val db = databaseHelper.readableDatabase
                 val cursor = db.rawQuery(
                     """
-                    SELECT ${DatabaseHelper.COLUMN_IMAGE_URI}, ${DatabaseHelper.COLUMN_IS_TRANSLATED} 
+                    SELECT ${DatabaseHelper.COLUMN_IMAGE_ID}, ${DatabaseHelper.COLUMN_IMAGE_URI}, ${DatabaseHelper.COLUMN_IS_TRANSLATED} 
                     FROM ${DatabaseHelper.TABLE_IMAGES} 
                     WHERE ${DatabaseHelper.COLUMN_ROOM_ID} = ? 
                     ORDER BY ${DatabaseHelper.COLUMN_DISPLAY_ORDER} 
@@ -279,9 +285,23 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 )
 
                 while (cursor.moveToNext()) {
-                    val uri = Uri.parse(cursor.getString(0))
-                    val isTranslated = cursor.getInt(1) == 1
+                    val imageId = cursor.getLong(0)
+                    val uriStr = cursor.getString(1)
+                    val isTranslated = cursor.getInt(2) == 1
+                    val uri = Uri.parse(uriStr)
                     translatedStatus[uri] = isTranslated
+                    // populate map for later selective save
+                    uriToImageId[uri] = imageId
+                    try {
+                        uriToImageId[Uri.parse(uriStr)] = imageId
+                    } catch (e: Exception) { /* ignore */ }
+                    // also index by lastPathSegment / filename to help match content:// vs file://
+                    try {
+                        val last = Uri.parse(uriStr).lastPathSegment
+                        if (!last.isNullOrBlank()) {
+                            uriToImageId[Uri.fromParts("filename", last, null)] = imageId
+                        }
+                    } catch (e: Exception) { /* ignore */ }
                 }
                 cursor.close()
 
@@ -519,11 +539,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 val roomId: Long = if (currentRoomId != null) {
                     // Nếu đã có roomId, update phòng
-                    val updated = databaseHelper.updateMangaRoom(
-                        currentRoomId,
-                        uniqueImageUris,
-                        uniqueTranslatedTexts
-                    )
+                    val updated: Boolean = if (dirtyUris.isNotEmpty()) {
+                        // chỉ update những ảnh đã thay đổi
+                        // Log để debug mapping URI -> imageId
+                        Log.d(TAG, "Selective save triggered. dirtyUris=${dirtyUris.map { it.toString() }}")
+                        Log.d(TAG, "uriToImageId map contents: ${uriToImageId.entries.joinToString { "${it.key}=>${it.value}" }}")
+                        val ok = databaseHelper.updateMangaRoomSelective(currentRoomId, uniqueImageUris, uniqueTranslatedTexts, dirtyUris.toList(), uriToImageId)
+                        if (ok) dirtyUris.clear()
+                        ok
+                    } else {
+                        databaseHelper.updateMangaRoom(currentRoomId, uniqueImageUris, uniqueTranslatedTexts)
+                    }
                     if (updated) currentRoomId else -1L
                 } else {
                     // Nếu chưa có roomId, tạo phòng mới
@@ -794,7 +820,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             )
         }
-        databaseHelper.updateMangaRoom(roomId, currentState.imageUris, updatedTranslatedTexts)
+        // If room already exists, update selectively by image_id for only edited images
+        if (dirtyUris.isNotEmpty() && uiState.value.roomId != null) {
+            Log.d(TAG, "saveRoom selective: dirtyUris=${dirtyUris.map { it.toString() }}")
+            Log.d(TAG, "saveRoom uriToImageId=${uriToImageId.entries.joinToString { "${it.key}=>${it.value}" }}")
+            databaseHelper.updateMangaRoomSelective(roomId, currentState.imageUris, updatedTranslatedTexts, dirtyUris.toList(), uriToImageId)
+            // clear dirty set after saving
+            dirtyUris.clear()
+        } else {
+            databaseHelper.updateMangaRoom(roomId, currentState.imageUris, updatedTranslatedTexts)
+        }
     }
 }
 
