@@ -159,16 +159,43 @@ fun Dialogs(
                                 .fillMaxWidth()
                                 .clickable {
                                     val uri = imageMenuUri
+                                    // Check API key availability for Gemini and Mistral modes
+                                    if (mode == TranslationMode.GEMINI && !viewModel.hasGeminiApiKeys()) {
+                                        Toast.makeText(
+                                            context,
+                                            "Không có API key Gemini. Vui lòng thêm ít nhất một API key Gemini trong cài đặt để dùng tính năng dịch Gemini.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        onImageMenuDismiss()
+                                        return@clickable
+                                    }
+                                    if (mode == TranslationMode.MISTRAL && !viewModel.hasMistralApiKeys()) {
+                                        Toast.makeText(
+                                            context,
+                                            "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        onImageMenuDismiss()
+                                        return@clickable
+                                    }
+
                                     if (uri != null) {
+                                        // Mark whether we actually started a retranslation (viewModel may reject if no keys)
+                                        var started = false
                                         Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
+                                        // Call onRetranslateImage; the ViewModel will early-return and show its own Toast
                                         onRetranslateImage(uri, mode)
-                                        coroutineScope.launch {
-                                            while (true) {
-                                                val status = viewModel.uiState.value.translatedStatus[uri]
-                                                if (status == true) break
-                                                delay(200)
+                                        started = true
+
+                                        if (started) {
+                                            coroutineScope.launch {
+                                                while (true) {
+                                                    val status = viewModel.uiState.value.translatedStatus[uri]
+                                                    if (status == true) break
+                                                    delay(200)
+                                                }
+                                                Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
                                             }
-                                            Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                     onImageMenuDismiss()

@@ -48,6 +48,15 @@ import com.example.ocrmanga.ui.screens.view.analyzeBackgroundAndTextColor
 
 class TranslationRepository(private val application: Application) {
 
+    // Public helpers so UI/ViewModel can check availability of API keys
+    fun hasGeminiApiKeys(): Boolean {
+        return geminiApiKeys.isNotEmpty()
+    }
+
+    fun hasMistralApiKeys(): Boolean {
+        return mistralApiKeys.isNotEmpty()
+    }
+
     // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
     suspend fun translateImage(imageUri: Uri, mode: TranslationMode): Pair<String, List<TextBlockInfo>> {
         val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode)
@@ -66,7 +75,7 @@ class TranslationRepository(private val application: Application) {
     private var geminiApiKeys: List<String> = emptyList()
     private var currentGeminiKeyIndex = 0
     private var currentGeminiModelIndex = 0
-    private val geminiModels = listOf("gemini-2.0-flash-lite","gemini-2.0-flash", "gemini-2.5-flash") // Add more models if needed
+    private val geminiModels = listOf("gemini-2.0-flash", "gemini-2.5-flash") // Add more models if needed
 
     // Mistral API keys
     private var mistralApiKeys: List<String> = emptyList()
@@ -313,6 +322,30 @@ class TranslationRepository(private val application: Application) {
         // Reset Toast flag at the start of each batch
         if (mode == TranslationMode.MISTRAL) {
             mistralErrorToastShown = false
+        }
+
+        // Early check: if user selected Gemini or Mistral mode but there are no API keys in DB,
+        // notify immediately and skip long-running OCR/translation work.
+        if (mode == TranslationMode.GEMINI && geminiApiKeys.isEmpty()) {
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    application,
+                    "Không có API key Gemini. Vui lòng thêm ít nhất một API key Gemini trong cài đặt để dùng tính năng dịch Gemini.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+            return@withContext Triple("", emptyList(), "zh")
+        }
+
+        if (mode == TranslationMode.MISTRAL && mistralApiKeys.isEmpty()) {
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    application,
+                    "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+            return@withContext Triple("", emptyList(), "zh")
         }
 
         val cacheKey = "$imageUri-$mode"
