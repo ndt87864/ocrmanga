@@ -97,10 +97,15 @@ fun ViewerScreen(
     }
 
     // Initialize dragBlocksMap for all uris from translatedTexts
-    LaunchedEffect(uiState.imageUris, uiState.translatedTexts) {
+    // Ưu tiên dữ liệu mới từ translation mode thay vì giữ nguyên dragBlocksMap cũ
+    LaunchedEffect(uiState.imageUris, uiState.translatedTexts, uiState.translationVersion) {
         uiState.imageUris.forEach { uri ->
-            if (!dragBlocksMap.containsKey(uri)) {
-                val blocks = uiState.translatedTexts[uri]?.second?.map { block ->
+            val currentTranslatedBlocks = uiState.translatedTexts[uri]?.second
+            
+            // Luôn cập nhật dragBlocksMap từ translatedTexts mới
+            // Nếu không có translatedTexts (mode OFF), xóa blocks
+            if (currentTranslatedBlocks != null) {
+                val blocks = currentTranslatedBlocks.map { block ->
                     DragBlockState(
                         block = block,
                         offset = androidx.compose.ui.geometry.Offset.Zero,
@@ -116,8 +121,11 @@ fun ViewerScreen(
                         textBorderThickness = block.borderThickness,
                         textBorderAlpha = block.borderAlpha
                     )
-                } ?: emptyList()
+                }
                 dragBlocksMap[uri] = blocks
+            } else {
+                // Xóa blocks khi tắt dịch
+                dragBlocksMap.remove(uri)
             }
         }
     }

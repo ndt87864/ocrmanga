@@ -105,31 +105,32 @@ fun ImageViewer(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         itemsIndexed(items = imageUris, key = { index, uri -> uri.toString() + "-$index" }) { index, uri ->
-            val initialBlocks = dragBlocksMap[uri]
-                ?: translatedTexts[uri]?.second?.map { block ->
-                    // Luôn dùng cỡ chữ gốc khi vào edit mode
-                    DragBlockState(
-                        block = block,
-                        fontSize = block.fontSize,
-                        rotation = block.rotation ?: 0f,
-                        whiteoutColor = block.customOverlayColor?.let { androidx.compose.ui.graphics.Color(it) },
-                        textColor = block.customTextColor?.let { androidx.compose.ui.graphics.Color(it) },
-                        overlayAlpha = block.overlayAlpha,
-                        textBoldness = block.textBoldness,
-                        overlaySaturation = block.overlaySaturation,
-                        textSaturation = block.textSaturation,
-                        textBorderColor = block.customBorderColor?.let { androidx.compose.ui.graphics.Color(it) },
-                        textBorderThickness = block.borderThickness,
-                        textBorderAlpha = block.borderAlpha
-                    )
-                } ?: emptyList()
+            // Luôn ưu tiên translatedTexts mới từ translation mode
+            val currentTranslatedBlocks = translatedTexts[uri]?.second?.map { block ->
+                DragBlockState(
+                    block = block,
+                    fontSize = block.fontSize,
+                    rotation = block.rotation ?: 0f,
+                    whiteoutColor = block.customOverlayColor?.let { androidx.compose.ui.graphics.Color(it) },
+                    textColor = block.customTextColor?.let { androidx.compose.ui.graphics.Color(it) },
+                    overlayAlpha = block.overlayAlpha,
+                    textBoldness = block.textBoldness,
+                    overlaySaturation = block.overlaySaturation,
+                    textSaturation = block.textSaturation,
+                    textBorderColor = block.customBorderColor?.let { androidx.compose.ui.graphics.Color(it) },
+                    textBorderThickness = block.borderThickness,
+                    textBorderAlpha = block.borderAlpha
+                )
+            } ?: emptyList()
+            
             var dragBlocks by remember(uri, translationVersion, translatedTexts[uri]) {
-                mutableStateOf(initialBlocks)
+                mutableStateOf(currentTranslatedBlocks)
             }
-            LaunchedEffect(uri, translatedTexts[uri]) {
+            
+            // Cập nhật dragBlocks khi translatedTexts thay đổi (do dịch mới)
+            LaunchedEffect(uri, translatedTexts[uri], translationVersion) {
                 if (!editTranslationMode) {
-                // 🔹 Chỉ cập nhật khi chưa có dữ liệu trong dragBlocksMap (tránh ghi đè fontSize mới chỉnh)
-                if (dragBlocksMap[uri].isNullOrEmpty()) {
+                    // Luôn cập nhật từ translatedTexts mới, không kiểm tra dragBlocksMap
                     val newBlocks = translatedTexts[uri]?.second?.map {
                         DragBlockState(
                             block = it,
@@ -149,10 +150,7 @@ fun ImageViewer(
                     dragBlocks = newBlocks
                     dragBlocksMap[uri] = newBlocks
                     newlyTranslated[uri] = true
-
                 }
-            }
-
             }
             LaunchedEffect(dragBlocks) {
                 dragBlocksMap[uri] = dragBlocks
@@ -472,26 +470,31 @@ fun ImageViewer(
                                             val textTop = rect.top + rect.height * textPadding
                                             val textWidth = rect.width * (1 - 2 * textPadding)
                                             val textHeight = rect.height * (1 - 2 * textPadding)
-                                            // Xác định màu text - ưu tiên màu tùy chỉnh với saturation
+                                            // Xác định màu text - ưu tiên màu tùy chỉnh
                                             val baseTextColor = when {
                                                 i == draggingIndex -> Color.Red
                                                 customTextColor != null -> customTextColor
                                                 else -> {
-                                                    // Tính độ sáng của overlay background
+                                                    // Khi chưa set màu custom, tính toán dựa trên brightness của overlay
+                                                    // Lấy overlay color (ưu tiên whiteoutColor, fallback sang averageBackgroundColor)
                                                     val overlayColor = if (region.whiteoutColor != null) {
                                                         region.whiteoutColor.toArgb()
                                                     } else {
                                                         block.averageBackgroundColor
                                                     }
+                                                    
                                                     if (overlayColor != null) {
+                                                        // Tính brightness sử dụng công thức chuẩn RGB
                                                         val r = (overlayColor shr 16) and 0xFF
                                                         val g = (overlayColor shr 8) and 0xFF
                                                         val b = overlayColor and 0xFF
-                                                        val brightness = (r + g + b) / 3
-                                                        // Sử dụng text đen nếu nền sáng, text trắng nếu nền tối
-                                                        if (brightness > 127) Color.Black else Color.White
+                                                        val brightness = (r * 299 + g * 587 + b * 114) / 1000
+                                                        
+                                                        // Sử dụng text đen cho overlay sáng (brightness > 128)
+                                                        // Sử dụng text trắng cho overlay tối (brightness <= 128)
+                                                        if (brightness > 128) Color.Black else Color.White
                                                     } else {
-                                                        // Mặc định cho nền trắng
+                                                        // Mặc định cho nền trắng -> text đen
                                                         Color.Black
                                                     }
                                                 }
