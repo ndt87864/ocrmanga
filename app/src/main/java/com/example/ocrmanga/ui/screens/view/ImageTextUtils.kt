@@ -26,6 +26,34 @@ import android.content.Context
 
 // Image and text region utilities extracted from ViewerScreen.kt
 
+// Resolve font file name from a logical font family name used in the app
+private fun resolveFontFile(fontFamilyName: String?): String {
+    return when (fontFamilyName) {
+        // MTO fonts used in drawText
+        "mto_astro_city" -> "mto_astro_city.ttf"
+        "mto_augie" -> "mto_augie.ttf"
+        "mto_chancery" -> "mto_chancery.ttf"
+        "mto_chranko" -> "mto_chranko.ttf"
+        "mto_comic_1" -> "mto_comic_1.ttf"
+        "mto_comic_2" -> "mto_comic_2.ttf"
+        "mto_dom" -> "mto_dom.ttf"
+        "mto_mikes" -> "mto_mikes.ttf"
+        "mto_sans" -> "mto_sans.ttf"
+        "mto_shadow" -> "mto_shadow.ttf"
+        // SF Toontime family names used elsewhere
+        "SF Toontime B" -> "SF Toontime B.ttf"
+        "SF Toontime B Italic" -> "SF Toontime B Italic.ttf"
+        "SF Toontime Blotch Bold" -> "SF Toontime Blotch Bold.ttf"
+        "SF Toontime Blotch Bold Italic" -> "SF Toontime Blotch Bold Italic.ttf"
+        "SF Toontime Extended" -> "SF Toontime Extended.ttf"
+        "SF Toontime Extended Italic" -> "SF Toontime Extended Italic.ttf"
+        "SF Toontime Extended Bold" -> "SF Toontime Extended Bold.ttf"
+        "SF Toontime Extended Bold Italic" -> "SF Toontime Extended Bold Italic.ttf"
+        else -> "mto_astro_city.ttf"
+    }
+}
+
+
 fun getImageDimensions(context: Context, uri: Uri): Pair<Int, Int> {
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     try {
@@ -296,13 +324,14 @@ fun calculateOptimalFontSize(
 
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
-        // Load font để tính toán chính xác
+        // Load font to compute accurate metrics for the requested fontFamilyName
         context?.let {
             try {
-                val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/sf_toontime_b.ttf")
+                val fontFile = resolveFontFile(fontFamilyName)
+                val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/$fontFile")
                 if (typeface != null) this.typeface = typeface
             } catch (e: Exception) {
-                // Use default typeface
+                // Use default typeface on error
             }
         }
     }
@@ -319,7 +348,7 @@ fun calculateOptimalFontSize(
     repeat(12) {
         val mid = (low + high) / 2
         paint.textSize = mid
-        val wrappedLines = wrapText(text, width * widthScale, mid, context, fontFamilyName)
+                val wrappedLines = wrapText(text, width * widthScale, mid, context, fontFamilyName)
         val fontMetrics = paint.fontMetrics
         val lineHeight = fontMetrics.descent - fontMetrics.ascent
         val textHeight = wrappedLines.size * lineHeight
@@ -505,17 +534,7 @@ fun DrawScope.drawText(
         this.textSize = fontSize
         context?.let {
             try {
-                val fontFile = when (fontFamilyName) {
-                    "SF Toontime B" -> "SF Toontime B.ttf"
-                    "SF Toontime B Italic" -> "SF Toontime B Italic.ttf"
-                    "SF Toontime Blotch Bold" -> "SF Toontime Blotch Bold.ttf"
-                    "SF Toontime Blotch Bold Italic" -> "SF Toontime Blotch Bold Italic.ttf"
-                    "SF Toontime Extended" -> "SF Toontime Extended.ttf"
-                    "SF Toontime Extended Italic" -> "SF Toontime Extended Italic.ttf"
-                    "SF Toontime Extended Bold" -> "SF Toontime Extended Bold.ttf"
-                    "SF Toontime Extended Bold Italic" -> "SF Toontime Extended Bold Italic.ttf"
-                    else -> "SF Toontime B.ttf"
-                }
+                val fontFile = resolveFontFile(fontFamilyName)
                 val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/$fontFile")
                 if (typeface != null) this.typeface = typeface
             } catch (e: Exception) {
@@ -546,20 +565,10 @@ fun DrawScope.drawText(
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.LEFT
-        // Sử dụng font Anime Ace BB để đo text chính xác
+        // Use resolved font file for measuring text width/bounds so different fonts produce correct sizes
         context?.let {
             try {
-                val fontFile = when (fontFamilyName) {
-                    "SF Toontime B" -> "SF Toontime B.ttf"
-                    "SF Toontime B Italic" -> "SF Toontime B Italic.ttf"
-                    "SF Toontime Blotch Bold" -> "SF Toontime Blotch Bold.ttf"
-                    "SF Toontime Blotch Bold Italic" -> "SF Toontime Blotch Bold Italic.ttf"
-                    "SF Toontime Extended" -> "SF Toontime Extended.ttf"
-                    "SF Toontime Extended Italic" -> "SF Toontime Extended Italic.ttf"
-                    "SF Toontime Extended Bold" -> "SF Toontime Extended Bold.ttf"
-                    "SF Toontime Extended Bold Italic" -> "SF Toontime Extended Bold Italic.ttf"
-                    else -> "SF Toontime B.ttf"
-                }
+                val fontFile = resolveFontFile(fontFamilyName)
                 val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/$fontFile")
                 if (typeface != null) this.typeface = typeface
             } catch (e: Exception) {
