@@ -95,6 +95,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         translationVersion = it.translationVersion + 1
                     )
                 }
+                // Mark as dirty and set DB change flag if this image belongs to a saved room
+                dirtyUris.add(uri)
+                val rid = _uiState.value.roomId
+                val imageId = uriToImageId[uri]
+                if (rid != null && imageId != null) {
+                    try { databaseHelper.markImageChanged(imageId, rid) } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
+                }
             }
             stopTranslationTimer()
         }
@@ -118,6 +125,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         // Mark this uri as dirty (edited) so later saveRoom can update only changed images
         dirtyUris.add(uri)
+        // Also mark DB change flag if this URI is associated with a saved image
+        val rid = _uiState.value.roomId
+        val imageId = uriToImageId[uri]
+        if (rid != null && imageId != null) {
+            try { databaseHelper.markImageChanged(imageId, rid) } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
+        }
         //log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${updatedBlocks.size} blocks")
         updatedBlocks.forEachIndexed { idx, block ->
             //log.i(TAG, "[UPDATE] Block[$idx] rotation=${block.rotation} text='${block.text}' uri=$uri")
@@ -482,20 +495,86 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         val overlaySat = colFloat("overlay_saturation", 1.0f)
                         val textSat = colFloat("text_saturation", 1.0f)
 
+                        // Try to find image_id for this uri and then check image_blocks overrides for persistent styling
                         val baseOverlay = customOverlay ?: avgBg ?: 0xFFFFFFFF.toInt()
-                        val textColor = customText ?: computeDefaultTextColor(baseOverlay, avgBg)
+                        val textColorFallback = customText ?: computeDefaultTextColor(baseOverlay, avgBg)
+
+                        // Resolve image_id for this uri (there should be only one)
+                        var foundImageId: Long? = null
+                        try {
+                            val c2 = db.rawQuery("SELECT ${DatabaseHelper.COLUMN_IMAGE_ID} FROM ${DatabaseHelper.TABLE_IMAGES} WHERE ${DatabaseHelper.COLUMN_IMAGE_URI} = ? LIMIT 1", arrayOf(uri.toString()))
+                            if (c2.moveToFirst()) {
+                                foundImageId = c2.getLong(0)
+                            }
+                            c2.close()
+                        } catch (e: Exception) { /* ignore */ }
+
+                        var finalOverlay = customOverlay ?: avgBg
+                        var finalTextColor = if (customText != null) customText else textColorFallback
+                        var finalOverlayAlpha = overlayAlpha
+                        var finalTextBold = textBoldness
+                        var finalOverlaySat = overlaySat
+                        var finalFontSize = fontSize
+                        var finalRotation: Float? = null
+                        var finalShapeType = 0
+                        var finalBorderColor: Int? = null
+                        var finalBorderThickness = 0f
+                        var finalFontFamily: String? = null
+
+                        if (foundImageId != null) {
+                            try {
+                                val bw = bounds.right - bounds.left
+                                val bh = bounds.bottom - bounds.top
+                                val blockCursor = db.rawQuery(
+                                    "SELECT * FROM ${DatabaseHelper.TABLE_IMAGE_BLOCKS} WHERE ${DatabaseHelper.COLUMN_BLOCK_IMAGE_ID} = ? AND ${DatabaseHelper.COLUMN_BLOCK_X} = ? AND ${DatabaseHelper.COLUMN_BLOCK_Y} = ? AND ${DatabaseHelper.COLUMN_BLOCK_WIDTH} = ? AND ${DatabaseHelper.COLUMN_BLOCK_HEIGHT} = ?",
+                                    arrayOf(foundImageId.toString(), bounds.left.toString(), bounds.top.toString(), bw.toString(), bh.toString())
+                                )
+                                if (blockCursor.moveToFirst()) {
+                                    // read overrides from image_blocks
+                                    val overlayColorBlockIdx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_OVERLAY_COLOR)
+                                    if (!blockCursor.isNull(overlayColorBlockIdx)) finalOverlay = blockCursor.getInt(overlayColorBlockIdx)
+                                    try { finalOverlayAlpha = blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_OVERLAY_ALPHA)).toFloat() } catch (e: Exception) { /* ignore */ }
+                                    try { finalOverlaySat = blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_OVERLAY_SATURATION)).toFloat() } catch (e: Exception) { /* ignore */ }
+                                    val textColorIdx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_TEXT_COLOR)
+                                    if (!blockCursor.isNull(textColorIdx)) {
+                                        val col = blockCursor.getInt(textColorIdx)
+                                        if (col != 0) finalTextColor = col
+                                    }
+                                    try { finalTextBold = blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_TEXT_BOLDNESS)).toFloat() } catch (e: Exception) { /* ignore */ }
+                                    try { finalFontSize = blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_FONT_SIZE)).toFloat() } catch (e: Exception) { /* ignore */ }
+                                    try { finalRotation = blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_ROTATION)).toFloat() } catch (e: Exception) { /* ignore */ }
+                                    try { finalShapeType = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_OVERLAY_TYPE)) } catch (e: Exception) { /* ignore */ }
+                                    val borderIdx = blockCursor.getColumnIndex(DatabaseHelper.COLUMN_BLOCK_BORDER_COLOR)
+                                    if (borderIdx >= 0 && !blockCursor.isNull(borderIdx)) finalBorderColor = blockCursor.getInt(borderIdx)
+                                    try { finalBorderThickness = blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_BORDER_THICKNESS)).toFloat() } catch (e: Exception) { /* ignore */ }
+                                    finalFontFamily = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_FONT_FAMILY)) } catch (e: Exception) { null }
+                                }
+                                blockCursor.close()
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Error while querying image_blocks for image uri=$uri", e)
+                            }
+                        }
 
                         textBlocks.add(TextBlockInfo(
                             text = translatedText,
                             bounds = bounds,
-                            fontSize = fontSize,
-                            averageBackgroundColor = avgBg,
-                            customOverlayColor = customOverlay ?: avgBg,
-                            customTextColor = customText ?: textColor,
-                            overlayAlpha = overlayAlpha,
-                            textBoldness = textBoldness,
-                            overlaySaturation = overlaySat,
-                            textSaturation = textSat
+                            fontSize = finalFontSize,
+                            rotation = finalRotation,
+                            originalImageWidth = null,
+                            originalImageHeight = null,
+                            shapeType = finalShapeType,
+                            backgroundType = com.example.ocrmanga.data.models.BackgroundType.WHITE,
+                            averageBackgroundColor = finalOverlay,
+                            originalTextColor = null,
+                            customOverlayColor = finalOverlay,
+                            customTextColor = finalTextColor,
+                            overlayAlpha = finalOverlayAlpha,
+                            textBoldness = finalTextBold,
+                            overlaySaturation = finalOverlaySat,
+                            textSaturation = textSat,
+                            customBorderColor = finalBorderColor,
+                            borderThickness = finalBorderThickness,
+                            fontFamily = finalFontFamily ?: "mto_astro_city"
                         ))
                     }
                     textCursor.close()
@@ -669,6 +748,27 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         uniqueImageUris,
                         uniqueTranslatedTexts
                     )
+                }
+                // If room exists, also apply any pending DB changes (is_changed = 1) by mapping imageIds -> translations
+                if (roomId != -1L) {
+                    try {
+                        val changedImageIds = databaseHelper.getChangedImageIdsForRoom(roomId)
+                        if (changedImageIds.isNotEmpty()) {
+                            // build mapping imageId -> Pair(originalText, list<TextBlockInfo>) from current UI state
+                            val mapping = mutableMapOf<Long, Pair<String, List<TextBlockInfo>>>()
+                            uniqueImageUris.forEach { uri ->
+                                val imgId = uriToImageId[uri]
+                                if (imgId != null && imgId in changedImageIds) {
+                                    uniqueTranslatedTexts[uri]?.let { pair -> mapping[imgId] = pair }
+                                }
+                            }
+                            if (mapping.isNotEmpty()) {
+                                databaseHelper.applyPendingChangesForRoom(roomId, mapping)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to apply pending changes for room $roomId", e)
+                    }
                 }
                 if (roomId != -1L) {
                     withContext(Dispatchers.Main) {

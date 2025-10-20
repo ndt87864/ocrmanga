@@ -1,5 +1,6 @@
 package com.example.ocrmanga.data.database
 
+import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
@@ -83,7 +84,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 10
+    private const val DATABASE_VERSION = 11
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -147,6 +148,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     const val COLUMN_BLOCK_ROTATION = "rotation"
     const val COLUMN_BLOCK_FONT_FAMILY = "font_family"
     const val COLUMN_BLOCK_FONT_SIZE = "font_size"
+        // change_images table to track whether an image has been interacted with
+        const val TABLE_CHANGE_IMAGES = "change_images"
+        const val COLUMN_CHANGE_IMAGE_ID = "change_image_id"
+        const val COLUMN_CHANGE_IMAGE_IMAGE_ID = "image_id"
+        const val COLUMN_CHANGE_IMAGE_ROOM_ID = "room_id"
+        const val COLUMN_CHANGE_IMAGE_FLAG = "is_changed" // 0 = false, 1 = true
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -236,6 +243,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_BLOCK_FONT_FAMILY TEXT DEFAULT '',
                 $COLUMN_BLOCK_FONT_SIZE REAL DEFAULT 12.0,
                 FOREIGN KEY ($COLUMN_BLOCK_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
+            )
+            """
+        )
+        // Create table for tracking changed images
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_CHANGE_IMAGES (
+                $COLUMN_CHANGE_IMAGE_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COLUMN_CHANGE_IMAGE_IMAGE_ID INTEGER NOT NULL,
+                $COLUMN_CHANGE_IMAGE_ROOM_ID INTEGER NOT NULL,
+                $COLUMN_CHANGE_IMAGE_FLAG INTEGER NOT NULL DEFAULT 0,
+                UNIQUE($COLUMN_CHANGE_IMAGE_IMAGE_ID)
             )
             """
         )
@@ -419,6 +438,25 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.w(TAG, "Không thể tạo bảng $TABLE_IMAGE_BLOCKS", e)
             }
         }
+        // Add change_images table in version 11
+        if (oldVersion < 11) {
+            try {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS $TABLE_CHANGE_IMAGES (
+                        $COLUMN_CHANGE_IMAGE_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                        $COLUMN_CHANGE_IMAGE_IMAGE_ID INTEGER NOT NULL,
+                        $COLUMN_CHANGE_IMAGE_ROOM_ID INTEGER NOT NULL,
+                        $COLUMN_CHANGE_IMAGE_FLAG INTEGER NOT NULL DEFAULT 0,
+                        UNIQUE($COLUMN_CHANGE_IMAGE_IMAGE_ID)
+                    )
+                    """
+                )
+                Log.i(TAG, "Đã tạo bảng $TABLE_CHANGE_IMAGES")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể tạo bảng $TABLE_CHANGE_IMAGES", e)
+            }
+        }
     }
 
     // --- Helper methods for image blocks CRUD ---
@@ -536,6 +574,165 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
     }
 
+    // Ensure a change_images record exists for an image (initially is_changed = 0)
+    fun ensureChangeRecord(imageId: Long, roomId: Long) {
+        val db = writableDatabase
+        try {
+            val cursor = db.rawQuery("SELECT $COLUMN_CHANGE_IMAGE_ID FROM $TABLE_CHANGE_IMAGES WHERE $COLUMN_CHANGE_IMAGE_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            val exists = cursor.moveToFirst()
+            cursor.close()
+            if (!exists) {
+                val values = ContentValues().apply {
+                    put(COLUMN_CHANGE_IMAGE_IMAGE_ID, imageId)
+                    put(COLUMN_CHANGE_IMAGE_ROOM_ID, roomId)
+                    put(COLUMN_CHANGE_IMAGE_FLAG, 0)
+                }
+                db.insert(TABLE_CHANGE_IMAGES, null, values)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "ensureChangeRecord failed for imageId=$imageId", e)
+        }
+    }
+
+    // Mark an image as changed (is_changed = 1). If record doesn't exist, create it.
+    fun markImageChanged(imageId: Long, roomId: Long) {
+        val db = writableDatabase
+        try {
+            val values = ContentValues().apply { put(COLUMN_CHANGE_IMAGE_FLAG, 1) }
+            val updated = db.update(TABLE_CHANGE_IMAGES, values, "$COLUMN_CHANGE_IMAGE_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            if (updated <= 0) {
+                // Insert new record
+                val ins = ContentValues().apply {
+                    put(COLUMN_CHANGE_IMAGE_IMAGE_ID, imageId)
+                    put(COLUMN_CHANGE_IMAGE_ROOM_ID, roomId)
+                    put(COLUMN_CHANGE_IMAGE_FLAG, 1)
+                }
+                db.insert(TABLE_CHANGE_IMAGES, null, ins)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "markImageChanged failed for imageId=$imageId", e)
+        }
+    }
+
+    // Clear change flag for an image (set to 0)
+    fun clearImageChange(imageId: Long) {
+        val db = writableDatabase
+        try {
+            val values = ContentValues().apply { put(COLUMN_CHANGE_IMAGE_FLAG, 0) }
+            db.update(TABLE_CHANGE_IMAGES, values, "$COLUMN_CHANGE_IMAGE_IMAGE_ID = ?", arrayOf(imageId.toString()))
+        } catch (e: Exception) {
+            Log.w(TAG, "clearImageChange failed for imageId=$imageId", e)
+        }
+    }
+
+    // Get list of image IDs with is_changed = 1 for a specific room
+    fun getChangedImageIdsForRoom(roomId: Long): List<Long> {
+        val db = readableDatabase
+        val result = mutableListOf<Long>()
+        try {
+            val cursor = db.rawQuery("SELECT $COLUMN_CHANGE_IMAGE_IMAGE_ID FROM $TABLE_CHANGE_IMAGES WHERE $COLUMN_CHANGE_IMAGE_ROOM_ID = ? AND $COLUMN_CHANGE_IMAGE_FLAG = 1", arrayOf(roomId.toString()))
+            while (cursor.moveToNext()) {
+                result.add(cursor.getLong(0))
+            }
+            cursor.close()
+        } catch (e: Exception) {
+            Log.w(TAG, "getChangedImageIdsForRoom failed for roomId=$roomId", e)
+        }
+        return result
+    }
+
+    /**
+     * Apply pending changes for all images in a room where is_changed = 1.
+     * For each changed imageId: re-save translations and image_blocks from provided translatedTexts map if present,
+     * or leave as-is if no translated data is provided. After applying, set is_changed = 0 for those images.
+     *
+     * This method assumes the caller prepares the translatedTexts mapping from imageId to its new translations/data.
+     */
+    fun applyPendingChangesForRoom(roomId: Long, translatedByImageId: Map<Long, Pair<String, List<TextBlockInfo>>>): Boolean {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val changedIds = getChangedImageIdsForRoom(roomId)
+            for (imageId in changedIds) {
+                // delete old translations and blocks
+                db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
+
+                // insert new translations if available
+                translatedByImageId[imageId]?.let { (originalText, textBlocks) ->
+                    textBlocks.forEach { textBlock ->
+                        val bounds = textBlock.bounds
+                        val textValues = ContentValues().apply {
+                            put(COLUMN_IMAGE_ID, imageId)
+                            put("original_text", originalText)
+                            put("translated_text", textBlock.text)
+                            put("bounds_left", bounds.left)
+                            put("bounds_top", bounds.top)
+                            put("bounds_right", bounds.right)
+                            put("bounds_bottom", bounds.bottom)
+                            put("font_size", textBlock.fontSize)
+                            put("rotation", textBlock.rotation ?: 0f)
+                            put("original_image_width", textBlock.originalImageWidth)
+                            put("original_image_height", textBlock.originalImageHeight)
+                            put("shape_type", textBlock.shapeType)
+                            put("background_type", textBlock.backgroundType.ordinal)
+                            put("average_background_color", textBlock.averageBackgroundColor)
+                            put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt())
+                            put("custom_overlay_color", textBlock.customOverlayColor)
+                            put("custom_text_color", textBlock.customTextColor)
+                            put("overlay_alpha", textBlock.overlayAlpha)
+                            put("text_boldness", textBlock.textBoldness)
+                            put("overlay_saturation", textBlock.overlaySaturation)
+                            put("text_saturation", textBlock.textSaturation)
+                        }
+                        val inserted = db.insert("translations", null, textValues)
+                        if (inserted != -1L) {
+                            try {
+                                val blockWidth = bounds.right - bounds.left
+                                val blockHeight = bounds.bottom - bounds.top
+                                insertImageBlock(
+                                    imageId = imageId,
+                                    x = bounds.left,
+                                    y = bounds.top,
+                                    width = blockWidth,
+                                    height = blockHeight,
+                                    overlayType = textBlock.shapeType,
+                                    overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor,
+                                    overlayBrightness = 1.0f,
+                                    overlayAlpha = textBlock.overlayAlpha,
+                                    overlaySaturation = textBlock.overlaySaturation,
+                                    textColor = textBlock.customTextColor ?: textBlock.originalTextColor,
+                                    textBrightness = 1.0f,
+                                    textBoldness = textBlock.textBoldness,
+                                    textSaturation = textBlock.textSaturation,
+                                    borderColor = textBlock.customBorderColor,
+                                    borderBrightness = 1.0f,
+                                    borderBoldness = textBlock.borderAlpha,
+                                    borderThickness = textBlock.borderThickness,
+                                    rotation = textBlock.rotation ?: 0f,
+                                    fontFamily = textBlock.fontFamily,
+                                    fontSize = textBlock.fontSize
+                                )
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Không thể lưu image_block cho image $imageId khi applyPendingChanges", e)
+                            }
+                        }
+                    }
+                }
+
+                // clear change flag
+                clearImageChange(imageId)
+            }
+            db.setTransactionSuccessful()
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "applyPendingChangesForRoom failed for roomId=$roomId", e)
+            return false
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun saveMangaRoom(imageUris: List<Uri>, translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>, title: String? = null): Long {
         if (imageUris.isEmpty()) return -1L
         val db = writableDatabase
@@ -584,6 +781,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     } else {
                         Log.i(TAG, "Saved image for room $roomId: ID=$imageId, URI=$newUri, Order=$index")
                         deleteOriginalImage(originalUri) // Xóa ảnh gốc sau khi lưu
+                        // Ensure change record exists for this image (default is_changed = 0)
+                        try { ensureChangeRecord(imageId, roomId) } catch (e: Exception) { /* ignore */ }
                     }
 
                     // Tự động scale lại bounds nếu ảnh đã bị resize
@@ -642,6 +841,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
                                     val textColor = textBlock.customTextColor ?: textBlock.originalTextColor
                                     
+                                    // After inserting translations for this image, ensure change flag cleared (applied)
+                                    try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
                                     // Log để debug màu text khi lưu
                                     Log.d(TAG, "Lưu vào image_blocks - textColor: $textColor (hex: ${String.format("#%08X", textColor ?: 0)})")
                                     Log.d(TAG, "  customTextColor: ${textBlock.customTextColor} (hex: ${String.format("#%08X", textBlock.customTextColor ?: 0)})")
@@ -757,6 +958,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     val imageId = db.insert(TABLE_IMAGES, null, imageValues)
                     if (imageId != -1L) {
                         // Tự động scale lại bounds nếu ảnh đã bị resize
+                        // Ensure change record exists for this image
+                        try { ensureChangeRecord(imageId, roomId) } catch (e: Exception) { /* ignore */ }
                         translatedTexts[uri]?.let { (originalText, textBlocks) ->
                             val originalWidth = textBlocks.firstOrNull()?.originalImageWidth
                             val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
@@ -830,6 +1033,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize
                                         )
+                                        // After inserting translations for this image, clear change flag
+                                        try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
                                     }
@@ -923,6 +1128,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize
                                         )
+                                            // translations for existing image updated => clear change flag
+                                            try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
                                     }
@@ -955,6 +1162,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
      * This avoids reprocessing all images when user only edited some images.
      * dirtyUris: list of original URIs that were edited (these should match the input imageUris values)
      */
+    @SuppressLint("SuspiciousIndentation")
     fun updateMangaRoomSelective(
         roomId: Long,
         imageUris: List<Uri>,
