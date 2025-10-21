@@ -338,31 +338,105 @@ fun TranslationEditor(
                             Icon(Icons.Default.Edit, "Sửa/Thêm bản dịch", tint = MaterialTheme.colorScheme.primary)
                         }
 
-                        IconButton(
-                            onClick = {
-                                selectedIndex?.let { idx ->
-                                    onDragBlocksChange(dragBlocks.toMutableList().also {
-                                        val old = it[idx]
-                                        val newFont = (old.fontSize ?: 16f) - 1f
-                                        it[idx] = old.copy(fontSize = newFont.coerceAtLeast(8f))
-                                    })
-                                }
-                            },
-                            enabled = isBlockSelected
-                        ) { Icon(Icons.Default.TextDecrease, "Giảm cỡ chữ") }
+                        // Compute current/min/max for selected block to control button states
+                        val selectedIdx = selectedIndex
+                        val minFontGlobal = 10f
+                        var currentFontForSelected = 0f
+                        var maxFontForSelected = 100f
+                        if (selectedIdx != null && selectedIdx in dragBlocks.indices) {
+                            val sel = dragBlocks[selectedIdx]
+                            val b = sel.block
+                            val bounds = b.bounds
+                            val width = bounds.width().toFloat()
+                            val height = bounds.height().toFloat()
+                            maxFontForSelected = calculateOptimalFontSize(
+                                text = b.text,
+                                width = width,
+                                height = height,
+                                minFontSize = minFontGlobal,
+                                shapeType = b.shapeType,
+                                context = context,
+                                fontFamilyName = b.fontFamily
+                            )
+                            currentFontForSelected = sel.fontSize ?: b.fontSize
+                        }
+
+                        val decreaseEnabled = isBlockSelected && currentFontForSelected > minFontGlobal + 0.01f
+                        val increaseEnabled = isBlockSelected && currentFontForSelected < maxFontForSelected - 0.01f
 
                         IconButton(
                             onClick = {
-                                selectedIndex?.let { idx ->
+                                selectedIdx?.let { idx ->
                                     onDragBlocksChange(dragBlocks.toMutableList().also {
                                         val old = it[idx]
-                                        val newFont = (old.fontSize ?: 16f) + 1f
-                                        it[idx] = old.copy(fontSize = newFont)
+                                        val b = old.block
+                                        val bounds = b.bounds
+                                        val width = bounds.width().toFloat()
+                                        val height = bounds.height().toFloat()
+                                        val maxFont = calculateOptimalFontSize(
+                                            text = b.text,
+                                            width = width,
+                                            height = height,
+                                            minFontSize = minFontGlobal,
+                                            shapeType = b.shapeType,
+                                            context = context,
+                                            fontFamilyName = b.fontFamily
+                                        )
+                                        val newFontCandidate = (old.fontSize ?: b.fontSize) - 1f
+                                        val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)
+                                        // If clamping prevented change and we're already at min, show toast
+                                        if (clamped <= minFontGlobal + 0.001f && (old.fontSize ?: b.fontSize) <= minFontGlobal + 0.001f) {
+                                            android.widget.Toast.makeText(context, "Đã đạt kích thước chữ nhỏ nhất", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        it[idx] = old.copy(fontSize = clamped)
                                     })
                                 }
                             },
-                            enabled = isBlockSelected
-                        ) { Icon(Icons.Default.TextIncrease, "Tăng cỡ chữ") }
+                            enabled = decreaseEnabled
+                        ) {
+                            Icon(
+                                Icons.Default.TextDecrease,
+                                "Giảm cỡ chữ",
+                                tint = if (decreaseEnabled) MaterialTheme.colorScheme.onBackground else Color.Gray
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                selectedIdx?.let { idx ->
+                                    onDragBlocksChange(dragBlocks.toMutableList().also {
+                                        val old = it[idx]
+                                        val b = old.block
+                                        val bounds = b.bounds
+                                        val width = bounds.width().toFloat()
+                                        val height = bounds.height().toFloat()
+                                        val maxFont = calculateOptimalFontSize(
+                                            text = b.text,
+                                            width = width,
+                                            height = height,
+                                            minFontSize = minFontGlobal,
+                                            shapeType = b.shapeType,
+                                            context = context,
+                                            fontFamilyName = b.fontFamily
+                                        )
+                                        val newFontCandidate = (old.fontSize ?: b.fontSize) + 1f
+                                        val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)
+                                        // If clamping prevented change and we're already at max, show toast
+                                        if (clamped >= maxFont - 0.001f && (old.fontSize ?: b.fontSize) >= maxFont - 0.001f) {
+                                            android.widget.Toast.makeText(context, "Đã đạt kích thước chữ tối đa", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        it[idx] = old.copy(fontSize = clamped)
+                                    })
+                                }
+                            },
+                            enabled = increaseEnabled
+                        ) {
+                            Icon(
+                                Icons.Default.TextIncrease,
+                                "Tăng cỡ chữ",
+                                tint = if (increaseEnabled) MaterialTheme.colorScheme.onBackground else Color.Gray
+                            )
+                        }
                     }
 
                     // --- TRANG 3: XOAY ---
