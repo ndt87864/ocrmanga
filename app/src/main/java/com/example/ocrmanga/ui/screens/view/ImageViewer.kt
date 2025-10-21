@@ -104,7 +104,10 @@ fun ImageViewer(
             ),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        itemsIndexed(items = imageUris, key = { index, uri -> uri.toString() + "-$index" }) { index, uri ->
+        // Use a stable key based on the image Uri only. Including the index in the key
+        // causes Compose to reuse/replace items when the list grows, which led to
+        // previously-last images being replaced by newly added images.
+        items(items = imageUris, key = { uri -> uri.toString() }) { uri ->
             // Luôn ưu tiên translatedTexts mới từ translation mode
             val currentTranslatedBlocks = translatedTexts[uri]?.second?.map { block ->
                 // ✅ Chuẩn hóa màu overlay & text, đảm bảo luôn có alpha
