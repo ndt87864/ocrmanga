@@ -361,12 +361,21 @@ fun TranslationEditor(
                             currentFontForSelected = sel.fontSize ?: b.fontSize
                         }
 
+                        // Keep buttons clickable so we can show a toast when user hits the limit,
+                        // but tint them gray when they are effectively disabled.
                         val decreaseEnabled = isBlockSelected && currentFontForSelected > minFontGlobal + 0.01f
                         val increaseEnabled = isBlockSelected && currentFontForSelected < maxFontForSelected - 0.01f
 
                         IconButton(
                             onClick = {
                                 selectedIdx?.let { idx ->
+                                    val alreadyAtMin = dragBlocks.getOrNull(idx)?.let { old ->
+                                        val current = old.fontSize ?: old.block.fontSize
+                                        current <= minFontGlobal + 0.001f
+                                    } ?: false
+                                    if (alreadyAtMin) {
+                                        android.widget.Toast.makeText(context, "Đã đạt kích thước chữ nhỏ nhất", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                                     onDragBlocksChange(dragBlocks.toMutableList().also {
                                         val old = it[idx]
                                         val b = old.block
@@ -384,15 +393,12 @@ fun TranslationEditor(
                                         )
                                         val newFontCandidate = (old.fontSize ?: b.fontSize) - 1f
                                         val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)
-                                        // If clamping prevented change and we're already at min, show toast
-                                        if (clamped <= minFontGlobal + 0.001f && (old.fontSize ?: b.fontSize) <= minFontGlobal + 0.001f) {
-                                            android.widget.Toast.makeText(context, "Đã đạt kích thước chữ nhỏ nhất", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
                                         it[idx] = old.copy(fontSize = clamped)
                                     })
                                 }
                             },
-                            enabled = decreaseEnabled
+                            // keep clickable even if it would do nothing so we can show a toast
+                            enabled = true
                         ) {
                             Icon(
                                 Icons.Default.TextDecrease,
@@ -404,6 +410,26 @@ fun TranslationEditor(
                         IconButton(
                             onClick = {
                                 selectedIdx?.let { idx ->
+                                    val alreadyAtMax = dragBlocks.getOrNull(idx)?.let { old ->
+                                        val b = old.block
+                                        val bounds = b.bounds
+                                        val width = bounds.width().toFloat()
+                                        val height = bounds.height().toFloat()
+                                        val maxFont = calculateOptimalFontSize(
+                                            text = b.text,
+                                            width = width,
+                                            height = height,
+                                            minFontSize = minFontGlobal,
+                                            shapeType = b.shapeType,
+                                            context = context,
+                                            fontFamilyName = b.fontFamily
+                                        )
+                                        val current = old.fontSize ?: old.block.fontSize
+                                        current >= maxFont - 0.001f
+                                    } ?: false
+                                    if (alreadyAtMax) {
+                                        android.widget.Toast.makeText(context, "Đã đạt kích thước chữ tối đa", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                                     onDragBlocksChange(dragBlocks.toMutableList().also {
                                         val old = it[idx]
                                         val b = old.block
@@ -421,15 +447,12 @@ fun TranslationEditor(
                                         )
                                         val newFontCandidate = (old.fontSize ?: b.fontSize) + 1f
                                         val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)
-                                        // If clamping prevented change and we're already at max, show toast
-                                        if (clamped >= maxFont - 0.001f && (old.fontSize ?: b.fontSize) >= maxFont - 0.001f) {
-                                            android.widget.Toast.makeText(context, "Đã đạt kích thước chữ tối đa", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
                                         it[idx] = old.copy(fontSize = clamped)
                                     })
                                 }
                             },
-                            enabled = increaseEnabled
+                            // keep clickable even if it would do nothing so we can show a toast
+                            enabled = true
                         ) {
                             Icon(
                                 Icons.Default.TextIncrease,
