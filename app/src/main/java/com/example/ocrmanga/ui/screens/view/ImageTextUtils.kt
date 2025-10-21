@@ -374,7 +374,25 @@ fun calculateOptimalFontSize(
             bounds.width().toFloat()
         } ?: 0f
 
-        if (maxLineWidth <= safeWidth * widthScale && textHeight <= safeHeight * heightScale) {
+        // Prefer height fit: if the text block height fits the safeHeight, allow
+        // increasing font size even when lines reach left/right edges. This
+        // supports translated text that is shorter than the original and can be
+        // rendered larger until top/bottom are touched.
+        val heightFits = textHeight <= safeHeight * heightScale
+        val widthFits = maxLineWidth <= safeWidth * widthScale
+
+        if (heightFits) {
+            // Allow some horizontal overflow tolerance (to avoid extreme clipping).
+            val maxOverflowFactor = 1.5f
+            if (widthFits || maxLineWidth <= safeWidth * widthScale * maxOverflowFactor) {
+                optimalFontSize = mid
+                low = mid + 0.2f
+            } else {
+                // Width overflow too large — treat as not fitting
+                high = mid - 0.2f
+            }
+        } else if (widthFits && textHeight <= safeHeight * heightScale) {
+            // both fit
             optimalFontSize = mid
             low = mid + 0.2f
         } else {
