@@ -345,30 +345,19 @@ fun ImageViewer(
                                             val scaledTop = (bounds.top * scale) + offsetY + dragBlock.offset.y
                                             val scaledWidth = (bounds.width() * scale).toFloat()
                                             val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
-                                            val fontSize = when {
-                                                editTranslationMode -> {
-                                                    // Use shared edit-mode font-size logic
-                                                    com.example.ocrmanga.ui.screens.view.computeEditModeFontSize(
-                                                        block = dragBlock.block,
-                                                        editedFontSize = dragBlock.fontSize
-                                                    )
-                                                }
-
-                                                newlyTranslated[uri] == true -> {
-                                                    val autoFont = calculateOptimalFontSize(
-                                                        text = dragBlock.block.text,
-                                                        width = dragBlock.block.bounds.width().toFloat(),
-                                                        height = dragBlock.block.bounds.height().toFloat(),
-                                                        minFontSize = 12f,
-                                                        shapeType = dragBlock.block.shapeType,
-                                                        context = context,
-                                                 fontFamilyName = dragBlock.block.fontFamily,
-                                                 extraSizeAllowance = 2f
-                                                    )
-                                                    autoFont
-                                                }
-
-                                                else -> dragBlock.block.fontSize
+                                            val fontSize = if (editTranslationMode) {
+                                                // Use shared edit-mode font-size logic (prefer an explicitly edited size)
+                                                com.example.ocrmanga.ui.screens.view.computeEditModeFontSize(
+                                                    block = dragBlock.block,
+                                                    editedFontSize = dragBlock.fontSize
+                                                )
+                                            } else {
+                                                // Prefer the persisted/stored font size on the block.
+                                                // The previous code used a newlyTranslated flag to recompute
+                                                // an automatic size which could overwrite user edits when
+                                                // translatedTexts changed. Using the stored fontSize here
+                                                // ensures user modifications persist immediately after save.
+                                                dragBlock.block.fontSize
                                             }
 
                                             RegionInfo(
