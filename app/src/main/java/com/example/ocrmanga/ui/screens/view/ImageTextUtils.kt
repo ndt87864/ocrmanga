@@ -353,8 +353,8 @@ fun calculateOptimalFontSize(
 
     // Điều chỉnh hệ số scale cho hình oval để text vừa vặn
     // Dùng scale hơi lớn hơn trước (0.99) để cho phép font lớn hơn 1 bước so với trước
-    val widthScale = if (shapeType == 1) 0.70f else 0.99f // Oval cần padding nhiều hơn
-    val heightScale = if (shapeType == 1) 0.70f else 0.99f
+    val widthScale = if (shapeType == 1) 0.99f else 0.999f
+    val heightScale = if (shapeType == 1) 0.99f else 0.999f
 
     // Compute available drawing area after applying explicit paddings.
     val safeWidth = (width - (horizontalPadding * 2f)).coerceAtLeast(1f)
@@ -381,23 +381,23 @@ fun calculateOptimalFontSize(
         val heightFits = textHeight <= safeHeight * heightScale
         val widthFits = maxLineWidth <= safeWidth * widthScale
 
-        if (heightFits) {
-            // Allow some horizontal overflow tolerance (to avoid extreme clipping).
-            val maxOverflowFactor = 1.5f
-            if (widthFits || maxLineWidth <= safeWidth * widthScale * maxOverflowFactor) {
-                optimalFontSize = mid
-                low = mid + 0.2f
-            } else {
-                // Width overflow too large — treat as not fitting
-                high = mid - 0.2f
-            }
-        } else if (widthFits && textHeight <= safeHeight * heightScale) {
-            // both fit
+// Chỉ coi là "fit" khi cả hai đều vừa hoặc khi chiều cao hơi thiếu nhưng chiều rộng vẫn ok.
+// Mục tiêu: tận dụng tối đa vùng overlay mà không bị tràn.
+        if (heightFits && widthFits) {
+            optimalFontSize = mid
+            low = mid + 0.2f
+        } else if (heightFits && !widthFits && maxLineWidth <= safeWidth * 1.1f) {
+            // Cho phép tràn nhẹ 10% chiều ngang
+            optimalFontSize = mid
+            low = mid + 0.2f
+        } else if (!heightFits && textHeight <= safeHeight * 1.05f && widthFits) {
+            // Cho phép tràn nhẹ 5% chiều cao
             optimalFontSize = mid
             low = mid + 0.2f
         } else {
             high = mid - 0.2f
         }
+
     }
 
     // Apply a small allowance so UI can present one or two more incremental steps to the user.
@@ -547,28 +547,27 @@ fun DrawScope.drawText(
             // margin so text doesn't touch the top/bottom edges. This makes viewing
             // and editing feel less cramped.
             val totalTextHeight = lines.size * lineHeight
-            val margin = max(1f, fontSize * 0.02f)
+            // Giảm margin và canh sát overlay hơn
+            val margin = fontSize * 0.5f // gần như bỏ padding
             val availableHeight = (height - margin * 2f).coerceAtLeast(lineHeight)
-            val startY = y + margin + (availableHeight - totalTextHeight) / 2f - fontMetrics.ascent
+            val startY = y + margin - fontMetrics.ascent // bắt đầu từ đỉnh overlay
 
             var currentY = startY
             for (line in lines) {
                 if (line.isNotBlank()) {
                     val centerX = x + width / 2
-                    borderPaint?.let {
-                        canvas.nativeCanvas.drawText(line, centerX, currentY, it)
-                    }
+                    borderPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
                     canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
                 }
                 currentY += lineHeight
-                // Stop drawing if we exceed the overlay bottom
                 if (currentY + fontMetrics.descent > y + height - margin) break
             }
+
         }
     }
 }
 
- fun adjustWhiteoutBounds(
+fun adjustWhiteoutBounds(
     text: String,
     initialWidth: Float,
     initialHeight: Float,
@@ -586,27 +585,15 @@ fun DrawScope.drawText(
                 val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/$fontFile")
                 if (typeface != null) this.typeface = typeface
             } catch (e: Exception) {
-                // Use default typeface
+                // fallback default
             }
         }
     }
 
     val effectiveWidth = if (isVertical) initialHeight else initialWidth
-    val effectiveHeight = if (isVertical) initialWidth else initialHeight
-    val wrappedLines = wrapText(text, effectiveWidth * 0.95f, fontSize, context, fontFamilyName)
-    val fontMetrics = paint.fontMetrics
-    val lineHeight = fontMetrics.descent - fontMetrics.ascent
-    val textHeight = wrappedLines.size * lineHeight
-
-    val finalFontSize = if (textHeight > effectiveHeight * 0.95f) {
-        fontSize * (effectiveHeight * 0.95f / textHeight)
-    } else {
-        fontSize
-    }
-
-    paint.textSize = finalFontSize
-    val finalWrappedLines = wrapText(text, effectiveWidth * 0.95f, finalFontSize, context, fontFamilyName)
-    return finalWrappedLines.joinToString("\n") to finalFontSize
+    // Không giảm font, chỉ re-wrap lại text cho khớp vùng
+    val wrappedLines = wrapText(text, effectiveWidth * 0.995f, fontSize, context, fontFamilyName)
+    return wrappedLines.joinToString("\n") to fontSize
 }
 
  fun wrapText(text: String, width: Float, fontSize: Float, context: Context? = null, fontFamilyName: String? = null): List<String> {
