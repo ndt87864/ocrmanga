@@ -372,6 +372,16 @@ fun calculateOptimalFontSize(
     return optimalFontSize.coerceIn(minFontSize, maxFontSize)
 }
 
+/**
+ * Compute the effective font size to use in edit mode.
+ * Uses the explicitly edited font size when provided, otherwise falls back to the block's fontSize.
+ * For vertical text we scale down to avoid extremely large visual rendering.
+ */
+fun computeEditModeFontSize(block: com.example.ocrmanga.data.models.TextBlockInfo, editedFontSize: Float?): Float {
+    val baseSize = editedFontSize ?: block.fontSize
+    return if (block.isVertical) (baseSize / 3f).coerceAtLeast(8f) else baseSize
+}
+
 fun DrawScope.drawText(
     text: String,
     x: Float,

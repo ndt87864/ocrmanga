@@ -193,8 +193,12 @@ fun TranslationEditor(
                                                 val bounds = currentBlock.block.bounds
                                                 val width = bounds.width().toFloat()
                                                 val height = bounds.height().toFloat()
+                                                val baseEditSize = com.example.ocrmanga.ui.screens.view.computeEditModeFontSize(
+                                                    block = currentBlock.block,
+                                                    editedFontSize = currentBlock.fontSize
+                                                )
                                                 val newFontSize = if (currentBlock.block.isVertical) {
-                                                    currentBlock.block.fontSize
+                                                    baseEditSize
                                                 } else {
                                                     calculateOptimalFontSize(
                                                         text = currentBlock.block.text,
