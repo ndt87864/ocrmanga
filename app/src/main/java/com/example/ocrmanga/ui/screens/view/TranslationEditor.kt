@@ -193,16 +193,21 @@ fun TranslationEditor(
                                                 val bounds = currentBlock.block.bounds
                                                 val width = bounds.width().toFloat()
                                                 val height = bounds.height().toFloat()
-                                                val newFontSize = calculateOptimalFontSize(
-                                                    text = currentBlock.block.text,
-                                                    width = width,
-                                                    height = height,
-                                                    minFontSize = 12f,
-                                                    shapeType = newShapeType,
-                                                    context = context,
-                                                    fontFamilyName = currentBlock.block.fontFamily
-                                                )
-                                                
+                                                val newFontSize = if (currentBlock.block.isVertical) {
+                                                    currentBlock.block.fontSize
+                                                } else {
+                                                    calculateOptimalFontSize(
+                                                        text = currentBlock.block.text,
+                                                        width = width,
+                                                        height = height,
+                                                        minFontSize = 12f,
+                                                        shapeType = newShapeType,
+                                                        context = context,
+                                                        fontFamilyName = currentBlock.block.fontFamily
+                                                    )
+                                                }
+
+
                                                 updatedBlocks[idx] = currentBlock.copy(
                                                     block = currentBlock.block.copy(shapeType = newShapeType),
                                                     fontSize = newFontSize
