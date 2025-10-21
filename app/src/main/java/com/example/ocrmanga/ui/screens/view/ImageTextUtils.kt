@@ -430,7 +430,8 @@ fun DrawScope.drawText(
     borderColor: Color? = null, // Màu viền chữ
     borderThickness: Float = 0.0f, // Độ dày viền (0.0 - 5.0)
     borderAlpha: Float = 1.0f, // Độ trong suốt của viền (0.0 - 1.0),
-    editMode: Boolean = false // Nếu true, không giới hạn font size bởi overlay
+    editMode: Boolean = false, // Nếu true, không giới hạn font size bởi overlay
+    shapeType: Int = 0 // 0 = rectangle, 1 = oval
 ) {
 
     // ...existing code...
@@ -591,9 +592,33 @@ fun adjustWhiteoutBounds(
     }
 
     val effectiveWidth = if (isVertical) initialHeight else initialWidth
-    // Không giảm font, chỉ re-wrap lại text cho khớp vùng
-    val wrappedLines = wrapText(text, effectiveWidth * 0.995f, fontSize, context, fontFamilyName)
-    return wrappedLines.joinToString("\n") to fontSize
+    val effectiveHeight = if (isVertical) initialWidth else initialHeight
+
+    // Safe padding to keep text away from overlay edges. Slightly conservative to avoid clipping.
+    val safePadding = 4f.coerceAtMost(fontSize * 0.5f)
+
+    val availableWidth = (effectiveWidth - safePadding * 2f).coerceAtLeast(1f)
+    val availableHeight = (effectiveHeight - safePadding * 2f).coerceAtLeast(1f)
+
+    // Compute an optimal font size that fits into the available area. Do not allow it
+    // to grow beyond the provided fontSize (we only want to shrink when overflowing).
+    val optimal = calculateOptimalFontSize(
+        text = text,
+        width = availableWidth,
+        height = availableHeight,
+        minFontSize = 8f,
+        maxFontSize = fontSize,
+        shapeType = 0,
+        context = context,
+        fontFamilyName = fontFamilyName,
+        extraSizeAllowance = 0f,
+        horizontalPadding = safePadding,
+        verticalPadding = safePadding
+    )
+
+    // Now wrap the text using the computed font size so measurements align with rendering.
+    val wrappedLines = wrapText(text, availableWidth * 0.995f, optimal, context, fontFamilyName)
+    return wrappedLines.joinToString("\n") to optimal
 }
 
  fun wrapText(text: String, width: Float, fontSize: Float, context: Context? = null, fontFamilyName: String? = null): List<String> {
