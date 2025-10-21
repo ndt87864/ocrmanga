@@ -107,25 +107,35 @@ fun ImageViewer(
         itemsIndexed(items = imageUris, key = { index, uri -> uri.toString() + "-$index" }) { index, uri ->
             // Luôn ưu tiên translatedTexts mới từ translation mode
             val currentTranslatedBlocks = translatedTexts[uri]?.second?.map { block ->
-                // Ensure overlay/text ints include alpha when converting to Compose Color
+                // ✅ Chuẩn hóa màu overlay & text, đảm bảo luôn có alpha
                 val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
                 val textInt = (block.customTextColor ?: computeDefaultTextColor(overlayInt, block.averageBackgroundColor)) or 0xFF000000.toInt()
+
+                // ✅ Điều chỉnh fontSize cho text dọc để tránh phóng to
+                val adjustedFontSize = if (block.isVertical) {
+                    (block.fontSize / 3f).coerceAtLeast(8f)
+                } else block.fontSize
+
                 DragBlockState(
-                    block = block.copy(customOverlayColor = overlayInt, customTextColor = textInt),
-                    fontSize = block.fontSize,
+                    block = block.copy(
+                        customOverlayColor = overlayInt,
+                        customTextColor = textInt,
+                        fontSize = adjustedFontSize
+                    ),
+                    fontSize = adjustedFontSize,
                     rotation = block.rotation ?: 0f,
-                    whiteoutColor = androidx.compose.ui.graphics.Color(overlayInt),
-                    textColor = androidx.compose.ui.graphics.Color(textInt),
+                    whiteoutColor = Color(overlayInt),
+                    textColor = Color(textInt),
                     overlayAlpha = block.overlayAlpha,
                     textBoldness = block.textBoldness,
                     overlaySaturation = block.overlaySaturation,
                     textSaturation = block.textSaturation,
-                    textBorderColor = block.customBorderColor?.let { androidx.compose.ui.graphics.Color(it or 0xFF000000.toInt()) },
+                    textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
                     textBorderThickness = block.borderThickness,
                     textBorderAlpha = block.borderAlpha
                 )
             } ?: emptyList()
-            
+
             var dragBlocks by remember(uri, translationVersion, translatedTexts[uri]) {
                 mutableStateOf(currentTranslatedBlocks)
             }
@@ -337,28 +347,24 @@ fun ImageViewer(
                                             val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
                                             val fontSize = when {
                                                 editTranslationMode -> {
-                                                    dragBlock.fontSize ?: dragBlock.block.fontSize
+                                                    val baseSize = dragBlock.fontSize ?: dragBlock.block.fontSize
+                                                    if (dragBlock.block.isVertical) baseSize / 3f else baseSize
                                                 }
 
                                                 newlyTranslated[uri] == true -> {
                                                     val autoFont = calculateOptimalFontSize(
                                                         text = dragBlock.block.text,
-                                                        width = scaledWidth,
-                                                        height = scaledBlockHeight2,
+                                                        width = dragBlock.block.bounds.width().toFloat(),
+                                                        height = dragBlock.block.bounds.height().toFloat(),
+                                                        minFontSize = 12f,
+                                                        shapeType = dragBlock.block.shapeType,
                                                         context = context,
                                                         fontFamilyName = dragBlock.block.fontFamily
                                                     )
-                                                    dragBlocks = dragBlocks.toMutableList().also { list ->
-                                                        val old = list[i]
-                                                        list[i] = old.copy(fontSize = autoFont)
-                                                    }
-                                                    newlyTranslated[uri] = false //  chỉ scale 1 lần
                                                     autoFont
                                                 }
 
-                                                else -> {
-                                                    dragBlock.fontSize ?: dragBlock.block.fontSize
-                                                }
+                                                else -> dragBlock.block.fontSize
                                             }
 
                                             RegionInfo(

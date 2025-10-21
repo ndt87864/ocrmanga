@@ -200,11 +200,13 @@ fun mergeOverlappingRegions(
 
                 val optimalFontSize = calculateOptimalFontSize(
                     text = mergedText,
-                    width = if (currentBlock.isVertical) mergedHeight else mergedWidth,
-                    height = if (currentBlock.isVertical) mergedWidth else mergedHeight,
+                    width = mergedRect.width,
+                    height = mergedRect.height,
                     minFontSize = minFontSize,
                     shapeType = currentBlock.shapeType
                 )
+
+
 
                 currentBlock = primaryBlock.copy(
                     text = mergedText,
