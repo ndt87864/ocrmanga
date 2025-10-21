@@ -51,12 +51,12 @@ fun TranslationEditor(
     val fontOptions = remember {
         try {
             listOf(
+                "mto_comic_1" to FontFamily(Font(R.font.mto_comic_1)),
+                "mto_comic_2" to FontFamily(Font(R.font.mto_comic_2)),
                 "mto_astro_city" to FontFamily(Font(R.font.mto_astro_city)),
                 "mto_augie" to FontFamily(Font(R.font.mto_augie)),
                 "mto_chancery" to FontFamily(Font(R.font.mto_chancery)),
                 "mto_chranko" to FontFamily(Font(R.font.mto_chranko)),
-                "mto_comic_1" to FontFamily(Font(R.font.mto_comic_1)),
-                "mto_comic_2" to FontFamily(Font(R.font.mto_comic_2)),
                 "mto_dom" to FontFamily(Font(R.font.mto_dom)),
                 "mto_mikes" to FontFamily(Font(R.font.mto_mikes)),
                 "mto_sans" to FontFamily(Font(R.font.mto_sans)),
