@@ -109,23 +109,19 @@ fun ImageViewer(
         // previously-last images being replaced by newly added images.
         items(items = imageUris, key = { uri -> uri.toString() }) { uri ->
             // Luôn ưu tiên translatedTexts mới từ translation mode
-            val currentTranslatedBlocks = translatedTexts[uri]?.second?.map { block ->
+                val currentTranslatedBlocks = translatedTexts[uri]?.second?.map { block ->
                 // ✅ Chuẩn hóa màu overlay & text, đảm bảo luôn có alpha
                 val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
                 val textInt = (block.customTextColor ?: computeDefaultTextColor(overlayInt, block.averageBackgroundColor)) or 0xFF000000.toInt()
-
-                // ✅ Điều chỉnh fontSize cho text dọc để tránh phóng to
-                val adjustedFontSize = if (block.isVertical) {
-                    (block.fontSize / 3f).coerceAtLeast(8f)
-                } else block.fontSize
-
+                // Keep original font sizes on the block; edit-mode scaling is applied when rendering.
                 DragBlockState(
                     block = block.copy(
                         customOverlayColor = overlayInt,
                         customTextColor = textInt,
-                        fontSize = adjustedFontSize
+                        fontSize = block.fontSize
                     ),
-                    fontSize = adjustedFontSize,
+                    // No explicit edited font size at load
+                    fontSize = null,
                     rotation = block.rotation ?: 0f,
                     whiteoutColor = Color(overlayInt),
                     textColor = Color(textInt),
@@ -148,9 +144,10 @@ fun ImageViewer(
                 if (!editTranslationMode) {
                     // Luôn cập nhật từ translatedTexts mới, không kiểm tra dragBlocksMap
                     val newBlocks = translatedTexts[uri]?.second?.map {
-                        DragBlockState(
-                            block = it,
-                            fontSize = it.fontSize,
+                DragBlockState(
+                    block = it,
+                    // Do not pre-scale/set an edited font size on load
+                    fontSize = null,
                             rotation = it.rotation ?: 0f,
                             whiteoutColor = it.customOverlayColor?.let { c -> Color(c) },
                             textColor = it.customTextColor?.let { c -> Color(c) },
@@ -350,8 +347,11 @@ fun ImageViewer(
                                             val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
                                             val fontSize = when {
                                                 editTranslationMode -> {
-                                                    val baseSize = dragBlock.fontSize ?: dragBlock.block.fontSize
-                                                    if (dragBlock.block.isVertical) baseSize / 3f else baseSize
+                                                    // Use shared edit-mode font-size logic
+                                                    com.example.ocrmanga.ui.screens.view.computeEditModeFontSize(
+                                                        block = dragBlock.block,
+                                                        editedFontSize = dragBlock.fontSize
+                                                    )
                                                 }
 
                                                 newlyTranslated[uri] == true -> {
