@@ -203,7 +203,8 @@ fun mergeOverlappingRegions(
                     width = mergedRect.width,
                     height = mergedRect.height,
                     minFontSize = minFontSize,
-                    shapeType = currentBlock.shapeType
+                    shapeType = currentBlock.shapeType,
+                    extraSizeAllowance = 2f
                 )
 
 
@@ -320,7 +321,10 @@ fun calculateOptimalFontSize(
     maxFontSize: Float = 100f,
     shapeType: Int = 0, // 0 = rectangle, 1 = oval
     context: Context? = null,
-    fontFamilyName: String? = null
+    fontFamilyName: String? = null,
+    // Allow returning a slightly larger font so UI can display one extra "step" when
+    // increasing size. Set to 1f by default to add one pixel/point of allowance.
+    extraSizeAllowance: Float = 1f
 ): Float {
     if (text.isBlank() || width <= 0 || height <= 0) return minFontSize
 
@@ -343,8 +347,9 @@ fun calculateOptimalFontSize(
     var optimalFontSize = minFontSize
 
     // Điều chỉnh hệ số scale cho hình oval để text vừa vặn
-    val widthScale = if (shapeType == 1) 0.70f else 0.98f // Oval cần padding nhiều hơn
-    val heightScale = if (shapeType == 1) 0.70f else 0.98f
+    // Dùng scale hơi lớn hơn trước (0.99) để cho phép font lớn hơn 1 bước so với trước
+    val widthScale = if (shapeType == 1) 0.70f else 0.99f // Oval cần padding nhiều hơn
+    val heightScale = if (shapeType == 1) 0.70f else 0.99f
 
     // Nhị phân để tìm fontSize lớn nhất mà text vẫn vừa vùng bôi trắng
     repeat(12) {
@@ -368,8 +373,9 @@ fun calculateOptimalFontSize(
         }
     }
 
-    // Đảm bảo không nhỏ hơn minFontSize và không lớn hơn maxFontSize
-    return optimalFontSize.coerceIn(minFontSize, maxFontSize)
+    // Apply a small allowance so UI can present one or two more incremental steps to the user.
+    val allowed = (optimalFontSize + extraSizeAllowance).coerceIn(minFontSize, maxFontSize)
+    return allowed
 }
 
 /**

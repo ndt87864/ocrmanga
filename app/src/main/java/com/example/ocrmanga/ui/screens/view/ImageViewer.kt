@@ -362,7 +362,8 @@ fun ImageViewer(
                                                         minFontSize = 12f,
                                                         shapeType = dragBlock.block.shapeType,
                                                         context = context,
-                                                        fontFamilyName = dragBlock.block.fontFamily
+                                                 fontFamilyName = dragBlock.block.fontFamily,
+                                                 extraSizeAllowance = 2f
                                                     )
                                                     autoFont
                                                 }
