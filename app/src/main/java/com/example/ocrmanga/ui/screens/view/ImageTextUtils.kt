@@ -324,7 +324,12 @@ fun calculateOptimalFontSize(
     fontFamilyName: String? = null,
     // Allow returning a slightly larger font so UI can display one extra "step" when
     // increasing size. Set to 1f by default to add one pixel/point of allowance.
-    extraSizeAllowance: Float = 1f
+    extraSizeAllowance: Float = 1f,
+    // Optional padding in pixels to keep text away from overlay edges. These are
+    // subtracted from the available width/height before sizing. Defaults keep
+    // current behavior.
+    horizontalPadding: Float = 0f,
+    verticalPadding: Float = 0f
 ): Float {
     if (text.isBlank() || width <= 0 || height <= 0) return minFontSize
 
@@ -351,11 +356,15 @@ fun calculateOptimalFontSize(
     val widthScale = if (shapeType == 1) 0.70f else 0.99f // Oval cần padding nhiều hơn
     val heightScale = if (shapeType == 1) 0.70f else 0.99f
 
+    // Compute available drawing area after applying explicit paddings.
+    val safeWidth = (width - (horizontalPadding * 2f)).coerceAtLeast(1f)
+    val safeHeight = (height - (verticalPadding * 2f)).coerceAtLeast(1f)
+
     // Nhị phân để tìm fontSize lớn nhất mà text vẫn vừa vùng bôi trắng
     repeat(12) {
         val mid = (low + high) / 2
         paint.textSize = mid
-                val wrappedLines = wrapText(text, width * widthScale, mid, context, fontFamilyName)
+            val wrappedLines = wrapText(text, safeWidth * widthScale, mid, context, fontFamilyName)
         val fontMetrics = paint.fontMetrics
         val lineHeight = fontMetrics.descent - fontMetrics.ascent
         val textHeight = wrappedLines.size * lineHeight
@@ -365,7 +374,7 @@ fun calculateOptimalFontSize(
             bounds.width().toFloat()
         } ?: 0f
 
-        if (maxLineWidth <= width * widthScale && textHeight <= height * heightScale) {
+        if (maxLineWidth <= safeWidth * widthScale && textHeight <= safeHeight * heightScale) {
             optimalFontSize = mid
             low = mid + 0.2f
         } else {
@@ -516,16 +525,26 @@ fun DrawScope.drawText(
                 }
             }
         } else {
-            var currentY = y - fontMetrics.ascent
+            // Center the block of lines vertically within the overlay and add a small
+            // margin so text doesn't touch the top/bottom edges. This makes viewing
+            // and editing feel less cramped.
+            val totalTextHeight = lines.size * lineHeight
+            val margin = max(1f, fontSize * 0.02f)
+            val availableHeight = (height - margin * 2f).coerceAtLeast(lineHeight)
+            val startY = y + margin + (availableHeight - totalTextHeight) / 2f - fontMetrics.ascent
+
+            var currentY = startY
             for (line in lines) {
-                if (line.isNotBlank() && currentY + fontMetrics.descent <= y + height) {
+                if (line.isNotBlank()) {
                     val centerX = x + width / 2
                     borderPaint?.let {
                         canvas.nativeCanvas.drawText(line, centerX, currentY, it)
                     }
                     canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
-                    currentY += lineHeight
                 }
+                currentY += lineHeight
+                // Stop drawing if we exceed the overlay bottom
+                if (currentY + fontMetrics.descent > y + height - margin) break
             }
         }
     }
