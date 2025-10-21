@@ -464,24 +464,17 @@ fun DrawScope.drawText(
         }
     }
 
-    // Đảm bảo text luôn nằm gọn trong overlay bằng cách tự động wrap và giảm font size nếu cần
-    // Trong chế độ edit, cho phép font size tự do không bị giới hạn bởi overlay
-    val (wrappedText, optimalFontSize) = if (editMode) {
-        // Edit mode: không điều chỉnh font size, chỉ wrap text
-        val wrappedLines = wrapText(text, width, fontSize, context, fontFamilyName)
-        Pair(wrappedLines.joinToString("\n"), fontSize)
-    } else {
-        // Normal mode: điều chỉnh font size để vừa overlay
-        adjustWhiteoutBounds(
-            text = text,
-            initialWidth = width,
-            initialHeight = height,
-            fontSize = fontSize,
-            isVertical = isVertical,
-            context = context,
-            fontFamilyName = fontFamilyName
-        )
-    }
+    // Đảm bảo text luôn nằm gọn trong overlay bằng cách tự động wrap và điều chỉnh font size nếu cần.
+    // Sử dụng chung một logic cho cả chế độ xem và chế độ chỉnh sửa để giữ nhất quán
+    val (wrappedText, optimalFontSize) = adjustWhiteoutBounds(
+        text = text,
+        initialWidth = width,
+        initialHeight = height,
+        fontSize = fontSize,
+        isVertical = isVertical,
+        context = context,
+        fontFamilyName = fontFamilyName
+    )
     paint.textSize = optimalFontSize
     borderPaint?.textSize = optimalFontSize
     val lines = wrappedText.split("\n")
