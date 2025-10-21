@@ -207,8 +207,10 @@ fun TranslationEditor(
                                                         minFontSize = 12f,
                                                         shapeType = newShapeType,
                                                         context = context,
-                                                        fontFamilyName = currentBlock.block.fontFamily
+                                                        fontFamilyName = currentBlock.block.fontFamily,
+                                                        extraSizeAllowance = 2f
                                                     )
+
                                                 }
 
 
@@ -343,39 +345,79 @@ fun TranslationEditor(
                         val minFontGlobal = 10f
                         var currentFontForSelected = 0f
                         var maxFontForSelected = 100f
+                        // These represent the font values as shown in edit UI (computeEditModeFontSize
+                        // scales vertical text). Use these for tinting and toast checks so the UI reflects
+                        // what the user actually sees.
+                        var displayedCurrentFont = 0f
+                        var displayedMaxFont = 100f
+                        var displayedMinFont = if (/*vertical scaled min*/ false) minFontGlobal else minFontGlobal
                         if (selectedIdx != null && selectedIdx in dragBlocks.indices) {
                             val sel = dragBlocks[selectedIdx]
                             val b = sel.block
                             val bounds = b.bounds
                             val width = bounds.width().toFloat()
                             val height = bounds.height().toFloat()
-                            maxFontForSelected = calculateOptimalFontSize(
+                            // compute raw maximum allowed font for the block (with allowance)
+                            val rawMax = calculateOptimalFontSize(
                                 text = b.text,
                                 width = width,
                                 height = height,
                                 minFontSize = minFontGlobal,
                                 shapeType = b.shapeType,
                                 context = context,
-                                fontFamilyName = b.fontFamily
+                                fontFamilyName = b.fontFamily,
+                                extraSizeAllowance = 2f
                             )
+                            maxFontForSelected = rawMax
                             currentFontForSelected = sel.fontSize ?: b.fontSize
+                            // compute displayed sizes (edit-mode scaling)
+                            displayedCurrentFont = com.example.ocrmanga.ui.screens.view.computeEditModeFontSize(
+                                block = b,
+                                editedFontSize = sel.fontSize
+                            )
+                            displayedMaxFont = if (b.isVertical) (rawMax / 3f) else rawMax
+                            displayedMinFont = if (b.isVertical) (minFontGlobal / 3f) else minFontGlobal
+                        }
+
+                        // Debug logging to inspect computed values at runtime
+                        if (selectedIdx != null && selectedIdx in dragBlocks.indices) {
+                            val sel = dragBlocks[selectedIdx]
+                            android.util.Log.d("TranslationEditor", "displayedCurrentFont=$displayedCurrentFont displayedMaxFont=$displayedMaxFont displayedMinFont=$displayedMinFont rawCurrent=${sel.fontSize ?: sel.block.fontSize} rawMax=$maxFontForSelected")
                         }
 
                         // Keep buttons clickable so we can show a toast when user hits the limit,
-                        // but tint them gray when they are effectively disabled.
-                        val decreaseEnabled = isBlockSelected && currentFontForSelected > minFontGlobal + 0.01f
-                        val increaseEnabled = isBlockSelected && currentFontForSelected < maxFontForSelected - 0.01f
+                        // but tint them gray when they are effectively disabled (based on displayed sizes).
+                        val decreaseEnabled = isBlockSelected && displayedCurrentFont > displayedMinFont + 0.01f
+                        val increaseEnabled = isBlockSelected && displayedCurrentFont < displayedMaxFont - 0.01f
 
                         IconButton(
                             onClick = {
                                 selectedIdx?.let { idx ->
-                                    val alreadyAtMin = dragBlocks.getOrNull(idx)?.let { old ->
-                                        val current = old.fontSize ?: old.block.fontSize
-                                        current <= minFontGlobal + 0.001f
-                                    } ?: false
-                                    if (alreadyAtMin) {
-                                        android.widget.Toast.makeText(context, "Đã đạt kích thước chữ nhỏ nhất", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
+                                    // Check displayed value so toast/tint match what user sees
+                                            // Use raw stored font for toast triggers so it matches the actual value stored
+                                            val currentRaw = dragBlocks.getOrNull(idx)?.let { it.fontSize ?: it.block.fontSize } ?: minFontGlobal
+                                            val curBlockForCheck = dragBlocks.getOrNull(idx)?.block
+                                            val rawMaxForThis = if (curBlockForCheck != null) {
+                                                val bb = curBlockForCheck
+                                                val w = bb.bounds.width().toFloat()
+                                                val h = bb.bounds.height().toFloat()
+                                                calculateOptimalFontSize(
+                                                    text = bb.text,
+                                                    width = w,
+                                                    height = h,
+                                                    minFontSize = minFontGlobal,
+                                                    shapeType = bb.shapeType,
+                                                    context = context,
+                                                    fontFamilyName = bb.fontFamily,
+                                                    extraSizeAllowance = 2f
+                                                )
+                                            } else {
+                                                minFontGlobal
+                                            }
+                                            val alreadyAtMinRaw = currentRaw <= minFontGlobal + 0.001f
+                                            if (alreadyAtMinRaw) {
+                                                android.widget.Toast.makeText(context, "Đã đạt kích thước chữ nhỏ nhất", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
                                     onDragBlocksChange(dragBlocks.toMutableList().also {
                                         val old = it[idx]
                                         val b = old.block
@@ -389,7 +431,8 @@ fun TranslationEditor(
                                             minFontSize = minFontGlobal,
                                             shapeType = b.shapeType,
                                             context = context,
-                                            fontFamilyName = b.fontFamily
+                                            fontFamilyName = b.fontFamily,
+                                            extraSizeAllowance = 2f
                                         )
                                         val newFontCandidate = (old.fontSize ?: b.fontSize) - 1f
                                         val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)
@@ -410,24 +453,29 @@ fun TranslationEditor(
                         IconButton(
                             onClick = {
                                 selectedIdx?.let { idx ->
-                                    val alreadyAtMax = dragBlocks.getOrNull(idx)?.let { old ->
-                                        val b = old.block
-                                        val bounds = b.bounds
-                                        val width = bounds.width().toFloat()
-                                        val height = bounds.height().toFloat()
-                                        val maxFont = calculateOptimalFontSize(
-                                            text = b.text,
-                                            width = width,
-                                            height = height,
+                                    // Use displayed values for toast/tint so user sees consistent behavior
+                                    // Use raw stored font for toast triggers so it matches the actual value stored
+                                    val currentRawMaxCheck = dragBlocks.getOrNull(idx)?.let { it.fontSize ?: it.block.fontSize } ?: minFontGlobal
+                                    val curBlockForCheck2 = dragBlocks.getOrNull(idx)?.block
+                                    val rawMaxForThisCheck = if (curBlockForCheck2 != null) {
+                                        val bb = curBlockForCheck2
+                                        val w = bb.bounds.width().toFloat()
+                                        val h = bb.bounds.height().toFloat()
+                                        calculateOptimalFontSize(
+                                            text = bb.text,
+                                            width = w,
+                                            height = h,
                                             minFontSize = minFontGlobal,
-                                            shapeType = b.shapeType,
+                                            shapeType = bb.shapeType,
                                             context = context,
-                                            fontFamilyName = b.fontFamily
+                                            fontFamilyName = bb.fontFamily,
+                                            extraSizeAllowance = 2f
                                         )
-                                        val current = old.fontSize ?: old.block.fontSize
-                                        current >= maxFont - 0.001f
-                                    } ?: false
-                                    if (alreadyAtMax) {
+                                    } else {
+                                        minFontGlobal
+                                    }
+                                    val alreadyAtMaxRaw = currentRawMaxCheck >= rawMaxForThisCheck - 0.001f
+                                    if (alreadyAtMaxRaw) {
                                         android.widget.Toast.makeText(context, "Đã đạt kích thước chữ tối đa", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                     onDragBlocksChange(dragBlocks.toMutableList().also {
@@ -443,7 +491,8 @@ fun TranslationEditor(
                                             minFontSize = minFontGlobal,
                                             shapeType = b.shapeType,
                                             context = context,
-                                            fontFamilyName = b.fontFamily
+                                            fontFamilyName = b.fontFamily,
+                                            extraSizeAllowance = 2f
                                         )
                                         val newFontCandidate = (old.fontSize ?: b.fontSize) + 1f
                                         val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)
