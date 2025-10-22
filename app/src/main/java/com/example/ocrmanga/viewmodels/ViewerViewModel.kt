@@ -765,6 +765,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             if (mapping.isNotEmpty()) {
                                 databaseHelper.applyPendingChangesForRoom(roomId, mapping)
                             }
+                        } else {
+                            // If there are NO change flags (is_changed = 1) for any image in this room,
+                            // ensure the whole room dataset is persisted in DB by performing a full update.
+                            // This guarantees the room's current ordering, images and translations are saved
+                            // even when no per-image pending-change markers exist.
+                            try {
+                                databaseHelper.updateMangaRoom(roomId, uniqueImageUris, uniqueTranslatedTexts)
+                            } catch (inner: Exception) {
+                                Log.w(TAG, "Failed to perform full room update for room $roomId when no change flags present", inner)
+                            }
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to apply pending changes for room $roomId", e)
