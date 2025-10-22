@@ -500,6 +500,8 @@ fun ViewerScreen(
             onShowImageMenuChange = { showImageMenu = it },
             onImageMenuUriChange = { imageMenuUri = it },
             lazyListState = lazyListState,
+            // provide ViewModel accessor so ImageViewer can use stable DB imageId as keys
+            getImageIdForUri = viewModel::getImageIdForUri,
             isLoadingMoreImages = uiState.isLoadingMoreImages,
             remainingImagesCount = uiState.remainingImages.size
         )

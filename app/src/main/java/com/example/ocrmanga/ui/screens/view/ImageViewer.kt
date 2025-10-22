@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import coil.ImageLoader
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
 import java.io.IOException
@@ -77,12 +78,43 @@ fun ImageViewer(
     onImageMenuUriChange: (Uri?) -> Unit,
     onRemoveImage: (Uri) -> Unit,
     lazyListState: LazyListState = rememberLazyListState(),
+    // function to retrieve DB imageId for a uri (may be null)
+    getImageIdForUri: (Uri) -> Long? = { null },
     isLoadingMoreImages: Boolean = false,
     remainingImagesCount: Int = 0
 ) {
     val context = LocalContext.current
     var translationVersion by remember { mutableStateOf(0) }
     val newlyTranslated = remember { mutableStateMapOf<Uri, Boolean>() }
+    // Windowing state: only render heavy overlays for indices inside this range
+    val visibleRange = remember { mutableStateOf(IntRange(0, -1)) }
+    val prefetchBuffer = 2 // how many items before/after visible area to prefetch
+    val imageLoader = ImageLoader(context)
+
+    // Observe LazyListState visible items and compute expanded window + prefetch
+    LaunchedEffect(lazyListState, imageUris) {
+        snapshotFlow { lazyListState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .collect { visibleIndices ->
+                if (visibleIndices.isNotEmpty()) {
+                    val min = visibleIndices.minOrNull() ?: 0
+                    val max = visibleIndices.maxOrNull() ?: 0
+                    val start = (min - prefetchBuffer).coerceAtLeast(0)
+                    val end = (max + prefetchBuffer).coerceAtMost(imageUris.size - 1)
+                    visibleRange.value = IntRange(start, end)
+                    // Prefetch images inside expanded window
+                    for (i in start..end) {
+                        try {
+                            val req = ImageRequest.Builder(context).data(imageUris[i]).build()
+                            imageLoader.enqueue(req)
+                        } catch (e: Exception) {
+                            // ignore prefetch errors
+                        }
+                    }
+                } else {
+                    visibleRange.value = IntRange(0, -1)
+                }
+            }
+    }
 
     LazyColumn(
         state = lazyListState,
@@ -107,9 +139,15 @@ fun ImageViewer(
         // Use a stable key based on the image Uri only. Including the index in the key
         // causes Compose to reuse/replace items when the list grows, which led to
         // previously-last images being replaced by newly added images.
-        items(items = imageUris, key = { uri -> uri.toString() }) { uri ->
+        itemsIndexed(items = imageUris, key = { index, uri ->
+            // prefer stable DB imageId when available, fallback to index:uri
+            val id = getImageIdForUri(uri)
+            if (id != null) id.toString() else "$index:${uri.toString()}"
+        }) { index, uri ->
+            val isInWindow = index in visibleRange.value
             // Luôn ưu tiên translatedTexts mới từ translation mode
-                val currentTranslatedBlocks = translatedTexts[uri]?.second?.map { block ->
+            // Only prepare translated blocks when the item is in window to avoid expensive work while scrolling
+            val currentTranslatedBlocks = if (isInWindow) translatedTexts[uri]?.second?.map { block ->
                 // ✅ Chuẩn hóa màu overlay & text, đảm bảo luôn có alpha
                 val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
                 val textInt = (block.customTextColor ?: computeDefaultTextColor(overlayInt, block.averageBackgroundColor)) or 0xFF000000.toInt()
@@ -133,21 +171,20 @@ fun ImageViewer(
                     textBorderThickness = block.borderThickness,
                     textBorderAlpha = block.borderAlpha
                 )
-            } ?: emptyList()
+            } else null
 
-            var dragBlocks by remember(uri, translationVersion, translatedTexts[uri]) {
-                mutableStateOf(currentTranslatedBlocks)
+            // Keep dragBlocks lightweight when offscreen to avoid allocations and heavy updates
+            var dragBlocks by remember(uri, translationVersion, translatedTexts[uri], isInWindow) {
+                mutableStateOf(if (isInWindow) (currentTranslatedBlocks ?: emptyList()) else (dragBlocksMap[uri] ?: emptyList()))
             }
-            
-            // Cập nhật dragBlocks khi translatedTexts thay đổi (do dịch mới)
-            LaunchedEffect(uri, translatedTexts[uri], translationVersion) {
-                if (!editTranslationMode) {
-                    // Luôn cập nhật từ translatedTexts mới, không kiểm tra dragBlocksMap
+
+            // Only update dragBlocks when item becomes visible (isInWindow) or when translationVersion changes
+            LaunchedEffect(uri, isInWindow, translationVersion) {
+                if (isInWindow && !editTranslationMode) {
                     val newBlocks = translatedTexts[uri]?.second?.map {
-                DragBlockState(
-                    block = it,
-                    // Do not pre-scale/set an edited font size on load
-                    fontSize = null,
+                        DragBlockState(
+                            block = it,
+                            fontSize = null,
                             rotation = it.rotation ?: 0f,
                             whiteoutColor = it.customOverlayColor?.let { c -> Color(c) },
                             textColor = it.customTextColor?.let { c -> Color(c) },
@@ -165,8 +202,9 @@ fun ImageViewer(
                     newlyTranslated[uri] = true
                 }
             }
-            LaunchedEffect(dragBlocks) {
-                dragBlocksMap[uri] = dragBlocks
+
+            LaunchedEffect(dragBlocks, isInWindow) {
+                if (isInWindow) dragBlocksMap[uri] = dragBlocks
             }
             var selectedIndex by remember(uri, editTranslationMode) { mutableStateOf<Int?>(null) }
             fun getWhiteoutShape(idx: Int) = if (idx < dragBlocks.size) dragBlocks[idx].block.shapeType else 0
@@ -211,17 +249,20 @@ fun ImageViewer(
                     var isImageLoaded by remember { mutableStateOf(false) }
                     var imageLoadState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
 
-                    LaunchedEffect(uri) {
-                        try {
-                            val (width, height) = getImageDimensions(context, uri)
-                            originalImageWidth = width.toFloat()
-                            originalImageHeight = height.toFloat()
-                            isImageLoaded = true
-                        } catch (e: IOException) {
-                            originalImageWidth = 1280f
-                            originalImageHeight = 1808f
-                            isImageLoaded = true
-                            Log.e("ImageViewer", "Failed to load image dimensions for $uri", e)
+                    // Only load image dimensions when visible to avoid I/O during fast scroll
+                    if (isInWindow) {
+                        LaunchedEffect(uri) {
+                            try {
+                                val (width, height) = getImageDimensions(context, uri)
+                                originalImageWidth = width.toFloat()
+                                originalImageHeight = height.toFloat()
+                                isImageLoaded = true
+                            } catch (e: IOException) {
+                                originalImageWidth = 1280f
+                                originalImageHeight = 1808f
+                                isImageLoaded = true
+                                Log.e("ImageViewer", "Failed to load image dimensions for $uri", e)
+                            }
                         }
                     }
 
@@ -241,7 +282,8 @@ fun ImageViewer(
                         contentScale = ContentScale.FillWidth,
                         onState = { state -> imageLoadState = state }
                     )
-                    if (translationEnabled && translatedTexts.containsKey(uri) && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success) {
+                    // Only draw heavy overlays when the item is inside the visible window
+                    if (isInWindow && translationEnabled && translatedTexts.containsKey(uri) && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success) {
                         Canvas(
                             modifier = Modifier
                                 .matchParentSize()
