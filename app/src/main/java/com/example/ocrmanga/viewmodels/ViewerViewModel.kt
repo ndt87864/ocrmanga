@@ -1246,6 +1246,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun hasMistralApiKeys(): Boolean {
         return translationRepository.hasMistralApiKeys()
     }
+
+    // Public accessor for UI to get imageId for a given uri if available
+    fun getImageIdForUri(uri: Uri): Long? {
+        return uriToImageId[uri]
+    }
 }
 data class ViewerUiState(
     val imageUris: List<Uri> = emptyList(),
