@@ -825,6 +825,88 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * Replace an existing image URI in the current room/session with a new URI.
+     * Keeps the existing image_id (if any), translations and image_blocks intact by
+     * updating the stored URI in DB. Also updates in-memory mappings and UI state.
+     * If the image was not associated with a stored image_id, the ViewModel will
+     * simply swap the URI in the UI state.
+     */
+    fun replaceImageUri(oldUri: Uri, newUri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val currentUris = _uiState.value.imageUris.toMutableList()
+                val idx = currentUris.indexOfFirst { it.toString() == oldUri.toString() }
+                if (idx == -1) {
+                    // not found: nothing to do
+                    Log.w(TAG, "replaceImageUri: oldUri not found: $oldUri")
+                    return@launch
+                }
+
+                // Update DB if we have an imageId mapping
+                val imageId = uriToImageId[oldUri]
+                if (imageId != null && _uiState.value.roomId != null) {
+                    try {
+                        // Copy new image into room folder if needed (use existing DB helper behaviour)
+                        // Here we only update the image_uri field so image_id remains the same.
+                        databaseHelper.updateImageUri(imageId, newUri)
+                        // update mapping keys: remove old key, add new key pointing to same imageId
+                        uriToImageId.remove(oldUri)
+                        uriToImageId[newUri] = imageId
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to update DB image uri for imageId=$imageId", e)
+                    }
+                }
+
+                // Update UI state: replace the URI while keeping translations mapped to the same data
+                val newUris = currentUris.toMutableList()
+                newUris[idx] = newUri
+
+                val newTranslatedTexts = _uiState.value.translatedTexts.toMutableMap()
+                // Move any translation entry from oldUri -> newUri
+                newTranslatedTexts[oldUri]?.let { pair ->
+                    newTranslatedTexts.remove(oldUri)
+                    newTranslatedTexts[newUri] = pair
+                }
+
+                val newTranslatedStatus = _uiState.value.translatedStatus.toMutableMap()
+                if (newTranslatedStatus.containsKey(oldUri)) {
+                    val status = newTranslatedStatus[oldUri]
+                    newTranslatedStatus.remove(oldUri)
+                    newTranslatedStatus[newUri] = status ?: false
+                }
+
+                val newSourceLangs = _uiState.value.sourceLanguages.toMutableMap()
+                newSourceLangs[oldUri]?.let { lang ->
+                    newSourceLangs.remove(oldUri)
+                    newSourceLangs[newUri] = lang
+                }
+
+                _uiState.update {
+                    it.copy(
+                        imageUris = newUris,
+                        translatedTexts = newTranslatedTexts,
+                        translatedStatus = newTranslatedStatus,
+                        sourceLanguages = newSourceLangs
+                    )
+                }
+
+                // Mark as dirty so caller may save if desired
+                dirtyUris.remove(oldUri)
+                dirtyUris.add(newUri)
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Đã thay thế ảnh", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "replaceImageUri failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Thay thế ảnh thất bại", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     private fun enqueueTranslation(images: List<Uri>) {
         translationQueue.addAll(images)
         if (translationJob == null || translationJob?.isActive != true) {
