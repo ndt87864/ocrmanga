@@ -1621,6 +1621,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.update(TABLE_ROOMS, values, "$COLUMN_ROOM_ID=?", arrayOf(roomId.toString()))
     }
 
+    /**
+     * Update image URI for a single image row. This preserves the image_id and any
+     * translations / image_blocks associated with that image. Caller is responsible
+     * for also updating any in-memory maps in the ViewModel.
+     */
+    fun updateImageUri(imageId: Long, newUri: Uri) {
+        try {
+            val db = writableDatabase
+            val values = ContentValues().apply { put(COLUMN_IMAGE_URI, newUri.toString()) }
+            db.update(TABLE_IMAGES, values, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            Log.i(TAG, "updateImageUri: imageId=$imageId -> $newUri")
+        } catch (e: Exception) {
+            Log.w(TAG, "updateImageUri failed for imageId=$imageId newUri=$newUri", e)
+        }
+    }
+
     fun getAllRooms(): List<Triple<Long, String, Uri>> {
         val db = readableDatabase
         val cursor = db.rawQuery("SELECT $COLUMN_ROOM_ID, $COLUMN_TITLE, $COLUMN_COVER_URI FROM $TABLE_ROOMS ORDER BY $COLUMN_ROOM_ID DESC", null)
