@@ -104,8 +104,15 @@ fun ImageViewer(
                     // Prefetch images inside expanded window
                     for (i in start..end) {
                         try {
-                            val req = ImageRequest.Builder(context).data(imageUris[i]).build()
-                            imageLoader.enqueue(req)
+                            // Create a lightweight request matching the one used by the item.
+                            val prefetchReq = ImageRequest.Builder(context)
+                                .data(imageUris[i])
+                                .memoryCacheKey("image-index-$i")
+                                .diskCacheKey("image-index-$i")
+                                .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                                .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                                .build()
+                            imageLoader.enqueue(prefetchReq)
                         } catch (e: Exception) {
                             // ignore prefetch errors
                         }
@@ -266,12 +273,22 @@ fun ImageViewer(
                         }
                     }
 
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
+                    // Build and remember ImageRequest per index so Compose doesn't recreate
+                    // requests on every recomposition. Use the image index as the cache key
+                    // so Coil can reuse the decoded bitmap when the same logical slot is shown.
+                    val imageRequest = remember(index, uri) {
+                        ImageRequest.Builder(context)
                             .data(uri)
+                            // Use index-based cache keys to prefer reuse by position
+                            .memoryCacheKey("image-index-$index")
+                            .diskCacheKey("image-index-$index")
                             .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                             .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-                            .build(),
+                            .build()
+                    }
+
+                    AsyncImage(
+                        model = imageRequest,
                         contentDescription = "Ảnh manga",
                         modifier = Modifier
                             .fillMaxWidth()
