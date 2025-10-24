@@ -502,6 +502,9 @@ fun ViewerScreen(
             lazyListState = lazyListState,
             // provide ViewModel accessor so ImageViewer can use stable DB imageId as keys
             getImageIdForUri = viewModel::getImageIdForUri,
+            // provide a version accessor so replaced images can be forced to reload
+            getImageVersionForUri = viewModel::getImageVersionForUri,
+            getReloadTokenForUri = viewModel::getReloadTokenForUri,
             isLoadingMoreImages = uiState.isLoadingMoreImages,
             remainingImagesCount = uiState.remainingImages.size
         )

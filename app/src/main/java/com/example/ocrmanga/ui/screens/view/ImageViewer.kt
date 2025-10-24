@@ -80,6 +80,10 @@ fun ImageViewer(
     lazyListState: LazyListState = rememberLazyListState(),
     // function to retrieve DB imageId for a uri (may be null)
     getImageIdForUri: (Uri) -> Long? = { null },
+    // accessor to retrieve per-image version to force cache invalidation when file replaced
+    getImageVersionForUri: (Uri) -> Int? = { null },
+    // accessor to retrieve an ad-hoc reload token (timestamp) for a uri so caller can force reloads
+    getReloadTokenForUri: (Uri) -> Long? = { null },
     isLoadingMoreImages: Boolean = false,
     remainingImagesCount: Int = 0
 ) {
@@ -105,10 +109,12 @@ fun ImageViewer(
                     for (i in start..end) {
                         try {
                             // Create a lightweight request matching the one used by the item.
+                            val reloadToken = try { getReloadTokenForUri(imageUris[i]) ?: 0L } catch (e: Exception) { 0L }
                             val prefetchReq = ImageRequest.Builder(context)
                                 .data(imageUris[i])
-                                .memoryCacheKey("image-index-$i")
-                                .diskCacheKey("image-index-$i")
+                                // include the uri+reloadToken in the cache key so replacing the image invalidates the cache for that slot
+                                .memoryCacheKey("image-index-$i:${imageUris[i].toString()}:rt$reloadToken")
+                                .diskCacheKey("image-index-$i:${imageUris[i].toString()}:rt$reloadToken")
                                 .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                                 .diskCachePolicy(coil.request.CachePolicy.ENABLED)
                                 .build()
@@ -276,12 +282,15 @@ fun ImageViewer(
                     // Build and remember ImageRequest per index so Compose doesn't recreate
                     // requests on every recomposition. Use the image index as the cache key
                     // so Coil can reuse the decoded bitmap when the same logical slot is shown.
-                    val imageRequest = remember(index, uri) {
+                    // include image version (from ViewModel) in the cache key when available to force reloads
+                    val imageVersion = try { getImageVersionForUri(uri) ?: 0 } catch (e: Exception) { 0 }
+                    val reloadToken = try { getReloadTokenForUri(uri) ?: 0L } catch (e: Exception) { 0L }
+                    val imageRequest = remember(index, uri, imageVersion) {
                         ImageRequest.Builder(context)
                             .data(uri)
-                            // Use index-based cache keys to prefer reuse by position
-                            .memoryCacheKey("image-index-$index")
-                            .diskCacheKey("image-index-$index")
+                            // Use index+uri+version+reloadToken-based cache keys so when the uri for a slot changes the cache is invalidated
+                            .memoryCacheKey("image-index-$index:${uri.toString()}:v$imageVersion:rt$reloadToken")
+                            .diskCacheKey("image-index-$index:${uri.toString()}:v$imageVersion:rt$reloadToken")
                             .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                             .diskCachePolicy(coil.request.CachePolicy.ENABLED)
                             .build()

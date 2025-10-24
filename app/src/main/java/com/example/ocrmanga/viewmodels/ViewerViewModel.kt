@@ -845,56 +845,65 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun replaceImageUri(oldUri: Uri, newUri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val currentUris = _uiState.value.imageUris.toMutableList()
-                val idx = currentUris.indexOfFirst { it.toString() == oldUri.toString() }
-                if (idx == -1) {
-                    // not found: nothing to do
-                    Log.w(TAG, "replaceImageUri: oldUri not found: $oldUri")
-                    return@launch
-                }
-
-                // Update DB if we have an imageId mapping
-                val imageId = uriToImageId[oldUri]
-                if (imageId != null && _uiState.value.roomId != null) {
+                // Update DB if we have an imageId mapping. Ask DB helper to copy the
+                // new image into the room's images folder and return the stored app URI.
+                val imageId = uriToImageId.entries.find { it.key.toString() == oldUri.toString() }?.value
+                val finalUri: Uri = if (imageId != null && _uiState.value.roomId != null) {
                     try {
-                        // Copy new image into room folder if needed (use existing DB helper behaviour)
-                        // Here we only update the image_uri field so image_id remains the same.
-                        databaseHelper.updateImageUri(imageId, newUri)
-                        // update mapping keys: remove old key, add new key pointing to same imageId
-                        uriToImageId.remove(oldUri)
-                        uriToImageId[newUri] = imageId
+                        val stored = databaseHelper.replaceImageWithCopy(imageId, newUri)
+                        val result = stored ?: newUri
+                        if (stored != null) {
+                            // bump version so UI invalidates Coil cache and reloads the new file
+                            bumpImageVersion(imageId)
+                            // bump reload token for the oldUri and the resulting stored uri string
+                            bumpReloadTokenForUri(oldUri)
+                            stored?.let { bumpReloadTokenForUri(it) }
+                        }
+                        // update uriToImageId mapping by string equality (remove old entries)
+                        val keysToRemove = uriToImageId.keys.filter { it.toString() == oldUri.toString() }
+                        keysToRemove.forEach { uriToImageId.remove(it) }
+                        uriToImageId[ Uri.parse(result.toString()) ] = imageId
+                        result
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to update DB image uri for imageId=$imageId", e)
+                        newUri
                     }
+                } else {
+                    // Not a stored image; just use newUri directly
+                    newUri
                 }
 
-                // Update UI state: replace the URI while keeping translations mapped to the same data
-                val newUris = currentUris.toMutableList()
-                newUris[idx] = newUri
+                // Atomically update UI state so we don't race with other updates
+                _uiState.update { state ->
+                    val current = state.imageUris.toMutableList()
+                    val indexInState = current.indexOfFirst { it.toString() == oldUri.toString() }
+                    if (indexInState == -1) {
+                        Log.w(TAG, "replaceImageUri: oldUri not found in state during update: $oldUri")
+                        return@update state
+                    }
+                    current[indexInState] = finalUri
 
-                val newTranslatedTexts = _uiState.value.translatedTexts.toMutableMap()
-                // Move any translation entry from oldUri -> newUri
-                newTranslatedTexts[oldUri]?.let { pair ->
-                    newTranslatedTexts.remove(oldUri)
-                    newTranslatedTexts[newUri] = pair
-                }
+                    val newTranslatedTexts = state.translatedTexts.toMutableMap()
+                    val oldTextKey = newTranslatedTexts.keys.find { it.toString() == oldUri.toString() }
+                    if (oldTextKey != null) {
+                        newTranslatedTexts[finalUri] = newTranslatedTexts.remove(oldTextKey)!!
+                    }
 
-                val newTranslatedStatus = _uiState.value.translatedStatus.toMutableMap()
-                if (newTranslatedStatus.containsKey(oldUri)) {
-                    val status = newTranslatedStatus[oldUri]
-                    newTranslatedStatus.remove(oldUri)
-                    newTranslatedStatus[newUri] = status ?: false
-                }
+                    val newTranslatedStatus = state.translatedStatus.toMutableMap()
+                    val oldStatusKey = newTranslatedStatus.keys.find { it.toString() == oldUri.toString() }
+                    if (oldStatusKey != null) {
+                        newTranslatedStatus[finalUri] = newTranslatedStatus.remove(oldStatusKey) ?: false
+                    }
 
-                val newSourceLangs = _uiState.value.sourceLanguages.toMutableMap()
-                newSourceLangs[oldUri]?.let { lang ->
-                    newSourceLangs.remove(oldUri)
-                    newSourceLangs[newUri] = lang
-                }
+                    val newSourceLangs = state.sourceLanguages.toMutableMap()
+                    val oldLangKey = newSourceLangs.keys.find { it.toString() == oldUri.toString() }
+                    if (oldLangKey != null) {
+                        newSourceLangs[finalUri] = newSourceLangs.remove(oldLangKey) ?: ""
+                    }
 
-                _uiState.update {
-                    it.copy(
-                        imageUris = newUris,
+                    // Return updated state with preserved ordering
+                    state.copy(
+                        imageUris = current,
                         translatedTexts = newTranslatedTexts,
                         translatedStatus = newTranslatedStatus,
                         sourceLanguages = newSourceLangs
@@ -902,8 +911,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 // Mark as dirty so caller may save if desired
-                dirtyUris.remove(oldUri)
-                dirtyUris.add(newUri)
+                val oldKeys = dirtyUris.filter { it.toString() == oldUri.toString() }
+                oldKeys.forEach { dirtyUris.remove(it) }
+                dirtyUris.add(finalUri)
 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Đã thay thế ảnh", Toast.LENGTH_SHORT).show()
@@ -1260,6 +1270,33 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     // Public accessor for UI to get imageId for a given uri if available
     fun getImageIdForUri(uri: Uri): Long? {
         return uriToImageId[uri]
+    }
+
+    // Per-image version counter used to force image reloads when the underlying file is replaced
+    private val imageVersions = mutableMapOf<Long, Int>()
+
+    // Bump version for an imageId (call after replacing file content)
+    private fun bumpImageVersion(imageId: Long) {
+        imageVersions[imageId] = (imageVersions[imageId] ?: 0) + 1
+        // Also bump translationVersion to ensure overlays re-evaluate if needed
+        _uiState.update { it.copy(translationVersion = it.translationVersion + 1) }
+    }
+
+    // Public accessor for UI to get version for a uri (based on mapped imageId)
+    fun getImageVersionForUri(uri: Uri): Int? {
+        val id = uriToImageId.entries.find { it.key.toString() == uri.toString() }?.value
+        return id?.let { imageVersions[it] }
+    }
+
+    // Per-URI reload tokens (timestamp) to force reload even when the Uri string doesn't change
+    private val uriReloadTokens = mutableMapOf<String, Long>()
+
+    private fun bumpReloadTokenForUri(uri: Uri) {
+        uriReloadTokens[uri.toString()] = System.currentTimeMillis()
+    }
+
+    fun getReloadTokenForUri(uri: Uri): Long? {
+        return uriReloadTokens[uri.toString()]
     }
 }
 data class ViewerUiState(
