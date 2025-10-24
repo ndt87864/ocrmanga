@@ -20,6 +20,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
@@ -59,6 +60,24 @@ data class DragBlockState(
     val textBorderColor: Color? = null, // Màu viền chữ
     val textBorderThickness: Float = 0.0f, // Độ dày viền chữ (0.0 - 5.0)
     val textBorderAlpha: Float = 1.0f // Độ trong suốt của viền chữ (0.0 - 1.0)
+)
+
+// Precomputed region used for drawing; computed off the main composition pass to
+// avoid repeated allocations and heavy calculations during scroll/recompose.
+data class PrecomputedRegion(
+    val block: TextBlockInfo,
+    val rect: Rect,
+    val fontSize: Float,
+    val rotation: Float,
+    val whiteoutColor: Color? = null,
+    val textColor: Color? = null,
+    val overlayAlpha: Float = 1.0f,
+    val textBoldness: Float = 1.0f,
+    val overlaySaturation: Float = 1.0f,
+    val textSaturation: Float = 1.0f,
+    val textBorderColor: Color? = null,
+    val textBorderThickness: Float = 0.0f,
+    val textBorderAlpha: Float = 1.0f
 )
 
 @Composable
@@ -317,6 +336,56 @@ fun ImageViewer(
                         contentScale = ContentScale.FillWidth,
                         onState = { state -> imageLoadState = state }
                     )
+                    // Precompute drawing regions off the UI thread to avoid heavy work during
+                    // fast scrolling/recomposition. The produced list is used by drawWithCache.
+                    val precomputedRegionsState = remember(uri, translationVersion) { mutableStateOf<List<PrecomputedRegion>>(emptyList()) }
+                    LaunchedEffect(uri, translationVersion, dragBlocks, imageWidth, imageHeight, isInWindow) {
+                        if (!isInWindow) {
+                            // clear when offscreen to reduce memory
+                            precomputedRegionsState.value = emptyList()
+                            return@LaunchedEffect
+                        }
+                        withContext(kotlinx.coroutines.Dispatchers.Default) {
+                            val list = dragBlocks.mapNotNull { dragBlock ->
+                                val block = dragBlock.block
+                                if (block.text.isBlank()) return@mapNotNull null
+                                val blockImageWidth = block.originalImageWidth?.toFloat() ?: originalImageWidth
+                                val blockImageHeight = block.originalImageHeight?.toFloat() ?: originalImageHeight
+                                val scale = if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
+                                val scaledBlockHeight = blockImageHeight * scale
+                                val offsetY = if (imageHeight > scaledBlockHeight) (imageHeight - scaledBlockHeight) / 2 else 0f
+                                val offsetX = 0f
+                                val bounds = block.bounds
+                                val scaledLeft = (bounds.left * scale) + offsetX + dragBlock.offset.x
+                                val scaledTop = (bounds.top * scale) + offsetY + dragBlock.offset.y
+                                val scaledWidth = (bounds.width() * scale).toFloat()
+                                val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
+                                val fontSize = if (editTranslationMode) {
+                                    com.example.ocrmanga.ui.screens.view.computeEditModeFontSize(
+                                        block = dragBlock.block,
+                                        editedFontSize = dragBlock.fontSize
+                                    )
+                                } else dragBlock.block.fontSize
+
+                                PrecomputedRegion(
+                                    block = block,
+                                    rect = Rect(scaledLeft, scaledTop, scaledLeft + scaledWidth, scaledTop + scaledBlockHeight2),
+                                    fontSize = fontSize,
+                                    rotation = dragBlock.rotation,
+                                    whiteoutColor = dragBlock.whiteoutColor,
+                                    textColor = dragBlock.textColor,
+                                    overlayAlpha = dragBlock.overlayAlpha,
+                                    textBoldness = dragBlock.textBoldness,
+                                    overlaySaturation = dragBlock.overlaySaturation,
+                                    textSaturation = dragBlock.textSaturation,
+                                    textBorderColor = dragBlock.textBorderColor,
+                                    textBorderThickness = dragBlock.textBorderThickness,
+                                    textBorderAlpha = dragBlock.textBorderAlpha
+                                )
+                            }
+                            precomputedRegionsState.value = list
+                        }
+                    }
                     // Only draw heavy overlays when the item is inside the visible window
                     if (isInWindow && translationEnabled && translatedTexts.containsKey(uri) && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success) {
                         Canvas(
@@ -377,280 +446,207 @@ fun ImageViewer(
                                                         val dy = dragBlock.offset.y / scale
                                                         val newBounds = android.graphics.Rect(block.bounds)
                                                         newBounds.offset(dx.toInt(), dy.toInt())
-                                                        dragBlocks = dragBlocks.toMutableList().also { list ->
-                                                            list[idx] = list[idx].copy(
-                                                                block = list[idx].block.copy(bounds = newBounds),
-                                                                offset = Offset.Zero
-                                                            )
-                                                        }
-                                                        dragEvent.consume()
+                                                        // Commit updated position to the shared map and reset dragging state
+                                                        dragBlocksMap[uri] = dragBlocks
+                                                        draggingIndex = null
                                                     }
-                                                    draggingIndex = null
-                                                    lastDragPos = Offset.Zero
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                .drawWithCache {
-                                    data class RegionInfo(
-                                        val block: TextBlockInfo,
-                                        val rect: Rect,
-                                        val fontSize: Float,
-                                        val rotation: Float,
-                                        val whiteoutColor: Color? = null,
-                                        val textColor: Color? = null,
-                                        val overlayAlpha: Float = 1.0f,
-                                        val textBoldness: Float = 1.0f,
-                                        val overlaySaturation: Float = 1.0f,
-                                        val textSaturation: Float = 1.0f,
-                                        val textBorderColor: Color? = null,
-                                        val textBorderThickness: Float = 0.0f,
-                                        val textBorderAlpha: Float = 1.0f
+                        ) {
+                            // Canvas draw scope: draw overlays using precomputed regions
+                            val regions = precomputedRegionsState.value
+                            regions.forEachIndexed { i, region ->
+                                val block = region.block
+                                val rect = region.rect
+                                val isOval = block.shapeType == 1
+
+                                // Xác định block đang được chọn bằng so sánh object hoặc thuộc tính duy nhất
+                                val isSelected = selectedIndex != null
+                                    && selectedIndex!! < dragBlocks.size
+                                    && dragBlocks[selectedIndex!!].block == block
+
+                                // Vẽ overlay với màu tùy chỉnh, độ trong suốt và saturation
+                                if (region.whiteoutColor != null) {
+                                    val overlayAlpha = region.overlayAlpha
+                                    val overlaySaturation = region.overlaySaturation
+
+                                    // Áp dụng saturation cho màu
+                                    val saturatedColor = if (overlaySaturation != 1.0f) {
+                                        val red = region.whiteoutColor.red
+                                        val green = region.whiteoutColor.green
+                                        val blue = region.whiteoutColor.blue
+
+                                        val max = maxOf(red, green, blue)
+                                        val min = minOf(red, green, blue)
+                                        val delta = max - min
+
+                                        val saturation = if (max == 0f) 0f else delta / max
+                                        val newSaturation = saturation * overlaySaturation
+
+                                        val factor = if (saturation == 0f) 1f else newSaturation / saturation
+                                        val newRed = min + (red - min) * factor
+                                        val newGreen = min + (green - min) * factor
+                                        val newBlue = min + (blue - min) * factor
+
+                                        Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
+                                    } else {
+                                        region.whiteoutColor
+                                    }
+
+                                    val finalOverlayColor = saturatedColor.copy(alpha = overlayAlpha)
+                                    if (isOval) {
+                                        drawOval(
+                                            color = finalOverlayColor,
+                                            topLeft = Offset(rect.left, rect.top),
+                                            size = Size(rect.width, rect.height)
+                                        )
+                                    } else {
+                                        drawRect(
+                                            color = finalOverlayColor,
+                                            topLeft = Offset(rect.left, rect.top),
+                                            size = Size(rect.width, rect.height)
+                                        )
+                                    }
+                                } else {
+                                    // Sử dụng overlay bán trong suốt cho nền có màu
+                                    drawTranslucentOverlay(
+                                        rect = rect,
+                                        backgroundType = block.backgroundType,
+                                        averageBackgroundColor = block.averageBackgroundColor,
+                                        originalTextColor = block.originalTextColor,
+                                        shapeType = block.shapeType
                                     )
-                                    val regions = dragBlocks.mapIndexedNotNull { i, dragBlock ->
-                                        val block = dragBlock.block
-                                        val blockImageWidth = block.originalImageWidth?.toFloat() ?: originalImageWidth
-                                        val blockImageHeight = block.originalImageHeight?.toFloat() ?: originalImageHeight
-                                        val scale = if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
-                                        val scaledBlockHeight = blockImageHeight * scale
-                                        val offsetY = if (imageHeight > scaledBlockHeight) (imageHeight - scaledBlockHeight) / 2 else 0f
-                                        val offsetX = 0f
-                                        if (block.text.isNotBlank()) {
-                                            val bounds = block.bounds
-                                            val scaledLeft = (bounds.left * scale) + offsetX + dragBlock.offset.x
-                                            val scaledTop = (bounds.top * scale) + offsetY + dragBlock.offset.y
-                                            val scaledWidth = (bounds.width() * scale).toFloat()
-                                            val scaledBlockHeight2 = (bounds.height() * scale).toFloat()
-                                            val fontSize = if (editTranslationMode) {
-                                                // Use shared edit-mode font-size logic (prefer an explicitly edited size)
-                                                com.example.ocrmanga.ui.screens.view.computeEditModeFontSize(
-                                                    block = dragBlock.block,
-                                                    editedFontSize = dragBlock.fontSize
-                                                )
-                                            } else {
-                                                // Prefer the persisted/stored font size on the block.
-                                                // The previous code used a newlyTranslated flag to recompute
-                                                // an automatic size which could overwrite user edits when
-                                                // translatedTexts changed. Using the stored fontSize here
-                                                // ensures user modifications persist immediately after save.
-                                                dragBlock.block.fontSize
-                                            }
+                                }
 
-                                            RegionInfo(
-                                                block = block,
-                                                rect = Rect(
-                                                    scaledLeft,
-                                                    scaledTop,
-                                                    scaledLeft + scaledWidth,
-                                                    scaledTop + scaledBlockHeight2
-                                                ),
-                                                fontSize = fontSize,
-                                                rotation = dragBlock.rotation,
-                                                whiteoutColor = dragBlock.whiteoutColor,
-                                                textColor = dragBlock.textColor,
-                                                overlayAlpha = dragBlock.overlayAlpha,
-                                                textBoldness = dragBlock.textBoldness,
-                                                overlaySaturation = dragBlock.overlaySaturation,
-                                                textSaturation = dragBlock.textSaturation,
-                                                textBorderColor = dragBlock.textBorderColor,
-                                                textBorderThickness = dragBlock.textBorderThickness,
-                                                textBorderAlpha = dragBlock.textBorderAlpha
-                                            )
-                                        } else null
+                                // Vẽ viền cho overlay
+                                if (editTranslationMode) {
+                                    if (isOval) {
+                                        drawOval(
+                                            color = if (isSelected) Color.Red else Color.Blue,
+                                            topLeft = Offset(rect.left, rect.top),
+                                            size = Size(rect.width, rect.height),
+                                            style = Stroke(width = 2f)
+                                        )
+                                    } else {
+                                        drawRect(
+                                            color = if (isSelected) Color.Red else Color.Blue,
+                                            topLeft = Offset(rect.left, rect.top),
+                                            size = Size(rect.width, rect.height),
+                                            style = Stroke(width = 2f)
+                                        )
                                     }
-                                    onDrawBehind {
-                                        regions.forEachIndexed { i, region ->
-                                            val block = region.block
-                                            val rect = region.rect
-                                            val isOval = block.shapeType == 1
+                                }
+                                val fontSize = region.fontSize
+                                val rotation = region.rotation
+                                val customTextColor = region.textColor
+                                val textPadding = if (isOval) 0.15f else 0f
+                                val textLeft = rect.left + rect.width * textPadding
+                                val textTop = rect.top + rect.height * textPadding
+                                val textWidth = rect.width * (1 - 2 * textPadding)
+                                val textHeight = rect.height * (1 - 2 * textPadding)
+                                // Xác định màu text - ưu tiên màu tùy chỉnh
+                                val baseTextColor = when {
+                                    i == draggingIndex -> Color.Red
+                                    customTextColor != null -> customTextColor
+                                    else -> {
+                                        // Khi chưa set màu custom, tính toán dựa trên brightness của overlay
+                                        // Lấy overlay color (ưu tiên whiteoutColor, fallback sang averageBackgroundColor)
+                                        val overlayColor = if (region.whiteoutColor != null) {
+                                            region.whiteoutColor.toArgb()
+                                        } else {
+                                            block.averageBackgroundColor
+                                        }
 
-                                            // Xác định block đang được chọn bằng so sánh object hoặc thuộc tính duy nhất
-                                            val isSelected = selectedIndex != null
-                                                && selectedIndex!! < dragBlocks.size
-                                                && dragBlocks[selectedIndex!!].block == block
+                                        if (overlayColor != null) {
+                                            // Tính brightness sử dụng công thức chuẩn RGB
+                                            val r = (overlayColor shr 16) and 0xFF
+                                            val g = (overlayColor shr 8) and 0xFF
+                                            val b = overlayColor and 0xFF
+                                            val brightness = (r * 299 + g * 587 + b * 114) / 1000
 
-                                            // Vẽ overlay với màu tùy chỉnh, độ trong suốt và saturation
-                                            if (region.whiteoutColor != null) {
-                                                val overlayAlpha = region.overlayAlpha
-                                                val overlaySaturation = region.overlaySaturation
-                                                
-                                                // Áp dụng saturation cho màu
-                                                val saturatedColor = if (overlaySaturation != 1.0f) {
-                                                    val red = region.whiteoutColor.red
-                                                    val green = region.whiteoutColor.green  
-                                                    val blue = region.whiteoutColor.blue
-                                                    
-                                                    val max = maxOf(red, green, blue)
-                                                    val min = minOf(red, green, blue)
-                                                    val delta = max - min
-                                                    
-                                                    val saturation = if (max == 0f) 0f else delta / max
-                                                    val newSaturation = saturation * overlaySaturation
-                                                    
-                                                    val factor = if (saturation == 0f) 1f else newSaturation / saturation
-                                                    val newRed = min + (red - min) * factor
-                                                    val newGreen = min + (green - min) * factor
-                                                    val newBlue = min + (blue - min) * factor
-                                                    
-                                                    Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
-                                                } else {
-                                                    region.whiteoutColor
-                                                }
-                                                
-                                                val finalOverlayColor = saturatedColor.copy(alpha = overlayAlpha)
-                                                if (isOval) {
-                                                    drawOval(
-                                                        color = finalOverlayColor,
-                                                        topLeft = Offset(rect.left, rect.top),
-                                                        size = Size(rect.width, rect.height)
-                                                    )
-                                                } else {
-                                                    drawRect(
-                                                        color = finalOverlayColor,
-                                                        topLeft = Offset(rect.left, rect.top),
-                                                        size = Size(rect.width, rect.height)
-                                                    )
-                                                }
-                                            } else {
-                                                // Sử dụng overlay bán trong suốt cho nền có màu
-                                                drawTranslucentOverlay(
-                                                    rect = rect,
-                                                    backgroundType = block.backgroundType,
-                                                    averageBackgroundColor = block.averageBackgroundColor,
-                                                    originalTextColor = block.originalTextColor,
-                                                    shapeType = block.shapeType
-                                                )
-                                            }
-
-                                            // Vẽ viền cho overlay
-                                            if (editTranslationMode) {
-                                                if (isOval) {
-                                                    drawOval(
-                                                        color = if (isSelected) Color.Red else Color.Blue,
-                                                        topLeft = Offset(rect.left, rect.top),
-                                                        size = Size(rect.width, rect.height),
-                                                        style = Stroke(width = 2f)
-                                                    )
-                                                } else {
-                                                    drawRect(
-                                                        color = if (isSelected) Color.Red else Color.Blue,
-                                                        topLeft = Offset(rect.left, rect.top),
-                                                        size = Size(rect.width, rect.height),
-                                                        style = Stroke(width = 2f)
-                                                    )
-                                                }
-                                            }
-                                            val fontSize = region.fontSize
-                                            val rotation = region.rotation
-                                            val customTextColor = region.textColor
-                                            val textPadding = if (isOval) 0.15f else 0f
-                                            val textLeft = rect.left + rect.width * textPadding
-                                            val textTop = rect.top + rect.height * textPadding
-                                            val textWidth = rect.width * (1 - 2 * textPadding)
-                                            val textHeight = rect.height * (1 - 2 * textPadding)
-                                            // Xác định màu text - ưu tiên màu tùy chỉnh
-                                            val baseTextColor = when {
-                                                i == draggingIndex -> Color.Red
-                                                customTextColor != null -> customTextColor
-                                                else -> {
-                                                    // Khi chưa set màu custom, tính toán dựa trên brightness của overlay
-                                                    // Lấy overlay color (ưu tiên whiteoutColor, fallback sang averageBackgroundColor)
-                                                    val overlayColor = if (region.whiteoutColor != null) {
-                                                        region.whiteoutColor.toArgb()
-                                                    } else {
-                                                        block.averageBackgroundColor
-                                                    }
-                                                    
-                                                    if (overlayColor != null) {
-                                                        // Tính brightness sử dụng công thức chuẩn RGB
-                                                        val r = (overlayColor shr 16) and 0xFF
-                                                        val g = (overlayColor shr 8) and 0xFF
-                                                        val b = overlayColor and 0xFF
-                                                        val brightness = (r * 299 + g * 587 + b * 114) / 1000
-                                                        
-                                                        // Sử dụng text đen cho overlay sáng (brightness > 128)
-                                                        // Sử dụng text trắng cho overlay tối (brightness <= 128)
-                                                        if (brightness > 128) Color.Black else Color.White
-                                                    } else {
-                                                        // Mặc định cho nền trắng -> text đen
-                                                        Color.Black
-                                                    }
-                                                }
-                                            }
-                                            
-                                            // Áp dụng saturation cho màu text nếu có
-                                            val textColor = if (customTextColor != null && region.textSaturation != 1.0f) {
-                                                val red = baseTextColor.red
-                                                val green = baseTextColor.green  
-                                                val blue = baseTextColor.blue
-                                                
-                                                val max = maxOf(red, green, blue)
-                                                val min = minOf(red, green, blue)
-                                                val delta = max - min
-                                                
-                                                val saturation = if (max == 0f) 0f else delta / max
-                                                val newSaturation = saturation * region.textSaturation
-                                                
-                                                val factor = if (saturation == 0f) 1f else newSaturation / saturation
-                                                val newRed = min + (red - min) * factor
-                                                val newGreen = min + (green - min) * factor
-                                                val newBlue = min + (blue - min) * factor
-                                                
-                                                Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
-                                            } else {
-                                                baseTextColor
-                                            }
-                                            
-                                            // Áp dụng rotation khi vẽ text
-                                            if (rotation != 0f) {
-                                                withTransform({
-                                                    // Xoay quanh tâm của text rect
-                                                    val centerX = textLeft + textWidth / 2
-                                                    val centerY = textTop + textHeight / 2
-                                                    rotate(rotation, Offset(centerX, centerY))
-                                                }) {
-                                                    drawText(
-                                                        text = block.text,
-                                                        x = textLeft,
-                                                        y = textTop,
-                                                        width = textWidth,
-                                                        height = textHeight,
-                                                        color = textColor,
-                                                        fontSize = fontSize,
-                                                        isVertical = block.isVertical,
-                                                        boldness = region.textBoldness,
-                                                        context = context,
-                                                        fontFamilyName = block.fontFamily,
-                                                        borderColor = region.textBorderColor,
-                                                        borderThickness = region.textBorderThickness,
-                                                        borderAlpha = region.textBorderAlpha,
-                                                        editMode = editTranslationMode
-                                                    )
-                                                }
-                                            } else {
-                                                drawText(
-                                                    text = block.text,
-                                                    x = textLeft,
-                                                    y = textTop,
-                                                    width = textWidth,
-                                                    height = textHeight,
-                                                    color = textColor,
-                                                    fontSize = fontSize,
-                                                    isVertical = block.isVertical,
-                                                    boldness = region.textBoldness,
-                                                    context = context,
-                                                    fontFamilyName = block.fontFamily,
-                                                    borderColor = region.textBorderColor,
-                                                    borderThickness = region.textBorderThickness,
-                                                    borderAlpha = region.textBorderAlpha,
-                                                    editMode = editTranslationMode
-                                                )
-                                            }
+                                            // Sử dụng text đen cho overlay sáng (brightness > 128)
+                                            // Sử dụng text trắng cho overlay tối (brightness <= 128)
+                                            if (brightness > 128) Color.Black else Color.White
+                                        } else {
+                                            // Mặc định cho nền trắng -> text đen
+                                            Color.Black
                                         }
                                     }
                                 }
-                        ) {}
+
+                                // Áp dụng saturation cho màu text nếu có
+                                val textColor = if (customTextColor != null && region.textSaturation != 1.0f) {
+                                    val red = baseTextColor.red
+                                    val green = baseTextColor.green
+                                    val blue = baseTextColor.blue
+
+                                    val max = maxOf(red, green, blue)
+                                    val min = minOf(red, green, blue)
+                                    val delta = max - min
+
+                                    val saturation = if (max == 0f) 0f else delta / max
+                                    val newSaturation = saturation * region.textSaturation
+
+                                    val factor = if (saturation == 0f) 1f else newSaturation / saturation
+                                    val newRed = min + (red - min) * factor
+                                    val newGreen = min + (green - min) * factor
+                                    val newBlue = min + (blue - min) * factor
+
+                                    Color(newRed.coerceIn(0f, 1f), newGreen.coerceIn(0f, 1f), newBlue.coerceIn(0f, 1f))
+                                } else {
+                                    baseTextColor
+                                }
+
+                                // Áp dụng rotation khi vẽ text
+                                if (rotation != 0f) {
+                                    withTransform({
+                                        // Xoay quanh tâm của text rect
+                                        val centerX = textLeft + textWidth / 2
+                                        val centerY = textTop + textHeight / 2
+                                        rotate(rotation, Offset(centerX, centerY))
+                                    }) {
+                                        drawText(
+                                            text = block.text,
+                                            x = textLeft,
+                                            y = textTop,
+                                            width = textWidth,
+                                            height = textHeight,
+                                            color = textColor,
+                                            fontSize = fontSize,
+                                            isVertical = block.isVertical,
+                                            boldness = region.textBoldness,
+                                            context = context,
+                                            fontFamilyName = block.fontFamily,
+                                            borderColor = region.textBorderColor,
+                                            borderThickness = region.textBorderThickness,
+                                            borderAlpha = region.textBorderAlpha,
+                                            editMode = editTranslationMode
+                                        )
+                                    }
+                                } else {
+                                    drawText(
+                                        text = block.text,
+                                        x = textLeft,
+                                        y = textTop,
+                                        width = textWidth,
+                                        height = textHeight,
+                                        color = textColor,
+                                        fontSize = fontSize,
+                                        isVertical = block.isVertical,
+                                        boldness = region.textBoldness,
+                                        context = context,
+                                        fontFamilyName = block.fontFamily,
+                                        borderColor = region.textBorderColor,
+                                        borderThickness = region.textBorderThickness,
+                                        borderAlpha = region.textBorderAlpha,
+                                        editMode = editTranslationMode
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
