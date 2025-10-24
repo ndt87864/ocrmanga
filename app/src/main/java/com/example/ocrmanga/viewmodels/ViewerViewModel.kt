@@ -32,6 +32,20 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileInputStream
+import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.RectF
+import android.graphics.Typeface
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.os.Build
+import android.os.Environment
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -1272,6 +1286,185 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Failed to create PDF", Toast.LENGTH_LONG).show()
                 }
+            }
+        }
+    }
+
+    /**
+     * Export all translated images of a room into a zip file placed under
+     * <externalFilesDir>/exports/room_<roomId>_<timestamp>.zip
+     * Returns the absolute path to the zip file on success, or null on failure / no translated images.
+     */
+    suspend fun exportRoomAsZip(roomId: Long): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
+                if (allImages.isEmpty()) return@withContext null
+
+                val app = getApplication<Application>()
+                val timestamp = System.currentTimeMillis()
+                val fileName = "room_${roomId}_$timestamp.zip"
+
+                // Try to write into the public Downloads folder first. If not possible, fall back to app's external files/exports
+                var zipFile: File? = null
+                try {
+                    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    if (downloadsDir != null) {
+                        if (!downloadsDir.exists()) downloadsDir.mkdirs()
+                        if (downloadsDir.exists() && downloadsDir.canWrite()) {
+                            zipFile = File(downloadsDir, fileName)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Unable to prepare Downloads dir, will fallback to app exports", e)
+                    zipFile = null
+                }
+
+                if (zipFile == null) {
+                    val exportsDir = File(app.getExternalFilesDir(null), "exports")
+                    if (!exportsDir.exists()) exportsDir.mkdirs()
+                    zipFile = File(exportsDir, fileName)
+                }
+
+                ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+                    val buffer = ByteArray(8 * 1024)
+                    var idx = 0
+                    // iterate all images to preserve order; if translation exists for a uri, bake it into the image
+                    for (uri in allImages) {
+                        try {
+                            val entryName = try { File(uri.path ?: "image_${idx}.jpg").name } catch (e: Exception) { "image_${idx}.jpg" }
+
+                            val pair = translations[uri]
+                            if (pair != null) {
+                                // render translated blocks onto bitmap
+                                try {
+                                    val cr = app.contentResolver
+                                    cr.openInputStream(uri)?.use { input ->
+                                        val src = BitmapFactory.decodeStream(input) ?: return@use
+                                        val bmp = src.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                                        val canvas = Canvas(bmp)
+
+                                        for (block in pair.second) {
+                                            try {
+                                                val bounds = block.bounds
+                                                val overlayColor = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                                                val overlayPaint = Paint().apply {
+                                                    isAntiAlias = true
+                                                    style = Paint.Style.FILL
+                                                    color = overlayColor
+                                                    alpha = (block.overlayAlpha * 255).toInt().coerceIn(0, 255)
+                                                }
+                                                val rectF = RectF(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat())
+                                                if (block.shapeType == 1) {
+                                                    canvas.drawOval(rectF, overlayPaint)
+                                                } else {
+                                                    canvas.drawRect(rectF, overlayPaint)
+                                                }
+
+                                                // Draw text using StaticLayout to support multi-line
+                                                val textColor = block.customTextColor ?: computeDefaultTextColor(overlayColor or 0xFF000000.toInt(), block.averageBackgroundColor)
+                                                val tp = TextPaint().apply {
+                                                    isAntiAlias = true
+                                                    color = textColor
+                                                    textSize = if (block.fontSize > 0f) block.fontSize else 20f
+                                                    typeface = Typeface.DEFAULT
+                                                }
+
+                                                val width = (bounds.right - bounds.left).coerceAtLeast(1)
+                                                val staticLayout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                                    StaticLayout.Builder.obtain(block.text, 0, block.text.length, tp, width)
+                                                        .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                                                        .setIncludePad(false)
+                                                        .build()
+                                                } else {
+                                                    @Suppress("DEPRECATION")
+                                                    StaticLayout(block.text, tp, width, Layout.Alignment.ALIGN_CENTER, 1.0f, 0.0f, false)
+                                                }
+
+                                                canvas.save()
+                                                // rotate around center of the block if rotation specified
+                                                val cx = bounds.left + (bounds.right - bounds.left) / 2f
+                                                val cy = bounds.top + (bounds.bottom - bounds.top) / 2f
+                                                val rotation = block.rotation ?: 0f
+                                                if (rotation != 0f) canvas.rotate(rotation, cx, cy)
+                                                canvas.translate(bounds.left.toFloat(), bounds.top.toFloat())
+                                                staticLayout.draw(canvas)
+                                                canvas.restore()
+                                            } catch (e: Exception) {
+                                                Log.w(TAG, "Failed to render block for uri=$uri", e)
+                                            }
+                                        }
+
+                                        // write bitmap to zip entry
+                                        val baos = ByteArrayOutputStream()
+                                        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, baos)
+                                        val bytes = baos.toByteArray()
+                                        zos.putNextEntry(ZipEntry(entryName))
+                                        zos.write(bytes)
+                                        zos.closeEntry()
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Failed to render image with translations for $uri", e)
+                                }
+                            } else {
+                                // no translations for this uri: stream original file
+                                try {
+                                    val path = uri.path
+                                    if (!path.isNullOrBlank()) {
+                                        val f = File(path)
+                                        if (f.exists()) {
+                                            zos.putNextEntry(ZipEntry(entryName))
+                                            BufferedInputStream(FileInputStream(f)).use { bis ->
+                                                var len = bis.read(buffer)
+                                                while (len > 0) {
+                                                    zos.write(buffer, 0, len)
+                                                    len = bis.read(buffer)
+                                                }
+                                            }
+                                            zos.closeEntry()
+                                        } else {
+                                            // fallback to content resolver
+                                            app.contentResolver.openInputStream(uri)?.use { input ->
+                                                zos.putNextEntry(ZipEntry(entryName))
+                                                BufferedInputStream(input).use { bis ->
+                                                    var len = bis.read(buffer)
+                                                    while (len > 0) {
+                                                        zos.write(buffer, 0, len)
+                                                        len = bis.read(buffer)
+                                                    }
+                                                }
+                                                zos.closeEntry()
+                                            }
+                                        }
+                                    } else {
+                                        app.contentResolver.openInputStream(uri)?.use { input ->
+                                            zos.putNextEntry(ZipEntry(entryName))
+                                            BufferedInputStream(input).use { bis ->
+                                                var len = bis.read(buffer)
+                                                while (len > 0) {
+                                                    zos.write(buffer, 0, len)
+                                                    len = bis.read(buffer)
+                                                }
+                                            }
+                                            zos.closeEntry()
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Failed to add original image to zip: $uri", e)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to add image to zip: $uri", e)
+                        }
+                        idx++
+                    }
+                }
+
+                Log.i(TAG, "Exported room $roomId to ${zipFile.absolutePath}")
+                zipFile.absolutePath
+            } catch (e: Exception) {
+                Log.e(TAG, "exportRoomAsZip failed for room $roomId", e)
+                null
             }
         }
     }
