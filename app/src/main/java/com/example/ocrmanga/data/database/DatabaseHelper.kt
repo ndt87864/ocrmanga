@@ -480,30 +480,30 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                          fontSize: Float = 12f
     ): Long {
         val db = writableDatabase
-        val values = ContentValues().apply {
-            put(COLUMN_BLOCK_IMAGE_ID, imageId)
-            put(COLUMN_BLOCK_X, x)
-            put(COLUMN_BLOCK_Y, y)
-            put(COLUMN_BLOCK_WIDTH, width)
-            put(COLUMN_BLOCK_HEIGHT, height)
-            put(COLUMN_BLOCK_OVERLAY_TYPE, overlayType)
-            overlayColor?.let { put(COLUMN_BLOCK_OVERLAY_COLOR, it) }
-            put(COLUMN_BLOCK_OVERLAY_BRIGHTNESS, overlayBrightness)
-            put(COLUMN_BLOCK_OVERLAY_ALPHA, overlayAlpha)
-            put(COLUMN_BLOCK_OVERLAY_SATURATION, overlaySaturation)
-            put(COLUMN_BLOCK_TEXT_COLOR, textColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
-            put(COLUMN_BLOCK_TEXT_BRIGHTNESS, textBrightness)
-            put(COLUMN_BLOCK_TEXT_BOLDNESS, textBoldness)
-            put(COLUMN_BLOCK_TEXT_SATURATION, textSaturation)
-            borderColor?.let { put(COLUMN_BLOCK_BORDER_COLOR, it) }
-            put(COLUMN_BLOCK_BORDER_BRIGHTNESS, borderBrightness)
-            put(COLUMN_BLOCK_BORDER_BOLDNESS, borderBoldness)
-            put(COLUMN_BLOCK_BORDER_THICKNESS, borderThickness)
-            put(COLUMN_BLOCK_ROTATION, rotation)
-            put(COLUMN_BLOCK_FONT_FAMILY, fontFamily)
-            put(COLUMN_BLOCK_FONT_SIZE, fontSize)
-        }
-        val id = db.insert(TABLE_IMAGE_BLOCKS, null, values)
+                        val values = ContentValues().apply {
+                            put(COLUMN_BLOCK_IMAGE_ID, imageId)
+                            put(COLUMN_BLOCK_X, x)
+                            put(COLUMN_BLOCK_Y, y)
+                            put(COLUMN_BLOCK_WIDTH, width)
+                            put(COLUMN_BLOCK_HEIGHT, height)
+                            put(COLUMN_BLOCK_OVERLAY_TYPE, overlayType)
+                            overlayColor?.let { put(COLUMN_BLOCK_OVERLAY_COLOR, it) }
+                            put(COLUMN_BLOCK_OVERLAY_BRIGHTNESS, overlayBrightness)
+                            put(COLUMN_BLOCK_OVERLAY_ALPHA, overlayAlpha)
+                            put(COLUMN_BLOCK_OVERLAY_SATURATION, overlaySaturation)
+                            put(COLUMN_BLOCK_TEXT_COLOR, textColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
+                            put(COLUMN_BLOCK_TEXT_BRIGHTNESS, textBrightness)
+                            put(COLUMN_BLOCK_TEXT_BOLDNESS, textBoldness)
+                            put(COLUMN_BLOCK_TEXT_SATURATION, textSaturation)
+                            borderColor?.let { put(COLUMN_BLOCK_BORDER_COLOR, it) }
+                            put(COLUMN_BLOCK_BORDER_BRIGHTNESS, borderBrightness)
+                            put(COLUMN_BLOCK_BORDER_BOLDNESS, borderBoldness)
+                            put(COLUMN_BLOCK_BORDER_THICKNESS, borderThickness)
+                            put(COLUMN_BLOCK_ROTATION, rotation)
+                            put(COLUMN_BLOCK_FONT_FAMILY, fontFamily)
+                            put(COLUMN_BLOCK_FONT_SIZE, fontSize)
+                        }
+                        val id = db.insert(TABLE_IMAGE_BLOCKS, null, values)
         Log.i(TAG, "Inserted image_block id=$id imageId=$imageId borderColor=${borderColor?.toString() ?: "null"} borderThickness=$borderThickness fontFamily='$fontFamily'")
         return id
     }
@@ -599,7 +599,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val db = writableDatabase
         try {
             val values = ContentValues().apply { put(COLUMN_CHANGE_IMAGE_FLAG, 1) }
-            val updated = db.update(TABLE_CHANGE_IMAGES, values, "$COLUMN_CHANGE_IMAGE_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            val updated = db.update(TABLE_CHANGE_IMAGES, values, "$COLUMN_CHANGE_IMAGE_IMAGE_ID = ?", arrayOf(imageId.toString())) ?: -1
             if (updated <= 0) {
                 // Insert new record
                 val ins = ContentValues().apply {
@@ -685,8 +685,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put("overlay_saturation", textBlock.overlaySaturation)
                             put("text_saturation", textBlock.textSaturation)
                         }
-                        val inserted = db.insert("translations", null, textValues)
-                        if (inserted != -1L) {
+                            val inserted = db.insert("translations", null, textValues)
+                            if (inserted != -1L) {
                             try {
                                 val blockWidth = bounds.right - bounds.left
                                 val blockHeight = bounds.bottom - bounds.top
@@ -924,12 +924,27 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val oldUris = oldImages.map { it.second }
 
             // Xóa ảnh đã bị loại khỏi danh sách mới
-            oldImages.filter { it.second !in imageUris }.forEach { (imageId, uri) ->
-                db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                // Xóa file vật lý nếu ảnh không còn được dùng
-                val file = File(Uri.parse(uri.toString()).path ?: "")
-                if (file.exists()) file.delete()
+            // Use filename/lastPathSegment matching to avoid deleting images when URI forms differ
+            fun lastNameOf(uri: Uri?): String? {
+                return try {
+                    uri?.lastPathSegment ?: java.io.File(uri.toString()).name
+                } catch (e: Exception) { null }
+            }
+
+            oldImages.forEach { (imageId, uri) ->
+                val exactPresent = imageUris.any { it.toString() == uri.toString() }
+                val name = lastNameOf(uri)
+                val namePresent = if (name != null) imageUris.any { newUri ->
+                    val newName = lastNameOf(newUri)
+                    newName != null && (newName == name || newUri.toString().endsWith(name))
+                } else false
+                if (!exactPresent && !namePresent) {
+                    db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    // Xóa file vật lý nếu ảnh không còn được dùng
+                    val file = File(Uri.parse(uri.toString()).path ?: "")
+                    if (file.exists()) file.delete()
+                }
             }
 
             // Thêm ảnh mới và cập nhật thứ tự, trạng thái dịch
@@ -1045,17 +1060,69 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     }
                 } else {
                     // Ảnh cũ: cập nhật thứ tự, trạng thái dịch
-                    val imageId = imageIdMap[uriStr] ?: return@forEachIndexed
-                    val imageValues = ContentValues().apply {
-                        put(COLUMN_DISPLAY_ORDER, index)
-                        put(COLUMN_IS_TRANSLATED, isTranslated)
+                    // Try to resolve imageId by exact URI, then by filename fallback
+                    var imageId = imageIdMap[uriStr]
+                    if (imageId == null) {
+                        // attempt filename-based match
+                        try {
+                            val fileName = Uri.parse(uriStr).lastPathSegment ?: java.io.File(uriStr).name
+                            val entry = imageIdMap.entries.find { (k, _) ->
+                                val kName = try { Uri.parse(k).lastPathSegment ?: java.io.File(k).name } catch (e: Exception) { java.io.File(k).name }
+                                k == uriStr || kName == fileName || k.endsWith(fileName)
+                            }
+                            if (entry != null) imageId = entry.value
+                        } catch (e: Exception) { /* ignore */ }
                     }
-                    db.update(TABLE_IMAGES, imageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    if (imageId == null) {
+                        // Not found; treat as new image (insert)
+                        val fileName = "image_$index.jpg"
+                        val newFile = File(imagesDir, fileName)
+                        if (!newFile.exists()) {
+                            val copied = copyImageToInternalStorage(uri, imagesDir, fileName)
+                            if (copied == null) {
+                                Log.e(TAG, "Không thể copy ảnh mới $uri vào phòng $roomId (fallback insert)")
+                            }
+                        }
+                        val newUri = if (newFile.exists()) Uri.fromFile(newFile) else uri
+                        val imageValues = ContentValues().apply {
+                            put(COLUMN_ROOM_ID, roomId)
+                            put(COLUMN_IMAGE_URI, newUri.toString())
+                            put(COLUMN_DISPLAY_ORDER, index)
+                            put(COLUMN_IS_TRANSLATED, isTranslated)
+                        }
+                        val insertedId = db.insert(TABLE_IMAGES, null, imageValues)
+                        if (insertedId != -1L) {
+                            try { ensureChangeRecord(insertedId, roomId) } catch (e: Exception) { /* ignore */ }
+                        }
+                    } else {
+                        val imageValues = ContentValues().apply {
+                            put(COLUMN_DISPLAY_ORDER, index)
+                            put(COLUMN_IS_TRANSLATED, isTranslated)
+                        }
+                        db.update(TABLE_IMAGES, imageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                        // If stored URI differs from provided, update stored URI to the new one (normalized)
+                        try {
+                            val storedUriCursor = db.rawQuery("SELECT $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                            if (storedUriCursor.moveToFirst()) {
+                                val storedUriStr = storedUriCursor.getString(0)
+                                if (storedUriStr != uriStr) {
+                                    val updateV = ContentValues().apply { put(COLUMN_IMAGE_URI, uriStr) }
+                                    db.update(TABLE_IMAGES, updateV, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                                }
+                            }
+                            storedUriCursor.close()
+                        } catch (e: Exception) { /* ignore */ }
+                    }
                     // Nếu có bản dịch mới, xóa bản dịch cũ và thêm lại
                     if (translatedTexts.containsKey(uri)) {
-                        db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                        val resolvedId = imageId
+                        if (resolvedId == null) {
+                            Log.w(TAG, "Skipping translation insert for uri=$uri because imageId could not be resolved")
+                            return@forEachIndexed
+                        }
+                        db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(resolvedId.toString()))
                         translatedTexts[uri]?.let { (originalText, textBlocks) ->
-                            try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
+                            try { deleteBlocksForImage(resolvedId) } catch (e: Exception) { /* ignore */ }
                             // Lấy lại kích thước ảnh đã lưu
                             val imageFile = File(Uri.parse(uriStr).path ?: "")
                             val savedBitmap = android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath)
@@ -1076,7 +1143,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     )
                                 } else origRect
                                 val textValues = ContentValues().apply {
-                                    put(COLUMN_IMAGE_ID, imageId)
+                                    put(COLUMN_IMAGE_ID, resolvedId)
                                     put("original_text", originalText)
                                     put("translated_text", textBlock.text)
                                     put("bounds_left", scaledRect.left)
@@ -1106,7 +1173,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                         val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
                                         val textColor = textBlock.customTextColor ?: (textBlock.originalTextColor ?: 0xFF000000.toInt())
                                         insertImageBlock(
-                                            imageId = imageId,
+                                            imageId = resolvedId,
                                             x = scaledRect.left,
                                             y = scaledRect.top,
                                             width = blockWidth,
@@ -1129,7 +1196,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             fontSize = textBlock.fontSize
                                         )
                                             // translations for existing image updated => clear change flag
-                                            try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
+                                            try { clearImageChange(resolvedId) } catch (e: Exception) { /* ignore */ }
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
                                     }
@@ -1307,8 +1374,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put("overlay_saturation", textBlock.overlaySaturation)
                             put("text_saturation", textBlock.textSaturation)
                         }
-                        val inserted = db.insert("translations", null, textValues)
-                            if (inserted != -1L) {
+                                val inserted = db.insert("translations", null, textValues)
+                                if (inserted != -1L) {
                                 Log.d(TAG, "Inserted translation for imageId=$imageId bounds=${scaledRect.left},${scaledRect.top},${scaledRect.right},${scaledRect.bottom}")
                             try {
                                 val blockWidth = scaledRect.right - scaledRect.left
@@ -1634,6 +1701,89 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             Log.i(TAG, "updateImageUri: imageId=$imageId -> $newUri")
         } catch (e: Exception) {
             Log.w(TAG, "updateImageUri failed for imageId=$imageId newUri=$newUri", e)
+        }
+    }
+
+    /**
+     * Replace an image referenced by imageId with a newUri. This will copy the new
+     * image into the app's images/<roomId>/ folder (naming it after the imageId to
+     * avoid collisions), update the stored image_uri in the DB, and return the
+     * app-managed Uri if successful. Returns null on failure (DB not updated).
+     */
+    fun replaceImageWithCopy(imageId: Long, newUri: Uri): Uri? {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            // find roomId for this image
+            val cur = db.rawQuery("SELECT $COLUMN_ROOM_ID, $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            if (!cur.moveToFirst()) {
+                cur.close()
+                Log.w(TAG, "replaceImageWithCopy: imageId not found: $imageId")
+                return null
+            }
+            val roomId = cur.getLong(0)
+            val oldUriStr = cur.getString(1)
+            cur.close()
+
+            val imagesDir = File(appContext.getExternalFilesDir(null), "images/$roomId")
+            imagesDir.mkdirs()
+
+            // Decide whether we can overwrite the previous stored file (preferred)
+            var storedFile: File? = null
+            try {
+                val prevPath = try { Uri.parse(oldUriStr).path } catch (e: Exception) { null }
+                if (!prevPath.isNullOrBlank()) {
+                    val prev = File(prevPath)
+                    if (prev.exists() && prev.parentFile != null && prev.parentFile.absolutePath.startsWith(imagesDir.absolutePath)) {
+                        // Overwrite the existing file in-place to preserve the stored URI and display order
+                        val copiedOver = copyImageToInternalStorage(newUri, prev.parentFile, prev.name)
+                        if (copiedOver != null && copiedOver.exists()) {
+                            storedFile = copiedOver
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "replaceImageWithCopy: unable to check/overwrite previous file for imageId=$imageId", e)
+            }
+
+            // If overwrite wasn't possible, create a stable filename based on imageId
+            if (storedFile == null) {
+                val ext = try { java.io.File(newUri.path ?: "").extension } catch (e: Exception) { "jpg" }
+                val safeExt = if (ext.isNullOrBlank()) "jpg" else ext
+                val fileName = "image_${imageId}.$safeExt"
+                val copied = copyImageToInternalStorage(newUri, imagesDir, fileName)
+                if (copied == null) {
+                    Log.e(TAG, "replaceImageWithCopy: failed to copy $newUri for imageId=$imageId")
+                    return null
+                }
+                storedFile = copied
+                // After copying into a stable new file, delete previous stored file if it was in our imagesDir
+                try {
+                    val prevFile = try { File(Uri.parse(oldUriStr).path ?: "") } catch (e: Exception) { null }
+                    if (prevFile != null && prevFile.exists()) {
+                        val parent = prevFile.parentFile
+                        if (parent != null && parent.absolutePath.startsWith(imagesDir.absolutePath) && prevFile.absolutePath != storedFile.absolutePath) {
+                            prevFile.delete()
+                        }
+                    }
+                } catch (e: Exception) { /* ignore */ }
+            }
+
+            val storedUri = Uri.fromFile(storedFile)
+            val values = ContentValues().apply { put(COLUMN_IMAGE_URI, storedUri.toString()) }
+            db.update(TABLE_IMAGES, values, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+
+            // Optionally, try to delete original provided uri if it's a file the app can remove
+            try { deleteOriginalImage(newUri) } catch (e: Exception) { /* ignore */ }
+
+            db.setTransactionSuccessful()
+            Log.i(TAG, "Replaced imageId=$imageId with $storedUri (overwrote=${storedFile != null})")
+            return storedUri
+        } catch (e: Exception) {
+            Log.e(TAG, "replaceImageWithCopy failed for imageId=$imageId", e)
+            return null
+        } finally {
+            try { db.endTransaction() } catch (e: Exception) { /* ignore */ }
         }
     }
 
