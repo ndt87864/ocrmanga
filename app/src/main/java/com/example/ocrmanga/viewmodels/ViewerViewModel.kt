@@ -1185,25 +1185,32 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     Log.w(TAG, "Failed to clear translationRepository session", e)
                 }
                 val app = getApplication<Application>()
-                // cacheDir
-                app.cacheDir?.listFiles()?.forEach { f ->
-                    try {
-                        if (f.name.startsWith("ocrmanga") || f.name.endsWith(".tmp") || f.name.endsWith(".ocr_cache")) {
-                            f.deleteRecursively()
-                        }
-                    } catch (e: Throwable) {
-                        Log.w(TAG, "Failed to delete cache file ${f.name}", e)
+                // Safer cache cleanup: only remove dedicated app subfolders to avoid deleting unrelated cache
+                try {
+                    // Prefer removing a dedicated subfolder (ocrmanga_cache) in cache directories
+                    val privateCacheFolder = File(app.cacheDir, "ocrmanga_cache")
+                    if (privateCacheFolder.exists()) {
+                        try { privateCacheFolder.deleteRecursively() } catch (e: Throwable) { Log.w(TAG, "Failed to delete private cache folder ${privateCacheFolder.absolutePath}", e) }
                     }
-                }
-                // externalCacheDir
-                app.externalCacheDir?.listFiles()?.forEach { f ->
-                    try {
-                        if (f.name.startsWith("ocrmanga") || f.name.endsWith(".tmp") || f.name.endsWith(".ocr_cache")) {
-                            f.deleteRecursively()
-                        }
-                    } catch (e: Throwable) {
-                        Log.w(TAG, "Failed to delete external cache file ${f.name}", e)
+
+                    val externalCacheFolder = app.externalCacheDir?.let { File(it, "ocrmanga_cache") }
+                    if (externalCacheFolder != null && externalCacheFolder.exists()) {
+                        try { externalCacheFolder.deleteRecursively() } catch (e: Throwable) { Log.w(TAG, "Failed to delete external cache folder ${externalCacheFolder.absolutePath}", e) }
                     }
+
+                    // Legacy: if old code stored files directly under cache with specific suffix, only delete those files
+                    app.cacheDir?.listFiles()?.forEach { f ->
+                        try {
+                            if (f.name.endsWith(".ocr_cache") || f.name.endsWith(".tmp") ) {
+                                // Only delete files (not directories) with these suffixes
+                                if (f.isFile) f.delete()
+                            }
+                        } catch (e: Throwable) {
+                            Log.w(TAG, "Failed to delete legacy cache file ${f.name}", e)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Error cleaning cache folders", e)
                 }
                 // app files/ocrmanga_temp
                 File(app.filesDir, "ocrmanga_temp").takeIf { it.exists() }?.let { tmpDir ->
