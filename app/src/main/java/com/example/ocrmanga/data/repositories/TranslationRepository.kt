@@ -1404,6 +1404,7 @@ class TranslationRepository(private val application: Application) {
             "zh" -> TranslateLanguage.CHINESE
             "ja" -> TranslateLanguage.JAPANESE
             "ko" -> TranslateLanguage.KOREAN
+            "es" -> TranslateLanguage.SPANISH
             "en" -> TranslateLanguage.ENGLISH
             "vi" -> TranslateLanguage.VIETNAMESE
             else -> TranslateLanguage.ENGLISH
@@ -1417,12 +1418,18 @@ class TranslationRepository(private val application: Application) {
         val koreanPattern = Regex("[\\uAC00-\\uD7AF\\u1100-\\u11FF\\u3130-\\u318F]")
         val vietnamesePattern = Regex("[àáảãạăắằẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]")
         val latinPattern = Regex("[A-Za-z]")
+        // Spanish-specific characters and common words
+        val spanishAccentPattern = Regex("[ñÑáÁéÉíÍóÓúÚüÜ]")
+        val spanishWordPattern = Regex("\\b(que|de|la|el|y|en|no|si|por|para|con|una|un|los|las|se|del|al)\\b", RegexOption.IGNORE_CASE)
 
         return when {
             vietnamesePattern.containsMatchIn(sampleText) -> "vi"
             koreanPattern.containsMatchIn(sampleText) -> "ko"
             japanesePattern.containsMatchIn(sampleText) -> "ja"
             chinesePattern.containsMatchIn(sampleText) -> "zh"
+            spanishAccentPattern.containsMatchIn(sampleText) -> "es"
+            // If common Spanish words appear enough, assume Spanish
+            spanishWordPattern.findAll(sampleText).count() >= 2 -> "es"
             latinPattern.containsMatchIn(sampleText) && sampleText.count { it in 'A'..'z' } > sampleText.length * 0.5 -> "en"
             else -> null
         }
