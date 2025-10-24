@@ -314,6 +314,31 @@ fun ViewerScreen(
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Share, null, modifier = Modifier.padding(end = 8.dp))
+                                    Text("Xuất phòng (ZIP)")
+                                }
+                            },
+                            onClick = {
+                                // Export current room's translated images as a zip
+                                showMainMenu = false
+                                val rid = uiState.roomId
+                                if (rid == null) {
+                                    Toast.makeText(context, "Không có phòng để xuất", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    coroutineScope.launch {
+                                        val path = viewModel.exportRoomAsZip(rid)
+                                        if (path != null) {
+                                            Toast.makeText(context, "Đã xuất: $path", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "Không có ảnh đã dịch để xuất hoặc xuất thất bại", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Add, null, modifier = Modifier.padding(end = 8.dp))
                                     Text("Thêm ảnh")
                                 }
