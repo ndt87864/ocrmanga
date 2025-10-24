@@ -3,8 +3,9 @@ package com.example.ocrmanga.ui.screens.view
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import android.content.Intent
+import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -158,9 +159,18 @@ fun ViewerScreen(
     }
 
     val pickImagesAtStartLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 1000),
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = { uris ->
-            if (uris.isNotEmpty()) {
+            if (!uris.isNullOrEmpty()) {
+                // Persist read permission for each picked URI so we can access it later
+                uris.forEach { uri ->
+                    try {
+                        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } catch (e: Exception) {
+                        // ignore - keep trying to copy what we can
+                        Log.w("ViewerScreen", "Could not persist permission for $uri", e)
+                    }
+                }
                 viewModel.addNewImageUrisAtStart(uris)
                 Toast.makeText(context, "Đã thêm ${uris.size} ảnh vào đầu", Toast.LENGTH_SHORT).show()
             }
@@ -168,9 +178,16 @@ fun ViewerScreen(
     )
 
     val pickImagesAtEndLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 1000),
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = { uris ->
-            if (uris.isNotEmpty()) {
+            if (!uris.isNullOrEmpty()) {
+                uris.forEach { uri ->
+                    try {
+                        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } catch (e: Exception) {
+                        Log.w("ViewerScreen", "Could not persist permission for $uri", e)
+                    }
+                }
                 viewModel.addNewImageUris(uris)
                 Toast.makeText(context, "Đã thêm ${uris.size} ảnh vào cuối", Toast.LENGTH_SHORT).show()
             }
@@ -178,9 +195,16 @@ fun ViewerScreen(
     )
 
     val pickImagesAtIndexLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 1000),
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = { uris ->
-            if (uris.isNotEmpty()) {
+            if (!uris.isNullOrEmpty()) {
+                uris.forEach { uri ->
+                    try {
+                        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } catch (e: Exception) {
+                        Log.w("ViewerScreen", "Could not persist permission for $uri", e)
+                    }
+                }
                 val index = insertAtIndex.toIntOrNull() ?: 0
                 viewModel.addNewImageUrisAtIndex(uris, index)
                 Toast.makeText(context, "Đã thêm ${uris.size} ảnh vào vị trí ${index + 1}", Toast.LENGTH_SHORT).show()
@@ -410,14 +434,14 @@ fun ViewerScreen(
                         DropdownMenuItem(
                             text = { Text("Thêm vào đầu") },
                             onClick = {
-                                pickImagesAtStartLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                pickImagesAtStartLauncher.launch(arrayOf("image/*"))
                                 showAddMenu = false
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Thêm vào cuối") },
                             onClick = {
-                                pickImagesAtEndLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                pickImagesAtEndLauncher.launch(arrayOf("image/*"))
                                 showAddMenu = false
                             }
                         )
@@ -541,7 +565,7 @@ fun ViewerScreen(
                 val index = insertAtIndex.toIntOrNull()
                 if (index != null && index in 1..(uiState.imageUris.size + 1)) {
                     insertAtIndex = (index - 1).toString()
-                    pickImagesAtIndexLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    pickImagesAtIndexLauncher.launch(arrayOf("image/*"))
                     showInsertAtIndexDialog = false
                 } else {
                     Toast.makeText(context, "Vui lòng nhập vị trí hợp lệ (1-${uiState.imageUris.size + 1})", Toast.LENGTH_SHORT).show()

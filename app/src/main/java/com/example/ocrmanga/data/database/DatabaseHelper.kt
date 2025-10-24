@@ -1436,13 +1436,44 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     private fun copyImageToInternalStorage(originalUri: Uri, directory: File, fileName: String): File? {
-        return try {
+        // Some content URIs (notably the Downloads provider: com.android.providers.downloads.documents)
+        // require the app to have a persistable URI permission obtained via
+        // ACTION_OPEN_DOCUMENT / ActivityResultContracts.OpenDocument and
+        // ContentResolver.takePersistableUriPermission(...). If the app doesn't hold
+        // that permission, openInputStream can throw SecurityException.
+        try {
+            // Quick check to provide a clearer log and to avoid throwing for known providers
+            val authority = originalUri.authority ?: ""
+            if (originalUri.scheme == "content" && authority.contains("downloads")) {
+                // Attempt to open, but be prepared to fail with SecurityException
+                try {
+                    val newFile = File(directory, fileName)
+                    val inputStream = appContext.contentResolver.openInputStream(originalUri)
+                        ?: return null
+                    val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                    inputStream.close()
+                    val format = when {
+                        fileName.endsWith(".webp", true) -> Bitmap.CompressFormat.WEBP
+                        fileName.endsWith(".png", true) -> Bitmap.CompressFormat.PNG
+                        else -> Bitmap.CompressFormat.JPEG
+                    }
+                    val outStream = FileOutputStream(newFile)
+                    bitmap.compress(format, 100, outStream)
+                    outStream.close()
+                    return newFile
+                } catch (se: SecurityException) {
+                    Log.e(TAG, "Permission denied when trying to read Downloads provider URI $originalUri - app must take persistable permissions when the URI is obtained (use ACTION_OPEN_DOCUMENT / takePersistableUriPermission).", se)
+                    return null
+                }
+            }
+
+            // Default path for other URIs
             val newFile = File(directory, fileName)
             val inputStream = appContext.contentResolver.openInputStream(originalUri)
             if (inputStream != null) {
                 val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
                 inputStream.close()
-                // Xác định định dạng từ đuôi file
+                // Determine format from file extension
                 val format = when {
                     fileName.endsWith(".webp", true) -> Bitmap.CompressFormat.WEBP
                     fileName.endsWith(".png", true) -> Bitmap.CompressFormat.PNG
@@ -1451,13 +1482,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val outStream = FileOutputStream(newFile)
                 bitmap.compress(format, 100, outStream)
                 outStream.close()
-                newFile
-            } else {
-                null
+                return newFile
             }
+            return null
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException while copying image $originalUri - missing permission to read this URI. Consider using ACTION_OPEN_DOCUMENT and calling takePersistableUriPermission when the URI is picked.", e)
+            return null
         } catch (e: Exception) {
             Log.e(TAG, "Failed to copy & compress image $originalUri", e)
-            null
+            return null
         }
     }
 
@@ -1470,10 +1503,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 scheme == "content" && uri.authority?.contains("media") == true -> {
                     contentResolver.delete(uri, null, null)
                 }
-                // Nếu là Document uri (SAF)
+                // If it's the Downloads provider, we should not attempt delete here because
+                // deleting a document from Downloads requires MANAGE_DOCUMENTS or a
+                // granted URI permission (grantUriPermission) for write. Skip deletion and log.
+                scheme == "content" && uri.authority?.contains("downloads") == true -> {
+                    Log.w(TAG, "Skipping attempt to delete Downloads provider URI $uri - app likely does not have MANAGE_DOCUMENTS or persisted write permission.")
+                }
+                // Nếu là Document uri (SAF) - other document providers
                 scheme == "content" && uri.authority?.contains("documents") == true -> {
                     try {
                         DocumentsContract.deleteDocument(contentResolver, uri)
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "Không thể xóa bằng DocumentsContract (permission denied): $uri", e)
                     } catch (e: Exception) {
                         Log.w(TAG, "Không thể xóa bằng DocumentsContract: $uri", e)
                     }

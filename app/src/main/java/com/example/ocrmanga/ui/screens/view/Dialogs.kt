@@ -17,7 +17,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.result.PickVisualMediaRequest
+import android.content.Intent
+import android.util.Log
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.database.DatabaseHelper
 import com.example.ocrmanga.viewmodels.ViewerViewModel
@@ -51,9 +52,15 @@ fun Dialogs(
     val coroutineScope = rememberCoroutineScope()
     // Launcher to pick a single image to replace the selected image
     val replaceImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
+        contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri: Uri? ->
             if (uri != null && imageMenuUri != null) {
+                try {
+                    // Persist read permission so we can access this URI later
+                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (e: Exception) {
+                    Log.w("Dialogs", "Could not persist permission for $uri", e)
+                }
                 // Call ViewModel to replace uri
                 viewModel.replaceImageUri(imageMenuUri, uri)
                 Toast.makeText(context, "Đã chọn ảnh thay thế", Toast.LENGTH_SHORT).show()
@@ -234,8 +241,8 @@ fun Dialogs(
                             .clickable {
                                 // Launch image picker to replace current image
                                 try {
-                                    // Use PickVisualMediaRequest to allow a single image selection
-                                    replaceImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                    // Launch OpenDocument for a single image; OpenDocument expects an Array<String> of MIME types
+                                    replaceImageLauncher.launch(arrayOf("image/*"))
                                 } catch (e: Exception) {
                                     // Fallback to generic ACTION_OPEN_DOCUMENT intent via system picker
                                     val intent = DatabaseHelper.createImagePickerIntent()
