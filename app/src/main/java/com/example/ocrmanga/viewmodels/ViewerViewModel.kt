@@ -1212,6 +1212,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 } catch (e: Throwable) {
                     Log.w(TAG, "Error cleaning cache folders", e)
                 }
+                    // Persist a flag so the app won't immediately rebuild disk caches (e.g., Coil disk cache)
+                    // This prevents the cache from being repopulated on next startup until the user performs
+                    // an explicit action that re-enables caching. Keep this small and safe (SharedPreferences).
+                    try {
+                        val prefs = app.getSharedPreferences("ocrmanga_prefs", android.content.Context.MODE_PRIVATE)
+                        prefs.edit().putBoolean("suppress_coil_disk_cache", true).apply()
+                        Log.i(TAG, "Set suppress_coil_disk_cache=true after clearing session cache")
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Failed to persist cache-suppress flag", e)
+                    }
                 // app files/ocrmanga_temp
                 File(app.filesDir, "ocrmanga_temp").takeIf { it.exists() }?.let { tmpDir ->
                     try {
@@ -1346,6 +1356,21 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun getReloadTokenForUri(uri: Uri): Long? {
         return uriReloadTokens[uri.toString()]
+    }
+
+    /**
+     * Re-enable disk cache writes after the user previously cleared cache.
+     * Call this from UI when the user explicitly wants caching back (optional).
+     */
+    fun enableDiskCacheWrites() {
+        try {
+            val app = getApplication<Application>()
+            val prefs = app.getSharedPreferences("ocrmanga_prefs", android.content.Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("suppress_coil_disk_cache", false).apply()
+            Log.i(TAG, "Cleared suppress_coil_disk_cache flag (disk caching re-enabled)")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to clear suppress_coil_disk_cache flag", e)
+        }
     }
 }
 data class ViewerUiState(
