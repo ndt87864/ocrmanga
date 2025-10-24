@@ -23,6 +23,8 @@ import java.io.IOException
 import kotlin.math.max
 import kotlin.math.min
 import android.content.Context
+import android.graphics.Typeface
+import java.util.concurrent.ConcurrentHashMap
 
 // Image and text region utilities extracted from ViewerScreen.kt
 
@@ -50,6 +52,21 @@ private fun resolveFontFile(fontFamilyName: String?): String {
         "SF Toontime Extended Bold" -> "SF Toontime Extended Bold.ttf"
         "SF Toontime Extended Bold Italic" -> "SF Toontime Extended Bold Italic.ttf"
         else -> "mto_astro_city.ttf"
+    }
+}
+
+// Typeface cache to avoid repeated asset loads during drawing/layout
+private val typefaceCache: MutableMap<String, Typeface?> = ConcurrentHashMap()
+
+private fun getCachedTypeface(context: Context, fontFamilyName: String?): Typeface? {
+    val key = fontFamilyName ?: "default"
+    return typefaceCache.getOrPut(key) {
+        try {
+            val file = resolveFontFile(fontFamilyName)
+            Typeface.createFromAsset(context.assets, "tessdata/font/$file")
+        } catch (e: Exception) {
+            null
+        }
     }
 }
 
@@ -335,15 +352,9 @@ fun calculateOptimalFontSize(
 
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
-        // Load font to compute accurate metrics for the requested fontFamilyName
-        context?.let {
-            try {
-                val fontFile = resolveFontFile(fontFamilyName)
-                val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/$fontFile")
-                if (typeface != null) this.typeface = typeface
-            } catch (e: Exception) {
-                // Use default typeface on error
-            }
+        // Use cached Typeface to avoid repeated asset loads
+        context?.let { ctx ->
+            getCachedTypeface(ctx, fontFamilyName)?.let { tf -> this.typeface = tf }
         }
     }
 
@@ -444,28 +455,10 @@ fun DrawScope.drawText(
             this.style = android.graphics.Paint.Style.STROKE
             this.strokeWidth = borderThickness
             
-            // Set typeface giống với paint chính để đảm bảo đồng nhất
+            // Use cached Typeface to avoid repeated asset loads
             try {
-                val fontFile = when (fontFamilyName) {
-                    "mto_astro_city" -> "mto_astro_city.ttf"
-                    "mto_augie" -> "mto_augie.ttf"
-                    "mto_chancery" -> "mto_chancery.ttf"
-                    "mto_chranko" -> "mto_chranko.ttf"
-                    "mto_comic_1" -> "mto_comic_1.ttf"
-                    "mto_comic_2" -> "mto_comic_2.ttf"
-                    "mto_dom" -> "mto_dom.ttf"
-                    "mto_mikes" -> "mto_mikes.ttf"
-                    "mto_sans" -> "mto_sans.ttf"
-                    "mto_shadow" -> "mto_shadow.ttf"
-                    else -> "mto_astro_city.ttf"
-                }
-                val typeface = android.graphics.Typeface.createFromAsset(context.assets, "tessdata/font/$fontFile")
-                if (typeface != null) {
-                    this.typeface = typeface
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("ImageTextUtils", "Error loading font for border: ${e.message}")
-            }
+                getCachedTypeface(context, fontFamilyName)?.let { this.typeface = it }
+            } catch (_: Exception) { }
         }
     } else null
 
@@ -474,29 +467,10 @@ fun DrawScope.drawText(
         this.color = color.toArgb()
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.CENTER // Đổi từ LEFT sang CENTER để căn giữa
-        // Set font from assets/tessdata/font using createFromAsset
+        // Use cached Typeface to avoid repeated asset loads
         try {
-            val fontFile = when (fontFamilyName) {
-                "mto_astro_city" -> "mto_astro_city.ttf"
-                "mto_augie" -> "mto_augie.ttf"
-                "mto_chancery" -> "mto_chancery.ttf"
-                "mto_chranko" -> "mto_chranko.ttf"
-                "mto_comic_1" -> "mto_comic_1.ttf"
-                "mto_comic_2" -> "mto_comic_2.ttf"
-                "mto_dom" -> "mto_dom.ttf"
-                "mto_mikes" -> "mto_mikes.ttf"
-                "mto_sans" -> "mto_sans.ttf"
-                "mto_shadow" -> "mto_shadow.ttf"
-                else -> "mto_astro_city.ttf"
-            }
-            val typeface = android.graphics.Typeface.createFromAsset(context.assets, "tessdata/font/$fontFile")
-            if (typeface != null) {
-                this.typeface = typeface
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("ImageTextUtils", "Error loading font from tessdata/font/$fontFamilyName: ${e.message}")
-            // Fallback to default typeface if not found
-        }
+            getCachedTypeface(context, fontFamilyName)?.let { this.typeface = it }
+        } catch (_: Exception) { }
         // Điều chỉnh stroke width để tạo hiệu ứng đậm nhạt
         if (boldness > 1.0f) {
             this.style = android.graphics.Paint.Style.FILL_AND_STROKE
@@ -580,14 +554,8 @@ fun adjustWhiteoutBounds(
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
         this.textSize = fontSize
-        context?.let {
-            try {
-                val fontFile = resolveFontFile(fontFamilyName)
-                val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/$fontFile")
-                if (typeface != null) this.typeface = typeface
-            } catch (e: Exception) {
-                // fallback default
-            }
+        context?.let { ctx ->
+            getCachedTypeface(ctx, fontFamilyName)?.let { this.typeface = it }
         }
     }
 
@@ -625,16 +593,8 @@ fun adjustWhiteoutBounds(
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.LEFT
-        // Use resolved font file for measuring text width/bounds so different fonts produce correct sizes
-        context?.let {
-            try {
-                val fontFile = resolveFontFile(fontFamilyName)
-                val typeface = android.graphics.Typeface.createFromAsset(it.assets, "tessdata/font/$fontFile")
-                if (typeface != null) this.typeface = typeface
-            } catch (e: Exception) {
-                // Use default typeface
-            }
-        }
+        // Use cached Typeface for measuring text width/bounds
+        context?.let { ctx -> getCachedTypeface(ctx, fontFamilyName)?.let { this.typeface = it } }
     }
 
     val lines = mutableListOf<String>()
