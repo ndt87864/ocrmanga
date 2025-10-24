@@ -94,6 +94,15 @@ fun ImageViewer(
     val visibleRange = remember { mutableStateOf(IntRange(0, -1)) }
     val prefetchBuffer = 2 // how many items before/after visible area to prefetch
     val imageLoader = ImageLoader(context)
+    // Read persisted preference to determine whether disk cache should be suppressed
+    val suppressDiskCachePref = remember {
+        try {
+            val prefs = context.getSharedPreferences("ocrmanga_prefs", android.content.Context.MODE_PRIVATE)
+            prefs.getBoolean("suppress_coil_disk_cache", false)
+        } catch (e: Exception) {
+            false
+        }
+    }
 
     // Observe LazyListState visible items and compute expanded window + prefetch
     LaunchedEffect(lazyListState, imageUris) {
@@ -116,7 +125,7 @@ fun ImageViewer(
                                 .memoryCacheKey("image-index-$i:${imageUris[i].toString()}:rt$reloadToken")
                                 .diskCacheKey("image-index-$i:${imageUris[i].toString()}:rt$reloadToken")
                                 .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                                .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                                    .diskCachePolicy(if (suppressDiskCachePref) coil.request.CachePolicy.DISABLED else coil.request.CachePolicy.ENABLED)
                                 .build()
                             imageLoader.enqueue(prefetchReq)
                         } catch (e: Exception) {
@@ -292,7 +301,7 @@ fun ImageViewer(
                             .memoryCacheKey("image-index-$index:${uri.toString()}:v$imageVersion:rt$reloadToken")
                             .diskCacheKey("image-index-$index:${uri.toString()}:v$imageVersion:rt$reloadToken")
                             .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                            .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                            .diskCachePolicy(if (suppressDiskCachePref) coil.request.CachePolicy.DISABLED else coil.request.CachePolicy.ENABLED)
                             .build()
                     }
 
