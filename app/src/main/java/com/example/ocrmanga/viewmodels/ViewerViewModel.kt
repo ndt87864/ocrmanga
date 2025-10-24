@@ -33,6 +33,7 @@ import kotlinx.coroutines.awaitAll
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
     // Dịch lại 1 ảnh (re-translate single image)
@@ -100,7 +101,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val rid = _uiState.value.roomId
                 val imageId = uriToImageId[uri]
                 if (rid != null && imageId != null) {
-                    try { databaseHelper.markImageChanged(imageId, rid) } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
+                    try {
+                        val numChanged = databaseHelper.markImageChanged(imageId, rid)
+                        if (numChanged >= 5) maybeAutoSaveChangedImages(rid)
+                    } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
                 }
             }
             stopTranslationTimer()
@@ -129,7 +133,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val rid = _uiState.value.roomId
         val imageId = uriToImageId[uri]
         if (rid != null && imageId != null) {
-            try { databaseHelper.markImageChanged(imageId, rid) } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
+            try {
+                val numChanged = databaseHelper.markImageChanged(imageId, rid)
+                if (numChanged >= 5) maybeAutoSaveChangedImages(rid)
+            } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
         }
         //log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${updatedBlocks.size} blocks")
         updatedBlocks.forEachIndexed { idx, block ->
@@ -138,6 +145,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private val translationRepository = TranslationRepository(application)
+    // prevent parallel auto-save runs
+    private val autoSaveInProgress = AtomicBoolean(false)
     private val databaseHelper = DatabaseHelper(application)
     // Track active jobs (translation / timer / io) so we can force-cancel them when clearing session
     private val activeJobs = ConcurrentLinkedQueue<Job>()
@@ -165,6 +174,39 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private fun registerJob(job: Job) {
         activeJobs.add(job)
         job.invokeOnCompletion { activeJobs.remove(job) }
+    }
+
+    // If a room accumulates >=5 changed images, automatically persist their pending edits.
+    private fun maybeAutoSaveChangedImages(roomId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // prevent concurrent auto-save runs
+            if (!autoSaveInProgress.compareAndSet(false, true)) return@launch
+            try {
+                val changedIds = databaseHelper.getChangedImageIdsForRoom(roomId)
+                if (changedIds.size >= 5) {
+                    val mapping = mutableMapOf<Long, Pair<String, List<TextBlockInfo>>>()
+                    val currentTranslated = _uiState.value.translatedTexts
+                    currentTranslated.forEach { (uri, pair) ->
+                        val imgId = uriToImageId[uri]
+                        if (imgId != null && changedIds.contains(imgId)) {
+                            mapping[imgId] = pair
+                        }
+                    }
+                    if (mapping.isNotEmpty()) {
+                        val ok = databaseHelper.applyPendingChangesForRoom(roomId, mapping)
+                        if (ok) {
+                            Log.i(TAG, "Auto-saved ${mapping.size} changed images for room $roomId (threshold reached)")
+                        } else {
+                            Log.w(TAG, "Auto-save failed for room $roomId mappingSize=${mapping.size}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "maybeAutoSaveChangedImages failed for room $roomId", e)
+            } finally {
+                autoSaveInProgress.set(false)
+            }
+        }
     }
     companion object {
         const val BATCH_SIZE = 10 // Số ảnh tải mỗi lần

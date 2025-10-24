@@ -595,7 +595,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     // Mark an image as changed (is_changed = 1). If record doesn't exist, create it.
-    fun markImageChanged(imageId: Long, roomId: Long) {
+    // Returns the current number of images with is_changed = 1 for the given room after marking.
+    fun markImageChanged(imageId: Long, roomId: Long): Int {
         val db = writableDatabase
         try {
             val values = ContentValues().apply { put(COLUMN_CHANGE_IMAGE_FLAG, 1) }
@@ -609,9 +610,19 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 }
                 db.insert(TABLE_CHANGE_IMAGES, null, ins)
             }
+
+            // Count how many images in this room are marked changed
+            val cursor = db.rawQuery("SELECT COUNT(*) FROM $TABLE_CHANGE_IMAGES WHERE $COLUMN_CHANGE_IMAGE_ROOM_ID = ? AND $COLUMN_CHANGE_IMAGE_FLAG = 1", arrayOf(roomId.toString()))
+            var count = 0
+            if (cursor.moveToFirst()) {
+                try { count = cursor.getInt(0) } catch (e: Exception) { count = 0 }
+            }
+            cursor.close()
+            return count
         } catch (e: Exception) {
             Log.w(TAG, "markImageChanged failed for imageId=$imageId", e)
         }
+        return 0
     }
 
     // Clear change flag for an image (set to 0)
