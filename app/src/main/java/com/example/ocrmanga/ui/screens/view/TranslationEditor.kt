@@ -86,6 +86,8 @@ fun TranslationEditor(
     
     // State cho viền chữ
     var showBorderColorPicker by remember { mutableStateOf(false) }
+    // State cho đổ bóng chữ
+    var showShadowColorPicker by remember { mutableStateOf(false) }
     // State cho chỉnh khoảng cách dòng
     var showLineSpacingDialog by remember { mutableStateOf(false) }
 
@@ -153,6 +155,24 @@ fun TranslationEditor(
             }
 
             // Row chứa các công cụ theo từng trang
+                            // Nút chọn màu đổ bóng chữ (bên cạnh màu viền)
+                            IconButton(
+                                onClick = { if (isBlockSelected) showShadowColorPicker = true },
+                                enabled = isBlockSelected
+                            ) {
+                                val currentShadowColor = selectedIndex?.let { dragBlocks[it].textShadowColor } ?: Color.Black
+                                val currentShadowAlpha = selectedIndex?.let { dragBlocks[it].textShadowAlpha } ?: 1f
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(Color.Transparent, CircleShape)
+                                        .border(
+                                            width = 2.dp,
+                                            color = currentShadowColor.copy(alpha = currentShadowAlpha),
+                                            shape = CircleShape
+                                        )
+                                )
+                            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
@@ -863,6 +883,40 @@ fun TranslationEditor(
             )
         }
 
+        // Dialog chọn màu đổ bóng chữ
+        if (showShadowColorPicker && isBlockSelected && selectedIndex != null) {
+            val idx = selectedIndex
+            val currentColor = dragBlocks[idx].textShadowColor ?: Color.Black
+            val currentAlpha = dragBlocks[idx].textShadowAlpha
+            ColorPickerDialog(
+                title = "Chọn màu đổ bóng chữ",
+                initialColor = currentColor.copy(alpha = 1f),
+                initialAlpha = currentAlpha,
+                initialThickness = (dragBlocks[idx].textShadowRadius),
+                isOverlayDialog = false,
+                onColorSelected = { color ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(textShadowColor = color)
+                    })
+                    showShadowColorPicker = false
+                },
+                onAlphaChanged = { alpha ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(textShadowAlpha = alpha)
+                    })
+                },
+                onThicknessChanged = { radius ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(textShadowRadius = radius)
+                    })
+                },
+                onDismiss = { showShadowColorPicker = false }
+            )
+        }
+
         // Dialog chỉnh khoảng cách dòng
         if (showLineSpacingDialog && isBlockSelected && selectedIndex != null) {
             val idx = selectedIndex
@@ -911,7 +965,7 @@ fun ColorPickerDialog(
     initialBoldness: Float = 1.0f,
     initialSaturation: Float = 1.0f,
     initialThickness: Float = 0.0f, // Thêm tham số này
-    maxThickness: Float = 5.0f,
+    maxThickness: Float = 20.0f,
     isOverlayDialog: Boolean = false,
     onColorSelected: (Color) -> Unit,
     onAlphaChanged: ((Float) -> Unit)? = null,

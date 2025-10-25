@@ -443,7 +443,10 @@ fun DrawScope.drawText(
     borderAlpha: Float = 1.0f, // Độ trong suốt của viền (0.0 - 1.0),
     editMode: Boolean = false, // Nếu true, không giới hạn font size bởi overlay
     shapeType: Int = 0, // 0 = rectangle, 1 = oval
-    lineSpacing: Float = 1.0f // Khoảng cách dòng, multiplier (1.0 = bình thường)
+    lineSpacing: Float = 1.0f, // Khoảng cách dòng, multiplier (1.0 = bình thường)
+    shadowColor: Color? = null, // Màu đổ bóng chữ
+    shadowAlpha: Float = 1.0f, // Alpha multiplier for shadow (0.0 - 1.0)
+    shadowRadius: Float = 0f // Blur radius in px for shadow; 0 = use default proportional radius
 ) {
 
     // ...existing code...
@@ -482,6 +485,25 @@ fun DrawScope.drawText(
             this.alpha = alpha
         }
     }
+    // Prepare a separate shadow paint so shadow is drawn behind border/text and remains outside border edges
+    val shadowPaint = if (shadowColor != null) {
+        androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+            val finalShadow = shadowColor.copy(alpha = shadowAlpha)
+            this.color = finalShadow.toArgb()
+            this.textSize = fontSize
+            this.textAlign = android.graphics.Paint.Align.CENTER
+            this.style = android.graphics.Paint.Style.FILL
+            // Use cached Typeface to match main text
+            try { getCachedTypeface(context, fontFamilyName)?.let { this.typeface = it } } catch (_: Exception) { }
+            try {
+                // If user provided an explicit radius use it, otherwise fall back to proportional radius
+                val radius = if (shadowRadius > 0f) shadowRadius else (fontSize * 0.14f).coerceAtLeast(1f)
+                val dx = (fontSize * 0.04f)
+                val dy = (fontSize * 0.04f)
+                this.setShadowLayer(radius, dx, dy, finalShadow.toArgb())
+            } catch (_: Exception) { }
+        }
+    } else null
 
     // Đảm bảo text luôn nằm gọn trong overlay bằng cách tự động wrap và điều chỉnh font size nếu cần.
     // Sử dụng chung một logic cho cả chế độ xem và chế độ chỉnh sửa để giữ nhất quán
@@ -510,6 +532,10 @@ fun DrawScope.drawText(
                     canvas.nativeCanvas.rotate(90f)
                     val lineWidth = paint.measureText(line)
                     val centeredY = (height - lineWidth) / 2
+                    // Draw shadow first so it appears outside the border and text
+                    shadowPaint?.let {
+                        canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, it)
+                    }
                     borderPaint?.let {
                         canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, it)
                     }
@@ -532,6 +558,8 @@ fun DrawScope.drawText(
             for (line in lines) {
                 if (line.isNotBlank()) {
                     val centerX = x + width / 2
+                    // Draw shadow behind text and border so it shows outside rounded corners
+                    shadowPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
                     borderPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
                     canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
                 }
