@@ -595,7 +595,8 @@ class TranslationRepository(private val application: Application) {
             "zh" -> listOf(chineseRecognizer)
             "ja" -> listOf(japaneseRecognizer)
             "ko" -> listOf(koreanRecognizer)
-            "en" -> listOf(latinRecognizer)
+            // Treat Spanish ("es") the same as English (Latin script)
+            "en", "es" -> listOf(latinRecognizer)
             else -> listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer, latinRecognizer)
         }
         val deferredResults = scaleFactors.flatMap { scale ->
@@ -1510,9 +1511,22 @@ class TranslationRepository(private val application: Application) {
                         val topDiff = kotlin.math.abs(block.bounds.top - ref.bounds.top)
                         val avgHeight = (block.bounds.height() + ref.bounds.height()) / 2f
                         if (topDiff < avgHeight * threshold) {
-                            group.add(block)
-                            assigned = true
-                            break
+                            // Additional horizontal proximity check: avoid merging blocks that are
+                            // on the same row but separated by a large horizontal gap (e.g., different balloons).
+                            // Compute group's bounding rect to check overlap/gap.
+                            val groupBounds = group.drop(1).fold(Rect(group.first().bounds)) { acc, b ->
+                                acc.union(b.bounds)
+                                acc
+                            }
+                            val xOverlap = block.bounds.left <= groupBounds.right && block.bounds.right >= groupBounds.left
+                            val avgWidth = (block.bounds.width() + ref.bounds.width()) / 2f
+                            val gap = if (block.bounds.left > groupBounds.right) block.bounds.left - groupBounds.right else groupBounds.left - block.bounds.right
+                            // Allow grouping when there is horizontal overlap or the gap is reasonably small
+                            if (xOverlap || gap <= avgWidth * 4) {
+                                group.add(block)
+                                assigned = true
+                                break
+                            }
                         }
                     }
                 }

@@ -336,6 +336,29 @@ fun ImageViewer(
                         contentScale = ContentScale.FillWidth,
                         onState = { state -> imageLoadState = state }
                     )
+                    // If translations are enabled but not yet loaded for this image, show a loading overlay
+                    if (isInWindow && translationEnabled && !translatedTexts.containsKey(uri)) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize(),
+                            contentAlignment = androidx.compose.ui.Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Đang tải bản dịch...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
                     // Precompute drawing regions off the UI thread to avoid heavy work during
                     // fast scrolling/recomposition. The produced list is used by drawWithCache.
                     val precomputedRegionsState = remember(uri, translationVersion) { mutableStateOf<List<PrecomputedRegion>>(emptyList()) }
