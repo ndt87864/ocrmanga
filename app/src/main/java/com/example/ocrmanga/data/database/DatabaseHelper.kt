@@ -533,7 +533,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                          fontSize: Float = 12f
     ): Long {
         val db = writableDatabase
-                        val values = ContentValues().apply {
+        if (shadowColor != null || shadowAlpha != 1.0f || shadowRadius != 0f) {
+            Log.i("DatabaseHelper", "LƯU SHADOW: imageId=$imageId shadowColor=$shadowColor shadowAlpha=$shadowAlpha shadowRadius=$shadowRadius")
+        }
+        val values = ContentValues().apply {
                             put(COLUMN_BLOCK_IMAGE_ID, imageId)
                             put(COLUMN_BLOCK_X, x)
                             put(COLUMN_BLOCK_Y, y)

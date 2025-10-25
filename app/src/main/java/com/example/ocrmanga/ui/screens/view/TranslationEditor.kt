@@ -898,9 +898,12 @@ fun TranslationEditor(
                 initialThickness = (dragBlocks[idx].textShadowRadius),
                 isOverlayDialog = false,
                 onColorSelected = { color ->
+                    // Thêm log kiểm tra giá trị shadowColor
+                    android.util.Log.d("TranslationEditor", "onColorSelected: idx=$idx color=$color (ARGB=${color.toArgb()}) trước khi cập nhật: old=${dragBlocks[idx].textShadowColor}")
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
                         list[idx] = old.copy(textShadowColor = color)
+                        android.util.Log.d("TranslationEditor", "onColorSelected: idx=$idx đã cập nhật textShadowColor=${list[idx].textShadowColor}")
                     })
                     showShadowColorPicker = false
                 },
