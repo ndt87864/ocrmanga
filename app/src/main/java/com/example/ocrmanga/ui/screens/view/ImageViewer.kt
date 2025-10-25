@@ -60,7 +60,10 @@ data class DragBlockState(
     val lineSpacing: Float = 1.0f, // Khoảng cách dòng (multiplier)
     val textBorderColor: Color? = null, // Màu viền chữ
     val textBorderThickness: Float = 0.0f, // Độ dày viền chữ (0.0 - 5.0)
-    val textBorderAlpha: Float = 1.0f // Độ trong suốt của viền chữ (0.0 - 1.0)
+    val textBorderAlpha: Float = 1.0f, // Độ trong suốt của viền chữ (0.0 - 1.0)
+    val textShadowColor: Color? = null, // Màu đổ bóng chữ
+    val textShadowAlpha: Float = 1.0f, // Độ trong suốt của đổ bóng (0.0 - 1.0)
+    val textShadowRadius: Float = 0f // Độ dày/blur radius của đổ bóng (px). 0 = tắt
 )
 
 // Precomputed region used for drawing; computed off the main composition pass to
@@ -80,6 +83,10 @@ data class PrecomputedRegion(
     val textBorderColor: Color? = null,
     val textBorderThickness: Float = 0.0f,
     val textBorderAlpha: Float = 1.0f
+    ,
+    val textShadowColor: Color? = null,
+    val textShadowAlpha: Float = 1.0f,
+    val textShadowRadius: Float = 0f
 )
 
 @Composable
@@ -225,7 +232,7 @@ fun ImageViewer(
             // Only update dragBlocks when item becomes visible (isInWindow) or when translationVersion changes
             LaunchedEffect(uri, isInWindow, translationVersion) {
                 if (isInWindow && !editTranslationMode) {
-                    val newBlocks = translatedTexts[uri]?.second?.map {
+                    val rawNewBlocks = translatedTexts[uri]?.second?.map {
                         DragBlockState(
                             block = it,
                             fontSize = null,
@@ -242,8 +249,34 @@ fun ImageViewer(
                             textBorderAlpha = it.borderAlpha
                         )
                     } ?: emptyList()
-                    dragBlocks = newBlocks
-                    dragBlocksMap[uri] = newBlocks
+
+                    // Merge user-edited visual properties (if any) from previously stored dragBlocksMap
+                    val existing = dragBlocksMap[uri]
+                    val merged = if (existing != null && existing.isNotEmpty()) {
+                        rawNewBlocks.map { nb ->
+                            // try to find a matching existing block by bounds + text
+                            val match = existing.find { eb ->
+                                eb.block.bounds == nb.block.bounds && eb.block.text == nb.block.text
+                            }
+                            if (match != null) {
+                                nb.copy(
+                                    // preserve any user-set shadow properties and custom lineSpacing
+                                    textShadowColor = match.textShadowColor,
+                                    textShadowAlpha = match.textShadowAlpha,
+                                    textShadowRadius = match.textShadowRadius,
+                                    lineSpacing = match.lineSpacing,
+                                    // also preserve edited font size/offset if present
+                                    fontSize = match.fontSize,
+                                    rotation = match.rotation,
+                                    // keep any manual offset made during editing
+                                    offset = match.offset
+                                )
+                            } else nb
+                        }
+                    } else rawNewBlocks
+
+                    dragBlocks = merged
+                    dragBlocksMap[uri] = merged
                     newlyTranslated[uri] = true
                 }
             }
@@ -408,7 +441,10 @@ fun ImageViewer(
                                     lineSpacing = dragBlock.lineSpacing,
                                     textBorderColor = dragBlock.textBorderColor,
                                     textBorderThickness = dragBlock.textBorderThickness,
-                                    textBorderAlpha = dragBlock.textBorderAlpha
+                                    textBorderAlpha = dragBlock.textBorderAlpha,
+                                    textShadowColor = dragBlock.textShadowColor,
+                                    textShadowAlpha = dragBlock.textShadowAlpha,
+                                    textShadowRadius = dragBlock.textShadowRadius
                                 )
                             }
                             precomputedRegionsState.value = list
@@ -652,7 +688,10 @@ fun ImageViewer(
                                             borderColor = region.textBorderColor,
                                             borderThickness = region.textBorderThickness,
                                             borderAlpha = region.textBorderAlpha,
-                                            editMode = editTranslationMode
+                                            editMode = editTranslationMode,
+                                            shadowColor = region.textShadowColor,
+                                            shadowAlpha = region.textShadowAlpha,
+                                            shadowRadius = region.textShadowRadius
                                         )
                                     }
                                 } else {
@@ -672,7 +711,10 @@ fun ImageViewer(
                                         borderColor = region.textBorderColor,
                                         borderThickness = region.textBorderThickness,
                                         borderAlpha = region.textBorderAlpha,
-                                        editMode = editTranslationMode
+                                        editMode = editTranslationMode,
+                                        shadowColor = region.textShadowColor,
+                                        shadowAlpha = region.textShadowAlpha,
+                                        shadowRadius = region.textShadowRadius
                                     )
                                 }
                             }
