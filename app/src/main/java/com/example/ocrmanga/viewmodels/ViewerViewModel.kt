@@ -70,11 +70,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
             if (mode == TranslationMode.OFF) {
-                // Nếu chọn OFF khi retranslate: xóa toàn bộ block / bản dịch cho ảnh này
+                // Nếu chọn OFF khi retranslate cho một ảnh cụ thể: thay vì xóa hoàn toàn
+                // entry trong translatedTexts (khiến UI nghĩ ảnh đang chờ dịch và hiển thị
+                // overlay "Đang tải bản dịch..."), ghi một entry rỗng "" -> emptyList()
+                // để đánh dấu ảnh đã được xử lý nhưng không có bản dịch.
                 _uiState.update { state ->
                     state.copy(
-                        translatedTexts = state.translatedTexts - uri,
-                        translatedStatus = state.translatedStatus + (uri to false),
+                        translatedTexts = state.translatedTexts + (uri to ("" to emptyList())),
+                        translatedStatus = state.translatedStatus + (uri to true),
                         sourceLanguages = state.sourceLanguages - uri,
                         // Tăng translationVersion để force UI xóa blocks
                         translationVersion = state.translationVersion + 1
