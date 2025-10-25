@@ -86,6 +86,8 @@ fun TranslationEditor(
     
     // State cho viền chữ
     var showBorderColorPicker by remember { mutableStateOf(false) }
+    // State cho chỉnh khoảng cách dòng
+    var showLineSpacingDialog by remember { mutableStateOf(false) }
 
     // --- EFFECTS ---
     // Hoist LaunchedEffects to the top level so they are always active
@@ -394,30 +396,30 @@ fun TranslationEditor(
                             onClick = {
                                 selectedIdx?.let { idx ->
                                     // Check displayed value so toast/tint match what user sees
-                                            // Use raw stored font for toast triggers so it matches the actual value stored
-                                            val currentRaw = dragBlocks.getOrNull(idx)?.let { it.fontSize ?: it.block.fontSize } ?: minFontGlobal
-                                            val curBlockForCheck = dragBlocks.getOrNull(idx)?.block
-                                            val rawMaxForThis = if (curBlockForCheck != null) {
-                                                val bb = curBlockForCheck
-                                                val w = bb.bounds.width().toFloat()
-                                                val h = bb.bounds.height().toFloat()
-                                                calculateOptimalFontSize(
-                                                    text = bb.text,
-                                                    width = w,
-                                                    height = h,
-                                                    minFontSize = minFontGlobal,
-                                                    shapeType = bb.shapeType,
-                                                    context = context,
-                                                    fontFamilyName = bb.fontFamily,
-                                                    extraSizeAllowance = 2f
-                                                )
-                                            } else {
-                                                minFontGlobal
-                                            }
-                                            val alreadyAtMinRaw = currentRaw <= minFontGlobal + 0.001f
-                                            if (alreadyAtMinRaw) {
-                                                android.widget.Toast.makeText(context, "Đã đạt kích thước chữ nhỏ nhất", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
+                                    // Use raw stored font for toast triggers so it matches the actual value stored
+                                    val currentRaw = dragBlocks.getOrNull(idx)?.let { it.fontSize ?: it.block.fontSize } ?: minFontGlobal
+                                    val curBlockForCheck = dragBlocks.getOrNull(idx)?.block
+                                    val rawMaxForThis = if (curBlockForCheck != null) {
+                                        val bb = curBlockForCheck
+                                        val w = bb.bounds.width().toFloat()
+                                        val h = bb.bounds.height().toFloat()
+                                        calculateOptimalFontSize(
+                                            text = bb.text,
+                                            width = w,
+                                            height = h,
+                                            minFontSize = minFontGlobal,
+                                            shapeType = bb.shapeType,
+                                            context = context,
+                                            fontFamilyName = bb.fontFamily,
+                                            extraSizeAllowance = 2f
+                                        )
+                                    } else {
+                                        minFontGlobal
+                                    }
+                                    val alreadyAtMinRaw = currentRaw <= minFontGlobal + 0.001f
+                                    if (alreadyAtMinRaw) {
+                                        android.widget.Toast.makeText(context, "Đã đạt kích thước chữ nhỏ nhất", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                                     onDragBlocksChange(dragBlocks.toMutableList().also {
                                         val old = it[idx]
                                         val b = old.block
@@ -444,9 +446,21 @@ fun TranslationEditor(
                             enabled = true
                         ) {
                             Icon(
-                                Icons.Default.TextDecrease,
-                                "Giảm cỡ chữ",
+                                imageVector = Icons.Default.TextDecrease,
+                                contentDescription = "Giảm cỡ chữ",
                                 tint = if (decreaseEnabled) MaterialTheme.colorScheme.onBackground else Color.Gray
+                            )
+                        }
+
+                        // Nút chỉnh khoảng cách dòng (đặt riêng để tránh lồng nhau)
+                        IconButton(
+                            onClick = { if (isBlockSelected) showLineSpacingDialog = true },
+                            enabled = isBlockSelected
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FormatLineSpacing,
+                                contentDescription = "Khoảng cách dòng",
+                                tint = if (isBlockSelected) MaterialTheme.colorScheme.onBackground else Color.Gray
                             )
                         }
 
@@ -846,6 +860,44 @@ fun TranslationEditor(
                     })
                 },
                 onDismiss = { showBorderColorPicker = false }
+            )
+        }
+
+        // Dialog chỉnh khoảng cách dòng
+        if (showLineSpacingDialog && isBlockSelected && selectedIndex != null) {
+            val idx = selectedIndex
+            val initialSpacing = dragBlocks[idx].lineSpacing
+            var currentSpacing by remember(initialSpacing) { mutableStateOf(initialSpacing) }
+            AlertDialog(
+                onDismissRequest = { showLineSpacingDialog = false },
+                title = { Text("Khoảng cách dòng") },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("Điều chỉnh khoảng cách giữa các dòng của bản dịch", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Slider(
+                            value = currentSpacing,
+                            onValueChange = { currentSpacing = it },
+                            valueRange = 0.6f..2.5f,
+                            steps = 38, // step ~0.05
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = "Hiện tại: ${"%.2f".format(currentSpacing)}", style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                            val old = list[idx]
+                            list[idx] = old.copy(lineSpacing = currentSpacing)
+                        })
+                        showLineSpacingDialog = false
+                    }) { Text("Áp dụng") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLineSpacingDialog = false }) { Text("Hủy") }
+                }
             )
         }
     }

@@ -442,7 +442,8 @@ fun DrawScope.drawText(
     borderThickness: Float = 0.0f, // Độ dày viền (0.0 - 5.0)
     borderAlpha: Float = 1.0f, // Độ trong suốt của viền (0.0 - 1.0),
     editMode: Boolean = false, // Nếu true, không giới hạn font size bởi overlay
-    shapeType: Int = 0 // 0 = rectangle, 1 = oval
+    shapeType: Int = 0, // 0 = rectangle, 1 = oval
+    lineSpacing: Float = 1.0f // Khoảng cách dòng, multiplier (1.0 = bình thường)
 ) {
 
     // ...existing code...
@@ -497,7 +498,7 @@ fun DrawScope.drawText(
     borderPaint?.textSize = optimalFontSize
     val lines = wrappedText.split("\n")
     val fontMetrics = paint.fontMetrics
-    val lineHeight = fontMetrics.descent - fontMetrics.ascent
+    val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
 
     drawIntoCanvas { canvas ->
         if (isVertical) {

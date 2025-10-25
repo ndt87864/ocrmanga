@@ -57,6 +57,7 @@ data class DragBlockState(
     val textBoldness: Float = 1.0f, // Độ đậm của text (0.5 - 2.0)
     val overlaySaturation: Float = 1.0f, // Độ đậm màu overlay (0.0 - 2.0)
     val textSaturation: Float = 1.0f, // Độ đậm màu text (0.0 - 2.0)
+    val lineSpacing: Float = 1.0f, // Khoảng cách dòng (multiplier)
     val textBorderColor: Color? = null, // Màu viền chữ
     val textBorderThickness: Float = 0.0f, // Độ dày viền chữ (0.0 - 5.0)
     val textBorderAlpha: Float = 1.0f // Độ trong suốt của viền chữ (0.0 - 1.0)
@@ -75,6 +76,7 @@ data class PrecomputedRegion(
     val textBoldness: Float = 1.0f,
     val overlaySaturation: Float = 1.0f,
     val textSaturation: Float = 1.0f,
+    val lineSpacing: Float = 1.0f,
     val textBorderColor: Color? = null,
     val textBorderThickness: Float = 0.0f,
     val textBorderAlpha: Float = 1.0f
@@ -208,6 +210,7 @@ fun ImageViewer(
                     textBoldness = block.textBoldness,
                     overlaySaturation = block.overlaySaturation,
                     textSaturation = block.textSaturation,
+                    lineSpacing = block.lineSpacing,
                     textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
                     textBorderThickness = block.borderThickness,
                     textBorderAlpha = block.borderAlpha
@@ -233,6 +236,7 @@ fun ImageViewer(
                             textBoldness = it.textBoldness,
                             overlaySaturation = it.overlaySaturation,
                             textSaturation = it.textSaturation,
+                            lineSpacing = it.lineSpacing,
                             textBorderColor = it.customBorderColor?.let { c -> Color(c) },
                             textBorderThickness = it.borderThickness,
                             textBorderAlpha = it.borderAlpha
@@ -401,6 +405,7 @@ fun ImageViewer(
                                     textBoldness = dragBlock.textBoldness,
                                     overlaySaturation = dragBlock.overlaySaturation,
                                     textSaturation = dragBlock.textSaturation,
+                                    lineSpacing = dragBlock.lineSpacing,
                                     textBorderColor = dragBlock.textBorderColor,
                                     textBorderThickness = dragBlock.textBorderThickness,
                                     textBorderAlpha = dragBlock.textBorderAlpha
@@ -643,6 +648,7 @@ fun ImageViewer(
                                             boldness = region.textBoldness,
                                             context = context,
                                             fontFamilyName = block.fontFamily,
+                                            lineSpacing = region.lineSpacing,
                                             borderColor = region.textBorderColor,
                                             borderThickness = region.textBorderThickness,
                                             borderAlpha = region.textBorderAlpha,
@@ -662,6 +668,7 @@ fun ImageViewer(
                                         boldness = region.textBoldness,
                                         context = context,
                                         fontFamilyName = block.fontFamily,
+                                        lineSpacing = region.lineSpacing,
                                         borderColor = region.textBorderColor,
                                         borderThickness = region.textBorderThickness,
                                         borderAlpha = region.textBorderAlpha,
