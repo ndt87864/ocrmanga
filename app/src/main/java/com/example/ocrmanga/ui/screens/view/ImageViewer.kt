@@ -20,6 +20,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -116,6 +122,20 @@ fun ImageViewer(
     remainingImagesCount: Int = 0
 ) {
     val context = LocalContext.current
+    // Determine appropriate read permission for the current OS
+    val readPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_IMAGES
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+    var permissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, readPermission) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permissionGranted = granted
+    }
     var translationVersion by remember { mutableStateOf(0) }
     val newlyTranslated = remember { mutableStateMapOf<Uri, Boolean>() }
     // Windowing state: only render heavy overlays for indices inside this range
@@ -337,7 +357,22 @@ fun ImageViewer(
 
                     // Only load image dimensions when visible to avoid I/O during fast scroll
                     if (isInWindow) {
-                        LaunchedEffect(uri) {
+                        // Wait for permissionGranted to be true before attempting to open content URIs
+                        LaunchedEffect(uri, permissionGranted) {
+                            if (!permissionGranted) {
+                                // Request permission; the launcher will update permissionGranted.
+                                try {
+                                    permissionLauncher.launch(readPermission)
+                                } catch (e: Exception) {
+                                    // launcher may throw if called too early; fall back to defaults
+                                    Log.w("ImageViewer", "Permission launcher failed to start for $uri", e)
+                                }
+                                // Use fallback sizes until permission is granted to avoid SecurityException
+                                originalImageWidth = 1280f
+                                originalImageHeight = 1808f
+                                isImageLoaded = true
+                                return@LaunchedEffect
+                            }
                             try {
                                 val (width, height) = getImageDimensions(context, uri)
                                 originalImageWidth = width.toFloat()

@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.nativeCanvas
 import com.example.ocrmanga.data.models.TextBlockInfo
 import java.io.IOException
+import android.provider.MediaStore
 import kotlin.math.max
 import kotlin.math.min
 import android.content.Context
@@ -81,6 +82,26 @@ fun getImageDimensions(context: Context, uri: Uri): Pair<Int, Int> {
             return options.outWidth to options.outHeight
         }
         throw IOException("Kích thước ảnh không hợp lệ")
+    } catch (e: SecurityException) {
+        // Permission denied when trying to open the stream.
+        // Try a safer MediaStore query fallback for media URIs before giving up.
+        Log.w("ViewerScreen", "SecurityException opening $uri, attempting MediaStore query", e)
+        try {
+            val projection = arrayOf(MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT)
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val wIdx = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
+                    val hIdx = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
+                    val w = if (wIdx >= 0) cursor.getInt(wIdx) else -1
+                    val h = if (hIdx >= 0) cursor.getInt(hIdx) else -1
+                    if (w > 0 && h > 0) return w to h
+                }
+            }
+        } catch (qe: Exception) {
+            Log.w("ViewerScreen", "MediaStore query fallback failed for $uri", qe)
+        }
+        Log.e("ViewerScreen", "Permission denied: reading $uri requires READ_EXTERNAL_STORAGE or grantUriPermission()")
+        return 1280 to 1808
     } catch (e: Exception) {
         Log.e("ViewerScreen", "Error getting image dimensions for $uri", e)
         return 1280 to 1808
