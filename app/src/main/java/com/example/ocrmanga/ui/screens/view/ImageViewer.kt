@@ -100,6 +100,8 @@ fun ImageViewer(
     imageUris: List<Uri>,
     translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>,
     translationEnabled: Boolean,
+    // Map indicating which URIs are expected to have translations (true = translated in DB or queued)
+    translatedStatus: Map<Uri, Boolean> = emptyMap(),
     editTranslationMode: Boolean,
     dragBlocksMap: MutableMap<Uri, List<DragBlockState>>,
     onEditTranslationModeToggle: (Boolean) -> Unit,
@@ -416,29 +418,7 @@ fun ImageViewer(
                         contentScale = ContentScale.FillWidth,
                         onState = { state -> imageLoadState = state }
                     )
-                    // If translations are enabled but not yet loaded for this image, show a loading overlay
-                    if (isInWindow && translationEnabled && !translatedTexts.containsKey(uri)) {
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize(),
-                            contentAlignment = androidx.compose.ui.Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "Đang tải bản dịch...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
+                    // No loading overlay: images without loaded translations are shown normally.
                     // Precompute drawing regions off the UI thread to avoid heavy work during
                     // fast scrolling/recomposition. The produced list is used by drawWithCache.
                     val precomputedRegionsState = remember(uri, translationVersion) { mutableStateOf<List<PrecomputedRegion>>(emptyList()) }

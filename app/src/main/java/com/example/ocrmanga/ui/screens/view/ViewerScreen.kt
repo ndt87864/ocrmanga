@@ -527,6 +527,7 @@ fun ViewerScreen(
             imageUris = uiState.imageUris,
             translatedTexts = uiState.translatedTexts,
             translationEnabled = uiState.translationEnabled,
+            translatedStatus = uiState.translatedStatus,
             editTranslationMode = editTranslationMode,
             dragBlocksMap = dragBlocksMap,
             onEditTranslationModeToggle = { editTranslationMode = it },
