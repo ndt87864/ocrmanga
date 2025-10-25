@@ -82,7 +82,7 @@ fun ViewerScreen(
     LaunchedEffect(editTranslationMode) {
         if (!editTranslationMode) {
             dragBlocksMap.forEach { (uri, blocks) ->
-                viewModel.updateTranslatedBlocks(uri, blocks.map { 
+                        viewModel.updateTranslatedBlocks(uri, blocks.map { 
                         it.block.copy(
                         fontSize = it.fontSize ?: it.block.fontSize, // Lưu fontSize đã chỉnh sửa
                         rotation = it.rotation,
@@ -97,7 +97,11 @@ fun ViewerScreen(
                         textSaturation = it.textSaturation,
                         customBorderColor = it.textBorderColor?.toArgb() ?: it.block.customBorderColor,
                         borderThickness = it.textBorderThickness,
-                        borderAlpha = it.textBorderAlpha
+                        borderAlpha = it.textBorderAlpha,
+                        // Preserve shadow settings from edit state so they persist after save/exit
+                        customShadowColor = it.textShadowColor?.toArgb(),
+                        shadowAlpha = it.textShadowAlpha,
+                        shadowRadius = it.textShadowRadius
                     ) 
                 })
             }
@@ -326,7 +330,11 @@ fun ViewerScreen(
                                                 textSaturation = dragBlock.textSaturation,
                                                 customBorderColor = dragBlock.textBorderColor?.toArgb(),
                                                 borderThickness = dragBlock.textBorderThickness,
-                                                borderAlpha = dragBlock.textBorderAlpha
+                                                borderAlpha = dragBlock.textBorderAlpha,
+                                                // persist shadow edits too
+                                                customShadowColor = dragBlock.textShadowColor?.toArgb(),
+                                                shadowAlpha = dragBlock.textShadowAlpha,
+                                                shadowRadius = dragBlock.textShadowRadius
                                             )
                                         }
                                     )
@@ -533,7 +541,11 @@ fun ViewerScreen(
                         textSaturation = it.textSaturation,
                         customBorderColor = it.textBorderColor?.toArgb(),
                         borderThickness = it.textBorderThickness,
-                        borderAlpha = it.textBorderAlpha
+                        borderAlpha = it.textBorderAlpha,
+                        // persist shadow edits as well
+                        customShadowColor = it.textShadowColor?.toArgb(),
+                        shadowAlpha = it.textShadowAlpha,
+                        shadowRadius = it.textShadowRadius
                     ) 
                 })
             },
