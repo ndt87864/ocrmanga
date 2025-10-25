@@ -73,7 +73,7 @@ fun TranslationEditor(
     // --- STATE MANAGEMENT ---
     val isBlockSelected = selectedIndex != null
     var currentPage by remember { mutableStateOf(0) }
-    val totalPages = 5 // 5 trang: Lưu+Hình dạng, Sửa+Xóa, Xoay, Màu sắc, Viền chữ
+    val totalPages = 4 // 5 trang: Lưu+Hình dạng, Sửa+Xóa, Xoay, Màu sắc, Viền chữ
 
     // Hoist state variables to the top level to prevent them from resetting on page change
     var showShapeMenu by remember { mutableStateOf(false) }
@@ -158,24 +158,7 @@ fun TranslationEditor(
             }
 
             // Row chứa các công cụ theo từng trang
-                            // Nút chọn màu đổ bóng chữ (bên cạnh màu viền)
-                            IconButton(
-                                onClick = { if (isBlockSelected) showShadowColorPicker = true },
-                                enabled = isBlockSelected
-                            ) {
-                                val currentShadowColor = selectedIndex?.let { dragBlocks[it].textShadowColor } ?: Color.Black
-                                val currentShadowAlpha = selectedIndex?.let { dragBlocks[it].textShadowAlpha } ?: 1f
-                                Box(
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .background(Color.Transparent, CircleShape)
-                                        .border(
-                                            width = 2.dp,
-                                            color = currentShadowColor.copy(alpha = currentShadowAlpha),
-                                            shape = CircleShape
-                                        )
-                                )
-                            }
+                           
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
@@ -550,6 +533,13 @@ fun TranslationEditor(
 
                     // --- TRANG 3: XOAY ---
                     2 -> {
+                        
+                            IconButton(onClick = { onSelectedIndexChange(selectedIndex?.let { maxOf(0, it - 1) } ?: 0) }) {
+                                Icon(Icons.Default.ArrowBack, "Block trước")
+                            }
+                            IconButton(onClick = { onSelectedIndexChange(selectedIndex?.let { minOf(dragBlocks.size - 1, it + 1) } ?: 0) }) {
+                                Icon(Icons.Default.ArrowForward, "Block tiếp theo")
+                            }
                         Box(
                             modifier = Modifier.size(40.dp).pointerInput(Unit) {
                                 awaitEachGesture {
@@ -589,12 +579,6 @@ fun TranslationEditor(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(onClick = { onSelectedIndexChange(selectedIndex?.let { maxOf(0, it - 1) } ?: 0) }) {
-                                Icon(Icons.Default.ArrowBack, "Block trước")
-                            }
-                            IconButton(onClick = { onSelectedIndexChange(selectedIndex?.let { minOf(dragBlocks.size - 1, it + 1) } ?: 0) }) {
-                                Icon(Icons.Default.ArrowForward, "Block tiếp theo")
-                            }
                             // Nút chọn màu overlay
                             IconButton(
                                 onClick = { if (isBlockSelected) showOverlayColorPicker = true },
@@ -620,6 +604,43 @@ fun TranslationEditor(
                                         .size(24.dp)
                                         .background(currentTextColor, CircleShape)
                                         .border(1.dp, Color.Gray, CircleShape)
+                                )
+                            }
+                            
+                            // Nút chọn màu viền (giống overlay/text)
+                            IconButton(
+                                onClick = { if (isBlockSelected) showBorderColorPicker = true },
+                                enabled = isBlockSelected
+                            ) {
+                                val currentBorderColor = selectedIndex?.let { dragBlocks[it].textBorderColor } ?: Color.Black
+                                val currentBorderAlpha = selectedIndex?.let { dragBlocks[it].textBorderAlpha } ?: 1f
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(Color.Transparent, CircleShape)
+                                        .border(
+                                            width = 3.dp,
+                                            color = currentBorderColor.copy(alpha = currentBorderAlpha),
+                                            shape = CircleShape
+                                        )
+                                )
+                            }
+                             // Nút chọn màu đổ bóng chữ (bên cạnh màu viền)
+                            IconButton(
+                                onClick = { if (isBlockSelected) showShadowColorPicker = true },
+                                enabled = isBlockSelected
+                            ) {
+                                val currentShadowColor = selectedIndex?.let { dragBlocks[it].textShadowColor } ?: Color.Black
+                                val currentShadowAlpha = selectedIndex?.let { dragBlocks[it].textShadowAlpha } ?: 1f
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .background(Color.Transparent, CircleShape)
+                                        .border(
+                                            width = 2.dp,
+                                            color = currentShadowColor.copy(alpha = currentShadowAlpha),
+                                            shape = CircleShape
+                                        )
                                 )
                             }
 
@@ -650,32 +671,6 @@ fun TranslationEditor(
                         }
                     }
                     
-                    // --- TRANG 5: VIỀN CHỮ ---
-                    4 -> {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Nút chọn màu viền (giống overlay/text)
-                            IconButton(
-                                onClick = { if (isBlockSelected) showBorderColorPicker = true },
-                                enabled = isBlockSelected
-                            ) {
-                                val currentBorderColor = selectedIndex?.let { dragBlocks[it].textBorderColor } ?: Color.Black
-                                val currentBorderAlpha = selectedIndex?.let { dragBlocks[it].textBorderAlpha } ?: 1f
-                                Box(
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .background(Color.Transparent, CircleShape)
-                                        .border(
-                                            width = 3.dp,
-                                            color = currentBorderColor.copy(alpha = currentBorderAlpha),
-                                            shape = CircleShape
-                                        )
-                                )
-                            }
-                        }
-                    }
                 }
             }
 
