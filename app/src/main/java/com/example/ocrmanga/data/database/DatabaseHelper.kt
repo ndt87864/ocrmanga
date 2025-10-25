@@ -80,6 +80,45 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         } catch (e: Exception) {
             Log.w(TAG, "Không thể tự động thêm cột vào bảng translations", e)
         }
+        // Ensure image_blocks has newer shadow / font columns when upgrading from older DBs
+        try {
+            val db = writableDatabase
+            val c = db.rawQuery("PRAGMA table_info($TABLE_IMAGE_BLOCKS)", null)
+            var hasShadowColor = false
+            var hasShadowAlpha = false
+            var hasShadowRadius = false
+            var hasFontFamily = false
+            var hasFontSize = false
+            while (c.moveToNext()) {
+                val columnName = c.getString(c.getColumnIndexOrThrow("name"))
+                when (columnName) {
+                    COLUMN_BLOCK_SHADOW_COLOR -> hasShadowColor = true
+                    COLUMN_BLOCK_SHADOW_ALPHA -> hasShadowAlpha = true
+                    COLUMN_BLOCK_SHADOW_RADIUS -> hasShadowRadius = true
+                    COLUMN_BLOCK_FONT_FAMILY -> hasFontFamily = true
+                    COLUMN_BLOCK_FONT_SIZE -> hasFontSize = true
+                }
+            }
+            c.close()
+
+            if (!hasShadowColor) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_SHADOW_COLOR INTEGER") } catch (e: Exception) { /* ignore */ }
+            }
+            if (!hasShadowAlpha) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_SHADOW_ALPHA REAL DEFAULT 1.0") } catch (e: Exception) { /* ignore */ }
+            }
+            if (!hasShadowRadius) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_SHADOW_RADIUS REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
+            }
+            if (!hasFontFamily) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_FONT_FAMILY TEXT DEFAULT ''") } catch (e: Exception) { /* ignore */ }
+            }
+            if (!hasFontSize) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_FONT_SIZE REAL DEFAULT 12.0") } catch (e: Exception) { /* ignore */ }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Không thể tự động thêm cột vào bảng image_blocks", e)
+        }
     }
 
     companion object {
@@ -522,7 +561,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put(COLUMN_BLOCK_FONT_SIZE, fontSize)
                         }
                         val id = db.insert(TABLE_IMAGE_BLOCKS, null, values)
-        Log.i(TAG, "Inserted image_block id=$id imageId=$imageId borderColor=${borderColor?.toString() ?: "null"} borderThickness=$borderThickness fontFamily='$fontFamily'")
+        Log.i(TAG, "Inserted image_block id=$id imageId=$imageId borderColor=${borderColor?.toString() ?: "null"} borderThickness=$borderThickness fontFamily='$fontFamily' shadowColor=${shadowColor?.toString() ?: "null"} shadowAlpha=$shadowAlpha shadowRadius=$shadowRadius")
+        // Explicit log when shadow properties are present to make it easy to spot
+        if (shadowColor != null || (shadowRadius > 0f) || shadowAlpha != 1.0f) {
+            Log.i(TAG, "Saved SHADOW for image_block id=$id imageId=$imageId shadowColor=${shadowColor?.toString() ?: "null"} shadowAlpha=$shadowAlpha shadowRadius=$shadowRadius")
+        }
         return id
     }
 
@@ -561,6 +604,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val shadowColor = cursor.getIntOrNull(idx(COLUMN_BLOCK_SHADOW_COLOR))
         val shadowAlpha = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_SHADOW_ALPHA), 1.0f)
         val shadowRadius = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_SHADOW_RADIUS), 0f)
+        Log.d(TAG, "cursorToImageBlock: id=$id imageId=$imageId shadowColor=${shadowColor?.toString() ?: "null"} shadowAlpha=$shadowAlpha shadowRadius=$shadowRadius")
+        if (shadowColor != null || (shadowRadius > 0f) || shadowAlpha != 1.0f) {
+            Log.i(TAG, "Loaded SHADOW from DB for image_block id=$id imageId=$imageId shadowColor=${shadowColor?.toString() ?: "null"} shadowAlpha=$shadowAlpha shadowRadius=$shadowRadius")
+        }
         val rotation = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_ROTATION), 0f)
         val fontFamily = cursor.getString(idx(COLUMN_BLOCK_FONT_FAMILY)) ?: "mto_astro_city"
         val fontSize = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_FONT_SIZE), 12f)
@@ -1703,6 +1750,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             val shadowColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR)) else null
                             val shadowAlphaBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
                             val shadowRadiusBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_RADIUS)).toFloat() } catch (e: Exception) { 0f }
+                            // Log shadow values loaded from image_blocks for debugging
+
                         textBlocks.add(TextBlockInfo(
                             text = translatedText,
                             bounds = bounds,

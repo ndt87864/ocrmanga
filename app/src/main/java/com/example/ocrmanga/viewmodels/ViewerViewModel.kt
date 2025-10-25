@@ -441,6 +441,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         val textColor = withRotation.customTextColor ?: computeDefaultTextColor(baseOverlay, withRotation.averageBackgroundColor)
                         withRotation.copy(customOverlayColor = baseOverlay, customTextColor = textColor)
                     }
+                    // Log loaded shadow values for each block to verify persistence
+                    fixedBlocks.forEachIndexed { idx, b ->
+                        if (b.customShadowColor != null || b.shadowRadius > 0f || b.shadowAlpha != 1.0f) {
+                            Log.i(TAG, "loadRoom: uri=$uri blockIndex=$idx shadowColor=${b.customShadowColor?.toString() ?: "null"} shadowAlpha=${b.shadowAlpha} shadowRadius=${b.shadowRadius}")
+                        }
+                    }
                     originalText to fixedBlocks
                 }
                 _uiState.update {
@@ -1479,6 +1485,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 blocks.map { state ->
                     // copy visual edits from DragBlockState into TextBlockInfo so they persist
                     val b = state.block
+                    Log.d(TAG, "saveRoom: block state shadowColor=${state.textShadowColor?.toArgb()?.toString() ?: "null"} shadowAlpha=${state.textShadowAlpha} shadowRadius=${state.textShadowRadius}")
+                    
                     b.copy(
                         rotation = state.rotation,
                         shapeType = b.shapeType,
@@ -1497,6 +1505,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         customShadowColor = state.textShadowColor?.toArgb(),
                         shadowAlpha = state.textShadowAlpha,
                         shadowRadius = state.textShadowRadius,
+                        // Log the resulting TextBlockInfo shadow values for debugging
+                        // (log after copy isn't trivial here; include in-line values)
                         fontSize = state.fontSize ?: b.fontSize
                     )
                 }
