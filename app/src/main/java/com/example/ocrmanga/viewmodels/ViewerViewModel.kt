@@ -452,22 +452,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     originalText to fixedBlocks
                 }
-                // Ensure translatedTexts contains an entry for every initially loaded image.
-                // For images that have no saved translations in DB, insert an explicit empty
-                // translation ("" to emptyList()) so the UI does not treat the image as
-                // "awaiting translation" and show the perpetual loading overlay.
+                // Only include translations that actually exist in DB for the initial batch.
+                // Do NOT insert empty translation entries for images that have no saved
+                // translations; those images should simply be displayed without overlays.
                 val translationsForBatch: Map<Uri, Pair<String, List<TextBlockInfo>>> =
-                    initialBatch.associateWith { uri ->
-                        fixedTranslations[uri] ?: ("" to emptyList())
-                    }
+                    fixedTranslations.filterKeys { uri -> uri in initialBatch }
 
-                // Keep sourceLanguages for those that had translations; others may be absent.
-                val sourceLangsForBatch: Map<Uri, String> = fixedTranslations.keys.associateWith { "zh" }
+                // Keep sourceLanguages only for those URIs that had translations loaded.
+                val sourceLangsForBatch: Map<Uri, String> = translationsForBatch.keys.associateWith { "zh" }
 
                 // Ensure translatedStatus contains an explicit value for each uri in the batch.
+                // If DB indicated the image was translated (or we loaded a translation), honor that;
+                // otherwise leave the image as not-translated (false) so UI will just show the image.
                 val statusForBatch = initialBatch.associateWith { uri ->
-                    // If DB indicated the image was translated, honor that; otherwise mark processed (true)
-                    translatedStatus[uri] ?: fixedTranslations.containsKey(uri)
+                    translatedStatus[uri] ?: translationsForBatch.containsKey(uri)
                 }
 
                 _uiState.update {
