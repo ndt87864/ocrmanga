@@ -534,11 +534,25 @@ fun TranslationEditor(
                     // --- TRANG 3: XOAY ---
                     2 -> {
                         
-                            IconButton(onClick = { onSelectedIndexChange(selectedIndex?.let { maxOf(0, it - 1) } ?: 0) }) {
-                                Icon(Icons.Default.ArrowBack, "Block trước")
+                            IconButton(
+                                onClick = { onSelectedIndexChange(selectedIndex?.let { maxOf(0, it - 1) } ?: 0) },
+                                enabled = dragBlocks.isNotEmpty()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowBack,
+                                    contentDescription = "Block trước",
+                                    tint = if (dragBlocks.isNotEmpty()) MaterialTheme.colorScheme.onBackground else Color.Gray
+                                )
                             }
-                            IconButton(onClick = { onSelectedIndexChange(selectedIndex?.let { minOf(dragBlocks.size - 1, it + 1) } ?: 0) }) {
-                                Icon(Icons.Default.ArrowForward, "Block tiếp theo")
+                            IconButton(
+                                onClick = { onSelectedIndexChange(selectedIndex?.let { minOf(dragBlocks.size - 1, it + 1) } ?: 0) },
+                                enabled = dragBlocks.isNotEmpty()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowForward,
+                                    contentDescription = "Block tiếp theo",
+                                    tint = if (dragBlocks.isNotEmpty()) MaterialTheme.colorScheme.onBackground else Color.Gray
+                                )
                             }
                         Box(
                             modifier = Modifier.size(40.dp).pointerInput(Unit) {
@@ -676,7 +690,7 @@ fun TranslationEditor(
 
             // Nút chuyển trang phải (với cuộn vô hạn)
             IconButton(
-                onClick = { 
+                onClick = {
                     currentPage = if (currentPage == totalPages - 1) 0 else currentPage + 1
                 }
             ) {
