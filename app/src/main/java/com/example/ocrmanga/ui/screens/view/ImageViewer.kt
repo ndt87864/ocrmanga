@@ -220,7 +220,12 @@ fun ImageViewer(
                     lineSpacing = block.lineSpacing,
                     textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
                     textBorderThickness = block.borderThickness,
-                    textBorderAlpha = block.borderAlpha
+                    textBorderAlpha = block.borderAlpha,
+                    // Map saved shadow values from TextBlockInfo into DragBlockState so they are visible in view mode
+                    textShadowColor = block.customShadowColor?.let { Color(it or 0xFF000000.toInt()) },
+                    textShadowAlpha = block.shadowAlpha ?: 1.0f,
+                    textShadowRadius = block.shadowRadius ?: 0f,
+                    // lineSpacing already set above
                 )
             } else null
 
@@ -246,7 +251,10 @@ fun ImageViewer(
                             lineSpacing = it.lineSpacing,
                             textBorderColor = it.customBorderColor?.let { c -> Color(c) },
                             textBorderThickness = it.borderThickness,
-                            textBorderAlpha = it.borderAlpha
+                            textBorderAlpha = it.borderAlpha,
+                            textShadowColor = it.customShadowColor?.let { c -> Color(c or 0xFF000000.toInt()) },
+                            textShadowAlpha = it.shadowAlpha ?: 1.0f,
+                            textShadowRadius = it.shadowRadius ?: 0f
                         )
                     } ?: emptyList()
 

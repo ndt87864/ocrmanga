@@ -145,6 +145,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     const val COLUMN_BLOCK_BORDER_BRIGHTNESS = "border_brightness"
     const val COLUMN_BLOCK_BORDER_BOLDNESS = "border_boldness"
     const val COLUMN_BLOCK_BORDER_THICKNESS = "border_thickness"
+    // Shadow properties
+    const val COLUMN_BLOCK_SHADOW_COLOR = "shadow_color"
+    const val COLUMN_BLOCK_SHADOW_ALPHA = "shadow_alpha"
+    const val COLUMN_BLOCK_SHADOW_RADIUS = "shadow_radius"
     const val COLUMN_BLOCK_ROTATION = "rotation"
     const val COLUMN_BLOCK_FONT_FAMILY = "font_family"
     const val COLUMN_BLOCK_FONT_SIZE = "font_size"
@@ -239,6 +243,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_BLOCK_BORDER_BRIGHTNESS REAL DEFAULT 1.0,
                 $COLUMN_BLOCK_BORDER_BOLDNESS REAL DEFAULT 1.0,
                 $COLUMN_BLOCK_BORDER_THICKNESS REAL DEFAULT 0.0,
+                $COLUMN_BLOCK_SHADOW_COLOR INTEGER,
+                $COLUMN_BLOCK_SHADOW_ALPHA REAL DEFAULT 1.0,
+                $COLUMN_BLOCK_SHADOW_RADIUS REAL DEFAULT 0.0,
                 $COLUMN_BLOCK_ROTATION REAL DEFAULT 0.0,
                 $COLUMN_BLOCK_FONT_FAMILY TEXT DEFAULT '',
                 $COLUMN_BLOCK_FONT_SIZE REAL DEFAULT 12.0,
@@ -375,6 +382,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         $COLUMN_BLOCK_BORDER_BRIGHTNESS REAL DEFAULT 1.0,
                         $COLUMN_BLOCK_BORDER_BOLDNESS REAL DEFAULT 1.0,
                         $COLUMN_BLOCK_BORDER_THICKNESS REAL DEFAULT 0.0,
+                        $COLUMN_BLOCK_SHADOW_COLOR INTEGER,
+                        $COLUMN_BLOCK_SHADOW_ALPHA REAL DEFAULT 1.0,
+                        $COLUMN_BLOCK_SHADOW_RADIUS REAL DEFAULT 0.0,
                         $COLUMN_BLOCK_ROTATION REAL DEFAULT 0.0,
                         $COLUMN_BLOCK_FONT_FAMILY TEXT DEFAULT '',
                         $COLUMN_BLOCK_FONT_SIZE REAL DEFAULT 12.0,
@@ -475,6 +485,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                          borderBrightness: Float = 1.0f,
                          borderBoldness: Float = 1.0f,
                          borderThickness: Float = 0f,
+                         // Shadow properties
+                         shadowColor: Int? = null,
+                         shadowAlpha: Float = 1.0f,
+                         shadowRadius: Float = 0f,
                          rotation: Float = 0f,
                          fontFamily: String = "",
                          fontSize: Float = 12f
@@ -499,6 +513,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put(COLUMN_BLOCK_BORDER_BRIGHTNESS, borderBrightness)
                             put(COLUMN_BLOCK_BORDER_BOLDNESS, borderBoldness)
                             put(COLUMN_BLOCK_BORDER_THICKNESS, borderThickness)
+                            // Store shadow properties
+                            shadowColor?.let { put(COLUMN_BLOCK_SHADOW_COLOR, it) }
+                            put(COLUMN_BLOCK_SHADOW_ALPHA, shadowAlpha)
+                            put(COLUMN_BLOCK_SHADOW_RADIUS, shadowRadius)
                             put(COLUMN_BLOCK_ROTATION, rotation)
                             put(COLUMN_BLOCK_FONT_FAMILY, fontFamily)
                             put(COLUMN_BLOCK_FONT_SIZE, fontSize)
@@ -540,6 +558,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val borderBrightness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_BORDER_BRIGHTNESS), 1.0f)
         val borderBoldness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_BORDER_BOLDNESS), 1.0f)
         val borderThickness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_BORDER_THICKNESS), 0f)
+        val shadowColor = cursor.getIntOrNull(idx(COLUMN_BLOCK_SHADOW_COLOR))
+        val shadowAlpha = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_SHADOW_ALPHA), 1.0f)
+        val shadowRadius = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_SHADOW_RADIUS), 0f)
         val rotation = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_ROTATION), 0f)
         val fontFamily = cursor.getString(idx(COLUMN_BLOCK_FONT_FAMILY)) ?: "mto_astro_city"
         val fontSize = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_FONT_SIZE), 12f)
@@ -563,6 +584,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             borderBrightness = borderBrightness,
             borderBoldness = borderBoldness,
             borderThickness = borderThickness,
+            shadowColor = shadowColor,
+            shadowAlpha = shadowAlpha,
+            shadowRadius = shadowRadius,
             rotation = rotation,
             fontFamily = if (fontFamily.isNullOrBlank()) "mto_astro_city" else fontFamily,
             fontSize = fontSize
@@ -720,6 +744,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     borderBrightness = 1.0f,
                                     borderBoldness = textBlock.borderAlpha,
                                     borderThickness = textBlock.borderThickness,
+                                    // Persist shadow properties if present on the TextBlockInfo
+                                    shadowColor = textBlock.customShadowColor,
+                                    shadowAlpha = textBlock.shadowAlpha ?: 1.0f,
+                                    shadowRadius = textBlock.shadowRadius ?: 0f,
                                     rotation = textBlock.rotation ?: 0f,
                                     fontFamily = textBlock.fontFamily,
                                     fontSize = textBlock.fontSize
@@ -878,6 +906,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             borderBrightness = 1.0f,
                                             borderBoldness = textBlock.borderAlpha,
                                             borderThickness = textBlock.borderThickness,
+                                            // Persist shadow properties if present on the TextBlockInfo
+                                            shadowColor = textBlock.customShadowColor,
+                                            shadowAlpha = textBlock.shadowAlpha ?: 1.0f,
+                                            shadowRadius = textBlock.shadowRadius ?: 0f,
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize
@@ -1055,6 +1087,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             borderBrightness = 1.0f,
                                             borderBoldness = textBlock.borderAlpha,
                                             borderThickness = textBlock.borderThickness,
+                                            // Persist shadow properties if present on the TextBlockInfo
+                                            shadowColor = textBlock.customShadowColor,
+                                            shadowAlpha = textBlock.shadowAlpha ?: 1.0f,
+                                            shadowRadius = textBlock.shadowRadius ?: 0f,
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize
@@ -1202,6 +1238,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             borderBrightness = 1.0f,
                                             borderBoldness = textBlock.borderAlpha,
                                             borderThickness = textBlock.borderThickness,
+                                            // Persist shadow properties if present on the TextBlockInfo
+                                            shadowColor = textBlock.customShadowColor,
+                                            shadowAlpha = textBlock.shadowAlpha ?: 1.0f,
+                                            shadowRadius = textBlock.shadowRadius ?: 0f,
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize
@@ -1412,6 +1452,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     borderBrightness = 1.0f,
                                     borderBoldness = textBlock.borderAlpha,
                                     borderThickness = textBlock.borderThickness,
+                                    // Persist shadow properties if present on the TextBlockInfo
+                                    shadowColor = textBlock.customShadowColor,
+                                    shadowAlpha = textBlock.shadowAlpha ?: 1.0f,
+                                    shadowRadius = textBlock.shadowRadius ?: 0f,
                                     rotation = textBlock.rotation ?: 0f,
                                     fontFamily = textBlock.fontFamily,
                                     fontSize = textBlock.fontSize
@@ -1655,7 +1699,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val finalFontFamily = if (fontFamilyBlock.isNullOrBlank()) "mto_astro_city" else fontFamilyBlock
                         val fontSizeBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_FONT_SIZE)).toFloat() } catch (e: Exception) { fontSize }
                         val borderColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_COLOR)) else null
-                        val borderThicknessBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_THICKNESS)).toFloat() } catch (e: Exception) { 0f }
+                            val borderThicknessBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_THICKNESS)).toFloat() } catch (e: Exception) { 0f }
+                            val shadowColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR)) else null
+                            val shadowAlphaBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
+                            val shadowRadiusBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_RADIUS)).toFloat() } catch (e: Exception) { 0f }
                         textBlocks.add(TextBlockInfo(
                             text = translatedText,
                             bounds = bounds,
@@ -1668,13 +1715,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             averageBackgroundColor = averageBackgroundColor,
                             originalTextColor = originalTextColor,
                             customOverlayColor = overlayColorBlock,
-                            customTextColor = finalTextColor,
+                                customTextColor = finalTextColor,
                             overlayAlpha = overlayAlphaBlock,
                             textBoldness = textBoldBlock,
                             overlaySaturation = overlaySatBlock,
                             textSaturation = textSatBlock,
                             customBorderColor = borderColorBlock,
                             borderThickness = borderThicknessBlock,
+                                customShadowColor = shadowColorBlock,
+                                shadowAlpha = shadowAlphaBlock,
+                                shadowRadius = shadowRadiusBlock,
                             fontFamily = finalFontFamily,
                             // keep other fields default/null
                         ))

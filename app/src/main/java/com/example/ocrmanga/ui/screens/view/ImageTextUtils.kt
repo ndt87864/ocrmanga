@@ -489,6 +489,9 @@ fun DrawScope.drawText(
     val shadowPaint = if (shadowColor != null) {
         androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
             val finalShadow = shadowColor.copy(alpha = shadowAlpha)
+            // Use the shadow color for the paint so setShadowLayer produces a visible cast
+            // The main text will be drawn afterwards, covering the glyph interior, leaving
+            // the blurred shadow visible around the glyph edges.
             this.color = finalShadow.toArgb()
             this.textSize = fontSize
             this.textAlign = android.graphics.Paint.Align.CENTER
@@ -500,6 +503,7 @@ fun DrawScope.drawText(
                 val radius = if (shadowRadius > 0f) shadowRadius else (fontSize * 0.14f).coerceAtLeast(1f)
                 val dx = (fontSize * 0.04f)
                 val dy = (fontSize * 0.04f)
+                // set shadow color on the layer; paint color remains transparent so glyph fill is not colored
                 this.setShadowLayer(radius, dx, dy, finalShadow.toArgb())
             } catch (_: Exception) { }
         }
