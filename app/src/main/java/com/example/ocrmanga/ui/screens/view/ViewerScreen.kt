@@ -139,7 +139,11 @@ fun ViewerScreen(
                         textSaturation = block.textSaturation,
                         textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
                         textBorderThickness = block.borderThickness,
-                        textBorderAlpha = block.borderAlpha
+                        textBorderAlpha = block.borderAlpha,
+                        // BỔ SUNG SHADOW
+                        textShadowColor = block.customShadowColor?.let { Color(it) },
+                        textShadowAlpha = block.shadowAlpha,
+                        textShadowRadius = block.shadowRadius
                     )
                 }
 

@@ -582,6 +582,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         var finalBorderColor: Int? = null
                         var finalBorderThickness = 0f
                         var finalFontFamily: String? = null
+                        // SHADOW: khai báo ngoài để dùng khi tạo TextBlockInfo
+                        var finalShadowColor: Int? = null
+                        var finalShadowAlpha: Float? = null
+                        var finalShadowRadius: Float? = null
 
                         if (foundImageId != null) {
                             try {
@@ -610,6 +614,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                     if (borderIdx >= 0 && !blockCursor.isNull(borderIdx)) finalBorderColor = blockCursor.getInt(borderIdx)
                                     try { finalBorderThickness = blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_BORDER_THICKNESS)).toFloat() } catch (e: Exception) { /* ignore */ }
                                     finalFontFamily = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_FONT_FAMILY)) } catch (e: Exception) { null }
+                           // SHADOW: lấy các thuộc tính shadow từ DB
+                           try {
+                               val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_SHADOW_COLOR)
+                               if (!blockCursor.isNull(idx)) finalShadowColor = blockCursor.getInt(idx)
+                           } catch (_: Exception) {}
+                           try {
+                               val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_SHADOW_ALPHA)
+                               if (!blockCursor.isNull(idx)) finalShadowAlpha = blockCursor.getDouble(idx).toFloat()
+                           } catch (_: Exception) {}
+                           try {
+                               val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_SHADOW_RADIUS)
+                               if (!blockCursor.isNull(idx)) finalShadowRadius = blockCursor.getDouble(idx).toFloat()
+                           } catch (_: Exception) {}
                                 }
                                 blockCursor.close()
                             } catch (e: Exception) {
@@ -617,6 +634,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             }
                         }
 
+                        if (finalShadowColor != null || (finalShadowAlpha ?: 1.0f) != 1.0f || (finalShadowRadius ?: 0f) != 0f) {
+                            Log.i("ViewerViewModel", "LẤY SHADOW: uri=$uri shadowColor=$finalShadowColor shadowAlpha=${finalShadowAlpha ?: 1.0f} shadowRadius=${finalShadowRadius ?: 0f}")
+                        }
                         textBlocks.add(TextBlockInfo(
                             text = translatedText,
                             bounds = bounds,
@@ -636,7 +656,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             textSaturation = textSat,
                             customBorderColor = finalBorderColor,
                             borderThickness = finalBorderThickness,
-                            fontFamily = finalFontFamily ?: "mto_astro_city"
+                            fontFamily = finalFontFamily ?: "mto_astro_city",
+                            customShadowColor = finalShadowColor,
+                            shadowAlpha = finalShadowAlpha ?: 1.0f,
+                            shadowRadius = finalShadowRadius ?: 0f
                         ))
                     }
                     textCursor.close()
