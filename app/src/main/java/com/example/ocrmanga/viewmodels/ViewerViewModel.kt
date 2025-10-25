@@ -449,16 +449,34 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     originalText to fixedBlocks
                 }
+                // Ensure translatedTexts contains an entry for every initially loaded image.
+                // For images that have no saved translations in DB, insert an explicit empty
+                // translation ("" to emptyList()) so the UI does not treat the image as
+                // "awaiting translation" and show the perpetual loading overlay.
+                val translationsForBatch: Map<Uri, Pair<String, List<TextBlockInfo>>> =
+                    initialBatch.associateWith { uri ->
+                        fixedTranslations[uri] ?: ("" to emptyList())
+                    }
+
+                // Keep sourceLanguages for those that had translations; others may be absent.
+                val sourceLangsForBatch: Map<Uri, String> = fixedTranslations.keys.associateWith { "zh" }
+
+                // Ensure translatedStatus contains an explicit value for each uri in the batch.
+                val statusForBatch = initialBatch.associateWith { uri ->
+                    // If DB indicated the image was translated, honor that; otherwise mark processed (true)
+                    translatedStatus[uri] ?: fixedTranslations.containsKey(uri)
+                }
+
                 _uiState.update {
                     it.copy(
                         imageUris = initialBatch, // Ảnh bìa vẫn nằm trong danh sách này
-                        translatedTexts = fixedTranslations.filterKeys { it in initialBatch },
+                        translatedTexts = it.translatedTexts + translationsForBatch,
                         translationEnabled = fixedTranslations.isNotEmpty(),
                         translationMode = if (fixedTranslations.isNotEmpty()) TranslationMode.OFFLINE else TranslationMode.OFF,
                         isTranslating = false,
                         roomId = roomId,
-                        translatedStatus = translatedStatus,
-                        sourceLanguages = fixedTranslations.mapValues { "zh" },
+                        translatedStatus = it.translatedStatus + statusForBatch,
+                        sourceLanguages = it.sourceLanguages + sourceLangsForBatch,
                         remainingImages = remainingImages,
                         // Tăng translationVersion để force UI update dragBlocksMap từ DB
                         translationVersion = it.translationVersion + 1
@@ -1108,6 +1126,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         //log.i(TAG, "Đã dịch ảnh $uri")
                     } else {
                         Log.w(TAG, "Không nhận diện được văn bản trong ảnh $uri")
+                        // Nếu không nhận diện được văn bản, đánh dấu ảnh đã được xử lý
+                        // bằng một entry rỗng trong translatedTexts để tránh UI vẫn
+                        // hiển thị overlay "Đang tải bản dịch..." vô thời hạn.
+                        _uiState.update {
+                            it.copy(
+                                translatedTexts = it.translatedTexts + (uri to ("" to emptyList())),
+                                translatedStatus = it.translatedStatus + (uri to true),
+                                // tăng phiên bản để ép UI cập nhật ngay
+                                translationVersion = it.translationVersion + 1
+                            )
+                        }
                     }
                 } // Nếu ảnh đã bị xóa thì bỏ qua
             }
