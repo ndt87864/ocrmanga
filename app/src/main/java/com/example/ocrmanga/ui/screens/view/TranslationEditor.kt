@@ -1,6 +1,7 @@
 package com.example.ocrmanga.ui.screens.view
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -25,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -1149,26 +1152,71 @@ fun OutlinedTextPreview(
     borderColor: Color,
     borderThickness: Float
 ) {
-    // Nếu borderThickness > 0 thì vẽ viền, ngược lại chỉ vẽ text thường
-    if (borderThickness > 0f) {
-        // Vẽ viền bằng shadow nhiều lần quanh text
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge.copy(
-                color = textColor,
-                shadow = Shadow(
-                    color = borderColor,
-                    blurRadius = borderThickness * 2,
-                    offset = Offset(0f, 0f)
-                )
-            ),
-            maxLines = 1
-        )
-    } else {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge.copy(color = textColor),
-            maxLines = 1
-        )
+    // Draw a more accurate preview using native Canvas so we can render:
+    // shadow (blurred) -> stroke (outline) -> fill (text). This makes the
+    // shadow appear outside the stroke and around rounded glyph corners.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val textStyle = MaterialTheme.typography.bodyLarge
+    val textSizePx = with(density) { textStyle.fontSize.toPx() }
+
+    Canvas(modifier = Modifier
+        .fillMaxWidth()
+        .height(56.dp)) {
+        val native = drawContext.canvas.nativeCanvas
+        // center coordinates
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+
+        // Android Paints
+        val fillPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = textSizePx
+            color = textColor.toArgb()
+            style = android.graphics.Paint.Style.FILL
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+
+        val strokePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = textSizePx
+            color = borderColor.toArgb()
+            style = android.graphics.Paint.Style.STROKE
+            // Stroke width: try to use the provided value directly. If the caller
+            // passed a shadow radius (for shadow dialog) this will also work as a
+            // visible outline for preview. Use round joins/caps so rounded glyph
+            // corners look smooth.
+            strokeWidth = borderThickness
+            strokeJoin = android.graphics.Paint.Join.ROUND
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+
+        val shadowPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = textSizePx
+            // Use transparent fill so only the blurred shadow is visible
+            color = android.graphics.Color.TRANSPARENT
+            style = android.graphics.Paint.Style.FILL
+            // Set a shadow layer. We choose blur radius proportional to borderThickness
+            // so the same slider can preview both border-thickness and shadow-radius dialogs.
+            setShadowLayer(borderThickness * 1.8f.coerceAtLeast(1f), 0f, 0f, borderColor.toArgb())
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+
+        // Compute baseline so text is vertically centered
+        val fm = fillPaint.fontMetrics
+        val textHeight = fm.descent - fm.ascent
+        val baseline = cy + textHeight / 2f - fm.descent
+
+        // Draw shadow first (blurred, outside)
+        native.save()
+        // Draw using shadow paint (transparent fill + shadow layer)
+        native.drawText(text, cx, baseline, shadowPaint)
+        native.restore()
+
+        // Draw stroke / outline
+        if (borderThickness > 0f) {
+            native.drawText(text, cx, baseline, strokePaint)
+        }
+
+        // Draw fill text on top
+        native.drawText(text, cx, baseline, fillPaint)
     }
 }

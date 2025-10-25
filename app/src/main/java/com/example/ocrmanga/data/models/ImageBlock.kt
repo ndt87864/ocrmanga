@@ -22,6 +22,10 @@ data class ImageBlock(
     val borderBrightness: Float = 1.0f,
     val borderBoldness: Float = 1.0f,
     val borderThickness: Float = 0f,
+    // Shadow properties
+    val shadowColor: Int? = null,
+    val shadowAlpha: Float = 1.0f,
+    val shadowRadius: Float = 0f,
     val rotation: Float = 0f,
     val fontFamily: String = "mto_astro_city",
     val fontSize: Float = 12f

@@ -32,6 +32,11 @@ data class TextBlockInfo(
     val customBorderColor: Int? = null, // Màu viền chữ tùy chỉnh
     val borderThickness: Float = 0.0f, // Độ dày viền chữ (0.0 - 5.0)
     val borderAlpha: Float = 1.0f // Độ trong suốt viền chữ (0.0 - 1.0)
+    ,
+    // Shadow properties for rendered text
+    val customShadowColor: Int? = null,
+    val shadowAlpha: Float = 1.0f,
+    val shadowRadius: Float = 0.0f
 )
 
 enum class BackgroundType {
