@@ -1493,6 +1493,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         customBorderColor = state.textBorderColor?.toArgb() ?: b.customBorderColor,
                         borderThickness = state.textBorderThickness,
                         borderAlpha = state.textBorderAlpha,
+                        // Persist shadow edits as well so they aren't lost after save
+                        customShadowColor = state.textShadowColor?.toArgb(),
+                        shadowAlpha = state.textShadowAlpha,
+                        shadowRadius = state.textShadowRadius,
                         fontSize = state.fontSize ?: b.fontSize
                     )
                 }
