@@ -374,7 +374,7 @@ class TranslationRepository(private val application: Application) {
                 val translatedBlocks = mutableListOf<String>()
                 val lines = content.trim().split("\n")
                 
-                Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI:\n$content")
+                //Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI:\n$content")
                 
                 for (line in lines) {
                     val trimmedLine = line.trim()
@@ -384,7 +384,7 @@ class TranslationRepository(private val application: Application) {
                         if (colonIndex != -1 && colonIndex < trimmedLine.length - 1) {
                             val translation = trimmedLine.substring(colonIndex + 1).trim()
                             translatedBlocks.add(translation)
-                            Log.i("TranslationRepository", "[MISTRAL-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
+                            //Log.i("TranslationRepository", "[MISTRAL-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
                         }
                     }
                 }
@@ -396,11 +396,11 @@ class TranslationRepository(private val application: Application) {
                     while (translatedBlocks.size < textBlocks.size) {
                         val missingIndex = translatedBlocks.size
                         translatedBlocks.add(textBlocks[missingIndex].text)
-                        Log.w("TranslationRepository", "[MISTRAL-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
+                        //Log.w("TranslationRepository", "[MISTRAL-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
                     }
                 }
                 
-                Log.i("TranslationRepository", "[MISTRAL-PARSE] Tổng số blocks dịch được: ${translatedBlocks.size}")
+               // Log.i("TranslationRepository", "[MISTRAL-PARSE] Tổng số blocks dịch được: ${translatedBlocks.size}")
                 
                 return translatedBlocks
             } catch (e: Exception) {
@@ -590,23 +590,23 @@ class TranslationRepository(private val application: Application) {
                 }
                 
                 // Gộp và merge các text blocks giống các mode khác
-                Log.i("TranslationRepository", "[MISTRAL] Số blocks từ sortVerticalTextBlocks: ${textBlocks.size}")
-                textBlocks.forEachIndexed { index, block ->
+                //Log.i("TranslationRepository", "[MISTRAL] Số blocks từ sortVerticalTextBlocks: ${textBlocks.size}")
+                /*textBlocks.forEachIndexed { index, block ->
                     Log.i("TranslationRepository", "[MISTRAL] Block từ sort #${index + 1}: '${block.text}', bubbleId=${block.bubbleId}")
-                }
-                
+                }*/
+
                 val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
-                Log.i("TranslationRepository", "[MISTRAL] Số blocks sau assignSpeechBubblesToBlocks: ${blocksWithBubble.size}")
-                blocksWithBubble.forEachIndexed { index, block ->
+                //Log.i("TranslationRepository", "[MISTRAL] Số blocks sau assignSpeechBubblesToBlocks: ${blocksWithBubble.size}")
+                /*blocksWithBubble.forEachIndexed { index, block ->
                     Log.i("TranslationRepository", "[MISTRAL] Block sau assign #${index + 1}: '${block.text}', bubbleId=${block.bubbleId}")
                 }
-                
+                */
                 val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
                 
-                Log.i("TranslationRepository", "[MISTRAL] Số blocks cần dịch: ${mergedBlocks.size}")
-                mergedBlocks.forEachIndexed { index, block ->
+                //Log.i("TranslationRepository", "[MISTRAL] Số blocks cần dịch: ${mergedBlocks.size}")
+                /*mergedBlocks.forEachIndexed { index, block ->
                     Log.i("TranslationRepository", "[MISTRAL] Block gốc #${index + 1}: ${block.text}")
-                }
+                }*/
                 
                 // Gửi tất cả kết quả cho Mistral AI để tổng hợp và dịch
                 val translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi")
@@ -617,7 +617,7 @@ class TranslationRepository(private val application: Application) {
                     return@withContext Triple("", emptyList(), "zh")
                 }
                 
-                Log.i("TranslationRepository", "[MISTRAL] Số bản dịch nhận được: ${translatedTexts.size}")
+                //Log.i("TranslationRepository", "[MISTRAL] Số bản dịch nhận được: ${translatedTexts.size}")
                 
                 // Ánh xạ các bản dịch vào các text blocks tương ứng
                 val blocks = mutableListOf<TextBlockInfo>()
@@ -628,12 +628,12 @@ class TranslationRepository(private val application: Application) {
                     // Post-process bản dịch
                     val naturalText = postProcessTranslation(translatedTextForBlock)
                     
-                    Log.i("TranslationRepository", "[MISTRAL] Block #${index + 1}:")
+                    /*Log.i("TranslationRepository", "[MISTRAL] Block #${index + 1}:")
                     Log.i("TranslationRepository", "  - Văn bản gốc: ${block.text}")
                     Log.i("TranslationRepository", "  - Văn bản dịch: $naturalText")
                     Log.i("TranslationRepository", "  - Tọa độ: left=${block.bounds.left}, top=${block.bounds.top}, right=${block.bounds.right}, bottom=${block.bounds.bottom}")
                     Log.i("TranslationRepository", "  - FontSize gốc: ${block.fontSize}")
-                    
+                    */
                     val isVertical = block.isVertical
                     val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
                         val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -666,7 +666,7 @@ class TranslationRepository(private val application: Application) {
                         isVertical
                     )
                     
-                    Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
+                    //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
                     blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize))
@@ -696,11 +696,11 @@ class TranslationRepository(private val application: Application) {
                 val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
                 val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
                 
-                Log.i("TranslationRepository", "[GEMINI] Số blocks cần dịch: ${mergedBlocks.size}")
-                mergedBlocks.forEachIndexed { index, block ->
+                //Log.i("TranslationRepository", "[GEMINI] Số blocks cần dịch: ${mergedBlocks.size}")
+                /*mergedBlocks.forEachIndexed { index, block ->
                     Log.i("TranslationRepository", "[GEMINI] Block gốc #${index + 1}: ${block.text}")
                 }
-                
+                */
                 // Gửi tất cả kết quả cho Gemini AI để tổng hợp và dịch
                 val translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi")
                 
@@ -710,7 +710,7 @@ class TranslationRepository(private val application: Application) {
                     return@withContext Triple("", emptyList(), "zh")
                 }
                 
-                Log.i("TranslationRepository", "[GEMINI] Số bản dịch nhận được: ${translatedTexts.size}")
+                //Log.i("TranslationRepository", "[GEMINI] Số bản dịch nhận được: ${translatedTexts.size}")
                 
                 // Ánh xạ các bản dịch vào các text blocks tương ứng
                 val blocks = mutableListOf<TextBlockInfo>()
@@ -721,12 +721,12 @@ class TranslationRepository(private val application: Application) {
                     // Post-process bản dịch
                     val naturalText = postProcessTranslation(translatedTextForBlock)
                     
-                    Log.i("TranslationRepository", "[GEMINI] Block #${index + 1}:")
+                    /*Log.i("TranslationRepository", "[GEMINI] Block #${index + 1}:")
                     Log.i("TranslationRepository", "  - Văn bản gốc: ${block.text}")
                     Log.i("TranslationRepository", "  - Văn bản dịch: $naturalText")
                     Log.i("TranslationRepository", "  - Tọa độ: left=${block.bounds.left}, top=${block.bounds.top}, right=${block.bounds.right}, bottom=${block.bounds.bottom}")
                     Log.i("TranslationRepository", "  - FontSize gốc: ${block.fontSize}")
-                    
+                    */
                     val isVertical = block.isVertical
                     val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
                         val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -759,7 +759,7 @@ class TranslationRepository(private val application: Application) {
                         isVertical
                     )
                     
-                    Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
+                    //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
                     blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize))
@@ -1712,14 +1712,14 @@ class TranslationRepository(private val application: Application) {
             val minFontSize = originalFontSize * 0.7f
             val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
             
-            Log.i("TranslationRepository", "[FONT-ADJUST-VERTICAL] " +
+            /*Log.i("TranslationRepository", "[FONT-ADJUST-VERTICAL] " +
                 "Original: '${originalText.replace("\n", "|")}' (${originalCharsNoNewline} chars), " +
                 "Translated: '${translatedText.replace("\n", "|")}' (${translatedCharsNoNewline} chars), " +
                 "charRatio=$charRatio, " +
                 "estimatedHeight=$estimatedHeight, availableHeight=$availableHeight, heightScale=$heightScale, " +
                 "widthScale=$widthScale, " +
                 "originalFontSize=$originalFontSize, newFontSize=$newFontSize (min: $minFontSize)")
-            
+            */
             return newFontSize
         }
         
@@ -1774,13 +1774,13 @@ class TranslationRepository(private val application: Application) {
     // Tăng giới hạn tối thiểu fontSize lên 80% fontSize gốc để text to hơn
     val minFontSize = originalFontSize * 0.8f
     val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
-        
-        Log.i("TranslationRepository", "[FONT-ADJUST-HORIZONTAL] Original: '${originalText.take(30)}...', " +
-            "Translated: '${translatedText.take(30)}...', " +
-            "lengthRatio=$lengthRatio, lineRatio=$lineRatio, " +
-            "widthScale=$widthScale, heightScale=$heightScale, " +
-            "originalFontSize=$originalFontSize, newFontSize=$newFontSize (min: $minFontSize)")
-        
+//
+//        Log.i("TranslationRepository", "[FONT-ADJUST-HORIZONTAL] Original: '${originalText.take(30)}...', " +
+//            "Translated: '${translatedText.take(30)}...', " +
+//            "lengthRatio=$lengthRatio, lineRatio=$lineRatio, " +
+//            "widthScale=$widthScale, heightScale=$heightScale, " +
+//            "originalFontSize=$originalFontSize, newFontSize=$newFontSize (min: $minFontSize)")
+//
         return newFontSize
     }
 
@@ -2002,8 +2002,8 @@ class TranslationRepository(private val application: Application) {
                 val translatedBlocks = mutableListOf<String>()
                 val lines = content.split("\n")
                 
-                Log.i("TranslationRepository", "[GEMINI-PARSE] Nội dung trả về từ AI:\n$content")
-                
+//                Log.i("TranslationRepository", "[GEMINI-PARSE] Nội dung trả về từ AI:\n$content")
+
                 for (line in lines) {
                     val trimmedLine = line.trim()
                     if (trimmedLine.startsWith("Block #")) {
@@ -2012,7 +2012,7 @@ class TranslationRepository(private val application: Application) {
                         if (colonIndex != -1 && colonIndex < trimmedLine.length - 1) {
                             val translation = trimmedLine.substring(colonIndex + 1).trim()
                             translatedBlocks.add(translation)
-                            Log.i("TranslationRepository", "[GEMINI-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
+//                            Log.i("TranslationRepository", "[GEMINI-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
                         }
                     }
                 }
@@ -2024,23 +2024,23 @@ class TranslationRepository(private val application: Application) {
                     while (translatedBlocks.size < textBlocks.size) {
                         val missingIndex = translatedBlocks.size
                         translatedBlocks.add(textBlocks[missingIndex].text)
-                        Log.w("TranslationRepository", "[GEMINI-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
+//                        Log.w("TranslationRepository", "[GEMINI-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
                     }
                 }
                 
-                Log.i("TranslationRepository", "[GEMINI-PARSE] Tổng số blocks dịch được: ${translatedBlocks.size}")
-                
+              /*  Log.i("TranslationRepository", "[GEMINI-PARSE] Tổng số blocks dịch được: ${translatedBlocks.size}")
+                */
                 return translatedBlocks
             } catch (e: Exception) {
                 val msg = e.message?.lowercase() ?: ""
                 // Nếu là lỗi 429 hoặc quota/throttling thì bỏ qua key này, không tăng attempt
                 if (msg.contains("429") || msg.contains("too many requests") || msg.contains("quota") || msg.contains("throttl")) {
-                    Log.w("TranslationRepository", "[GEMINI] Bỏ qua API key #$apiKeyIndex (model $modelName) do lỗi 429/quota/throttling: ${e.message}")
+                    //Log.w("TranslationRepository", "[GEMINI] Bỏ qua API key #$apiKeyIndex (model $modelName) do lỗi 429/quota/throttling: ${e.message}")
                     skipped429++
                     continue // thử key tiếp theo, không tăng attempt
                 }
                 lastError = e
-                Log.e("TranslationRepository", "Gemini API (multi-scale) exception: keyIndex=$apiKeyIndex, model=$modelName: ${e.message}", e)
+              //  Log.e("TranslationRepository", "Gemini API (multi-scale) exception: keyIndex=$apiKeyIndex, model=$modelName: ${e.message}", e)
                 attempt++ // chỉ tăng attempt nếu không phải lỗi 429/quota
             }
         }
@@ -2206,7 +2206,7 @@ class TranslationRepository(private val application: Application) {
             val groups = mutableListOf<MutableList<TextBlockInfo>>()
             val threshold = if (isVertical) 0.3 else 0.2 // tỉ lệ khoảng cách cho phép
             
-            Log.i("TranslationRepository", "[MERGE] BubbleId=$bubbleId, isVertical=$isVertical, số blocks=${sorted.size}")
+           // Log.i("TranslationRepository", "[MERGE] BubbleId=$bubbleId, isVertical=$isVertical, số blocks=${sorted.size}")
             
             for (block in sorted) {
                 var assigned = false
@@ -2225,14 +2225,14 @@ class TranslationRepository(private val application: Application) {
                         val leftThreshold = avgWidth * threshold
                         val gapThreshold = avgHeight * 1.5f
                         
-                        Log.i("TranslationRepository", "[MERGE-CHECK] Block='${block.text.take(10)}', " +
+                       /* Log.i("TranslationRepository", "[MERGE-CHECK] Block='${block.text.take(10)}', " +
                             "leftDiff=$leftDiff (threshold=$leftThreshold), " +
                             "verticalGap=$verticalGap (threshold=$gapThreshold)")
-                        
+                        */
                         // Chỉ merge nếu left gần nhau VÀ khoảng cách dọc không quá lớn
                         // Threshold cho vertical gap: không quá 1.5 lần chiều cao trung bình
                         if (leftDiff < leftThreshold && verticalGap < gapThreshold) {
-                            Log.i("TranslationRepository", "[MERGE-CHECK] ✓ MERGE vào group hiện tại")
+                           // Log.i("TranslationRepository", "[MERGE-CHECK] ✓ MERGE vào group hiện tại")
                             group.add(block)
                             assigned = true
                             break
@@ -2263,15 +2263,15 @@ class TranslationRepository(private val application: Application) {
                     }
                 }
                 if (!assigned) {
-                    Log.i("TranslationRepository", "[MERGE-CHECK] ⭐ TẠO GROUP MỚI cho block='${block.text.take(10)}'")
+                    //Log.i("TranslationRepository", "[MERGE-CHECK] ⭐ TẠO GROUP MỚI cho block='${block.text.take(10)}'")
                     groups.add(mutableListOf(block))
                 }
             }
             
-            Log.i("TranslationRepository", "[MERGE] Tổng số groups sau khi phân loại: ${groups.size}")
-            groups.forEachIndexed { idx, group ->
+            //Log.i("TranslationRepository", "[MERGE] Tổng số groups sau khi phân loại: ${groups.size}")
+            /*groups.forEachIndexed { idx, group ->
                 Log.i("TranslationRepository", "[MERGE] Group #$idx: ${group.size} blocks, text='${group.joinToString(" | ") { it.text.take(10) }}'")
-            }
+            }*/
             
             // Merge từng group nhỏ trong bubble
             for (group in groups) {
