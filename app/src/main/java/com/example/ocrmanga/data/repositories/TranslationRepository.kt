@@ -662,7 +662,8 @@ class TranslationRepository(private val application: Application) {
                         reformattedText,
                         block.text,
                         block.bounds,
-                        block.fontSize
+                        block.fontSize,
+                        isVertical
                     )
                     
                     Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
@@ -754,7 +755,8 @@ class TranslationRepository(private val application: Application) {
                         reformattedText,
                         block.text,
                         block.bounds,
-                        block.fontSize
+                        block.fontSize,
+                        isVertical
                     )
                     
                     Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
@@ -1647,18 +1649,79 @@ class TranslationRepository(private val application: Application) {
      * @param originalText Văn bản gốc
      * @param originalBounds Bounds của overlay gốc
      * @param originalFontSize FontSize gốc
+     * @param isVertical Có phải là văn bản dọc (vertical) hay không
      * @return FontSize mới phù hợp
      */
     private fun calculateAdjustedFontSize(
         translatedText: String,
         originalText: String,
         originalBounds: Rect,
-        originalFontSize: Float
+        originalFontSize: Float,
+        isVertical: Boolean = false
     ): Float {
         // Tính số dòng trong văn bản dịch
         val translatedLines = translatedText.split("\n")
         val originalLines = originalText.split("\n")
         
+        val availableWidth = originalBounds.width().toFloat()
+        val availableHeight = originalBounds.height().toFloat()
+        
+        // Xử lý văn bản DỌC (vertical)
+        if (isVertical) {
+            // Đối với văn bản dọc:
+            // - Số lượng ký tự (độ dài văn bản) ảnh hưởng đến HEIGHT (chiều cao)
+            // - Chiều rộng thường chỉ có 1 ký tự
+            
+            // Loại bỏ ký tự xuống dòng vì chúng không được hiển thị trong vertical text
+            val translatedCharsNoNewline = translatedText.replace("\n", "").length
+            val originalCharsNoNewline = originalText.replace("\n", "").length
+            
+            // Tính tỷ lệ số ký tự
+            val charRatio = if (originalCharsNoNewline > 0) {
+                translatedCharsNoNewline.toFloat() / originalCharsNoNewline
+            } else {
+                1.0f
+            }
+            
+            // Tính fontSize dựa trên HEIGHT (số ký tự chồng lên nhau)
+            // line spacing = 1.15 cho vertical text (conservative để đảm bảo vừa)
+            val lineSpacing = 1.15f
+            val estimatedHeight = translatedCharsNoNewline * originalFontSize * lineSpacing
+            
+            val heightScale = if (estimatedHeight > availableHeight) {
+                availableHeight / estimatedHeight
+            } else {
+                1.0f
+            }
+            
+            // Đối với vertical, chiều rộng ít khi là vấn đề (thường chỉ 1 ký tự)
+            // Nhưng vẫn cần kiểm tra xem fontSize có quá lớn không
+            val charWidthEstimate = originalFontSize * 0.6f
+            val estimatedWidth = charWidthEstimate // 1 ký tự trên mỗi "dòng"
+            val widthScale = if (estimatedWidth > availableWidth) {
+                availableWidth / estimatedWidth
+            } else {
+                1.0f
+            }
+            
+            // Chọn scale nhỏ hơn để đảm bảo vừa
+            val finalScale = minOf(widthScale, heightScale, 1.0f)
+            
+            // Tính fontSize mới, đảm bảo không nhỏ hơn 45% fontSize gốc (aggressive cho vertical để fit all text)
+            val newFontSize = (originalFontSize * finalScale).coerceAtLeast(originalFontSize * 0.45f)
+            
+            Log.i("TranslationRepository", "[FONT-ADJUST-VERTICAL] " +
+                "Original: '${originalText.replace("\n", "|")}' (${originalCharsNoNewline} chars), " +
+                "Translated: '${translatedText.replace("\n", "|")}' (${translatedCharsNoNewline} chars), " +
+                "charRatio=$charRatio, " +
+                "estimatedHeight=$estimatedHeight, availableHeight=$availableHeight, heightScale=$heightScale, " +
+                "widthScale=$widthScale, " +
+                "originalFontSize=$originalFontSize, newFontSize=$newFontSize")
+            
+            return newFontSize
+        }
+        
+        // Xử lý văn bản NGANG (horizontal) - logic cũ
         // Tính độ dài trung bình mỗi dòng
         val avgTranslatedLineLength = if (translatedLines.isNotEmpty()) {
             translatedLines.sumOf { it.length }.toFloat() / translatedLines.size
@@ -1686,10 +1749,6 @@ class TranslationRepository(private val application: Application) {
             1.0f
         }
         
-        // Chiều rộng và chiều cao available
-        val availableWidth = originalBounds.width().toFloat()
-        val availableHeight = originalBounds.height().toFloat()
-        
         // Tính fontSize dựa trên chiều rộng
         val charWidthEstimate = originalFontSize * 0.6f
         val estimatedWidth = avgTranslatedLineLength * charWidthEstimate
@@ -1710,14 +1769,15 @@ class TranslationRepository(private val application: Application) {
         // Chọn scale nhỏ hơn để đảm bảo vừa cả width và height
         val finalScale = minOf(widthScale, heightScale, 1.0f)
         
-        // Tính fontSize mới, đảm bảo không nhỏ hơn 60% fontSize gốc
-        val newFontSize = (originalFontSize * finalScale).coerceAtLeast(originalFontSize * 0.6f)
+    // Tăng giới hạn tối thiểu fontSize lên 80% fontSize gốc để text to hơn
+    val minFontSize = originalFontSize * 0.8f
+    val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
         
-        Log.i("TranslationRepository", "[FONT-ADJUST] Original: '${originalText.take(30)}...', " +
+        Log.i("TranslationRepository", "[FONT-ADJUST-HORIZONTAL] Original: '${originalText.take(30)}...', " +
             "Translated: '${translatedText.take(30)}...', " +
             "lengthRatio=$lengthRatio, lineRatio=$lineRatio, " +
             "widthScale=$widthScale, heightScale=$heightScale, " +
-            "originalFontSize=$originalFontSize, newFontSize=$newFontSize")
+            "originalFontSize=$originalFontSize, newFontSize=$newFontSize (min: $minFontSize)")
         
         return newFontSize
     }
