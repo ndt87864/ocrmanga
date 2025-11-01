@@ -660,7 +660,89 @@ class TranslationRepository(private val application: Application) {
                 return@withContext result
             }
 
-            // --- LOGIC CŨ CHO CÁC CHẾ ĐỘ KHÁC (OFFLINE, ONLINE, GEMINI) ---
+            // --- LOGIC MỚI CHO GEMINI: THU THẬP TẤT CẢ KẾT QUẢ OCR TỪ CÁC SCALE ---
+            if (mode == TranslationMode.GEMINI) {
+                // Thu thập tất cả kết quả OCR từ các scale khác nhau
+                val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
+                
+                if (allOcrResults.isEmpty()) {
+                    Log.w("TranslationRepository", "Không có kết quả OCR nào từ các scale")
+                    lastTranslationSession.add(Pair(imageUri, Pair("", "")))
+                    return@withContext Triple("", emptyList(), "zh")
+                }
+                
+                // Gộp và merge các text blocks giống các mode khác
+                val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
+                val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
+                
+                Log.i("TranslationRepository", "[GEMINI] Số blocks cần dịch: ${mergedBlocks.size}")
+                mergedBlocks.forEachIndexed { index, block ->
+                    Log.i("TranslationRepository", "[GEMINI] Block gốc #${index + 1}: ${block.text}")
+                }
+                
+                // Gửi tất cả kết quả cho Gemini AI để tổng hợp và dịch
+                val translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi")
+                
+                if (translatedTexts.isNullOrEmpty()) {
+                    Log.w("TranslationRepository", "Gemini không trả về kết quả dịch")
+                    lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
+                    return@withContext Triple("", emptyList(), "zh")
+                }
+                
+                Log.i("TranslationRepository", "[GEMINI] Số bản dịch nhận được: ${translatedTexts.size}")
+                
+                // Ánh xạ các bản dịch vào các text blocks tương ứng
+                val blocks = mutableListOf<TextBlockInfo>()
+                mergedBlocks.forEachIndexed { index, block ->
+                    // Lấy văn bản dịch tương ứng với block này
+                    val translatedTextForBlock = translatedTexts.getOrNull(index) ?: block.text
+                    
+                    // Post-process bản dịch
+                    val naturalText = postProcessTranslation(translatedTextForBlock)
+                    
+                    Log.i("TranslationRepository", "[GEMINI] Block #${index + 1}:")
+                    Log.i("TranslationRepository", "  - Văn bản gốc: ${block.text}")
+                    Log.i("TranslationRepository", "  - Văn bản dịch: $naturalText")
+                    Log.i("TranslationRepository", "  - Tọa độ: left=${block.bounds.left}, top=${block.bounds.top}, right=${block.bounds.right}, bottom=${block.bounds.bottom}")
+                    Log.i("TranslationRepository", "  - FontSize: ${block.fontSize}")
+                    
+                    val isVertical = block.isVertical
+                    val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
+                        val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                        val wordCounts = block.wordCountsPerLine
+                        val reformattedLines = mutableListOf<String>()
+                        var wordIndex = 0
+                        for (wordCount in wordCounts) {
+                            if (wordIndex >= words.size) break
+                            val lineWords = words.subList(wordIndex, minOf(wordIndex + wordCount, words.size))
+                            reformattedLines.add(lineWords.joinToString(" "))
+                            wordIndex += wordCount
+                        }
+                        val maxWordsPerLine = wordCounts.lastOrNull() ?: 5
+                        while (wordIndex < words.size) {
+                            val remainingWords = words.subList(wordIndex, minOf(wordIndex + maxWordsPerLine, words.size))
+                            reformattedLines.add(remainingWords.joinToString(" "))
+                            wordIndex += maxWordsPerLine
+                        }
+                        reformattedLines.joinToString("\n")
+                    } else {
+                        naturalText
+                    }
+                    
+                    val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
+                    blocks.add(block.copy(text = reformattedText, bounds = newBounds))
+                }
+                
+                resultText = blocks.joinToString("\n") { it.text }
+                translatedBlocks = blocks
+                
+                val result = Triple(resultText, translatedBlocks, sourceLanguage)
+                cache[cacheKey] = resultText to translatedBlocks
+                lastTranslationSession.add(Pair(imageUri, Pair(fullText, resultText)))
+                return@withContext result
+            }
+
+            // --- LOGIC CŨ CHO CÁC CHẾ ĐỘ KHÁC (OFFLINE, ONLINE) ---
             val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
             val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
             val blocks = mutableListOf<TextBlockInfo>()
@@ -1647,6 +1729,138 @@ class TranslationRepository(private val application: Application) {
         return@withContext originalText
     }
 
+    /**
+     * Hàm dịch văn bản từ nhiều kết quả OCR (multi-scale) bằng Gemini API
+     * Trả về danh sách các bản dịch tương ứng với từng text block gốc
+     */
+    suspend fun translateWithGeminiMultiScale(
+        textBlocks: List<TextBlockInfo>,
+        ocrResults: List<Pair<Float, String>>,
+        sourceLang: String,
+        targetLang: String
+    ): List<String>? {
+        if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
+        if (geminiApiKeys.isEmpty()) return null
+        
+        var lastError: Exception? = null
+        val maxTries = geminiApiKeys.size * geminiModels.size
+        
+        // Tạo prompt với tất cả kết quả OCR từ các scale khác nhau
+        val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
+            "Kết quả quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
+        }.joinToString("\n\n")
+        
+        // Đánh số các text blocks gốc
+        val numberedBlocks = textBlocks.mapIndexed { index, block ->
+            "Block #${index + 1}: ${block.text}"
+        }.joinToString("\n")
+        
+        for (attempt in 0 until maxTries) {
+            val apiKeyIndex = currentGeminiKeyIndex
+            val modelIndex = currentGeminiModelIndex
+            val apiKey = getNextGeminiApiKey() ?: return null
+            val modelName = getCurrentGeminiModel()
+            
+            try {
+                val safetySettings = listOf(
+                    SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.NONE),
+                    SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.NONE),
+                    SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.NONE),
+                    SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.NONE)
+                )
+                
+                val generativeModel = GenerativeModel(
+                    modelName = modelName,
+                    apiKey = apiKey,
+                    safetySettings = safetySettings
+                )
+                
+                val prompt = """
+                    Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ.
+                    
+                    Nhiệm vụ: Dưới đây là các kết quả quét OCR từ cùng một ảnh truyện tranh/manga với các độ phóng đại (scale) khác nhau. Hãy phân tích, tổng hợp và chọn lọc thông tin chính xác nhất từ tất cả các kết quả này, sau đó trả về bản dịch tiếng Việt cho TỪNG BLOCK theo đúng thứ tự.
+                    
+                    Các kết quả OCR từ các scale khác nhau:
+                    $ocrResultsText
+                    
+                    Các text blocks gốc cần dịch (đã được đánh số):
+                    $numberedBlocks
+                    
+                    Yêu cầu khi dịch:
+                    1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
+                    2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác.
+                    3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
+                    4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).
+                    5. Khi trả về văn bản gốc do không thể dịch, chỉ trả về văn bản (giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được.
+                    6. Không trả về nhiều bản dịch khác nhau cho cùng một văn bản. VD: Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả? -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này. VD: Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
+                    7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác, hãy chỉ trả về văn bản gốc trong 2 trường hợp này.
+                    8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.
+                    9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.
+                    10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép ("), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.
+                    11. Các bản dịch trong cùng một ảnh phải có sự thống nhất, liên kết với nhau về xưng hô, ngữ cảnh, tránh trường hợp mỗi câu một kiểu dịch khác nhau. Ví dụ: 1. Mày đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> sai; 1. Cậu đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> đúng.
+                    12. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
+                    13. So sánh và phân tích sự khác biệt giữa các kết quả OCR để chọn ra văn bản gốc chính xác nhất trước khi dịch.
+                    14. BẮT BUỘC: Trả về kết quả theo định dạng sau, mỗi block trên một dòng:
+                        Block #1: <bản dịch block 1>
+                        Block #2: <bản dịch block 2>
+                        Block #3: <bản dịch block 3>
+                        ...
+                    15. QUAN TRỌNG: Phải dịch đủ ${textBlocks.size} blocks theo đúng thứ tự từ Block #1 đến Block #${textBlocks.size}
+                    
+                    Trả về bản dịch cho TỪNG BLOCK theo định dạng đã nêu.
+                """.trimIndent()
+                
+                val response = generativeModel.generateContent(prompt)
+                val content = response.text?.trim()
+                
+                if (content.isNullOrBlank()) {
+                    Log.w("TranslationRepository", "[GEMINI] Response rỗng từ key #$apiKeyIndex, model $modelName")
+                    continue
+                }
+                
+                // Parse kết quả theo định dạng "Block #N: <bản dịch>"
+                val translatedBlocks = mutableListOf<String>()
+                val lines = content.split("\n")
+                
+                Log.i("TranslationRepository", "[GEMINI-PARSE] Nội dung trả về từ AI:\n$content")
+                
+                for (line in lines) {
+                    val trimmedLine = line.trim()
+                    if (trimmedLine.startsWith("Block #")) {
+                        // Extract translation after "Block #N: "
+                        val colonIndex = trimmedLine.indexOf(":")
+                        if (colonIndex != -1 && colonIndex < trimmedLine.length - 1) {
+                            val translation = trimmedLine.substring(colonIndex + 1).trim()
+                            translatedBlocks.add(translation)
+                            Log.i("TranslationRepository", "[GEMINI-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
+                        }
+                    }
+                }
+                
+                // Kiểm tra số lượng blocks dịch có khớp không
+                if (translatedBlocks.size != textBlocks.size) {
+                    Log.w("TranslationRepository", "[GEMINI-PARSE] Gemini trả về ${translatedBlocks.size} blocks nhưng cần ${textBlocks.size} blocks")
+                    // Nếu thiếu, thêm text gốc vào
+                    while (translatedBlocks.size < textBlocks.size) {
+                        val missingIndex = translatedBlocks.size
+                        translatedBlocks.add(textBlocks[missingIndex].text)
+                        Log.w("TranslationRepository", "[GEMINI-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
+                    }
+                }
+                
+                Log.i("TranslationRepository", "[GEMINI-PARSE] Tổng số blocks dịch được: ${translatedBlocks.size}")
+                
+                return translatedBlocks
+            } catch (e: Exception) {
+                lastError = e
+                Log.e("TranslationRepository", "Gemini API (multi-scale) exception: keyIndex=$apiKeyIndex, model=$modelName: ${e.message}", e)
+            }
+        }
+        
+        lastError?.let { Log.e("TranslationRepository", "Tất cả Gemini key/model đều thất bại: ${it.message}") }
+        return null
+    }
+    
     private suspend fun translateWithGemini(inputText: String): String? {
         if (geminiApiKeys.isEmpty()) {
             Log.e("TranslationRepository", "No API keys available.")
