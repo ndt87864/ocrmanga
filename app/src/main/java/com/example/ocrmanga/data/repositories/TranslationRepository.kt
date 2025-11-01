@@ -69,7 +69,11 @@ class TranslationRepository(private val application: Application) {
     private val koreanRecognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
     private val translators = mutableMapOf<String, com.google.mlkit.nl.translate.Translator>()
     private val cache = mutableMapOf<String, Pair<String, List<TextBlockInfo>>>()
-    private val httpClient = OkHttpClient()
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
     private val databaseHelper = DatabaseHelper(application)
 
     /**
@@ -160,7 +164,7 @@ class TranslationRepository(private val application: Application) {
     }
 
     /**
-     * Hàm dịch văn bản bằng Mistral API
+     * Hàm dịch văn bản bằng Mistral API (phiên bản đơn giản cho từng đoạn văn)
      * @param text Văn bản nguồn
      * @param sourceLang Ngôn ngữ nguồn (ví dụ: "ja", "zh", "en")
      * @param targetLang Ngôn ngữ đích (ví dụ: "vi")
@@ -243,6 +247,169 @@ class TranslationRepository(private val application: Application) {
                     mistralErrorToastShown = true
                     withContext(Dispatchers.Main) {
                         android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                // Nếu lỗi là HTTP 429 (Too Many Requests) từ OkHttp
+                if (e is okhttp3.internal.http2.StreamResetException && e.errorCode == okhttp3.internal.http2.ErrorCode.ENHANCE_YOUR_CALM) {
+                    continue
+                }
+                // Hoặc kiểm tra message có chứa 429 (phòng trường hợp khác)
+                if (e.message?.contains("429") == true) {
+                    continue
+                }
+                return null
+            }
+        }
+        return null
+    }
+
+    suspend fun translateWithMistralMultiScale(
+        textBlocks: List<TextBlockInfo>,
+        ocrResults: List<Pair<Float, String>>,
+        sourceLang: String,
+        targetLang: String
+    ): List<String>? {
+        if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
+        
+        var lastError: Exception? = null
+        val maxTries = mistralApiKeys.size.coerceAtLeast(1)
+        
+        // Tạo prompt với tất cả kết quả OCR từ các scale khác nhau
+        val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
+            "Kết quả quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
+        }.joinToString("\n\n")
+        
+        // Đánh số các text blocks gốc
+        val numberedBlocks = textBlocks.mapIndexed { index, block ->
+            "Block #${index + 1}: ${block.text}"
+        }.joinToString("\n")
+        
+        for (i in 0 until maxTries) {
+            val mistralKey = getNextMistralApiKey() ?: return null
+            
+            val prompt = """
+                Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ.
+                
+                Nhiệm vụ: Dưới đây là các kết quả quét OCR từ cùng một ảnh truyện tranh/manga với các độ phóng đại (scale) khác nhau. Hãy phân tích, tổng hợp và chọn lọc thông tin chính xác nhất từ tất cả các kết quả này, sau đó trả về bản dịch tiếng Việt cho TỪNG BLOCK theo đúng thứ tự.
+                
+                Các kết quả OCR từ các scale khác nhau:
+                $ocrResultsText
+                
+                Các text blocks gốc cần dịch (đã được đánh số):
+                $numberedBlocks
+                
+                Yêu cầu khi dịch:
+                1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
+                2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác.
+                3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
+                4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).
+                5. Khi trả về văn bản gốc do không thể dịch, chỉ trả về văn bản (giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được.
+                6. Không trả về nhiều bản dịch khác nhau cho cùng một văn bản. VD: Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả? -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này. VD: Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
+                7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác, hãy chỉ trả về văn bản gốc trong 2 trường hợp này.
+                8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.
+                9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.
+                10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép ("), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.
+                11. Các bản dịch trong cùng một ảnh phải có sự thống nhất, liên kết với nhau về xưng hô, ngữ cảnh, tránh trường hợp mỗi câu một kiểu dịch khác nhau. Ví dụ: 1. Mày đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> sai; 1. Cậu đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> đúng.
+                12. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
+                13. So sánh và phân tích sự khác biệt giữa các kết quả OCR để chọn ra văn bản gốc chính xác nhất trước khi dịch.
+                14. BẮT BUỘC: Trả về kết quả theo định dạng sau, mỗi block trên một dòng:
+                    Block #1: <bản dịch block 1>
+                    Block #2: <bản dịch block 2>
+                    Block #3: <bản dịch block 3>
+                    ...
+                15. QUAN TRỌNG: Phải dịch đủ ${textBlocks.size} blocks theo đúng thứ tự từ Block #1 đến Block #${textBlocks.size}
+                
+                Trả về bản dịch cho TỪNG BLOCK theo định dạng đã nêu.
+            """.trimIndent()
+
+            // Build JSON body using Gson to avoid invalid JSON
+            val gson = com.google.gson.Gson()
+            val message = mapOf("role" to "user", "content" to prompt)
+            val bodyMap = mapOf(
+                "model" to "mistral-medium-latest",
+                "messages" to listOf(message)
+            )
+            val requestBody = gson.toJson(bodyMap)
+
+            val request = okhttp3.Request.Builder()
+                .url(mistralApiUrl)
+                .addHeader("Authorization", "Bearer $mistralKey")
+                .addHeader("Content-Type", "application/json")
+                .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
+                .build()
+
+            try {
+                val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
+                if (!response.isSuccessful) {
+                    Log.e("TranslationRepository", "Mistral API (multi-scale) error: ${response.code} ${response.message}")
+                    if (response.code == 429) {
+                        // Nếu bị 429 thì thử key tiếp theo ngay lập tức
+                        continue
+                    }
+                    if (response.code == 422) {
+                        // Lỗi request không hợp lệ, chỉ log 1 lần, không Toast
+                        if (!mistralErrorToastShown) {
+                            mistralErrorToastShown = true
+                            Log.w("TranslationRepository", "Mistral API (multi-scale) error 422: ${response.message}")
+                        }
+                        return null
+                    }
+                    if (!mistralErrorToastShown) {
+                        mistralErrorToastShown = true
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(application, "Lỗi dịch Mistral (multi-scale): ${response.code} ${response.message}", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    return null
+                }
+                val body = response.body?.string() ?: return null
+                // Parse JSON để lấy phần dịch
+                val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                val choices = json["choices"]?.asJsonArray
+                val content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
+                
+                if (content.isNullOrBlank()) return null
+                
+                // Parse kết quả theo định dạng "Block #N: <bản dịch>"
+                val translatedBlocks = mutableListOf<String>()
+                val lines = content.trim().split("\n")
+                
+                Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI:\n$content")
+                
+                for (line in lines) {
+                    val trimmedLine = line.trim()
+                    if (trimmedLine.startsWith("Block #")) {
+                        // Extract translation after "Block #N: "
+                        val colonIndex = trimmedLine.indexOf(":")
+                        if (colonIndex != -1 && colonIndex < trimmedLine.length - 1) {
+                            val translation = trimmedLine.substring(colonIndex + 1).trim()
+                            translatedBlocks.add(translation)
+                            Log.i("TranslationRepository", "[MISTRAL-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
+                        }
+                    }
+                }
+                
+                // Kiểm tra số lượng blocks dịch có khớp không
+                if (translatedBlocks.size != textBlocks.size) {
+                    Log.w("TranslationRepository", "[MISTRAL-PARSE] Mistral trả về ${translatedBlocks.size} blocks nhưng cần ${textBlocks.size} blocks")
+                    // Nếu thiếu, thêm text gốc vào
+                    while (translatedBlocks.size < textBlocks.size) {
+                        val missingIndex = translatedBlocks.size
+                        translatedBlocks.add(textBlocks[missingIndex].text)
+                        Log.w("TranslationRepository", "[MISTRAL-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
+                    }
+                }
+                
+                Log.i("TranslationRepository", "[MISTRAL-PARSE] Tổng số blocks dịch được: ${translatedBlocks.size}")
+                
+                return translatedBlocks
+            } catch (e: Exception) {
+                lastError = e
+                Log.e("TranslationRepository", "Mistral API (multi-scale) exception: keyIndex=$i, key=${mistralKey}...: ${e.message}", e)
+                if (!mistralErrorToastShown) {
+                    mistralErrorToastShown = true
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(application, "Lỗi dịch Mistral (multi-scale): ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
                 // Nếu lỗi là HTTP 429 (Too Many Requests) từ OkHttp
@@ -411,7 +578,89 @@ class TranslationRepository(private val application: Application) {
             sourceLanguage = detectLanguage(fullText) ?: "zh"
             //log.i("TranslationRepository", "Ngôn ngữ nguồn được phát hiện: $sourceLanguage")
 
-            // --- TỰ ĐỘNG GÁN BUBBLE, MERGE, VÀ DỊCH ---
+            // --- LOGIC MỚI CHO MISTRAL: THU THẬP TẤT CẢ KẾT QUẢ OCR TỪ CÁC SCALE ---
+            if (mode == TranslationMode.MISTRAL) {
+                // Thu thập tất cả kết quả OCR từ các scale khác nhau
+                val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
+                
+                if (allOcrResults.isEmpty()) {
+                    Log.w("TranslationRepository", "Không có kết quả OCR nào từ các scale")
+                    lastTranslationSession.add(Pair(imageUri, Pair("", "")))
+                    return@withContext Triple("", emptyList(), "zh")
+                }
+                
+                // Gộp và merge các text blocks giống các mode khác
+                val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
+                val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
+                
+                Log.i("TranslationRepository", "[MISTRAL] Số blocks cần dịch: ${mergedBlocks.size}")
+                mergedBlocks.forEachIndexed { index, block ->
+                    Log.i("TranslationRepository", "[MISTRAL] Block gốc #${index + 1}: ${block.text}")
+                }
+                
+                // Gửi tất cả kết quả cho Mistral AI để tổng hợp và dịch
+                val translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi")
+                
+                if (translatedTexts.isNullOrEmpty()) {
+                    Log.w("TranslationRepository", "Mistral không trả về kết quả dịch")
+                    lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
+                    return@withContext Triple("", emptyList(), "zh")
+                }
+                
+                Log.i("TranslationRepository", "[MISTRAL] Số bản dịch nhận được: ${translatedTexts.size}")
+                
+                // Ánh xạ các bản dịch vào các text blocks tương ứng
+                val blocks = mutableListOf<TextBlockInfo>()
+                mergedBlocks.forEachIndexed { index, block ->
+                    // Lấy văn bản dịch tương ứng với block này
+                    val translatedTextForBlock = translatedTexts.getOrNull(index) ?: block.text
+                    
+                    // Post-process bản dịch
+                    val naturalText = postProcessTranslation(translatedTextForBlock)
+                    
+                    Log.i("TranslationRepository", "[MISTRAL] Block #${index + 1}:")
+                    Log.i("TranslationRepository", "  - Văn bản gốc: ${block.text}")
+                    Log.i("TranslationRepository", "  - Văn bản dịch: $naturalText")
+                    Log.i("TranslationRepository", "  - Tọa độ: left=${block.bounds.left}, top=${block.bounds.top}, right=${block.bounds.right}, bottom=${block.bounds.bottom}")
+                    Log.i("TranslationRepository", "  - FontSize: ${block.fontSize}")
+                    
+                    val isVertical = block.isVertical
+                    val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
+                        val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
+                        val wordCounts = block.wordCountsPerLine
+                        val reformattedLines = mutableListOf<String>()
+                        var wordIndex = 0
+                        for (wordCount in wordCounts) {
+                            if (wordIndex >= words.size) break
+                            val lineWords = words.subList(wordIndex, minOf(wordIndex + wordCount, words.size))
+                            reformattedLines.add(lineWords.joinToString(" "))
+                            wordIndex += wordCount
+                        }
+                        val maxWordsPerLine = wordCounts.lastOrNull() ?: 5
+                        while (wordIndex < words.size) {
+                            val remainingWords = words.subList(wordIndex, minOf(wordIndex + maxWordsPerLine, words.size))
+                            reformattedLines.add(remainingWords.joinToString(" "))
+                            wordIndex += maxWordsPerLine
+                        }
+                        reformattedLines.joinToString("\n")
+                    } else {
+                        naturalText
+                    }
+                    
+                    val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
+                    blocks.add(block.copy(text = reformattedText, bounds = newBounds))
+                }
+                
+                resultText = blocks.joinToString("\n") { it.text }
+                translatedBlocks = blocks
+                
+                val result = Triple(resultText, translatedBlocks, sourceLanguage)
+                cache[cacheKey] = resultText to translatedBlocks
+                lastTranslationSession.add(Pair(imageUri, Pair(fullText, resultText)))
+                return@withContext result
+            }
+
+            // --- LOGIC CŨ CHO CÁC CHẾ ĐỘ KHÁC (OFFLINE, ONLINE, GEMINI) ---
             val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
             val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
             val blocks = mutableListOf<TextBlockInfo>()
@@ -425,7 +674,7 @@ class TranslationRepository(private val application: Application) {
                             TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
                             TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                             TranslationMode.OFF -> block.text
-                            TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
+                            TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: "" // Không nên xảy ra vì đã xử lý ở trên
                         }
                         // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
                         // Tối ưu: chỉ kiểm tra lần 2 nếu text quá ngắn (có thể bị dịch sai)
@@ -580,6 +829,50 @@ class TranslationRepository(private val application: Application) {
             // Gợi ý GC dọn dẹp bộ nhớ sau mỗi ảnh để tránh OOM
             System.gc()
         }
+    }
+
+    /**
+     * Thu thập tất cả kết quả OCR từ các scale khác nhau
+     * @return List<Pair<Float, String>> - danh sách các cặp (scaleFactor, ocrText)
+     */
+    private suspend fun recognizeTextAllScales(
+        bitmap: Bitmap,
+        rotationDegrees: Int,
+        forceScript: String? = null
+    ): List<Pair<Float, String>> = withContext(Dispatchers.IO) {
+        val scaleFactors = listOf(0.95f, 1.003f, 1.12f)
+        val recognizers = when (forceScript) {
+            "zh" -> listOf(chineseRecognizer)
+            "ja" -> listOf(japaneseRecognizer)
+            "ko" -> listOf(koreanRecognizer)
+            "en", "es" -> listOf(latinRecognizer)
+            else -> listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer, latinRecognizer)
+        }
+        
+        val allResults = mutableListOf<Pair<Float, String>>()
+        
+        // Thu thập kết quả từ tất cả các scale
+        scaleFactors.forEach { scale ->
+            recognizers.forEach { recognizer ->
+                var preprocessedBitmap: Bitmap? = null
+                try {
+                    val (preBitmap, _) = preprocessImage(bitmap, scale)
+                    preprocessedBitmap = preBitmap
+                    val scaledInputImage = InputImage.fromBitmap(preprocessedBitmap, rotationDegrees)
+                    val result = recognizer.process(scaledInputImage).await()
+                    
+                    if (result.text.isNotEmpty()) {
+                        allResults.add(Pair(scale, result.text))
+                    }
+                } catch (e: Exception) {
+                    Log.e("TranslationRepository", "OCR failed for scale $scale and recognizer ${recognizer.javaClass.simpleName}", e)
+                } finally {
+                    preprocessedBitmap?.recycle()
+                }
+            }
+        }
+        
+        return@withContext allResults
     }
 
     // recognizeText mới: cho phép chỉ quét preview hoặc ép loại recognizer
