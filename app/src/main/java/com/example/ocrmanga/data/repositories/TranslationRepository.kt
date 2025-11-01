@@ -944,7 +944,9 @@ class TranslationRepository(private val application: Application) {
                     val result = recognizer.process(scaledInputImage).await()
                     
                     if (result.text.isNotEmpty()) {
-                        allResults.add(Pair(scale, result.text))
+                        // Áp dụng post-processing để sửa lỗi OCR
+                        val processedText = postProcessOCRText(result.text, forceScript)
+                        allResults.add(Pair(scale, processedText))
                     }
                 } catch (e: Exception) {
                     Log.e("TranslationRepository", "OCR failed for scale $scale and recognizer ${recognizer.javaClass.simpleName}", e)
@@ -1081,8 +1083,10 @@ class TranslationRepository(private val application: Application) {
                         val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
                         // Phân tích màu nền và màu text
                         val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
+                        // Áp dụng post-processing để sửa lỗi OCR (ví dụ: し -> L cho Latin script)
+                        val processedText = postProcessOCRText(line.text, forceScript)
                         TextBlockInfo(
-                            text = line.text,
+                            text = processedText,
                             bounds = scaledBounds,
                             fontSize = fontSize,
                             wordCountsPerLine = listOf(wordCount),
@@ -1148,8 +1152,10 @@ class TranslationRepository(private val application: Application) {
                 val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
                 // Phân tích màu nền và màu text
                 val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
+                // Áp dụng post-processing để sửa lỗi OCR (ví dụ: し -> L cho Latin script)
+                val processedText = postProcessOCRText(line.text, forceScript)
                 TextBlockInfo(
-                    text = line.text,
+                    text = processedText,
                     bounds = scaledBounds,
                     fontSize = fontSize,
                     wordCountsPerLine = listOf(wordCount),
@@ -1890,6 +1896,21 @@ class TranslationRepository(private val application: Application) {
             Log.e("TranslationRepository", "Error during translation: ${e.message}")
             null
         }
+    }
+
+    /**
+     * Xử lý hậu kỳ cho kết quả OCR: chuyển đổi ký tự し (katakana shi) thành L
+     * khi phát hiện văn bản là Latin script. Đây là lỗi OCR phổ biến.
+     */
+    private fun postProcessOCRText(text: String, detectedScript: String?): String {
+        // Nếu script được phát hiện là Latin (en, es) hoặc chứa nhiều chữ Latin
+        val isLatinScript = detectedScript == "en" || detectedScript == "es" || 
+            (text.count { it in 'A'..'z' || it in 'A'..'Z' } > text.length * 0.5)
+        
+        if (!isLatinScript) return text
+        
+        // Chuyển し (U+3057 - Hiragana Shi) và シ (U+30B7 - Katakana Shi) thành L
+        return text.replace('し', 'L').replace('シ', 'L')
     }
 
     private fun postProcessTranslation(translatedText: String): String {
