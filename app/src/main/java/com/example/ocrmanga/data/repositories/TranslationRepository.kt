@@ -1687,12 +1687,13 @@ class TranslationRepository(private val application: Application) {
             // line spacing = 1.15 cho vertical text (conservative để đảm bảo vừa)
             val lineSpacing = 1.15f
             val estimatedHeight = translatedCharsNoNewline * originalFontSize * lineSpacing
-            
+
             val heightScale = if (estimatedHeight > availableHeight) {
                 availableHeight / estimatedHeight
             } else {
                 1.0f
             }
+            
             
             // Đối với vertical, chiều rộng ít khi là vấn đề (thường chỉ 1 ký tự)
             // Nhưng vẫn cần kiểm tra xem fontSize có quá lớn không
@@ -1707,8 +1708,9 @@ class TranslationRepository(private val application: Application) {
             // Chọn scale nhỏ hơn để đảm bảo vừa
             val finalScale = minOf(widthScale, heightScale, 1.0f)
             
-            // Tính fontSize mới, đảm bảo không nhỏ hơn 45% fontSize gốc (aggressive cho vertical để fit all text)
-            val newFontSize = (originalFontSize * finalScale).coerceAtLeast(originalFontSize * 0.45f)
+            // Tăng giới hạn tối thiểu fontSize lên 70% fontSize gốc cho vertical (AI dịch) để text to hơn
+            val minFontSize = originalFontSize * 0.7f
+            val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
             
             Log.i("TranslationRepository", "[FONT-ADJUST-VERTICAL] " +
                 "Original: '${originalText.replace("\n", "|")}' (${originalCharsNoNewline} chars), " +
@@ -1716,7 +1718,7 @@ class TranslationRepository(private val application: Application) {
                 "charRatio=$charRatio, " +
                 "estimatedHeight=$estimatedHeight, availableHeight=$availableHeight, heightScale=$heightScale, " +
                 "widthScale=$widthScale, " +
-                "originalFontSize=$originalFontSize, newFontSize=$newFontSize")
+                "originalFontSize=$originalFontSize, newFontSize=$newFontSize (min: $minFontSize)")
             
             return newFontSize
         }
