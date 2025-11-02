@@ -1774,14 +1774,12 @@ class TranslationRepository(private val application: Application) {
     // Tăng giới hạn tối thiểu fontSize lên 80% fontSize gốc để text to hơn
     val minFontSize = originalFontSize * 0.7f
     val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
-//
 //        Log.i("TranslationRepository", "[FONT-ADJUST-HORIZONTAL] Original: '${originalText.take(30)}...', " +
 //            "Translated: '${translatedText.take(30)}...', " +
 //            "lengthRatio=$lengthRatio, lineRatio=$lineRatio, " +
 //            "widthScale=$widthScale, heightScale=$heightScale, " +
 //            "originalFontSize=$originalFontSize, newFontSize=$newFontSize (min: $minFontSize)")
-//
-        return newFontSize
+    return newFontSize
     }
 
     private suspend fun translateTextOffline(originalText: String, sourceLanguage: String): String = withContext(Dispatchers.IO) {
