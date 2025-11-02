@@ -1590,6 +1590,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     private fun deleteOriginalImage(uri: Uri) {
         try {
+            // On Android 9 and below, deleting MediaStore URIs requires WRITE_EXTERNAL_STORAGE
+            // which we don't request at runtime. Skip deletion to avoid SecurityException.
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                Log.i(TAG, "Skipping deletion of original image on Android 9 or below: $uri")
+                return
+            }
+
             val contentResolver = appContext.contentResolver
             val scheme = uri.scheme
             when {
