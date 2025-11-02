@@ -1685,7 +1685,7 @@ class TranslationRepository(private val application: Application) {
             
             // Tính fontSize dựa trên HEIGHT (số ký tự chồng lên nhau)
             // line spacing = 1.15 cho vertical text (conservative để đảm bảo vừa)
-            val lineSpacing = 1.15f
+            val lineSpacing = 1.1f
             val estimatedHeight = translatedCharsNoNewline * originalFontSize * lineSpacing
 
             val heightScale = if (estimatedHeight > availableHeight) {
@@ -1697,7 +1697,7 @@ class TranslationRepository(private val application: Application) {
             
             // Đối với vertical, chiều rộng ít khi là vấn đề (thường chỉ 1 ký tự)
             // Nhưng vẫn cần kiểm tra xem fontSize có quá lớn không
-            val charWidthEstimate = originalFontSize * 0.6f
+            val charWidthEstimate = originalFontSize * 0.5f
             val estimatedWidth = charWidthEstimate // 1 ký tự trên mỗi "dòng"
             val widthScale = if (estimatedWidth > availableWidth) {
                 availableWidth / estimatedWidth
@@ -1709,7 +1709,7 @@ class TranslationRepository(private val application: Application) {
             val finalScale = minOf(widthScale, heightScale, 1.0f)
             
             // Tăng giới hạn tối thiểu fontSize lên 70% fontSize gốc cho vertical (AI dịch) để text to hơn
-            val minFontSize = originalFontSize * 0.7f
+            val minFontSize = originalFontSize * 0.5f
             val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
             
             /*Log.i("TranslationRepository", "[FONT-ADJUST-VERTICAL] " +
@@ -1761,7 +1761,7 @@ class TranslationRepository(private val application: Application) {
         }
         
         // Tính fontSize dựa trên chiều cao (số dòng)
-        val estimatedHeight = translatedLines.size * originalFontSize * 1.2f // 1.2 là line spacing
+        val estimatedHeight = translatedLines.size * originalFontSize * 1.1f // 1.2 là line spacing
         val heightScale = if (estimatedHeight > availableHeight) {
             availableHeight / estimatedHeight
         } else {
@@ -1772,7 +1772,7 @@ class TranslationRepository(private val application: Application) {
         val finalScale = minOf(widthScale, heightScale, 1.0f)
         
     // Tăng giới hạn tối thiểu fontSize lên 80% fontSize gốc để text to hơn
-    val minFontSize = originalFontSize * 0.8f
+    val minFontSize = originalFontSize * 0.7f
     val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
 //
 //        Log.i("TranslationRepository", "[FONT-ADJUST-HORIZONTAL] Original: '${originalText.take(30)}...', " +
