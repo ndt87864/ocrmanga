@@ -533,8 +533,17 @@ fun ImageViewer(
                                                         val dy = dragBlock.offset.y / scale
                                                         val newBounds = android.graphics.Rect(block.bounds)
                                                         newBounds.offset(dx.toInt(), dy.toInt())
+                                                        
+                                                        // Cập nhật bounds mới và reset offset về Zero
+                                                        val updatedBlock = dragBlock.copy(
+                                                            block = block.copy(bounds = newBounds),
+                                                            offset = Offset.Zero
+                                                        )
+                                                        val updatedList = dragBlocks.toMutableList()
+                                                        updatedList[idx] = updatedBlock
+                                                        
                                                         // Commit updated position to the shared map and reset dragging state
-                                                        dragBlocksMap[uri] = dragBlocks
+                                                        dragBlocksMap[uri] = updatedList
                                                         draggingIndex = null
                                                     }
                                                 }
