@@ -542,7 +542,8 @@ fun ImageViewer(
                                                         val updatedList = dragBlocks.toMutableList()
                                                         updatedList[idx] = updatedBlock
                                                         
-                                                        // Commit updated position to the shared map and reset dragging state
+                                                        // QUAN TRỌNG: Cập nhật cả local dragBlocks và shared map
+                                                        dragBlocks = updatedList
                                                         dragBlocksMap[uri] = updatedList
                                                         draggingIndex = null
                                                     }
