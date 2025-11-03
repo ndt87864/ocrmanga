@@ -84,6 +84,7 @@ fun ViewerScreen(
             dragBlocksMap.forEach { (uri, blocks) ->
                         viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
                         // Bounds đã được cập nhật khi drag trong ImageViewer, không cần cộng offset nữa
+                        // copy() sẽ tự động copy bounds từ dragBlock.block
                         dragBlock.block.copy(
                         fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
                         rotation = dragBlock.rotation,
@@ -113,47 +114,51 @@ fun ViewerScreen(
 
     // Initialize dragBlocksMap for all uris from translatedTexts
     // Ưu tiên dữ liệu mới từ translation mode thay vì giữ nguyên dragBlocksMap cũ
-    LaunchedEffect(uiState.imageUris, uiState.translatedTexts, uiState.translationVersion) {
+    LaunchedEffect(uiState.imageUris, uiState.translatedTexts, uiState.translationVersion, editTranslationMode) {
         uiState.imageUris.forEach { uri ->
             val currentTranslatedBlocks = uiState.translatedTexts[uri]?.second
             
-            // Luôn cập nhật dragBlocksMap từ translatedTexts mới
-            // Nếu không có translatedTexts (mode OFF), xóa blocks
+            // Chỉ rebuild dragBlocksMap khi KHÔNG ở edit mode để tránh override các thay đổi đang được edit
+            // Khi ở edit mode, dragBlocksMap được quản lý bởi ImageViewer
+            if (!editTranslationMode) {
+                // Luôn cập nhật dragBlocksMap từ translatedTexts mới
+                // Nếu không có translatedTexts (mode OFF), xóa blocks
                 if (currentTranslatedBlocks != null) {
-                val blocks = currentTranslatedBlocks.map { block ->
-                    // Ensure overlay int includes opaque alpha so Color(...) isn't transparent
-                    val rawOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
-                    val overlayColorInt = rawOverlay or 0xFF000000.toInt()
-                    val textColorInt = block.customTextColor ?: computeDefaultTextColor(overlayColorInt, block.averageBackgroundColor)
+                    val blocks = currentTranslatedBlocks.map { block ->
+                        // Ensure overlay int includes opaque alpha so Color(...) isn't transparent
+                        val rawOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                        val overlayColorInt = rawOverlay or 0xFF000000.toInt()
+                        val textColorInt = block.customTextColor ?: computeDefaultTextColor(overlayColorInt, block.averageBackgroundColor)
 
-                    DragBlockState(
-                        block = block.copy(
-                            customOverlayColor = overlayColorInt,
-                            customTextColor = textColorInt
-                        ),
-                        offset = androidx.compose.ui.geometry.Offset.Zero,
-                        fontSize = block.fontSize,
-                        rotation = block.rotation ?: 0f,
-                        whiteoutColor = Color(overlayColorInt),
-                        textColor = Color(textColorInt),
-                        overlayAlpha = block.overlayAlpha,
-                        textBoldness = block.textBoldness,
-                        overlaySaturation = block.overlaySaturation,
-                        textSaturation = block.textSaturation,
-                        textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
-                        textBorderThickness = block.borderThickness,
-                        textBorderAlpha = block.borderAlpha,
-                        // BỔ SUNG SHADOW
-                        textShadowColor = block.customShadowColor?.let { Color(it) },
-                        textShadowAlpha = block.shadowAlpha,
-                        textShadowRadius = block.shadowRadius
-                    )
+                        DragBlockState(
+                            block = block.copy(
+                                customOverlayColor = overlayColorInt,
+                                customTextColor = textColorInt
+                            ),
+                            offset = androidx.compose.ui.geometry.Offset.Zero,
+                            fontSize = block.fontSize,
+                            rotation = block.rotation ?: 0f,
+                            whiteoutColor = Color(overlayColorInt),
+                            textColor = Color(textColorInt),
+                            overlayAlpha = block.overlayAlpha,
+                            textBoldness = block.textBoldness,
+                            overlaySaturation = block.overlaySaturation,
+                            textSaturation = block.textSaturation,
+                            textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
+                            textBorderThickness = block.borderThickness,
+                            textBorderAlpha = block.borderAlpha,
+                            // BỔ SUNG SHADOW
+                            textShadowColor = block.customShadowColor?.let { Color(it) },
+                            textShadowAlpha = block.shadowAlpha,
+                            textShadowRadius = block.shadowRadius
+                        )
+                    }
+
+                    dragBlocksMap[uri] = blocks
+                } else {
+                    // Xóa blocks khi tắt dịch
+                    dragBlocksMap.remove(uri)
                 }
-
-                dragBlocksMap[uri] = blocks
-            } else {
-                // Xóa blocks khi tắt dịch
-                dragBlocksMap.remove(uri)
             }
         }
     }
