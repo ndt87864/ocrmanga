@@ -147,7 +147,7 @@ class TranslationRepository(private val application: Application) {
         }
     }
     // Hàm lấy API key Mistral tiếp theo: mỗi key chỉ dùng 1 lần/lượt, hết danh sách mới quay lại đầu
-    private fun getNextMistralApiKey(): String? {
+    fun getNextMistralApiKey(): String? {
         if (mistralApiKeys.isEmpty()) {
             Log.e("TranslationRepository", "Không có API key Mistral nào được cấu hình. Không thể dịch.")
             return null
@@ -267,7 +267,8 @@ class TranslationRepository(private val application: Application) {
         textBlocks: List<TextBlockInfo>,
         ocrResults: List<Pair<Float, String>>,
         sourceLang: String,
-        targetLang: String
+        targetLang: String,
+        apiKey: String? = null
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
         
@@ -285,7 +286,7 @@ class TranslationRepository(private val application: Application) {
         }.joinToString("\n")
         
         for (i in 0 until maxTries) {
-            val mistralKey = getNextMistralApiKey() ?: return null
+            val mistralKey = apiKey ?: getNextMistralApiKey() ?: return null
             
             val prompt = """
                 Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ.
@@ -426,7 +427,7 @@ class TranslationRepository(private val application: Application) {
         return null
     }
 
-    private fun getNextGeminiApiKey(): String? {
+    fun getNextGeminiApiKey(): String? {
         if (geminiApiKeys.isEmpty()) {
             Log.e("TranslationRepository", "Không có API key Gemini nào được cấu hình.")
             return null
@@ -497,7 +498,7 @@ class TranslationRepository(private val application: Application) {
         return Pair(contrastBitmap, scaleFactor)
     }
 
-    suspend fun recognizeAndTranslateText(imageUri: Uri, mode: TranslationMode): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
+    suspend fun recognizeAndTranslateText(imageUri: Uri, mode: TranslationMode, apiKey: String? = null): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
         if (mode == TranslationMode.OFF) {
             //log.i("TranslationRepository", "Chế độ dịch đã tắt, bỏ qua việc dịch cho $imageUri")
             return@withContext Triple("", emptyList(), "zh")
@@ -609,7 +610,7 @@ class TranslationRepository(private val application: Application) {
                 }*/
                 
                 // Gửi tất cả kết quả cho Mistral AI để tổng hợp và dịch
-                val translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi")
+                val translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey)
                 
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Mistral không trả về kết quả dịch")
@@ -702,7 +703,7 @@ class TranslationRepository(private val application: Application) {
                 }
                 */
                 // Gửi tất cả kết quả cho Gemini AI để tổng hợp và dịch
-                val translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi")
+                val translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey)
                 
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Gemini không trả về kết quả dịch")
@@ -1914,7 +1915,8 @@ class TranslationRepository(private val application: Application) {
         textBlocks: List<TextBlockInfo>,
         ocrResults: List<Pair<Float, String>>,
         sourceLang: String,
-        targetLang: String
+        targetLang: String,
+        apiKey: String? = null
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
         if (geminiApiKeys.isEmpty()) return null
@@ -1937,8 +1939,9 @@ class TranslationRepository(private val application: Application) {
         while (attempt < maxTries) {
             val apiKeyIndex = currentGeminiKeyIndex
             val modelIndex = currentGeminiModelIndex
-            val apiKey = getNextGeminiApiKey() ?: return null
+            val useKey = apiKey ?: getNextGeminiApiKey()
             val modelName = getCurrentGeminiModel()
+            if (useKey == null) return null
             try {
                 val safetySettings = listOf(
                     SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.NONE),
@@ -1949,7 +1952,7 @@ class TranslationRepository(private val application: Application) {
                 
                 val generativeModel = GenerativeModel(
                     modelName = modelName,
-                    apiKey = apiKey,
+                    apiKey = useKey,
                     safetySettings = safetySettings
                 )
                 
