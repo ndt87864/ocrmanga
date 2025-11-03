@@ -1042,11 +1042,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun processTranslationQueue() {
-        val maxBatchSize = 1 // Giảm xuống 1 để tránh OOM khi xử lý nhiều bitmap cùng lúc
-        val translatedTexts = mutableMapOf<Uri, Pair<String, List<TextBlockInfo>>>()
-        val sourceLanguages = mutableMapOf<Uri, String>()
-        var completedCount = 0
-        val totalToTranslate = translationQueue.size
+    // Khi dịch bằng Mistral/Gemini cho toàn bộ phòng, dịch song song 2 ảnh, mỗi ảnh dùng 1 key khác nhau trong lượt đó
+    val isParallelKeyMode = uiState.value.translationMode == TranslationMode.MISTRAL || uiState.value.translationMode == TranslationMode.GEMINI
+    val maxBatchSize = if (isParallelKeyMode) 2 else 1
+    val translatedTexts = mutableMapOf<Uri, Pair<String, List<TextBlockInfo>>>()
+    val sourceLanguages = mutableMapOf<Uri, String>()
+    var completedCount = 0
+    val totalToTranslate = translationQueue.size
         _uiState.update {
             it.copy(
                 isTranslating = true,
@@ -1060,28 +1062,39 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationQueue.poll()?.let { batch.add(it) }
             }
             if (batch.isEmpty()) break
-            // Dịch song song 2 ảnh bằng async/awaitAll
+
+            // Lấy key cho từng ảnh trong batch (nếu là Mistral/Gemini)
+            val keysForBatch: List<String?> = if (isParallelKeyMode) {
+                val repo = translationRepository
+                if (uiState.value.translationMode == TranslationMode.MISTRAL) {
+                    (0 until batch.size).map { repo.getNextMistralApiKey() }
+                } else if (uiState.value.translationMode == TranslationMode.GEMINI) {
+                    (0 until batch.size).map { repo.getNextGeminiApiKey() }
+                } else {
+                    List(batch.size) { null }
+                }
+            } else {
+                List(batch.size) { null }
+            }
+
+            // Dịch song song, truyền key tương ứng cho từng ảnh
             val results = kotlinx.coroutines.coroutineScope {
-                batch.map { uri ->
+                batch.mapIndexed { idx, uri ->
+                    val key = keysForBatch.getOrNull(idx)
                     async(Dispatchers.IO) {
                         try {
-                            // Bắt đầu timer cho ảnh này
                             startTranslationTimer(uri)
-                            
                             val (original, translatedBlocks, sourceLang) = translationRepository.recognizeAndTranslateText(
                                 uri,
-                                uiState.value.translationMode
+                                uiState.value.translationMode,
+                                key
                             )
-                            
-                            // Dừng timer sau khi dịch xong
                             if (uiState.value.currentTranslatingImage == uri) {
                                 stopTranslationTimer()
                             }
-                            
                             Triple(uri, original, translatedBlocks to sourceLang)
                         } catch (e: Exception) {
                             Log.e(TAG, "Lỗi khi dịch ảnh $uri", e)
-                            // Dừng timer nếu có lỗi
                             if (uiState.value.currentTranslatingImage == uri) {
                                 stopTranslationTimer()
                             }
