@@ -370,6 +370,10 @@ fun calculateOptimalFontSize(
     verticalPadding: Float = 0f
 ): Float {
     if (text.isBlank() || width <= 0 || height <= 0) return minFontSize
+    
+    // Ensure valid range: if maxFontSize < minFontSize, use minFontSize for both
+    val safeMinFontSize = minFontSize
+    val safeMaxFontSize = maxFontSize.coerceAtLeast(minFontSize)
 
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
@@ -379,9 +383,9 @@ fun calculateOptimalFontSize(
         }
     }
 
-    var low = minFontSize
-    var high = maxFontSize
-    var optimalFontSize = minFontSize
+    var low = safeMinFontSize
+    var high = safeMaxFontSize
+    var optimalFontSize = safeMinFontSize
 
     // Điều chỉnh hệ số scale cho hình oval để text vừa vặn
     // Dùng scale hơi lớn hơn trước (0.99) để cho phép font lớn hơn 1 bước so với trước
@@ -433,7 +437,7 @@ fun calculateOptimalFontSize(
     }
 
     // Apply a small allowance so UI can present one or two more incremental steps to the user.
-    val allowed = (optimalFontSize + extraSizeAllowance).coerceIn(minFontSize, maxFontSize)
+    val allowed = (optimalFontSize + extraSizeAllowance).coerceIn(safeMinFontSize, safeMaxFontSize)
     return allowed
 }
 
@@ -624,12 +628,15 @@ fun adjustWhiteoutBounds(
 
     // Compute an optimal font size that fits into the available area. Do not allow it
     // to grow beyond the provided fontSize (we only want to shrink when overflowing).
+    // Ensure maxFontSize is at least minFontSize to avoid invalid range.
+    val minSize = 8f
+    val maxSize = fontSize.coerceAtLeast(minSize)
     val optimal = calculateOptimalFontSize(
         text = text,
         width = availableWidth,
         height = availableHeight,
-        minFontSize = 8f,
-        maxFontSize = fontSize,
+        minFontSize = minSize,
+        maxFontSize = maxSize,
         shapeType = 0,
         context = context,
         fontFamilyName = fontFamilyName,
