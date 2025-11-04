@@ -36,7 +36,11 @@ data class TextBlockInfo(
     // Shadow properties for rendered text
     val customShadowColor: Int? = null,
     val shadowAlpha: Float = 1.0f,
-    val shadowRadius: Float = 0.0f
+    val shadowRadius: Float = 0.0f,
+    // Flag để kiểm soát việc áp dụng logic chống chồng lấn
+    // true: áp dụng merge overlapping (khi translation từ OCR)
+    // false: không áp dụng merge (khi edit hoặc di chuyển manual)
+    val applyMerge: Boolean = true
 )
 
 enum class BackgroundType {

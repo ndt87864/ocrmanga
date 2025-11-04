@@ -559,7 +559,9 @@ fun ViewerScreen(
                         // persist shadow edits as well
                         customShadowColor = dragBlock.textShadowColor?.toArgb(),
                         shadowAlpha = dragBlock.textShadowAlpha,
-                        shadowRadius = dragBlock.textShadowRadius
+                        shadowRadius = dragBlock.textShadowRadius,
+                        // Đánh dấu rằng block này đã được edit manual, không áp dụng merge logic
+                        applyMerge = false
                     ) 
                 })
             },

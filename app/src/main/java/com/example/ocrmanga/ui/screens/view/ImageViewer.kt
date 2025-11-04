@@ -318,7 +318,15 @@ fun ImageViewer(
             fun getWhiteoutShape(idx: Int) = if (idx < dragBlocks.size) dragBlocks[idx].block.shapeType else 0
             var draggingIndex by remember { mutableStateOf<Int?>(null) }
             var lastDragPos by remember { mutableStateOf(Offset.Zero) }
-            val shrinkedBlocks = splitNonOverlappingBoxes(dragBlocks.map { it.block })
+            
+            // Only apply merge logic (splitNonOverlappingBoxes) during translation/view mode when applyMerge is true
+            // Do NOT apply merge during edit mode or when blocks are manually edited
+            val shouldApplyMerge = !editTranslationMode && dragBlocks.all { it.block.applyMerge }
+            val shrinkedBlocks = if (shouldApplyMerge) {
+                splitNonOverlappingBoxes(dragBlocks.map { it.block })
+            } else {
+                dragBlocks.map { it.block }
+            }
 
             Column(
                 modifier = Modifier
