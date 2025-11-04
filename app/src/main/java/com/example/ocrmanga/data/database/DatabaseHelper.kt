@@ -77,6 +77,21 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     Log.w(TAG, "Không thể cập nhật shape_type cho dữ liệu cũ", e)
                 }
             }
+            
+            // Kiểm tra và thêm cột apply_merge nếu chưa có
+            var hasApplyMerge = false
+            val cursor2 = db.rawQuery("PRAGMA table_info(translations)", null)
+            while (cursor2.moveToNext()) {
+                val columnName = cursor2.getString(cursor2.getColumnIndexOrThrow("name"))
+                if (columnName == "apply_merge") {
+                    hasApplyMerge = true
+                }
+            }
+            cursor2.close()
+            if (!hasApplyMerge) {
+                db.execSQL("ALTER TABLE translations ADD COLUMN apply_merge INTEGER DEFAULT 1")
+                Log.i(TAG, "Đã thêm cột apply_merge vào bảng translations")
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Không thể tự động thêm cột vào bảng translations", e)
         }
@@ -769,6 +784,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put("text_boldness", textBlock.textBoldness)
                             put("overlay_saturation", textBlock.overlaySaturation)
                             put("text_saturation", textBlock.textSaturation)
+                            put("apply_merge", if (textBlock.applyMerge) 1 else 0)
                         }
                             val inserted = db.insert("translations", null, textValues)
                             if (inserted != -1L) {
@@ -917,6 +933,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("text_boldness", textBlock.textBoldness)
                                 put("overlay_saturation", textBlock.overlaySaturation)
                                 put("text_saturation", textBlock.textSaturation)
+                                put("apply_merge", if (textBlock.applyMerge) 1 else 0)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -1110,6 +1127,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("text_boldness", textBlock.textBoldness)
                                     put("overlay_saturation", textBlock.overlaySaturation)
                                     put("text_saturation", textBlock.textSaturation)
+                                    put("apply_merge", if (textBlock.applyMerge) 1 else 0)
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -1261,6 +1279,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("text_boldness", textBlock.textBoldness)
                                     put("overlay_saturation", textBlock.overlaySaturation)
                                     put("text_saturation", textBlock.textSaturation)
+                                    put("apply_merge", if (textBlock.applyMerge) 1 else 0)
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -1474,6 +1493,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put("text_boldness", textBlock.textBoldness)
                             put("overlay_saturation", textBlock.overlaySaturation)
                             put("text_saturation", textBlock.textSaturation)
+                            put("apply_merge", if (textBlock.applyMerge) 1 else 0)
                         }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -1666,7 +1686,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             orders.add(order)
 
             val textCursor = db.rawQuery("""
-                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type, background_type, average_background_color, original_text_color, custom_overlay_color, custom_text_color, overlay_alpha, text_boldness, overlay_saturation, text_saturation
+                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type, background_type, average_background_color, original_text_color, custom_overlay_color, custom_text_color, overlay_alpha, text_boldness, overlay_saturation, text_saturation, apply_merge
                 FROM translations 
                 WHERE $COLUMN_IMAGE_ID = ?
             """, arrayOf(imageId.toString()))
@@ -1717,6 +1737,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val textBoldness = if (textCursor.columnCount > 17) textCursor.getFloat(17) else 1.0f
                 val overlaySaturation = if (textCursor.columnCount > 18) textCursor.getFloat(18) else 1.0f
                 val textSaturation = if (textCursor.columnCount > 19) textCursor.getFloat(19) else 1.0f
+                val applyMerge = if (textCursor.columnCount > 20) textCursor.getInt(20) == 1 else true
                 val backgroundType = BackgroundType.values().getOrNull(backgroundTypeOrdinal) ?: BackgroundType.WHITE
                 // Try to find a matching image_blocks row for more persistent styling
                 try {
@@ -1785,6 +1806,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 shadowAlpha = shadowAlphaBlock,
                                 shadowRadius = shadowRadiusBlock,
                             fontFamily = finalFontFamily,
+                            applyMerge = applyMerge
                             // keep other fields default/null
                         ))
                         blockCursor.close()
@@ -1807,7 +1829,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             overlayAlpha = overlayAlpha,
                             textBoldness = textBoldness,
                             overlaySaturation = overlaySaturation,
-                            textSaturation = textSaturation
+                            textSaturation = textSaturation,
+                            applyMerge = applyMerge
                         ))
                     }
                 } catch (e: Exception) {
@@ -1829,7 +1852,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         overlayAlpha = overlayAlpha,
                         textBoldness = textBoldness,
                         overlaySaturation = overlaySaturation,
-                        textSaturation = textSaturation
+                        textSaturation = textSaturation,
+                        applyMerge = applyMerge
                     ))
                 }
             }

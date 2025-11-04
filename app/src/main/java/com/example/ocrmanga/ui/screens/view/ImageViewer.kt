@@ -290,6 +290,10 @@ fun ImageViewer(
                             }
                             if (match != null) {
                                 nb.copy(
+                                    block = nb.block.copy(
+                                        // Preserve applyMerge flag from edited block (should be false after edit)
+                                        applyMerge = match.block.applyMerge
+                                    ),
                                     // preserve any user-set shadow properties and custom lineSpacing
                                     textShadowColor = match.textShadowColor,
                                     textShadowAlpha = match.textShadowAlpha,

@@ -103,7 +103,9 @@ fun ViewerScreen(
                         // Preserve shadow settings from edit state so they persist after save/exit
                         customShadowColor = dragBlock.textShadowColor?.toArgb(),
                         shadowAlpha = dragBlock.textShadowAlpha,
-                        shadowRadius = dragBlock.textShadowRadius
+                        shadowRadius = dragBlock.textShadowRadius,
+                        // ✅ Đánh dấu block đã được edit - không áp dụng logic chống chồng lấn
+                        applyMerge = false
                     ) 
                 })
             }
@@ -117,23 +119,31 @@ fun ViewerScreen(
     LaunchedEffect(uiState.imageUris, uiState.translatedTexts, uiState.translationVersion, editTranslationMode) {
         uiState.imageUris.forEach { uri ->
             val currentTranslatedBlocks = uiState.translatedTexts[uri]?.second
-            
             // Chỉ rebuild dragBlocksMap khi KHÔNG ở edit mode để tránh override các thay đổi đang được edit
             // Khi ở edit mode, dragBlocksMap được quản lý bởi ImageViewer
             if (!editTranslationMode) {
                 // Luôn cập nhật dragBlocksMap từ translatedTexts mới
                 // Nếu không có translatedTexts (mode OFF), xóa blocks
                 if (currentTranslatedBlocks != null) {
+                    // Get old blocks to check which ones have been edited (applyMerge=false)
+                    // Dùng bounds làm key duy nhất để nhận diện block đã edit, KHÔNG dùng text
+                    val oldBlocks = dragBlocksMap[uri]?.associateBy { it.block.bounds } ?: emptyMap()
+
                     val blocks = currentTranslatedBlocks.map { block ->
                         // Ensure overlay int includes opaque alpha so Color(...) isn't transparent
                         val rawOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
                         val overlayColorInt = rawOverlay or 0xFF000000.toInt()
                         val textColorInt = block.customTextColor ?: computeDefaultTextColor(overlayColorInt, block.averageBackgroundColor)
 
+                        // Check if this block was previously edited (applyMerge=false)
+                        val oldBlock = oldBlocks[block.bounds]
+                        val shouldApplyMerge = oldBlock?.block?.applyMerge ?: true // Default to true (from translation)
+
                         DragBlockState(
                             block = block.copy(
                                 customOverlayColor = overlayColorInt,
-                                customTextColor = textColorInt
+                                customTextColor = textColorInt,
+                                applyMerge = shouldApplyMerge
                             ),
                             offset = androidx.compose.ui.geometry.Offset.Zero,
                             fontSize = block.fontSize,
