@@ -670,7 +670,7 @@ class TranslationRepository(private val application: Application) {
                     //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
-                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize))
+                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize, applyMerge = true))
                 }
                 
                 resultText = blocks.joinToString("\n") { it.text }
@@ -763,7 +763,7 @@ class TranslationRepository(private val application: Application) {
                     //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
-                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize))
+                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize, applyMerge = true))
                 }
                 
                 resultText = blocks.joinToString("\n") { it.text }
@@ -832,7 +832,7 @@ class TranslationRepository(private val application: Application) {
                         }
                         //log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
                         val newBounds = adjustBoundsForTranslatedText(reformattedText.orEmpty(), block.bounds, block.fontSize, 1.0f)
-                        block.copy(text = reformattedText.orEmpty(), bounds = newBounds)
+                        block.copy(text = reformattedText.orEmpty(), bounds = newBounds, applyMerge = true)
                     }
                 }
                 blocks.addAll(deferredBlocks.awaitAll())
@@ -890,7 +890,7 @@ class TranslationRepository(private val application: Application) {
                         naturalText
                     }
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
-                    blocks2.add(block.copy(text = reformattedText, bounds = newBounds))
+                    blocks2.add(block.copy(text = reformattedText, bounds = newBounds, applyMerge = true))
                 }
                 val resultText2 = blocks2.joinToString("\n") { it.text }
                 val detectedFinal2 = detectLanguage(resultText2) ?: ""
@@ -919,12 +919,12 @@ class TranslationRepository(private val application: Application) {
                     }
                     val retryLang = detectLanguage(retryText) ?: ""
                     if (retryLang == "vi") {
-                        block.copy(text = postProcessTranslation(retryText))
+                        block.copy(text = postProcessTranslation(retryText), applyMerge = true)
                     } else {
-                        block
+                        block.copy(applyMerge = true)
                     }
                 } else {
-                    block
+                    block.copy(applyMerge = true)
                 }
             }
             val finalResultText = finalBlocks.joinToString("\n") { it.text }
