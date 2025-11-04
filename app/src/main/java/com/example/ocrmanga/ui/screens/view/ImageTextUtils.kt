@@ -242,7 +242,7 @@ fun mergeOverlappingRegions(
                     height = mergedRect.height,
                     minFontSize = minFontSize,
                     shapeType = currentBlock.shapeType,
-                    extraSizeAllowance = 2f
+                    extraSizeAllowance = 4f
                 )
 
 
@@ -388,8 +388,8 @@ fun calculateOptimalFontSize(
     var optimalFontSize = safeMinFontSize
 
     // Điều chỉnh hệ số scale cho hình oval để text vừa vặn
-    // Dùng scale hơi lớn hơn trước (0.99) để cho phép font lớn hơn 1 bước so với trước
-    val widthScale = if (shapeType == 1) 0.99f else 0.999f
+    // Tăng vùng text trong oval lên tối đa: 99% chiều dọc, 93% chiều ngang
+    val widthScale = if (shapeType == 1) 0.93f else 0.999f
     val heightScale = if (shapeType == 1) 0.99f else 0.999f
 
     // Compute available drawing area after applying explicit paddings.
@@ -417,17 +417,17 @@ fun calculateOptimalFontSize(
         val heightFits = textHeight <= safeHeight * heightScale
         val widthFits = maxLineWidth <= safeWidth * widthScale
 
-// Chỉ coi là "fit" khi cả hai đều vừa hoặc khi chiều cao hơi thiếu nhưng chiều rộng vẫn ok.
-// Mục tiêu: tận dụng tối đa vùng overlay mà không bị tràn.
+// Cho phép text tràn nhiều hơn trong oval để tận dụng tối đa không gian (99% dọc, 93% ngang)
+// Mục tiêu: giảm vùng trống, tăng kích thước text
         if (heightFits && widthFits) {
             optimalFontSize = mid
             low = mid + 0.2f
-        } else if (heightFits && !widthFits && maxLineWidth <= safeWidth * 1.1f) {
-            // Cho phép tràn nhẹ 10% chiều ngang
+        } else if (heightFits && !widthFits && maxLineWidth <= safeWidth * 1.25f) {
+            // Cho phép tràn 25% chiều ngang cho oval (thay vì 10%)
             optimalFontSize = mid
             low = mid + 0.2f
-        } else if (!heightFits && textHeight <= safeHeight * 1.05f && widthFits) {
-            // Cho phép tràn nhẹ 5% chiều cao
+        } else if (!heightFits && textHeight <= safeHeight * 1.15f && widthFits) {
+            // Cho phép tràn 15% chiều cao cho oval (thay vì 5%)
             optimalFontSize = mid
             low = mid + 0.2f
         } else {
@@ -578,10 +578,10 @@ fun DrawScope.drawText(
             // margin so text doesn't touch the top/bottom edges. This makes viewing
             // and editing feel less cramped.
             val totalTextHeight = lines.size * lineHeight
-            // Giảm margin và canh sát overlay hơn
-            val margin = fontSize * 0.5f // gần như bỏ padding
+            // Tối thiểu hóa margin để tận dụng tối đa vùng overlay (chỉ 1% margin)
+            val margin = fontSize * 0.01f // margin rất nhỏ, gần như sát edge
             val availableHeight = (height - margin * 2f).coerceAtLeast(lineHeight)
-            val startY = y + margin - fontMetrics.ascent // bắt đầu từ đỉnh overlay
+            val startY = y + margin - fontMetrics.ascent // bắt đầu từ gần đỉnh overlay
 
             var currentY = startY
             for (line in lines) {
