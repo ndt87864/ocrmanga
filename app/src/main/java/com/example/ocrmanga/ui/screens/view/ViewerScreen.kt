@@ -135,9 +135,10 @@ fun ViewerScreen(
                         val overlayColorInt = rawOverlay or 0xFF000000.toInt()
                         val textColorInt = block.customTextColor ?: computeDefaultTextColor(overlayColorInt, block.averageBackgroundColor)
 
-                        // Check if this block was previously edited (applyMerge=false)
+                        // ✅ Ưu tiên applyMerge từ block load từ DB, giữ nguyên oldBlock nếu có
+                        // Nếu load từ DB thì block.applyMerge đã có giá trị đúng từ database
                         val oldBlock = oldBlocks[block.bounds]
-                        val shouldApplyMerge = oldBlock?.block?.applyMerge ?: true // Default to true (from translation)
+                        val shouldApplyMerge = oldBlock?.block?.applyMerge ?: block.applyMerge
 
                         DragBlockState(
                             block = block.copy(

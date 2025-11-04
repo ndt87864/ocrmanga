@@ -305,7 +305,14 @@ fun ImageViewer(
                                     // keep any manual offset made during editing
                                     offset = match.offset
                                 )
-                            } else nb
+                            } else {
+                                // ✅ Không tìm thấy match - giữ nguyên applyMerge từ block (từ DB)
+                                nb.copy(
+                                    block = nb.block.copy(
+                                        applyMerge = nb.block.applyMerge
+                                    )
+                                )
+                            }
                         }
                     } else rawNewBlocks
 
