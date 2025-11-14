@@ -1571,6 +1571,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         customShadowColor = state.textShadowColor?.toArgb(),
                         shadowAlpha = state.textShadowAlpha,
                         shadowRadius = state.textShadowRadius,
+                        lineSpacing = state.lineSpacing,
                         // Log the resulting TextBlockInfo shadow values for debugging
                         // (log after copy isn't trivial here; include in-line values)
                         fontSize = state.fontSize ?: b.fontSize

@@ -104,6 +104,8 @@ fun ViewerScreen(
                         customShadowColor = dragBlock.textShadowColor?.toArgb(),
                         shadowAlpha = dragBlock.textShadowAlpha,
                         shadowRadius = dragBlock.textShadowRadius,
+                        // ✅ Lưu lineSpacing từ edit state
+                        lineSpacing = dragBlock.lineSpacing,
                         // ✅ Đánh dấu block đã được edit - không áp dụng logic chống chồng lấn
                         applyMerge = false
                     ) 
@@ -155,6 +157,7 @@ fun ViewerScreen(
                             textBoldness = block.textBoldness,
                             overlaySaturation = block.overlaySaturation,
                             textSaturation = block.textSaturation,
+                            lineSpacing = block.lineSpacing,
                             textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
                             textBorderThickness = block.borderThickness,
                             textBorderAlpha = block.borderAlpha,

@@ -138,7 +138,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 11
+    private const val DATABASE_VERSION = 12
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -206,6 +206,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     const val COLUMN_BLOCK_ROTATION = "rotation"
     const val COLUMN_BLOCK_FONT_FAMILY = "font_family"
     const val COLUMN_BLOCK_FONT_SIZE = "font_size"
+    const val COLUMN_BLOCK_LINE_SPACING = "line_spacing"
         // change_images table to track whether an image has been interacted with
         const val TABLE_CHANGE_IMAGES = "change_images"
         const val COLUMN_CHANGE_IMAGE_ID = "change_image_id"
@@ -303,6 +304,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_BLOCK_ROTATION REAL DEFAULT 0.0,
                 $COLUMN_BLOCK_FONT_FAMILY TEXT DEFAULT '',
                 $COLUMN_BLOCK_FONT_SIZE REAL DEFAULT 12.0,
+                line_spacing REAL DEFAULT 1.0,
                 FOREIGN KEY ($COLUMN_BLOCK_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
             """
@@ -521,6 +523,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.w(TAG, "Không thể tạo bảng $TABLE_CHANGE_IMAGES", e)
             }
         }
+        // Add lineSpacing column in version 12
+        if (oldVersion < 12) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN line_spacing REAL DEFAULT 1.0")
+                Log.i(TAG, "Đã thêm cột line_spacing vào $TABLE_IMAGE_BLOCKS")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm cột line_spacing (có thể đã tồn tại)", e)
+            }
+        }
     }
 
     // --- Helper methods for image blocks CRUD ---
@@ -545,7 +556,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                          shadowRadius: Float = 0f,
                          rotation: Float = 0f,
                          fontFamily: String = "",
-                         fontSize: Float = 12f
+                         fontSize: Float = 12f,
+                         lineSpacing: Float = 1.0f
     ): Long {
         val db = writableDatabase
         if (shadowColor != null || shadowAlpha != 1.0f || shadowRadius != 0f) {
@@ -577,6 +589,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put(COLUMN_BLOCK_ROTATION, rotation)
                             put(COLUMN_BLOCK_FONT_FAMILY, fontFamily)
                             put(COLUMN_BLOCK_FONT_SIZE, fontSize)
+                            put(COLUMN_BLOCK_LINE_SPACING, lineSpacing)
                         }
                         val id = db.insert(TABLE_IMAGE_BLOCKS, null, values)
         Log.i(TAG, "Inserted image_block id=$id imageId=$imageId borderColor=${borderColor?.toString() ?: "null"} borderThickness=$borderThickness fontFamily='$fontFamily' shadowColor=${shadowColor?.toString() ?: "null"} shadowAlpha=$shadowAlpha shadowRadius=$shadowRadius")
@@ -816,7 +829,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     shadowRadius = textBlock.shadowRadius ?: 0f,
                                     rotation = textBlock.rotation ?: 0f,
                                     fontFamily = textBlock.fontFamily,
-                                    fontSize = textBlock.fontSize
+                                    fontSize = textBlock.fontSize,
+                                    // ✅ Truyền lineSpacing từ TextBlockInfo
+                                    lineSpacing = textBlock.lineSpacing
                                 )
                             } catch (e: Exception) {
                                 Log.w(TAG, "Không thể lưu image_block cho image $imageId khi applyPendingChanges", e)
@@ -979,7 +994,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             shadowRadius = textBlock.shadowRadius ?: 0f,
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
-                                            fontSize = textBlock.fontSize
+                                            fontSize = textBlock.fontSize,
+                                            // ✅ Truyền lineSpacing từ TextBlockInfo
+                                            lineSpacing = textBlock.lineSpacing
                                         )
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -1161,7 +1178,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             shadowRadius = textBlock.shadowRadius ?: 0f,
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
-                                            fontSize = textBlock.fontSize
+                                            fontSize = textBlock.fontSize,
+                                            // ✅ Truyền lineSpacing từ TextBlockInfo
+                                            lineSpacing = textBlock.lineSpacing
                                         )
                                         // After inserting translations for this image, clear change flag
                                         try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
@@ -1313,7 +1332,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             shadowRadius = textBlock.shadowRadius ?: 0f,
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
-                                            fontSize = textBlock.fontSize
+                                            fontSize = textBlock.fontSize,
+                                            // ✅ Truyền lineSpacing từ TextBlockInfo
+                                            lineSpacing = textBlock.lineSpacing
                                         )
                                             // translations for existing image updated => clear change flag
                                             try { clearImageChange(resolvedId) } catch (e: Exception) { /* ignore */ }
@@ -1528,7 +1549,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     shadowRadius = textBlock.shadowRadius ?: 0f,
                                     rotation = textBlock.rotation ?: 0f,
                                     fontFamily = textBlock.fontFamily,
-                                    fontSize = textBlock.fontSize
+                                    fontSize = textBlock.fontSize,
+                                    // ✅ Truyền lineSpacing từ TextBlockInfo
+                                    lineSpacing = textBlock.lineSpacing
                                 )
                             } catch (e: Exception) {
                                 Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -1781,12 +1804,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             val shadowColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR)) else null
                             val shadowAlphaBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
                             val shadowRadiusBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_RADIUS)).toFloat() } catch (e: Exception) { 0f }
+                            val lineSpacingBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_LINE_SPACING)).toFloat() } catch (e: Exception) { 1.0f }
                             // Log shadow values loaded from image_blocks for debugging
 
                         textBlocks.add(TextBlockInfo(
                             text = translatedText,
                             bounds = bounds,
                             fontSize = fontSizeBlock,
+                            lineSpacing = lineSpacingBlock,
                             rotation = rotationBlock,
                             originalImageWidth = originalImageWidth,
                             originalImageHeight = originalImageHeight,
@@ -1817,6 +1842,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             text = translatedText,
                             bounds = bounds,
                             fontSize = fontSize,
+                            lineSpacing = 1.0f,
                             rotation = rotation,
                             originalImageWidth = originalImageWidth,
                             originalImageHeight = originalImageHeight,
@@ -1840,6 +1866,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         text = translatedText,
                         bounds = bounds,
                         fontSize = fontSize,
+                        lineSpacing = 1.0f,
                         rotation = rotation,
                         originalImageWidth = originalImageWidth,
                         originalImageHeight = originalImageHeight,
