@@ -954,8 +954,8 @@ fun TranslationEditor(
                         Slider(
                             value = currentSpacing,
                             onValueChange = { currentSpacing = it },
-                            valueRange = 0.6f..2.5f,
-                            steps = 38, // step ~0.05
+                            valueRange = 1f..2.3f,
+                            steps = 64, // step ≈ 0.02
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(modifier = Modifier.height(8.dp))
