@@ -734,6 +734,17 @@ fun TranslationEditor(
                                         onClick = {
                                             selectedFontName = name
                                             fontDropdownExpanded = false
+                                            // Update lineSpacing to default for selected font
+                                            val defaultLineSpacing = when {
+                                                name.equals("mto_comic_1", ignoreCase = true) -> 1.1f
+                                                name.equals("mto_augie", ignoreCase = true) || name.contains("augie", ignoreCase = true) -> 2.0f
+                                                else -> 1.0f
+                                            }
+                                            // Only update lineSpacing for the currently selected block
+                                            onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                                val oldBlock = list[idx]
+                                                list[idx] = oldBlock.copy(lineSpacing = defaultLineSpacing)
+                                            })
                                         }
                                     )
                                 }
@@ -773,10 +784,16 @@ fun TranslationEditor(
                             onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                                 val oldBlock = list[idx]
                                 val newBlocks = nonBlankParts.mapIndexed { index, text ->
+                                    val defaultLineSpacing = when {
+                                        selectedFontName.equals("mto_comic_1", ignoreCase = true) -> 1.1f
+                                        selectedFontName.equals("mto_augie", ignoreCase = true) || selectedFontName.contains("augie", ignoreCase = true) -> 2.0f
+                                        else -> 1.0f
+                                    }
                                     oldBlock.copy(
                                         block = oldBlock.block.copy(
                                             text = text,
-                                            fontFamily = selectedFontName
+                                            fontFamily = selectedFontName,
+                                            lineSpacing = defaultLineSpacing
                                         )
                                     )
                                 }
