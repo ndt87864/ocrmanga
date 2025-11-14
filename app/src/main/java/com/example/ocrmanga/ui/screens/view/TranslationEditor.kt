@@ -93,6 +93,8 @@ fun TranslationEditor(
     var showShadowColorPicker by remember { mutableStateOf(false) }
     // State cho chỉnh khoảng cách dòng
     var showLineSpacingDialog by remember { mutableStateOf(false) }
+    // Lưu giá trị lineSpacing hiện tại của block đang chọn để truyền vào form
+    var initialLineSpacing by remember { mutableStateOf(1.0f) }
 
     // --- EFFECTS ---
     // Hoist LaunchedEffects to the top level so they are always active
@@ -460,7 +462,12 @@ fun TranslationEditor(
 
                         // Nút chỉnh khoảng cách dòng (đặt riêng để tránh lồng nhau)
                         IconButton(
-                            onClick = { if (isBlockSelected) showLineSpacingDialog = true },
+                            onClick = {
+                                if (isBlockSelected && selectedIndex != null) {
+                                    initialLineSpacing = dragBlocks[selectedIndex].lineSpacing
+                                    showLineSpacingDialog = true
+                                }
+                            },
                             enabled = isBlockSelected
                         ) {
                             Icon(
@@ -935,8 +942,8 @@ fun TranslationEditor(
         // Dialog chỉnh khoảng cách dòng
         if (showLineSpacingDialog && isBlockSelected && selectedIndex != null) {
             val idx = selectedIndex
-            val initialSpacing = dragBlocks[idx].lineSpacing
-            var currentSpacing by remember(initialSpacing) { mutableStateOf(initialSpacing) }
+            // Sử dụng initialLineSpacing đã truyền vào khi mở dialog
+            var currentSpacing by remember(initialLineSpacing) { mutableStateOf(initialLineSpacing) }
             AlertDialog(
                 onDismissRequest = { showLineSpacingDialog = false },
                 title = { Text("Khoảng cách dòng") },

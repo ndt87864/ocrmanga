@@ -10,7 +10,7 @@ data class TextBlockInfo(
     val text: String,
     val bounds: Rect,
     val fontSize: Float,
-    val lineSpacing: Float = 1.0f, // Khoảng cách dòng (multiplier), 1.0 = mặc định
+        val lineSpacing: Float = if (fontFamily == "comic_1") 1.1f else 1.0f, // Khoảng cách dòng (multiplier), comic_1 = 1.09, mặc định = 1.0
     val isVertical: Boolean = false,
     val rotation: Float? = null,
     val polygon: Path? = null,
