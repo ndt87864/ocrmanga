@@ -92,6 +92,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 db.execSQL("ALTER TABLE translations ADD COLUMN apply_merge INTEGER DEFAULT 1")
                 Log.i(TAG, "Đã thêm cột apply_merge vào bảng translations")
             }
+            
+            // Kiểm tra và thêm cột pending_delete nếu chưa có
+            var hasPendingDelete = false
+            val cursor3 = db.rawQuery("PRAGMA table_info(translations)", null)
+            while (cursor3.moveToNext()) {
+                val colName = cursor3.getString(cursor3.getColumnIndexOrThrow("name"))
+                if (colName == "pending_delete") {
+                    hasPendingDelete = true
+                    break
+                }
+            }
+            cursor3.close()
+            if (!hasPendingDelete) {
+                db.execSQL("ALTER TABLE translations ADD COLUMN pending_delete INTEGER DEFAULT 0")
+                Log.i(TAG, "Đã thêm cột pending_delete vào bảng translations")
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Không thể tự động thêm cột vào bảng translations", e)
         }
@@ -138,7 +154,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 13
+    private const val DATABASE_VERSION = 14
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -259,6 +275,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 text_boldness REAL DEFAULT 1.0, -- New column: độ đậm text
                 overlay_saturation REAL DEFAULT 1.0, -- New column: độ bão hòa overlay
                 text_saturation REAL DEFAULT 1.0, -- New column: độ bão hòa text
+                pending_delete INTEGER DEFAULT 0, -- New column: đánh dấu pending delete khi retranslate
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
@@ -532,6 +549,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.w(TAG, "Không thể thêm cột line_spacing (có thể đã tồn tại)", e)
             }
         }
+        // Add pending_delete column to translations in version 14
+        if (oldVersion < 14) {
+            try {
+                db.execSQL("ALTER TABLE translations ADD COLUMN pending_delete INTEGER DEFAULT 0")
+                Log.i(TAG, "Đã thêm cột pending_delete vào bảng translations")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm cột pending_delete (có thể đã tồn tại)", e)
+            }
+        }
     }
 
     // --- Helper methods for image blocks CRUD ---
@@ -738,6 +764,52 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
+    /**
+     * Đánh dấu tất cả bản dịch cũ của một imageId là pending_delete = 1
+     * Được gọi khi bắt đầu retranslate một ảnh
+     */
+    fun markTranslationsAsPendingDelete(imageId: Long) {
+        val db = writableDatabase
+        try {
+            val values = ContentValues().apply { put("pending_delete", 1) }
+            val rowsUpdated = db.update("translations", values, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            Log.i(TAG, "Marked $rowsUpdated translations as pending_delete for imageId=$imageId")
+        } catch (e: Exception) {
+            Log.w(TAG, "markTranslationsAsPendingDelete failed for imageId=$imageId", e)
+        }
+    }
+
+    /**
+     * Xóa tất cả bản dịch pending_delete của một imageId
+     * Được gọi sau khi lưu bản dịch mới thành công
+     */
+    fun deletePendingTranslations(imageId: Long): Int {
+        val db = writableDatabase
+        try {
+            val rowsDeleted = db.delete("translations", "$COLUMN_IMAGE_ID = ? AND pending_delete = 1", arrayOf(imageId.toString()))
+            Log.i(TAG, "Deleted $rowsDeleted pending translations for imageId=$imageId")
+            return rowsDeleted
+        } catch (e: Exception) {
+            Log.w(TAG, "deletePendingTranslations failed for imageId=$imageId", e)
+            return 0
+        }
+    }
+
+    /**
+     * Hủy trạng thái pending_delete cho tất cả bản dịch của một imageId
+     * Được gọi khi retranslate thất bại hoặc bị hủy
+     */
+    fun clearPendingDeleteStatus(imageId: Long) {
+        val db = writableDatabase
+        try {
+            val values = ContentValues().apply { put("pending_delete", 0) }
+            val rowsUpdated = db.update("translations", values, "$COLUMN_IMAGE_ID = ? AND pending_delete = 1", arrayOf(imageId.toString()))
+            Log.i(TAG, "Cleared pending_delete status for $rowsUpdated translations of imageId=$imageId")
+        } catch (e: Exception) {
+            Log.w(TAG, "clearPendingDeleteStatus failed for imageId=$imageId", e)
+        }
+    }
+
     // Get list of image IDs with is_changed = 1 for a specific room
     fun getChangedImageIdsForRoom(roomId: Long): List<Long> {
         val db = readableDatabase
@@ -767,7 +839,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         try {
             val changedIds = getChangedImageIdsForRoom(roomId)
             for (imageId in changedIds) {
-                // delete old translations and blocks
+                // delete old translations and blocks (including pending_delete ones)
                 db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                 try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
 
@@ -964,6 +1036,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     
                                     // After inserting translations for this image, ensure change flag cleared (applied)
                                     try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
+                                    // Delete pending translations after successful save
+                                    try { deletePendingTranslations(imageId) } catch (e: Exception) { /* ignore */ }
                                     // Log để debug màu text khi lưu
                                     Log.d(TAG, "Lưu vào image_blocks - textColor: $textColor (hex: ${String.format("#%08X", textColor ?: 0)})")
                                     Log.d(TAG, "  customTextColor: ${textBlock.customTextColor} (hex: ${String.format("#%08X", textBlock.customTextColor ?: 0)})")
@@ -1184,6 +1258,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                         )
                                         // After inserting translations for this image, clear change flag
                                         try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
+                                        // Delete pending translations after successful save
+                                        try { deletePendingTranslations(imageId) } catch (e: Exception) { /* ignore */ }
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
                                     }
@@ -1338,6 +1414,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                         )
                                             // translations for existing image updated => clear change flag
                                             try { clearImageChange(resolvedId) } catch (e: Exception) { /* ignore */ }
+                                            // Delete pending translations after successful save
+                                            try { deletePendingTranslations(resolvedId) } catch (e: Exception) { /* ignore */ }
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
                                     }
@@ -1553,6 +1631,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     // ✅ Truyền lineSpacing từ TextBlockInfo
                                     lineSpacing = textBlock.lineSpacing
                                 )
+                                // Clear change flag after successful save
+                                try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
+                                // Delete pending translations after successful save
+                                try { deletePendingTranslations(imageId) } catch (e: Exception) { /* ignore */ }
                             } catch (e: Exception) {
                                 Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
                             }
@@ -1711,7 +1793,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val textCursor = db.rawQuery("""
                 SELECT translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type, background_type, average_background_color, original_text_color, custom_overlay_color, custom_text_color, overlay_alpha, text_boldness, overlay_saturation, text_saturation, apply_merge
                 FROM translations 
-                WHERE $COLUMN_IMAGE_ID = ?
+                WHERE $COLUMN_IMAGE_ID = ? AND (pending_delete IS NULL OR pending_delete = 0)
             """, arrayOf(imageId.toString()))
 
             val textBlocks = mutableListOf<TextBlockInfo>()

@@ -66,6 +66,18 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 return@launch
             }
+            
+            // Đánh dấu bản dịch cũ là pending_delete trước khi dịch mới
+            val imageId = uriToImageId[uri]
+            if (imageId != null) {
+                try {
+                    databaseHelper.markTranslationsAsPendingDelete(imageId)
+                    Log.i(TAG, "[RETRANSLATE] Marked old translations as pending_delete for imageId=$imageId")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to mark pending delete for imageId=$imageId", e)
+                }
+            }
+            
             startTranslationTimer(uri)
             _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
@@ -74,6 +86,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // entry trong translatedTexts (khiến UI nghĩ ảnh đang chờ dịch và hiển thị
                 // overlay "Đang tải bản dịch..."), ghi một entry rỗng "" -> emptyList()
                 // để đánh dấu ảnh đã được xử lý nhưng không có bản dịch.
+                
+                // Hủy trạng thái pending_delete vì không dịch mới
+                if (imageId != null) {
+                    try {
+                        databaseHelper.clearPendingDeleteStatus(imageId)
+                        Log.i(TAG, "[RETRANSLATE-OFF] Cleared pending_delete status for imageId=$imageId")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to clear pending delete for imageId=$imageId", e)
+                    }
+                }
+                
                 _uiState.update { state ->
                     state.copy(
                         translatedTexts = state.translatedTexts + (uri to ("" to emptyList())),
@@ -89,41 +112,53 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
             // Nếu không phải OFF, tiến hành dịch bình thường
             if (mode != TranslationMode.OFF) {
-                val result = translationRepository.translateImage(uri, mode)
-                // Ensure blocks have overlay/text colors set similarly to queued translations
-                val (originalText, blocks) = result
-                val fixedBlocks = blocks.map { block ->
-                    val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
-                    val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
-                    block.copy(
-                        customOverlayColor = baseOverlay,
-                        customTextColor = textColor,
-                        // Set applyMerge = true khi retranslate để áp dụng logic chống chồng lấn
-                        applyMerge = true
-                    )
-                }
-                // Debug log to help verify colors applied for retranslateImage
-                fixedBlocks.forEachIndexed { idx, b ->
-                    Log.d(TAG, "[RETRANSLATE] uri=$uri block#$idx overlay=0x${b.customOverlayColor?.toUInt()?.toString(16)} text=0x${b.customTextColor?.toUInt()?.toString(16)} avgBg=${b.averageBackgroundColor}")
-                }
-                _uiState.update {
-                    it.copy(
-                        translatedTexts = it.translatedTexts + (uri to (originalText to fixedBlocks)),
-                        translatedStatus = it.translatedStatus + (uri to true),
-                        translationEnabled = true, // Bật hiển thị dịch cho UI nếu cần
-                        // Tăng translationVersion để force UI update blocks mới
-                        translationVersion = it.translationVersion + 1
-                    )
-                }
-                // Mark as dirty and set DB change flag if this image belongs to a saved room
-                dirtyUris.add(uri)
-                val rid = _uiState.value.roomId
-                val imageId = uriToImageId[uri]
-                if (rid != null && imageId != null) {
-                    try {
-                        val numChanged = databaseHelper.markImageChanged(imageId, rid)
-                        if (numChanged >= 5) maybeAutoSaveChangedImages(rid)
-                    } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
+                try {
+                    val result = translationRepository.translateImage(uri, mode)
+                    // Ensure blocks have overlay/text colors set similarly to queued translations
+                    val (originalText, blocks) = result
+                    val fixedBlocks = blocks.map { block ->
+                        val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                        val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
+                        block.copy(
+                            customOverlayColor = baseOverlay,
+                            customTextColor = textColor,
+                            // Set applyMerge = true khi retranslate để áp dụng logic chống chồng lấn
+                            applyMerge = true
+                        )
+                    }
+                    // Debug log to help verify colors applied for retranslateImage
+                    fixedBlocks.forEachIndexed { idx, b ->
+                        Log.d(TAG, "[RETRANSLATE] uri=$uri block#$idx overlay=0x${b.customOverlayColor?.toUInt()?.toString(16)} text=0x${b.customTextColor?.toUInt()?.toString(16)} avgBg=${b.averageBackgroundColor}")
+                    }
+                    _uiState.update {
+                        it.copy(
+                            translatedTexts = it.translatedTexts + (uri to (originalText to fixedBlocks)),
+                            translatedStatus = it.translatedStatus + (uri to true),
+                            translationEnabled = true, // Bật hiển thị dịch cho UI nếu cần
+                            // Tăng translationVersion để force UI update blocks mới
+                            translationVersion = it.translationVersion + 1
+                        )
+                    }
+                    // Mark as dirty and set DB change flag if this image belongs to a saved room
+                    dirtyUris.add(uri)
+                    val rid = _uiState.value.roomId
+                    if (rid != null && imageId != null) {
+                        try {
+                            val numChanged = databaseHelper.markImageChanged(imageId, rid)
+                            if (numChanged >= 5) maybeAutoSaveChangedImages(rid)
+                        } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "[RETRANSLATE] Translation failed for uri=$uri", e)
+                    // Nếu dịch thất bại, hủy trạng thái pending_delete để giữ bản dịch cũ
+                    if (imageId != null) {
+                        try {
+                            databaseHelper.clearPendingDeleteStatus(imageId)
+                            Log.i(TAG, "[RETRANSLATE-FAIL] Cleared pending_delete status for imageId=$imageId")
+                        } catch (ex: Exception) {
+                            Log.w(TAG, "Failed to clear pending delete after translation failure for imageId=$imageId", ex)
+                        }
+                    }
                 }
             }
             stopTranslationTimer()
