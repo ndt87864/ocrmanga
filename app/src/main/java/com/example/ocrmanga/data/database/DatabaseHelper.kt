@@ -870,6 +870,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put("overlay_saturation", textBlock.overlaySaturation)
                             put("text_saturation", textBlock.textSaturation)
                             put("apply_merge", if (textBlock.applyMerge) 1 else 0)
+                            put("pending_delete", 0)
                         }
                             val inserted = db.insert("translations", null, textValues)
                             if (inserted != -1L) {
@@ -1021,6 +1022,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("overlay_saturation", textBlock.overlaySaturation)
                                 put("text_saturation", textBlock.textSaturation)
                                 put("apply_merge", if (textBlock.applyMerge) 1 else 0)
+                                put("pending_delete", 0)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -1219,6 +1221,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("overlay_saturation", textBlock.overlaySaturation)
                                     put("text_saturation", textBlock.textSaturation)
                                     put("apply_merge", if (textBlock.applyMerge) 1 else 0)
+                                    put("pending_delete", 0)
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -1375,6 +1378,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("overlay_saturation", textBlock.overlaySaturation)
                                     put("text_saturation", textBlock.textSaturation)
                                     put("apply_merge", if (textBlock.applyMerge) 1 else 0)
+                                    put("pending_delete", 0)
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -1593,6 +1597,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put("overlay_saturation", textBlock.overlaySaturation)
                             put("text_saturation", textBlock.textSaturation)
                             put("apply_merge", if (textBlock.applyMerge) 1 else 0)
+                            put("pending_delete", 0)
                         }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -1766,7 +1771,23 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     fun getMangaRoom(roomId: Long): Triple<List<Uri>, List<Int>, Map<Uri, Pair<String, List<TextBlockInfo>>>> {
-        val db = readableDatabase
+        val db = writableDatabase
+        
+        // Xóa tất cả bản dịch có pending_delete = 1 cho room này
+        db.execSQL("""
+            DELETE FROM translations 
+            WHERE image_id IN (
+                SELECT image_id FROM images WHERE room_id = ?
+            ) AND pending_delete = 1
+        """, arrayOf(roomId.toString()))
+        
+        // Chuyển tất cả is_changed về 0 cho images trong room
+        db.execSQL("""
+            UPDATE $TABLE_CHANGE_IMAGES 
+            SET $COLUMN_CHANGE_IMAGE_FLAG = 0 
+            WHERE $COLUMN_CHANGE_IMAGE_ROOM_ID = ?
+        """, arrayOf(roomId.toString()))
+        
         val images = mutableListOf<Uri>()
         val orders = mutableListOf<Int>()
         val translations = mutableMapOf<Uri, Pair<String, MutableList<TextBlockInfo>>>()
