@@ -106,6 +106,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         }
                         db.update(DatabaseHelper.TABLE_IMAGES, imageValues, "${DatabaseHelper.COLUMN_IMAGE_ID} = ?", arrayOf(imageId.toString()))
                         Log.i(TAG, "[RETRANSLATE-OFF] Marked image as untranslated in TABLE_IMAGES for imageId=$imageId")
+                        
+                        // Track this deletion for save count
+                        deletedTranslationUris.add(uri)
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to delete translations for imageId=$imageId", e)
                     }
@@ -244,6 +247,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private val dirtyUris = mutableSetOf<Uri>()
     // Map from URI (string) to image_id in DB for current loaded room
     private val uriToImageId = mutableMapOf<Uri, Long>()
+    // Track images that had translations deleted (OFF mode)
+    private val deletedTranslationUris = mutableSetOf<Uri>()
+    // Track images removed from room
+    private val removedImageIds = mutableSetOf<Long>()
     private var translationJob: Job? = null
     private var timerJob: Job? = null
 
@@ -464,6 +471,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun loadRoom(roomId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Clear tracking variables when loading a room
+                dirtyUris.clear()
+                deletedTranslationUris.clear()
+                removedImageIds.clear()
+                newImageUris.clear()
+                uriToImageId.clear()
+                
                 //log.i(TAG, "Đang tải phòng $roomId")
                 val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
                 // ĐẢM BẢO: KHÔNG loại bỏ ảnh đầu (coverUri) khỏi danh sách ảnh phòng!
@@ -950,7 +964,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         //log.i(TAG, "[SAVE ROOM] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
                     }
                 }
-                val roomId: Long = if (currentRoomId != null) {
+                val roomId: Long
+                val savedCount: Int
+                val wasRemoval: Boolean
+                
+                if (currentRoomId != null) {
                     // Nếu đã có roomId, update phòng
                     
                     // Check xem có ảnh nào thay đổi không
@@ -958,25 +976,48 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val hasDirtyUris = dirtyUris.isNotEmpty()
                     val hasChangedImages = changedImageIds.isNotEmpty()
                     val hasNewImages = newImageUris.isNotEmpty()
+                    val hasDeletedTranslations = deletedTranslationUris.isNotEmpty()
+                    val hasRemovedImages = removedImageIds.isNotEmpty()
                     
-                    Log.i(TAG, "Save check: dirtyUris=${dirtyUris.size} changedImageIds=${changedImageIds.size} newImageUris=${newImageUris.size}")
+                    Log.i(TAG, "Save check: dirtyUris=${dirtyUris.size} changedImageIds=${changedImageIds.size} newImageUris=${newImageUris.size} deletedTranslations=${deletedTranslationUris.size} removedImages=${removedImageIds.size}")
                     
+                    var tempSavedCount = 0 // Track số lượng ảnh được save
+                    var isRemovalOperation = false // Track if this is a removal operation
                     val updated: Boolean = when {
                         // Case 1: Có ảnh mới được thêm vào phòng → full update để add new images
                         hasNewImages -> {
                             Log.i(TAG, "Full update: Adding ${newImageUris.size} new images to room")
+                            tempSavedCount = newImageUris.size
                             val ok = databaseHelper.updateMangaRoom(currentRoomId, uniqueImageUris, uniqueTranslatedTexts)
-                            if (ok) newImageUris.clear()
+                            if (ok) {
+                                newImageUris.clear()
+                                dirtyUris.clear()
+                                deletedTranslationUris.clear()
+                            }
                             ok
                         }
-                        // Case 2: Có dirtyUris (từ edit manual) → selective save
-                        hasDirtyUris -> {
-                            Log.d(TAG, "Selective save: ${dirtyUris.size} edited images")
-                            val ok = databaseHelper.updateMangaRoomSelective(currentRoomId, uniqueImageUris, uniqueTranslatedTexts, dirtyUris.toList(), uriToImageId)
-                            if (ok) dirtyUris.clear()
+                        // Case 2: Có ảnh bị xóa khỏi phòng → update to remove images
+                        hasRemovedImages -> {
+                            Log.i(TAG, "Removing ${removedImageIds.size} images from room")
+                            tempSavedCount = removedImageIds.size
+                            isRemovalOperation = true
+                            val ok = databaseHelper.updateMangaRoom(currentRoomId, uniqueImageUris, uniqueTranslatedTexts)
+                            if (ok) removedImageIds.clear()
                             ok
                         }
-                        // Case 3: Có changedImageIds (từ retranslate) nhưng chưa được auto-save
+                        // Case 3: Có dirtyUris (từ edit manual) hoặc deletedTranslations → selective save
+                        hasDirtyUris || hasDeletedTranslations -> {
+                            val affectedUris = (dirtyUris + deletedTranslationUris).toSet()
+                            Log.d(TAG, "Selective save: ${affectedUris.size} affected images (edited or deleted translations)")
+                            tempSavedCount = affectedUris.size
+                            val ok = databaseHelper.updateMangaRoomSelective(currentRoomId, uniqueImageUris, uniqueTranslatedTexts, affectedUris.toList(), uriToImageId)
+                            if (ok) {
+                                dirtyUris.clear()
+                                deletedTranslationUris.clear()
+                            }
+                            ok
+                        }
+                        // Case 4: Có changedImageIds (từ retranslate) nhưng chưa được auto-save
                         hasChangedImages -> {
                             Log.i(TAG, "Partial save: ${changedImageIds.size} retranslated images (not auto-saved yet)")
                             val mapping = mutableMapOf<Long, Pair<String, List<TextBlockInfo>>>()
@@ -986,6 +1027,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                     uniqueTranslatedTexts[uri]?.let { pair -> mapping[imgId] = pair }
                                 }
                             }
+                            tempSavedCount = mapping.size
                             if (mapping.isNotEmpty()) {
                                 databaseHelper.applyPendingChangesForRoom(currentRoomId, mapping)
                             } else {
@@ -993,34 +1035,41 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 false
                             }
                         }
-                        // Case 4: Không có gì thay đổi → skip save
+                        // Case 5: Không có gì thay đổi → skip save
                         else -> {
                             Log.i(TAG, "No changes detected, skipping save")
+                            tempSavedCount = -1 // Signal no changes
                             true // Không có gì để save nhưng cũng không phải lỗi
                         }
                     }
                     
-                    if (updated) currentRoomId else -1L
+                    roomId = if (updated) currentRoomId else -1L
+                    savedCount = tempSavedCount
+                    wasRemoval = isRemovalOperation
                 } else {
                     // Nếu chưa có roomId, tạo phòng mới
-                    databaseHelper.saveMangaRoom(
+                    roomId = databaseHelper.saveMangaRoom(
                         uniqueImageUris,
                         uniqueTranslatedTexts
                     )
+                    savedCount = uniqueImageUris.size
+                    wasRemoval = false
                 }
                 
                 if (roomId != -1L) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Đã lưu thành công!", Toast.LENGTH_SHORT).show()
-                        // KHÔNG reload lại phòng sau khi save để tránh ghi đè dữ liệu hiện tại
-                        // Chỉ cần cập nhật roomId nếu đây là lần save đầu tiên
+                        val message = when {
+                            savedCount > 0 && wasRemoval -> "Đã xóa $savedCount ảnh!"
+                            savedCount > 0 -> "Đã lưu thành công $savedCount ảnh!"
+                            savedCount == -1 -> "Không có thay đổi để lưu"
+                            else -> "Đã lưu thành công!"
+                        }
+                        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
                     }
                     _uiState.update { it.copy(roomId = roomId) }
-                    // remember saved room id
                     lastLoadedRoomId = roomId
                     galleryViewModel.notifyDataSaved()
                     loadAllRoomIds()
-                    //log.i(TAG, "Phòng đã được lưu với ID: $roomId")
                 } else {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Lưu thất bại!", Toast.LENGTH_SHORT).show()
@@ -1042,18 +1091,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun removeImageFromRoom(uri: Uri) {
         val currentUris = uiState.value.imageUris.toMutableList()
         if (!currentUris.contains(uri)) return
+        
+        // Track the removed image ID
+        val imageId = uriToImageId[uri]
+        if (imageId != null) {
+            removedImageIds.add(imageId)
+            Log.i(TAG, "Marked image for removal: imageId=$imageId uri=$uri")
+        }
+        
         currentUris.remove(uri)
         val newTranslatedTexts = uiState.value.translatedTexts.filterKeys { it != uri }
         val newStatus = uiState.value.translatedStatus.filterKeys { it != uri }.toMutableMap()
         val newSourceLangs = uiState.value.sourceLanguages.filterKeys { it != uri }
         // Loại ảnh khỏi hàng đợi dịch nếu có
         translationQueue.remove(uri)
-        // Nếu có roomId thì cập nhật DB, nếu không thì chỉ cập nhật UI
-        val roomId = uiState.value.roomId
-        if (roomId != null) {
-            databaseHelper.updateMangaRoom(roomId, currentUris, newTranslatedTexts)
-        }
-        // Luôn cập nhật UI state
+        
+        // Just update UI state - save will handle DB update
         _uiState.update {
             it.copy(
                 imageUris = currentUris,
@@ -1361,6 +1414,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         newImageUris.clear()
         translationQueue.clear()
         dirtyUris.clear()
+        deletedTranslationUris.clear()
+        removedImageIds.clear()
         uriToImageId.clear()
     // Ensure we forget any remembered room id so temporary sessions don't fall back
     // to a previously loaded room. This fixes cases where selecting images creates
