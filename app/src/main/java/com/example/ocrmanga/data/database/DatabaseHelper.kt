@@ -138,7 +138,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 12
+    private const val DATABASE_VERSION = 13
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -1709,7 +1709,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             orders.add(order)
 
             val textCursor = db.rawQuery("""
-                SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type, background_type, average_background_color, original_text_color, custom_overlay_color, custom_text_color, overlay_alpha, text_boldness, overlay_saturation, text_saturation, apply_merge
+                SELECT translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type, background_type, average_background_color, original_text_color, custom_overlay_color, custom_text_color, overlay_alpha, text_boldness, overlay_saturation, text_saturation, apply_merge
                 FROM translations 
                 WHERE $COLUMN_IMAGE_ID = ?
             """, arrayOf(imageId.toString()))
@@ -1717,35 +1717,34 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val textBlocks = mutableListOf<TextBlockInfo>()
             var originalText = ""
             while (textCursor.moveToNext()) {
-                originalText = textCursor.getString(0) ?: ""
-                val translatedText = textCursor.getString(1)
+                val translatedText = textCursor.getString(0)
                 val bounds = Rect(
+                    textCursor.getInt(1),
                     textCursor.getInt(2),
                     textCursor.getInt(3),
-                    textCursor.getInt(4),
-                    textCursor.getInt(5)
+                    textCursor.getInt(4)
                 )
-                val fontSize = textCursor.getFloat(6)
-                val rotation = if (textCursor.columnCount > 7) textCursor.getFloat(7) else 0f
-                val originalImageWidth = if (textCursor.columnCount > 8) textCursor.getInt(8) else null
-                val originalImageHeight = if (textCursor.columnCount > 9) textCursor.getInt(9) else null
-                val shapeType = if (textCursor.columnCount > 10) textCursor.getInt(10) else 0
-                val backgroundTypeOrdinal = if (textCursor.columnCount > 11) textCursor.getInt(11) else 0
-                val averageBackgroundColor = if (textCursor.columnCount > 12) {
+                val fontSize = textCursor.getFloat(5)
+                val rotation = if (textCursor.columnCount > 6) textCursor.getFloat(6) else 0f
+                val originalImageWidth = if (textCursor.columnCount > 7) textCursor.getInt(7) else null
+                val originalImageHeight = if (textCursor.columnCount > 8) textCursor.getInt(8) else null
+                val shapeType = if (textCursor.columnCount > 9) textCursor.getInt(9) else 0
+                val backgroundTypeOrdinal = if (textCursor.columnCount > 10) textCursor.getInt(10) else 0
+                val averageBackgroundColor = if (textCursor.columnCount > 11) {
+                    val value = textCursor.getInt(11)
+                    if (textCursor.isNull(11)) null else value
+                } else null
+                val originalTextColor = if (textCursor.columnCount > 12) {
                     val value = textCursor.getInt(12)
                     if (textCursor.isNull(12)) null else value
                 } else null
-                val originalTextColor = if (textCursor.columnCount > 13) {
+                val customOverlayColor = if (textCursor.columnCount > 13) {
                     val value = textCursor.getInt(13)
                     if (textCursor.isNull(13)) null else value
                 } else null
-                val customOverlayColor = if (textCursor.columnCount > 14) {
+                val customTextColor = if (textCursor.columnCount > 14) {
                     val value = textCursor.getInt(14)
                     if (textCursor.isNull(14)) null else value
-                } else null
-                val customTextColor = if (textCursor.columnCount > 15) {
-                    val value = textCursor.getInt(15)
-                    if (textCursor.isNull(15)) null else value
                 } else null
                 
                 // Log để debug màu text
@@ -1756,11 +1755,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     Log.d(TAG, "Load từ translations - originalTextColor: $originalTextColor (hex: ${String.format("#%08X", originalTextColor)})")
                 }
                 
-                val overlayAlpha = if (textCursor.columnCount > 16) textCursor.getFloat(16) else 1.0f
-                val textBoldness = if (textCursor.columnCount > 17) textCursor.getFloat(17) else 1.0f
-                val overlaySaturation = if (textCursor.columnCount > 18) textCursor.getFloat(18) else 1.0f
-                val textSaturation = if (textCursor.columnCount > 19) textCursor.getFloat(19) else 1.0f
-                val applyMerge = if (textCursor.columnCount > 20) textCursor.getInt(20) == 1 else true
+                val overlayAlpha = if (textCursor.columnCount > 15) textCursor.getFloat(15) else 1.0f
+                val textBoldness = if (textCursor.columnCount > 16) textCursor.getFloat(16) else 1.0f
+                val overlaySaturation = if (textCursor.columnCount > 17) textCursor.getFloat(17) else 1.0f
+                val textSaturation = if (textCursor.columnCount > 18) textCursor.getFloat(18) else 1.0f
+                val applyMerge = if (textCursor.columnCount > 19) textCursor.getInt(19) == 1 else true
                 val backgroundType = BackgroundType.values().getOrNull(backgroundTypeOrdinal) ?: BackgroundType.WHITE
                 // Try to find a matching image_blocks row for more persistent styling
                 try {

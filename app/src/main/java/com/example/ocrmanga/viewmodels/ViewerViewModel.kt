@@ -97,7 +97,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
                     block.copy(
                         customOverlayColor = baseOverlay,
-                        customTextColor = textColor
+                        customTextColor = textColor,
+                        // Set applyMerge = true khi retranslate để áp dụng logic chống chồng lấn
+                        applyMerge = true
                     )
                 }
                 // Debug log to help verify colors applied for retranslateImage
@@ -131,10 +133,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     // Thêm hàm mới để cập nhật translatedTexts cho một uri cụ thể (sửa lỗi unresolved reference)
     fun updateTranslatedBlocks(uri: Uri, blocks: List<TextBlockInfo>) {
         // Always update rotation from DragBlockState if available
+        // Set applyMerge = false khi edit manual để không áp dụng logic chống chồng lấn
         val updatedBlocks = blocks.map { block ->
             val rot = if (block.rotation == null) 0f else block.rotation
             Log.i(TAG, "[UPDATE] Block text='${block.text}' rotation=$rot for uri=$uri")
-            if (block.rotation == null) block.copy(rotation = 0f) else block
+            val blockWithRotation = if (block.rotation == null) block.copy(rotation = 0f) else block
+            // Set applyMerge = false vì đây là edit manual
+            blockWithRotation.copy(applyMerge = false)
         }
         val current = _uiState.value.translatedTexts[uri] ?: ("" to emptyList())
         val newPair = current.first to updatedBlocks
@@ -442,7 +447,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         val withRotation = if (block.rotation == null) block.copy(rotation = 0f) else block
                         val baseOverlay = withRotation.customOverlayColor ?: 0xFFFFFFFF.toInt()
                         val textColor = withRotation.customTextColor ?: computeDefaultTextColor(baseOverlay, withRotation.averageBackgroundColor)
-                        withRotation.copy(customOverlayColor = baseOverlay, customTextColor = textColor)
+                        // QUAN TRỌNG: Set applyMerge = false khi load từ DB để không áp dụng logic chống chồng lấn
+                        withRotation.copy(
+                            customOverlayColor = baseOverlay, 
+                            customTextColor = textColor,
+                            applyMerge = false
+                        )
                     }
                     // Log loaded shadow values for each block to verify persistence
                     fixedBlocks.forEachIndexed { idx, b ->
@@ -678,7 +688,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             fontFamily = finalFontFamily ?: "mto_astro_city",
                             customShadowColor = finalShadowColor,
                             shadowAlpha = finalShadowAlpha ?: 1.0f,
-                            shadowRadius = finalShadowRadius ?: 0f
+                            shadowRadius = finalShadowRadius ?: 0f,
+                            // QUAN TRỌNG: Set applyMerge = false khi load từ DB
+                            applyMerge = false
                         ))
                     }
                     textCursor.close()
@@ -1115,7 +1127,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                         val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
                                         block.copy(
                                             customOverlayColor = baseOverlay,
-                                            customTextColor = textColor
+                                            customTextColor = textColor,
+                                            // Set applyMerge = true khi translation mới để áp dụng logic chống chồng lấn
+                                            applyMerge = true
                                         )
                                 }
                                 // Debug log for batch translated image
@@ -1574,7 +1588,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         lineSpacing = state.lineSpacing,
                         // Log the resulting TextBlockInfo shadow values for debugging
                         // (log after copy isn't trivial here; include in-line values)
-                        fontSize = state.fontSize ?: b.fontSize
+                        fontSize = state.fontSize ?: b.fontSize,
+                        // Set applyMerge = false vì đây là save sau khi edit
+                        applyMerge = false
                     )
                 }
             )

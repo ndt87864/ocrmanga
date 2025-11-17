@@ -113,6 +113,13 @@ fun mergeOverlappingRegions(
     imageWidth: Float
 ): List<Triple<TextBlockInfo, Rect, Float>> {
     if (regions.isEmpty()) return emptyList()
+    
+    // Kiểm tra xem có block nào cần apply merge không
+    val needMerge = regions.any { it.first.applyMerge }
+    if (!needMerge) {
+        // Không có block nào cần merge, trả về nguyên bản
+        return regions
+    }
 
     val sortedRegions = regions.sortedWith { (blockA, rectA, _), (blockB, rectB, _) ->
         if (blockA.isVertical == blockB.isVertical && blockA.isVertical) {
