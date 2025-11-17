@@ -777,7 +777,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val bounds = textBlock.bounds
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
-                            put("original_text", originalText)
+                            put("original_text", textBlock.originalText ?: originalText)
                             put("translated_text", textBlock.text)
                             put("bounds_left", bounds.left)
                             put("bounds_top", bounds.top)
@@ -928,7 +928,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             } else origRect
                             val textValues = ContentValues().apply {
                                 put(COLUMN_IMAGE_ID, imageId)
-                                put("original_text", originalText)
+                                put("original_text", textBlock.originalText ?: originalText)
                                 put("translated_text", textBlock.text)
                                 put("bounds_left", scaledRect.left)
                                 put("bounds_top", scaledRect.top)
@@ -1124,7 +1124,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 } else origRect
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, imageId)
-                                    put("original_text", originalText)
+                                    put("original_text", textBlock.originalText ?: originalText)
                                     put("translated_text", textBlock.text)
                                     put("bounds_left", scaledRect.left)
                                     put("bounds_top", scaledRect.top)
@@ -1278,7 +1278,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 } else origRect
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, resolvedId)
-                                    put("original_text", originalText)
+                                    put("original_text", textBlock.originalText ?: originalText)
                                     put("translated_text", textBlock.text)
                                     put("bounds_left", scaledRect.left)
                                     put("bounds_top", scaledRect.top)
@@ -1494,7 +1494,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
-                            put("original_text", originalText)
+                            put("original_text", textBlock.originalText ?: originalText)
                             put("translated_text", textBlock.text)
                             put("bounds_left", scaledRect.left)
                             put("bounds_top", scaledRect.top)

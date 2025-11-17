@@ -832,7 +832,7 @@ class TranslationRepository(private val application: Application) {
                         }
                         //log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
                         val newBounds = adjustBoundsForTranslatedText(reformattedText.orEmpty(), block.bounds, block.fontSize, 1.0f)
-                        block.copy(text = reformattedText.orEmpty(), bounds = newBounds, applyMerge = true)
+                        block.copy(text = reformattedText.orEmpty(), originalText = block.text, bounds = newBounds, applyMerge = true)
                     }
                 }
                 blocks.addAll(deferredBlocks.awaitAll())
@@ -890,7 +890,7 @@ class TranslationRepository(private val application: Application) {
                         naturalText
                     }
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
-                    blocks2.add(block.copy(text = reformattedText, bounds = newBounds, applyMerge = true))
+                    blocks2.add(block.copy(text = reformattedText, originalText = block.text, bounds = newBounds, applyMerge = true))
                 }
                 val resultText2 = blocks2.joinToString("\n") { it.text }
                 val detectedFinal2 = detectLanguage(resultText2) ?: ""
@@ -919,9 +919,9 @@ class TranslationRepository(private val application: Application) {
                     }
                     val retryLang = detectLanguage(retryText) ?: ""
                     if (retryLang == "vi") {
-                        block.copy(text = postProcessTranslation(retryText), applyMerge = true)
+                        block.copy(text = postProcessTranslation(retryText), originalText = block.originalText ?: block.text, applyMerge = true)
                     } else {
-                        block.copy(applyMerge = true)
+                        block.copy(originalText = block.originalText ?: block.text, applyMerge = true)
                     }
                 } else {
                     block.copy(applyMerge = true)
