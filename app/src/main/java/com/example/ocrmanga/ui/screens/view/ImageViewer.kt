@@ -528,6 +528,34 @@ fun ImageViewer(
                                                             selectedIndex = blockIndex
                                                             draggingIndex = blockIndex
                                                             lastDragPos = offset
+                                                            // Log thông tin overlay khi chạm vào
+                                                            val selectedBlock = dragBlocks[blockIndex]
+                                                            android.util.Log.i("ImageViewer_EditMode", """
+                                                                ========== OVERLAY TOUCHED ==========
+                                                                Index: $blockIndex
+                                                                Original Text: ${selectedBlock.block.originalText?.take(50) ?: "N/A"}
+                                                                Translated Text: ${selectedBlock.block.text.take(50)}
+                                                                Bounds: ${selectedBlock.block.bounds}
+                                                                FontSize: ${selectedBlock.fontSize ?: selectedBlock.block.fontSize}
+                                                                Rotation: ${selectedBlock.rotation}
+                                                                ShapeType: ${if (selectedBlock.block.shapeType == 1) "Oval" else "Rectangle"}
+                                                                WhiteoutColor: 0x${selectedBlock.whiteoutColor?.value?.toString(16) ?: "null"}
+                                                                TextColor: 0x${selectedBlock.textColor?.value?.toString(16) ?: "null"}
+                                                                OverlayAlpha: ${selectedBlock.overlayAlpha}
+                                                                TextBoldness: ${selectedBlock.textBoldness}
+                                                                OverlaySaturation: ${selectedBlock.overlaySaturation}
+                                                                TextSaturation: ${selectedBlock.textSaturation}
+                                                                LineSpacing: ${selectedBlock.lineSpacing}
+                                                                BorderColor: 0x${selectedBlock.textBorderColor?.value?.toString(16) ?: "null"}
+                                                                BorderThickness: ${selectedBlock.textBorderThickness}
+                                                                BorderAlpha: ${selectedBlock.textBorderAlpha}
+                                                                ShadowColor: 0x${selectedBlock.textShadowColor?.value?.toString(16) ?: "null"}
+                                                                ShadowAlpha: ${selectedBlock.textShadowAlpha}
+                                                                ShadowRadius: ${selectedBlock.textShadowRadius}
+                                                                Offset: ${selectedBlock.offset}
+                                                                FontFamily: ${selectedBlock.block.fontFamily}
+                                                                ====================================
+                                                            """.trimIndent())
                                                         } else {
                                                             selectedIndex = null
                                                         }

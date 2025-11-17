@@ -44,10 +44,80 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         )
     }
 
+    /**
+     * Clean up duplicate translations for the same image.
+     * Keep only the most recent translation per image (highest translation_id).
+     */
+    private fun cleanupDuplicateTranslations() {
+        try {
+            val db = writableDatabase
+            // For each image_id, keep only the translations that are part of the latest set
+            // (i.e., delete older duplicate translations)
+            val cursor = db.rawQuery("""
+                SELECT DISTINCT $COLUMN_IMAGE_ID FROM translations
+            """, null)
+            
+            var totalDeleted = 0
+            while (cursor.moveToNext()) {
+                val imageId = cursor.getLong(0)
+                // Count how many translations exist for this image
+                val countCursor = db.rawQuery(
+                    "SELECT COUNT(*) FROM translations WHERE $COLUMN_IMAGE_ID = ?",
+                    arrayOf(imageId.toString())
+                )
+                if (countCursor.moveToFirst()) {
+                    val count = countCursor.getInt(0)
+                    // If there are suspiciously many translations (e.g., > 20), likely duplicates
+                    // Keep only the most recent ones by deleting older entries
+                    if (count > 20) {
+                        // Get distinct bounds to see how many unique blocks we should have
+                        val uniqueBlocksCursor = db.rawQuery("""
+                            SELECT COUNT(DISTINCT bounds_left || ',' || bounds_top || ',' || bounds_right || ',' || bounds_bottom)
+                            FROM translations WHERE $COLUMN_IMAGE_ID = ?
+                        """, arrayOf(imageId.toString()))
+                        var expectedBlocks = count
+                        if (uniqueBlocksCursor.moveToFirst()) {
+                            expectedBlocks = uniqueBlocksCursor.getInt(0)
+                        }
+                        uniqueBlocksCursor.close()
+                        
+                        // If actual count is much more than expected unique blocks, we have duplicates
+                        if (count > expectedBlocks * 2) {
+                            Log.w(TAG, "Image $imageId has $count translations but only $expectedBlocks unique blocks - cleaning up")
+                            // Delete all but keep the latest N translations (where N = expectedBlocks)
+                            // This assumes newer translations have higher IDs
+                            db.execSQL("""
+                                DELETE FROM translations 
+                                WHERE $COLUMN_IMAGE_ID = ? 
+                                AND translation_id NOT IN (
+                                    SELECT translation_id FROM translations 
+                                    WHERE $COLUMN_IMAGE_ID = ? 
+                                    ORDER BY translation_id DESC 
+                                    LIMIT ?
+                                )
+                            """, arrayOf(imageId.toString(), imageId.toString(), expectedBlocks.toString()))
+                            totalDeleted += (count - expectedBlocks)
+                        }
+                    }
+                }
+                countCursor.close()
+            }
+            cursor.close()
+            
+            if (totalDeleted > 0) {
+                Log.i(TAG, "Cleaned up $totalDeleted duplicate translations")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error cleaning up duplicate translations", e)
+        }
+    }
+
     private val appContext = context
 
     init {
         migrateRoomImageLinks()
+        // Clean up any duplicate translations that might exist
+        cleanupDuplicateTranslations()
         // Tự động thêm cột rotation vào bảng translations nếu chưa có
         try {
             val db = writableDatabase
@@ -154,7 +224,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 14
+    private const val DATABASE_VERSION = 15
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -181,6 +251,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COLUMN_IMAGE_URI = "image_uri"
         const val COLUMN_DISPLAY_ORDER = "display_order"
         const val COLUMN_IS_TRANSLATED = "is_translated"
+        const val COLUMN_ORIGINAL_TEXT = "original_text" // OCR text before translation
 
         // API Keys table
         private const val TABLE_API_KEYS = "api_keys"
@@ -247,6 +318,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_IMAGE_URI TEXT NOT NULL,
                 $COLUMN_DISPLAY_ORDER INTEGER,
                 $COLUMN_IS_TRANSLATED INTEGER DEFAULT 0,
+                $COLUMN_ORIGINAL_TEXT TEXT,
                 FOREIGN KEY ($COLUMN_ROOM_ID) REFERENCES $TABLE_ROOMS($COLUMN_ROOM_ID)
             )
         """)
@@ -428,6 +500,33 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.i(TAG, "Đã thêm các cột màu sắc tùy chỉnh vào bảng translations")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm các cột màu sắc tùy chỉnh vào bảng translations", e)
+            }
+        }
+        // Add original_text column to images table in version 15
+        if (oldVersion < 15) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_IMAGES ADD COLUMN $COLUMN_ORIGINAL_TEXT TEXT")
+                Log.i(TAG, "Đã thêm cột original_text vào bảng images")
+                // Migrate existing original_text from translations to images (take first distinct original_text per image)
+                try {
+                    db.execSQL("""
+                        UPDATE $TABLE_IMAGES
+                        SET $COLUMN_ORIGINAL_TEXT = (
+                            SELECT original_text FROM translations 
+                            WHERE translations.$COLUMN_IMAGE_ID = $TABLE_IMAGES.$COLUMN_IMAGE_ID 
+                            LIMIT 1
+                        )
+                        WHERE EXISTS (
+                            SELECT 1 FROM translations 
+                            WHERE translations.$COLUMN_IMAGE_ID = $TABLE_IMAGES.$COLUMN_IMAGE_ID
+                        )
+                    """)
+                    Log.i(TAG, "Đã migrate original_text từ translations sang images")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Không thể migrate original_text", e)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm cột original_text vào images", e)
             }
         }
         // Add new table for image blocks in version 10
@@ -845,11 +944,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
                 // insert new translations if available
                 translatedByImageId[imageId]?.let { (originalText, textBlocks) ->
+                    // Update original_text at image level
+                    val imageUpdateValues = ContentValues().apply {
+                        put(COLUMN_ORIGINAL_TEXT, originalText)
+                    }
+                    db.update(TABLE_IMAGES, imageUpdateValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    
                     textBlocks.forEach { textBlock ->
                         val bounds = textBlock.bounds
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
-                            put("original_text", textBlock.originalText ?: originalText)
+                            // DO NOT store original_text per block anymore
+                            // put("original_text", textBlock.originalText ?: originalText)
                             put("translated_text", textBlock.text)
                             put("bounds_left", bounds.left)
                             put("bounds_top", bounds.top)
@@ -962,11 +1068,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val newFile = copyImageToInternalStorage(originalUri, imagesDir, fileName)
                 if (newFile != null) {
                     val newUri = Uri.fromFile(newFile)
+                    // Get original OCR text for this image (first element of Pair)
+                    val originalOcrText = translatedTexts[originalUri]?.first ?: ""
                     val imageValues = ContentValues().apply {
                         put(COLUMN_ROOM_ID, roomId)
                         put(COLUMN_IMAGE_URI, newUri.toString())
                         put(COLUMN_DISPLAY_ORDER, index)
                         put(COLUMN_IS_TRANSLATED, if (translatedTexts.containsKey(originalUri)) 1 else 0)
+                        put(COLUMN_ORIGINAL_TEXT, originalOcrText) // Store OCR text here, once per image
                     }
                     val imageId = db.insert(TABLE_IMAGES, null, imageValues)
                     if (imageId == -1L) {
@@ -980,6 +1089,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
                     // Tự động scale lại bounds nếu ảnh đã bị resize
                     translatedTexts[originalUri]?.let { (originalText, textBlocks) ->
+                        // IMPORTANT: Delete ALL existing translations for this image to prevent duplicates
+                        val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                        Log.i(TAG, "saveMangaRoom: Deleted $deletedCount existing translations for imageId=$imageId before inserting new ones")
+                        try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
+                        
                         // Lấy kích thước gốc từ textBlock đầu tiên (nếu có)
                         val originalWidth = textBlocks.firstOrNull()?.originalImageWidth
                         val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
@@ -989,6 +1103,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val savedHeight = savedBitmap?.height
                         val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
                         val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
+                        Log.i(TAG, "saveMangaRoom: Inserting ${textBlocks.size} new translation blocks for imageId=$imageId originalUri=$originalUri")
+                        var insertedCount = 0
                         textBlocks.forEach { textBlock ->
                             val origRect = textBlock.bounds
                             val scaledRect = if (scaleX != 1f || scaleY != 1f) {
@@ -1001,7 +1117,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             } else origRect
                             val textValues = ContentValues().apply {
                                 put(COLUMN_IMAGE_ID, imageId)
-                                put("original_text", textBlock.originalText ?: originalText)
+                                // DO NOT store original_text here anymore - it's now at image level
+                                // put("original_text", textBlock.originalText ?: originalText)
                                 put("translated_text", textBlock.text)
                                 put("bounds_left", scaledRect.left)
                                 put("bounds_top", scaledRect.top)
@@ -1028,7 +1145,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             if (textId == -1L) {
                                 Log.e(TAG, "Failed to insert translation for image $imageId")
                             } else {
-                                Log.i(TAG, "Saved translation for image $imageId: ID=$textId")
+                                insertedCount++
+                                Log.i(TAG, "saveMangaRoom: Inserted translation #$insertedCount for imageId=$imageId, translationId=$textId")
                                 // Also save equivalent block to image_blocks so styling persists independently
                                 try {
                                     val blockWidth = scaledRect.right - scaledRect.left
@@ -1079,6 +1197,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 }
                             }
                         }
+                        Log.i(TAG, "saveMangaRoom: Completed insertion for imageId=$imageId - $insertedCount blocks inserted (expected ${textBlocks.size})")
                         savedBitmap?.recycle()
                     }
                 } else {
@@ -1167,11 +1286,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         }
                     }
                     val newUri = if (newFile.exists()) Uri.fromFile(newFile) else uri
+                    // Get original OCR text for this image
+                    val originalOcrText = translatedTexts[uri]?.first ?: ""
                     val imageValues = ContentValues().apply {
                         put(COLUMN_ROOM_ID, roomId)
                         put(COLUMN_IMAGE_URI, newUri.toString())
                         put(COLUMN_DISPLAY_ORDER, index)
                         put(COLUMN_IS_TRANSLATED, isTranslated)
+                        put(COLUMN_ORIGINAL_TEXT, originalOcrText) // Store OCR text at image level
                     }
                     val imageId = db.insert(TABLE_IMAGES, null, imageValues)
                     if (imageId != -1L) {
@@ -1179,6 +1301,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         // Ensure change record exists for this image
                         try { ensureChangeRecord(imageId, roomId) } catch (e: Exception) { /* ignore */ }
                         translatedTexts[uri]?.let { (originalText, textBlocks) ->
+                            // IMPORTANT: Delete ALL existing translations for this image first
+                            val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                            Log.i(TAG, "updateMangaRoom(new): Deleted $deletedCount existing translations for imageId=$imageId before inserting new ones")
+                            try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
+                            
                             val originalWidth = textBlocks.firstOrNull()?.originalImageWidth
                             val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
                             val savedBitmap = android.graphics.BitmapFactory.decodeFile(newFile.absolutePath)
@@ -1188,6 +1315,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
                             // Remove any existing blocks for this image so we replace with fresh ones
                             try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
+                            Log.i(TAG, "updateMangaRoom(new): Inserting ${textBlocks.size} new translation blocks for imageId=$imageId uri=$uriStr")
+                            var insertedCount = 0
                             textBlocks.forEach { textBlock ->
                                 val origRect = textBlock.bounds
                                 val scaledRect = if (scaleX != 1f || scaleY != 1f) {
@@ -1200,7 +1329,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 } else origRect
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, imageId)
-                                    put("original_text", textBlock.originalText ?: originalText)
+                                    // DO NOT store original_text here - it's at image level now
+                                    // put("original_text", textBlock.originalText ?: originalText)
                                     put("translated_text", textBlock.text)
                                     put("bounds_left", scaledRect.left)
                                     put("bounds_top", scaledRect.top)
@@ -1225,6 +1355,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
+                                    insertedCount++
+                                    Log.i(TAG, "updateMangaRoom(new): Inserted translation #$insertedCount for imageId=$imageId, translationId=$inserted")
                                     try {
                                         val blockWidth = scaledRect.right - scaledRect.left
                                         val blockHeight = scaledRect.bottom - scaledRect.top
@@ -1268,6 +1400,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     }
                                 }
                             }
+                            Log.i(TAG, "updateMangaRoom(new): Completed insertion for imageId=$imageId - $insertedCount blocks inserted (expected ${textBlocks.size})")
                             savedBitmap?.recycle()
                         }
                     }
@@ -1333,8 +1466,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             Log.w(TAG, "Skipping translation insert for uri=$uri because imageId could not be resolved")
                             return@forEachIndexed
                         }
-                        db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(resolvedId.toString()))
+                        val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(resolvedId.toString()))
+                        Log.i(TAG, "updateMangaRoom(existing): Deleted $deletedCount existing translations for imageId=$resolvedId before inserting new ones")
                         translatedTexts[uri]?.let { (originalText, textBlocks) ->
+                            // Update original_text at image level
+                            val imageUpdateValues = ContentValues().apply {
+                                put(COLUMN_ORIGINAL_TEXT, originalText)
+                            }
+                            db.update(TABLE_IMAGES, imageUpdateValues, "$COLUMN_IMAGE_ID = ?", arrayOf(resolvedId.toString()))
+                            
                             try { deleteBlocksForImage(resolvedId) } catch (e: Exception) { /* ignore */ }
                             // Lấy lại kích thước ảnh đã lưu
                             val imageFile = File(Uri.parse(uriStr).path ?: "")
@@ -1345,6 +1485,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
                             val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
                             val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
+                            Log.i(TAG, "updateMangaRoom(existing): Inserting ${textBlocks.size} new translation blocks for imageId=$resolvedId uri=$uriStr")
+                            var insertedCount = 0
                             textBlocks.forEach { textBlock ->
                                 val origRect = textBlock.bounds
                                 val scaledRect = if (scaleX != 1f || scaleY != 1f) {
@@ -1357,7 +1499,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 } else origRect
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, resolvedId)
-                                    put("original_text", textBlock.originalText ?: originalText)
+                                    // DO NOT store original_text per block
+                                    // put("original_text", textBlock.originalText ?: originalText)
                                     put("translated_text", textBlock.text)
                                     put("bounds_left", scaledRect.left)
                                     put("bounds_top", scaledRect.top)
@@ -1382,6 +1525,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
+                                    insertedCount++
+                                    Log.i(TAG, "updateMangaRoom(existing): Inserted translation #$insertedCount for imageId=$resolvedId, translationId=$inserted")
                                     try {
                                         val blockWidth = scaledRect.right - scaledRect.left
                                         val blockHeight = scaledRect.bottom - scaledRect.top
@@ -1425,6 +1570,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     }
                                 }
                             }
+                            Log.i(TAG, "updateMangaRoom(existing): Completed insertion for imageId=$resolvedId - $insertedCount blocks inserted (expected ${textBlocks.size})")
                             savedBitmap?.recycle()
                         }
                     }
@@ -1521,11 +1667,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val fileName = "image_${index}.jpg"
                         val newFile = copyImageToInternalStorage(dirtyUri, imagesDir, fileName)
                         val newUri = if (newFile != null && newFile.exists()) Uri.fromFile(newFile) else dirtyUri
+                        // Get original OCR text for this image
+                        val originalOcrText = translatedTexts[dirtyUri]?.first ?: ""
                         val imageValues = ContentValues().apply {
                             put(COLUMN_ROOM_ID, roomId)
                             put(COLUMN_IMAGE_URI, newUri.toString())
                             put(COLUMN_DISPLAY_ORDER, index)
                             put(COLUMN_IS_TRANSLATED, if (translatedTexts.containsKey(dirtyUri)) 1 else 0)
+                            put(COLUMN_ORIGINAL_TEXT, originalOcrText) // Store OCR text at image level
                         }
                         val insertedImageId = db.insert(TABLE_IMAGES, null, imageValues)
                         if (insertedImageId != -1L) {
@@ -1546,19 +1695,27 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 }
                 Log.d(TAG, "Selective save: resolved imageId=$imageId for dirtyUri=$uriStr")
 
-                // delete existing translations and image_blocks for this imageId
-                db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
+                // IMPORTANT: Delete ALL existing translations and image_blocks for this imageId to prevent duplicates
+                val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                Log.i(TAG, "Deleted $deletedCount existing translations for imageId=$imageId before inserting new ones")
+                try { 
+                    deleteBlocksForImage(imageId)
+                    Log.i(TAG, "Deleted image_blocks for imageId=$imageId")
+                } catch (e: Exception) { 
+                    Log.w(TAG, "Failed to delete image_blocks for imageId=$imageId", e)
+                }
 
                 // insert new translations if present
                 translatedTexts[dirtyUri]?.let { (originalText, textBlocks) ->
+                    Log.i(TAG, "Inserting ${textBlocks.size} new translation blocks for imageId=$imageId dirtyUri=$uriStr")
                     // find saved file size info if needed
                     val imageFile = File(Uri.parse((imageIdMap.entries.find { it.value == imageId }?.key) ?: uriStr).path ?: "")
                     val savedBitmap = android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath)
                     val savedWidth = savedBitmap?.width
                     val savedHeight = savedBitmap?.height
 
-                    textBlocks.forEach { textBlock ->
+                    var insertedCount = 0
+                    textBlocks.forEachIndexed { idx, textBlock ->
                         val origRect = textBlock.bounds
                         // Attempt to scale if original sizes provided
                         val originalWidth = textBlock.originalImageWidth
@@ -1576,7 +1733,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
-                            put("original_text", textBlock.originalText ?: originalText)
+                            // DO NOT store original_text per block - it's at image level now
+                            // put("original_text", textBlock.originalText ?: originalText)
                             put("translated_text", textBlock.text)
                             put("bounds_left", scaledRect.left)
                             put("bounds_top", scaledRect.top)
@@ -1601,7 +1759,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
-                                Log.d(TAG, "Inserted translation for imageId=$imageId bounds=${scaledRect.left},${scaledRect.top},${scaledRect.right},${scaledRect.bottom}")
+                                insertedCount++
+                                Log.d(TAG, "Inserted translation #$insertedCount (idx=$idx) for imageId=$imageId bounds=${scaledRect.left},${scaledRect.top},${scaledRect.right},${scaledRect.bottom}")
                             try {
                                 val blockWidth = scaledRect.right - scaledRect.left
                                 val blockHeight = scaledRect.bottom - scaledRect.top
@@ -1645,6 +1804,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             }
                         }
                     }
+                    Log.i(TAG, "Completed insertion: $insertedCount blocks inserted for imageId=$imageId (expected ${textBlocks.size})")
                     savedBitmap?.recycle()
                 }
             }
@@ -1794,7 +1954,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
         val seenUris = mutableSetOf<String>()
         val imageCursor = db.rawQuery("""
-            SELECT $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER, $COLUMN_IMAGE_ID 
+            SELECT $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER, $COLUMN_IMAGE_ID, $COLUMN_ORIGINAL_TEXT
             FROM $TABLE_IMAGES 
             WHERE $COLUMN_ROOM_ID = ? 
             ORDER BY $COLUMN_DISPLAY_ORDER
@@ -1807,6 +1967,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val uri = Uri.parse(uriStr)
             val order = imageCursor.getInt(1)
             val imageId = imageCursor.getLong(2)
+            val originalTextForImage = imageCursor.getString(3) ?: "" // Get original OCR text from image level
 
             images.add(uri)
             orders.add(order)
@@ -1818,7 +1979,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             """, arrayOf(imageId.toString()))
 
             val textBlocks = mutableListOf<TextBlockInfo>()
-            var originalText = ""
             while (textCursor.moveToNext()) {
                 val translatedText = textCursor.getString(0)
                 val bounds = Rect(
@@ -1987,8 +2147,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 }
             }
             textCursor.close()
+            Log.i(TAG, "getMangaRoom: Query returned ${textBlocks.size} translation blocks for imageId=$imageId uri=$uriStr")
             if (textBlocks.isNotEmpty()) {
-                translations[uri] = originalText to textBlocks
+                // Use original text from image level
+                // IMPORTANT: Only add if not already present (prevent duplicates)
+                if (!translations.containsKey(uri)) {
+                    translations[uri] = originalTextForImage to textBlocks
+                    Log.d(TAG, "getMangaRoom: Loaded translation for uri=$uri with ${textBlocks.size} blocks, originalText='$originalTextForImage'")
+                } else {
+                    Log.w(TAG, "getMangaRoom: DUPLICATE translation detected for uri=$uri - skipping")
+                }
             }
         }
         imageCursor.close()

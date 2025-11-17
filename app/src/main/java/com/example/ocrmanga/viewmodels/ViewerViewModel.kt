@@ -51,6 +51,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
     // Dịch lại 1 ảnh (re-translate single image)
+    // IMPORTANT: This will DELETE all existing translations for this image before creating new ones
     fun retranslateImage(uri: Uri, mode: TranslationMode) {
         viewModelScope.launch {
             // Early validation: if user requests Gemini or Mistral but there are no API keys, notify and skip
@@ -577,28 +578,40 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     cursor.close()
 
+                    // Get original_text from images table (once per image)
+                    var originalTextForImage = ""
+                    val originalTextCursor = db.rawQuery(
+                        """
+                        SELECT ${DatabaseHelper.COLUMN_ORIGINAL_TEXT}
+                        FROM ${DatabaseHelper.TABLE_IMAGES}
+                        WHERE ${DatabaseHelper.COLUMN_IMAGE_URI} = ?
+                        """, arrayOf(uri.toString())
+                    )
+                    if (originalTextCursor.moveToFirst()) {
+                        originalTextForImage = originalTextCursor.getString(0) ?: ""
+                    }
+                    originalTextCursor.close()
+
                     val textCursor = db.rawQuery(
                         """
-                        SELECT original_text, translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size
+                        SELECT translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size
                         FROM translations 
-                        WHERE ${DatabaseHelper.COLUMN_IMAGE_ID} IN (
+                        WHERE (${DatabaseHelper.COLUMN_IMAGE_ID} IN (
                             SELECT ${DatabaseHelper.COLUMN_IMAGE_ID} FROM ${DatabaseHelper.TABLE_IMAGES} 
                             WHERE ${DatabaseHelper.COLUMN_IMAGE_URI} = ?
-                        )
+                        )) AND (pending_delete IS NULL OR pending_delete = 0)
                         """, arrayOf(uri.toString())
                     )
                     val textBlocks = mutableListOf<TextBlockInfo>()
-                    var originalText = ""
                     while (textCursor.moveToNext()) {
-                        originalText = textCursor.getString(0) ?: ""
-                        val translatedText = textCursor.getString(1)
+                        val translatedText = textCursor.getString(0)
                         val bounds = android.graphics.Rect(
+                            textCursor.getInt(1),
                             textCursor.getInt(2),
                             textCursor.getInt(3),
-                            textCursor.getInt(4),
-                            textCursor.getInt(5)
+                            textCursor.getInt(4)
                         )
-                        val fontSize = textCursor.getFloat(6)
+                        val fontSize = textCursor.getFloat(5)
                         // Try to read optional columns (average_background_color, custom_overlay_color, custom_text_color, overlay_alpha, etc.) if present
                         fun colInt(name: String): Int? {
                             return try {
@@ -708,6 +721,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             rotation = finalRotation,
                             originalImageWidth = null,
                             originalImageHeight = null,
+                            originalText = originalTextForImage, // Set original text from image level
                             shapeType = finalShapeType,
                             backgroundType = com.example.ocrmanga.data.models.BackgroundType.WHITE,
                             averageBackgroundColor = finalOverlay,
@@ -729,8 +743,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         ))
                     }
                     textCursor.close()
+                    Log.i(TAG, "loadMoreImages: Query returned ${textBlocks.size} translation blocks for uri=$uri")
                     if (textBlocks.isNotEmpty()) {
-                        translations[uri] = originalText to textBlocks
+                        // Use original text from image level (already fetched above)
+                        // IMPORTANT: Ensure we only have ONE translation per image by checking if it already exists
+                        if (!translations.containsKey(uri)) {
+                            translations[uri] = originalTextForImage to textBlocks
+                            Log.d(TAG, "loadMoreImages: Loaded translation for uri=$uri with ${textBlocks.size} blocks, originalText='$originalTextForImage'")
+                        } else {
+                            Log.w(TAG, "loadMoreImages: DUPLICATE translation detected for uri=$uri - skipping")
+                        }
                     }
                 }
 
