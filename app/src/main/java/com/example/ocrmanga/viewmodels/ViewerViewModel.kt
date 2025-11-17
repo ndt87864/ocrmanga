@@ -952,31 +952,33 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 val roomId: Long = if (currentRoomId != null) {
                     // Nếu đã có roomId, update phòng
-                    val updated: Boolean = if (dirtyUris.isNotEmpty()) {
-                        // chỉ update những ảnh đã thay đổi
-                        // Log để debug mapping URI -> imageId
-                        Log.d(TAG, "Selective save triggered. dirtyUris=${dirtyUris.map { it.toString() }}")
-                        Log.d(TAG, "uriToImageId map contents: ${uriToImageId.entries.joinToString { "${it.key}=>${it.value}" }}")
-                        val ok = databaseHelper.updateMangaRoomSelective(currentRoomId, uniqueImageUris, uniqueTranslatedTexts, dirtyUris.toList(), uriToImageId)
-                        if (ok) dirtyUris.clear()
-                        ok
-                    } else {
-                        databaseHelper.updateMangaRoom(currentRoomId, uniqueImageUris, uniqueTranslatedTexts)
-                    }
-                    if (updated) currentRoomId else -1L
-                } else {
-                    // Nếu chưa có roomId, tạo phòng mới
-                    databaseHelper.saveMangaRoom(
-                        uniqueImageUris,
-                        uniqueTranslatedTexts
-                    )
-                }
-                // If room exists, also apply any pending DB changes (is_changed = 1) by mapping imageIds -> translations
-                if (roomId != -1L) {
-                    try {
-                        val changedImageIds = databaseHelper.getChangedImageIdsForRoom(roomId)
-                        if (changedImageIds.isNotEmpty()) {
-                            // build mapping imageId -> Pair(originalText, list<TextBlockInfo>) from current UI state
+                    
+                    // Check xem có ảnh nào thay đổi không
+                    val changedImageIds = databaseHelper.getChangedImageIdsForRoom(currentRoomId)
+                    val hasDirtyUris = dirtyUris.isNotEmpty()
+                    val hasChangedImages = changedImageIds.isNotEmpty()
+                    val hasNewImages = newImageUris.isNotEmpty()
+                    
+                    Log.i(TAG, "Save check: dirtyUris=${dirtyUris.size} changedImageIds=${changedImageIds.size} newImageUris=${newImageUris.size}")
+                    
+                    val updated: Boolean = when {
+                        // Case 1: Có ảnh mới được thêm vào phòng → full update để add new images
+                        hasNewImages -> {
+                            Log.i(TAG, "Full update: Adding ${newImageUris.size} new images to room")
+                            val ok = databaseHelper.updateMangaRoom(currentRoomId, uniqueImageUris, uniqueTranslatedTexts)
+                            if (ok) newImageUris.clear()
+                            ok
+                        }
+                        // Case 2: Có dirtyUris (từ edit manual) → selective save
+                        hasDirtyUris -> {
+                            Log.d(TAG, "Selective save: ${dirtyUris.size} edited images")
+                            val ok = databaseHelper.updateMangaRoomSelective(currentRoomId, uniqueImageUris, uniqueTranslatedTexts, dirtyUris.toList(), uriToImageId)
+                            if (ok) dirtyUris.clear()
+                            ok
+                        }
+                        // Case 3: Có changedImageIds (từ retranslate) nhưng chưa được auto-save
+                        hasChangedImages -> {
+                            Log.i(TAG, "Partial save: ${changedImageIds.size} retranslated images (not auto-saved yet)")
                             val mapping = mutableMapOf<Long, Pair<String, List<TextBlockInfo>>>()
                             uniqueImageUris.forEach { uri ->
                                 val imgId = uriToImageId[uri]
@@ -985,23 +987,28 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 }
                             }
                             if (mapping.isNotEmpty()) {
-                                databaseHelper.applyPendingChangesForRoom(roomId, mapping)
-                            }
-                        } else {
-                            // If there are NO change flags (is_changed = 1) for any image in this room,
-                            // ensure the whole room dataset is persisted in DB by performing a full update.
-                            // This guarantees the room's current ordering, images and translations are saved
-                            // even when no per-image pending-change markers exist.
-                            try {
-                                databaseHelper.updateMangaRoom(roomId, uniqueImageUris, uniqueTranslatedTexts)
-                            } catch (inner: Exception) {
-                                Log.w(TAG, "Failed to perform full room update for room $roomId when no change flags present", inner)
+                                databaseHelper.applyPendingChangesForRoom(currentRoomId, mapping)
+                            } else {
+                                Log.w(TAG, "Changed images found but no mapping created")
+                                false
                             }
                         }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to apply pending changes for room $roomId", e)
+                        // Case 4: Không có gì thay đổi → skip save
+                        else -> {
+                            Log.i(TAG, "No changes detected, skipping save")
+                            true // Không có gì để save nhưng cũng không phải lỗi
+                        }
                     }
+                    
+                    if (updated) currentRoomId else -1L
+                } else {
+                    // Nếu chưa có roomId, tạo phòng mới
+                    databaseHelper.saveMangaRoom(
+                        uniqueImageUris,
+                        uniqueTranslatedTexts
+                    )
                 }
+                
                 if (roomId != -1L) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Đã lưu thành công!", Toast.LENGTH_SHORT).show()
