@@ -83,25 +83,38 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
             if (mode == TranslationMode.OFF) {
-                // Nếu chọn OFF khi retranslate cho một ảnh cụ thể: thay vì xóa hoàn toàn
-                // entry trong translatedTexts (khiến UI nghĩ ảnh đang chờ dịch và hiển thị
-                // overlay "Đang tải bản dịch..."), ghi một entry rỗng "" -> emptyList()
-                // để đánh dấu ảnh đã được xử lý nhưng không có bản dịch.
-                
-                // Hủy trạng thái pending_delete vì không dịch mới
+                // User chọn OFF → XÓA HOÀN TOÀN tất cả translations của ảnh này khỏi DB
                 if (imageId != null) {
                     try {
-                        databaseHelper.clearPendingDeleteStatus(imageId)
-                        Log.i(TAG, "[RETRANSLATE-OFF] Cleared pending_delete status for imageId=$imageId")
+                        // Xóa tất cả translations cho image này
+                        val db = databaseHelper.writableDatabase
+                        val deletedCount = db.delete("translations", "${DatabaseHelper.COLUMN_IMAGE_ID} = ?", arrayOf(imageId.toString()))
+                        Log.i(TAG, "[RETRANSLATE-OFF] Deleted $deletedCount translations from DB for imageId=$imageId")
+                        
+                        // Xóa luôn các image_blocks
+                        try {
+                            databaseHelper.deleteBlocksForImage(imageId)
+                            Log.i(TAG, "[RETRANSLATE-OFF] Deleted image_blocks for imageId=$imageId")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to delete image_blocks for imageId=$imageId", e)
+                        }
+                        
+                        // Đánh dấu ảnh là chưa dịch trong TABLE_IMAGES
+                        val imageValues = android.content.ContentValues().apply {
+                            put(DatabaseHelper.COLUMN_IS_TRANSLATED, 0)
+                            put(DatabaseHelper.COLUMN_ORIGINAL_TEXT, "") // Clear original text too
+                        }
+                        db.update(DatabaseHelper.TABLE_IMAGES, imageValues, "${DatabaseHelper.COLUMN_IMAGE_ID} = ?", arrayOf(imageId.toString()))
+                        Log.i(TAG, "[RETRANSLATE-OFF] Marked image as untranslated in TABLE_IMAGES for imageId=$imageId")
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to clear pending delete for imageId=$imageId", e)
+                        Log.e(TAG, "Failed to delete translations for imageId=$imageId", e)
                     }
                 }
                 
                 _uiState.update { state ->
                     state.copy(
                         translatedTexts = state.translatedTexts + (uri to ("" to emptyList())),
-                        translatedStatus = state.translatedStatus + (uri to true),
+                        translatedStatus = state.translatedStatus + (uri to false), // Mark as not translated
                         sourceLanguages = state.sourceLanguages - uri,
                         // Tăng translationVersion để force UI xóa blocks
                         translationVersion = state.translationVersion + 1
@@ -895,6 +908,26 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 val currentRoomId = uiState.value.roomId
+                
+                // XÓA translations của các ảnh có translatedStatus = false TRƯỚC KHI SAVE
+                if (currentRoomId != null) {
+                    uniqueImageUris.forEach { uri ->
+                        val isTranslated = uniqueTranslatedStatus[uri] ?: false
+                        if (!isTranslated) {
+                            // Ảnh này đã tắt translation → XÓA tất cả translations khỏi DB
+                            val imageId = uriToImageId[uri]
+                            if (imageId != null) {
+                                try {
+                                    databaseHelper.deleteAllTranslationsForImage(imageId)
+                                    Log.i(TAG, "Deleted all translations for imageId=$imageId uri=$uri (translatedStatus=false)")
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Failed to delete translations for imageId=$imageId", e)
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 // Log all rotation values before saving
                 uniqueTranslatedTexts.forEach { (uri, pair) ->
                     pair.second.forEachIndexed { idx, block ->

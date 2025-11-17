@@ -801,6 +801,37 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
     }
 
+    /**
+     * Xóa HOÀN TOÀN tất cả translations của một image khỏi DB.
+     * Được gọi khi user chọn OFF (tắt bản dịch) và sau đó SAVE.
+     */
+    fun deleteAllTranslationsForImage(imageId: Long) {
+        val db = writableDatabase
+        try {
+            db.beginTransaction()
+            // Xóa tất cả translations
+            val deletedTranslations = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            // Xóa tất cả image_blocks
+            val deletedBlocks = db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            // Xóa pending translations nếu có
+            try { deletePendingTranslations(imageId) } catch (e: Exception) { /* ignore */ }
+            // Clear change flag
+            try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
+            // Update is_translated = 0 cho image
+            val imageValues = ContentValues().apply {
+                put(COLUMN_IS_TRANSLATED, 0)
+            }
+            db.update(TABLE_IMAGES, imageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            
+            db.setTransactionSuccessful()
+            Log.i(TAG, "deleteAllTranslationsForImage: Deleted $deletedTranslations translations and $deletedBlocks blocks for imageId=$imageId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting all translations for imageId=$imageId", e)
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     // Ensure a change_images record exists for an image (initially is_changed = 0)
     fun ensureChangeRecord(imageId: Long, roomId: Long) {
         val db = writableDatabase
