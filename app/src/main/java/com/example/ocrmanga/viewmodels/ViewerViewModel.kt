@@ -156,11 +156,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     // Mark as dirty and set DB change flag if this image belongs to a saved room
                     dirtyUris.add(uri)
                     val rid = _uiState.value.roomId
+                    Log.i(TAG, "[RETRANSLATE] Checking auto-save: uri=$uri imageId=$imageId roomId=$rid")
                     if (rid != null && imageId != null) {
                         try {
                             val numChanged = databaseHelper.markImageChanged(imageId, rid)
-                            if (numChanged >= 5) maybeAutoSaveChangedImages(rid)
-                        } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
+                            Log.i(TAG, "[RETRANSLATE] After markImageChanged: numChanged=$numChanged for imageId=$imageId")
+                            if (numChanged >= 5) {
+                                Log.i(TAG, "[RETRANSLATE] Threshold reached! Calling maybeAutoSaveChangedImages")
+                                maybeAutoSaveChangedImages(rid)
+                            }
+                        } catch (e: Exception) { 
+                            Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) 
+                        }
+                    } else {
+                        Log.w(TAG, "[RETRANSLATE] Cannot mark image changed: roomId=$rid imageId=$imageId")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "[RETRANSLATE] Translation failed for uri=$uri", e)
@@ -251,9 +260,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private fun maybeAutoSaveChangedImages(roomId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             // prevent concurrent auto-save runs
-            if (!autoSaveInProgress.compareAndSet(false, true)) return@launch
+            if (!autoSaveInProgress.compareAndSet(false, true)) {
+                Log.i(TAG, "Auto-save already in progress, skipping")
+                return@launch
+            }
             try {
                 val changedIds = databaseHelper.getChangedImageIdsForRoom(roomId)
+                Log.i(TAG, "Auto-save check: ${changedIds.size} images marked as changed for room $roomId")
                 if (changedIds.size >= 5) {
                     val mapping = mutableMapOf<Long, Pair<String, List<TextBlockInfo>>>()
                     val currentTranslated = _uiState.value.translatedTexts
@@ -263,6 +276,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             mapping[imgId] = pair
                         }
                     }
+                    Log.i(TAG, "Auto-save: Will save ${mapping.size} images (threshold: 5, changed: ${changedIds.size})")
                     if (mapping.isNotEmpty()) {
                         val ok = databaseHelper.applyPendingChangesForRoom(roomId, mapping)
                         if (ok) {
@@ -271,6 +285,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             Log.w(TAG, "Auto-save failed for room $roomId mappingSize=${mapping.size}")
                         }
                     }
+                } else {
+                    Log.i(TAG, "Auto-save: Not enough changed images (${changedIds.size}/5)")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "maybeAutoSaveChangedImages failed for room $roomId", e)

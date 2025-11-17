@@ -876,6 +876,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 try { count = cursor.getInt(0) } catch (e: Exception) { count = 0 }
             }
             cursor.close()
+            Log.i(TAG, "markImageChanged: imageId=$imageId marked as changed, total changed images in room $roomId: $count")
             return count
         } catch (e: Exception) {
             Log.w(TAG, "markImageChanged failed for imageId=$imageId", e)
