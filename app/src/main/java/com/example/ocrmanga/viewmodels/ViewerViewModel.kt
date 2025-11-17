@@ -107,6 +107,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         db.update(DatabaseHelper.TABLE_IMAGES, imageValues, "${DatabaseHelper.COLUMN_IMAGE_ID} = ?", arrayOf(imageId.toString()))
                         Log.i(TAG, "[RETRANSLATE-OFF] Marked image as untranslated in TABLE_IMAGES for imageId=$imageId")
                         
+                        // Clear is_changed flag to prevent this from counting as changed
+                        databaseHelper.clearChangedFlagForImage(imageId)
+                        
                         // Track this deletion for save count
                         deletedTranslationUris.add(uri)
                     } catch (e: Exception) {
@@ -287,7 +290,18 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     if (mapping.isNotEmpty()) {
                         val ok = databaseHelper.applyPendingChangesForRoom(roomId, mapping)
                         if (ok) {
-                            Log.i(TAG, "Auto-saved ${mapping.size} changed images for room $roomId (threshold reached)")
+                            // Clear dirtyUris for images that were auto-saved
+                            // NOTE: Do NOT clear deletedTranslationUris here because applyPendingChangesForRoom
+                            // only saves NEW translations, it does NOT handle deletion of old translations.
+                            // Deletion is handled separately in saveCurrentRoom's selective save (case 3).
+                            val currentTranslated = _uiState.value.translatedTexts
+                            currentTranslated.forEach { (uri, _) ->
+                                val imgId = uriToImageId[uri]
+                                if (imgId != null && imgId in changedIds) {
+                                    dirtyUris.remove(uri)
+                                }
+                            }
+                            Log.i(TAG, "Auto-saved ${mapping.size} changed images for room $roomId (threshold reached), cleared from dirtyUris")
                         } else {
                             Log.w(TAG, "Auto-save failed for room $roomId mappingSize=${mapping.size}")
                         }
@@ -1019,7 +1033,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         }
                         // Case 4: Có changedImageIds (từ retranslate) nhưng chưa được auto-save
                         hasChangedImages -> {
-                            Log.i(TAG, "Partial save: ${changedImageIds.size} retranslated images (not auto-saved yet)")
                             val mapping = mutableMapOf<Long, Pair<String, List<TextBlockInfo>>>()
                             uniqueImageUris.forEach { uri ->
                                 val imgId = uriToImageId[uri]
@@ -1028,7 +1041,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 }
                             }
                             tempSavedCount = mapping.size
+                            Log.i(TAG, "Partial save: ${tempSavedCount} retranslated images (out of ${changedImageIds.size} changed)")
                             if (mapping.isNotEmpty()) {
+                                // Only process images in mapping, not all changedImageIds
                                 databaseHelper.applyPendingChangesForRoom(currentRoomId, mapping)
                             } else {
                                 Log.w(TAG, "Changed images found but no mapping created")

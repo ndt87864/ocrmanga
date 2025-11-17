@@ -89,10 +89,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             db.execSQL("""
                                 DELETE FROM translations 
                                 WHERE $COLUMN_IMAGE_ID = ? 
-                                AND translation_id NOT IN (
-                                    SELECT translation_id FROM translations 
+                                AND text_id NOT IN (
+                                    SELECT text_id FROM translations 
                                     WHERE $COLUMN_IMAGE_ID = ? 
-                                    ORDER BY translation_id DESC 
+                                    ORDER BY text_id DESC 
                                     LIMIT ?
                                 )
                             """, arrayOf(imageId.toString(), imageId.toString(), expectedBlocks.toString()))
@@ -894,6 +894,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             Log.w(TAG, "clearImageChange failed for imageId=$imageId", e)
         }
     }
+    
+    // Alias for clearImageChange with more descriptive name
+    fun clearChangedFlagForImage(imageId: Long) = clearImageChange(imageId)
 
     /**
      * Đánh dấu tất cả bản dịch cũ của một imageId là pending_delete = 1
@@ -968,10 +971,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val db = writableDatabase
         db.beginTransaction()
         try {
-            val changedIds = getChangedImageIdsForRoom(roomId)
-            for (imageId in changedIds) {
+            // Only process imageIds that are in the mapping, not all changed images
+            val imageIdsToProcess = translatedByImageId.keys
+            Log.i(TAG, "applyPendingChangesForRoom: Processing ${imageIdsToProcess.size} specific images")
+            
+            for (imageId in imageIdsToProcess) {
                 // delete old translations and blocks (including pending_delete ones)
-                db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                Log.d(TAG, "Deleted $deletedCount translations for imageId=$imageId")
                 try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
 
                 // insert new translations if available
