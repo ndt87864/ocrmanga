@@ -219,37 +219,39 @@ fun ImageViewer(
             val isInWindow = index in visibleRange.value
             // Luôn ưu tiên translatedTexts mới từ translation mode
             // Only prepare translated blocks when the item is in window to avoid expensive work while scrolling
-            val currentTranslatedBlocks = if (isInWindow) translatedTexts[uri]?.second?.map { block ->
-                // ✅ Chuẩn hóa màu overlay & text, đảm bảo luôn có alpha
-                val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
-                val textInt = (block.customTextColor ?: computeDefaultTextColor(overlayInt, block.averageBackgroundColor)) or 0xFF000000.toInt()
-                // Keep original font sizes on the block; edit-mode scaling is applied when rendering.
-                DragBlockState(
-                    block = block.copy(
-                        customOverlayColor = overlayInt,
-                        customTextColor = textInt,
-                        fontSize = block.fontSize
-                    ),
-                    // No explicit edited font size at load
-                    fontSize = null,
-                    rotation = block.rotation ?: 0f,
-                    whiteoutColor = Color(overlayInt),
-                    textColor = Color(textInt),
-                    overlayAlpha = block.overlayAlpha,
-                    textBoldness = block.textBoldness,
-                    overlaySaturation = block.overlaySaturation,
-                    textSaturation = block.textSaturation,
-                    lineSpacing = block.lineSpacing,
-                    textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
-                    textBorderThickness = block.borderThickness,
-                    textBorderAlpha = block.borderAlpha,
-                    // Map saved shadow values from TextBlockInfo into DragBlockState so they are visible in view mode
-                    textShadowColor = block.customShadowColor?.let { Color(it or 0xFF000000.toInt()) },
-                    textShadowAlpha = block.shadowAlpha ?: 1.0f,
-                    textShadowRadius = block.shadowRadius ?: 0f,
-                    // lineSpacing already set above
-                )
-            } else null
+            val currentTranslatedBlocks = if (isInWindow) translatedTexts[uri]?.second
+                ?.filter { !it.pendingDelete }
+                ?.map { block ->
+                    // ✅ Chuẩn hóa màu overlay & text, đảm bảo luôn có alpha
+                    val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
+                    val textInt = (block.customTextColor ?: computeDefaultTextColor(overlayInt, block.averageBackgroundColor)) or 0xFF000000.toInt()
+                    // Keep original font sizes on the block; edit-mode scaling is applied when rendering.
+                    DragBlockState(
+                        block = block.copy(
+                            customOverlayColor = overlayInt,
+                            customTextColor = textInt,
+                            fontSize = block.fontSize
+                        ),
+                        // No explicit edited font size at load
+                        fontSize = null,
+                        rotation = block.rotation ?: 0f,
+                        whiteoutColor = Color(overlayInt),
+                        textColor = Color(textInt),
+                        overlayAlpha = block.overlayAlpha,
+                        textBoldness = block.textBoldness,
+                        overlaySaturation = block.overlaySaturation,
+                        textSaturation = block.textSaturation,
+                        lineSpacing = block.lineSpacing,
+                        textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
+                        textBorderThickness = block.borderThickness,
+                        textBorderAlpha = block.borderAlpha,
+                        // Map saved shadow values from TextBlockInfo into DragBlockState so they are visible in view mode
+                        textShadowColor = block.customShadowColor?.let { Color(it or 0xFF000000.toInt()) },
+                        textShadowAlpha = block.shadowAlpha ?: 1.0f,
+                        textShadowRadius = block.shadowRadius ?: 0f,
+                        // lineSpacing already set above
+                    )
+                } else null
 
             // Keep dragBlocks lightweight when offscreen to avoid allocations and heavy updates
             var dragBlocks by remember(uri, translationVersion, translatedTexts[uri], isInWindow) {

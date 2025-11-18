@@ -51,6 +51,20 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
+        // Chuyển đổi trạng thái pendingDelete cho block của một ảnh
+    fun togglePendingDelete(uri: Uri, blockId: Int, setPending: Boolean) {
+        _uiState.update { state ->
+            val oldPair = state.translatedTexts[uri] ?: ("" to emptyList<TextBlockInfo>())
+            val blocks = oldPair.second.map {
+                if (it.bounds.hashCode() == blockId) it.copy(pendingDelete = setPending) else it
+            }
+            state.copy(
+                translatedTexts = state.translatedTexts.toMutableMap().apply {
+                    put(uri, oldPair.first to blocks)
+                }
+            )
+        }
+    }
     // Dịch lại 1 ảnh (re-translate single image)
     // IMPORTANT: This will DELETE all existing translations for this image before creating new ones
     fun retranslateImage(uri: Uri, mode: TranslationMode) {

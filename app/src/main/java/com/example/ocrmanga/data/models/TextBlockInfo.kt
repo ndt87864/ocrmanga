@@ -42,6 +42,9 @@ data class TextBlockInfo(
     // true: áp dụng merge overlapping (khi translation từ OCR)
     // false: không áp dụng merge (khi edit hoặc di chuyển manual)
     val applyMerge: Boolean = true
+    ,
+    // Trạng thái chờ xóa bản dịch (ẩn khỏi view, có thể khôi phục)
+    val pendingDelete: Boolean = false
 )
 
 enum class BackgroundType {

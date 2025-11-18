@@ -160,6 +160,12 @@ fun Dialogs(
     }
 
     if (showImageMenu && imageMenuUri != null) {
+        val uri = imageMenuUri
+        // Lấy danh sách block của ảnh này
+        val blocks = viewModel.uiState.value.translatedTexts[uri]?.second ?: emptyList()
+        // Nếu có block, lấy trạng thái pendingDelete của block đầu tiên (hoặc có thể chọn block cụ thể nếu cần)
+        val hasPendingDelete = blocks.any { it.pendingDelete }
+        val blockId = blocks.firstOrNull()?.bounds?.hashCode()
         AlertDialog(
             onDismissRequest = onImageMenuDismiss,
             title = { Text("Tùy chọn ảnh") },
@@ -176,44 +182,70 @@ fun Dialogs(
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Xóa ảnh khỏi trang") }
                     Spacer(Modifier.height(16.dp))
+                    // ...không còn nút ON/OFF riêng biệt...
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    TranslationMode.values().forEach { mode ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val uri = imageMenuUri
-                                    // Check API key availability for Gemini and Mistral modes
-                                    if (mode == TranslationMode.GEMINI && !viewModel.hasGeminiApiKeys()) {
-                                        Toast.makeText(
-                                            context,
-                                            "Không có API key Gemini. Vui lòng thêm ít nhất một API key Gemini trong cài đặt để dùng tính năng dịch Gemini.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL).forEach { mode ->
+                        if (mode == TranslationMode.OFF) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val uri = imageMenuUri
+                                        val hasPendingDelete = blocks.all { it.pendingDelete }
+                                        if (uri != null) {
+                                            if (hasPendingDelete) {
+                                                // Hiện lại toàn bộ bản dịch
+                                                blocks.forEach { block ->
+                                                    viewModel.togglePendingDelete(uri, block.bounds.hashCode(), false)
+                                                }
+                                                Toast.makeText(context, "Đã bật lại bản dịch", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                // Ẩn toàn bộ bản dịch
+                                                blocks.forEach { block ->
+                                                    viewModel.togglePendingDelete(uri, block.bounds.hashCode(), true)
+                                                }
+                                                Toast.makeText(context, "Đã tắt bản dịch", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
                                         onImageMenuDismiss()
-                                        return@clickable
                                     }
-                                    if (mode == TranslationMode.MISTRAL && !viewModel.hasMistralApiKeys()) {
-                                        Toast.makeText(
-                                            context,
-                                            "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                        onImageMenuDismiss()
-                                        return@clickable
-                                    }
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Text(if (hasPendingDelete) "ON" else "OFF", modifier = Modifier.padding(start = 8.dp))
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val uri = imageMenuUri
+                                        // Check API key availability for Gemini and Mistral modes
+                                        if (mode == TranslationMode.GEMINI && !viewModel.hasGeminiApiKeys()) {
+                                            Toast.makeText(
+                                                context,
+                                                "Không có API key Gemini. Vui lòng thêm ít nhất một API key Gemini trong cài đặt để dùng tính năng dịch Gemini.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            onImageMenuDismiss()
+                                            return@clickable
+                                        }
+                                        if (mode == TranslationMode.MISTRAL && !viewModel.hasMistralApiKeys()) {
+                                            Toast.makeText(
+                                                context,
+                                                "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            onImageMenuDismiss()
+                                            return@clickable
+                                        }
 
-                                    if (uri != null) {
-                                        // Mark whether we actually started a retranslation (viewModel may reject if no keys)
-                                        var started = false
-                                        Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
-                                        // Call onRetranslateImage; the ViewModel will early-return and show its own Toast
-                                        onRetranslateImage(uri, mode)
-                                        started = true
-
-                                        if (started) {
+                                        if (uri != null) {
+                                            Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
+                                            onRetranslateImage(uri, mode)
                                             coroutineScope.launch {
                                                 while (true) {
                                                     val status = viewModel.uiState.value.translatedStatus[uri]
@@ -223,13 +255,13 @@ fun Dialogs(
                                                 Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
                                             }
                                         }
+                                        onImageMenuDismiss()
                                     }
-                                    onImageMenuDismiss()
-                                }
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Text(mode.name, modifier = Modifier.padding(start = 8.dp))
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Text(mode.name, modifier = Modifier.padding(start = 8.dp))
+                            }
                         }
                     }
                     Spacer(Modifier.height(12.dp))

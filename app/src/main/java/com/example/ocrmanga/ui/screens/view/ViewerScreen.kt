@@ -249,6 +249,12 @@ fun ViewerScreen(
         onNavigateBack()
     }
 
+    // Tạo translatedTextsFiltered để lọc các block có pendingDelete = false
+    val translatedTextsFiltered = uiState.translatedTexts.mapValues { entry ->
+        val pair = entry.value
+        pair.copy(second = pair.second.filter { !it.pendingDelete })
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
