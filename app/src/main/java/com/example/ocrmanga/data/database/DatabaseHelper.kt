@@ -1380,6 +1380,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to initialize room settings for roomId=$roomId", e)
             }
+            
+            // Clean up duplicate image_id entries after save
+            cleanupDuplicateImages(roomId)
+            
         } catch (e: Exception) {
             Log.e(TAG, "Error saving manga room", e)
             return -1L
@@ -1766,12 +1770,67 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
             db.setTransactionSuccessful()
             Log.i(TAG, "Đã cập nhật phòng $roomId (tối ưu lưu trữ, chỉ copy ảnh mới)")
+            
+            // Clean up duplicate image_id entries after update
+            cleanupDuplicateImages(roomId)
+            
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi khi cập nhật phòng $roomId", e)
             return false
         } finally {
             db.endTransaction()
+        }
+    }
+    
+    /**
+     * Remove duplicate image entries in a room, keeping only the first occurrence
+     * of each image_uri and deleting all subsequent duplicates.
+     */
+    private fun cleanupDuplicateImages(roomId: Long) {
+        val db = writableDatabase
+        try {
+            // Find all images in this room
+            val cursor = db.rawQuery(
+                """
+                SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI 
+                FROM $TABLE_IMAGES 
+                WHERE $COLUMN_ROOM_ID = ? 
+                ORDER BY $COLUMN_DISPLAY_ORDER
+                """,
+                arrayOf(roomId.toString())
+            )
+            
+            val seenUris = mutableSetOf<String>()
+            val duplicateImageIds = mutableListOf<Long>()
+            
+            while (cursor.moveToNext()) {
+                val imageId = cursor.getLong(0)
+                val imageUri = cursor.getString(1)
+                
+                if (seenUris.contains(imageUri)) {
+                    // This is a duplicate
+                    duplicateImageIds.add(imageId)
+                } else {
+                    seenUris.add(imageUri)
+                }
+            }
+            cursor.close()
+            
+            // Delete all duplicate entries
+            if (duplicateImageIds.isNotEmpty()) {
+                duplicateImageIds.forEach { imageId ->
+                    // Delete translations for this duplicate
+                    db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    // Delete image_blocks for this duplicate
+                    db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    // Delete the image record itself
+                    db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                }
+                Log.i(TAG, "cleanupDuplicateImages: Removed ${duplicateImageIds.size} duplicate image entries from room $roomId: $duplicateImageIds")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error cleaning up duplicate images for room $roomId", e)
         }
     }
 
@@ -1992,6 +2051,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
 
             db.setTransactionSuccessful()
+            
+            // Clean up duplicate image_id entries after selective update
+            cleanupDuplicateImages(roomId)
+            
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi khi cập nhật phòng selective $roomId", e)

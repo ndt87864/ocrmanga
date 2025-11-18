@@ -1,5 +1,6 @@
 package com.example.ocrmanga.viewmodels
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Paint
@@ -537,11 +538,47 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 
                 //log.i(TAG, "Đang tải phòng $roomId")
                 val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
+                
+                // Filter out duplicate URIs, keeping only the first occurrence
+                val uniqueImages = mutableListOf<Uri>()
+                val seenUris = mutableSetOf<String>()
+                allImages.forEach { uri ->
+                    val uriString = uri.toString()
+                    if (!seenUris.contains(uriString)) {
+                        uniqueImages.add(uri)
+                        seenUris.add(uriString)
+                    } else {
+                        Log.w(TAG, "loadRoom: Skipping duplicate URI: $uriString")
+                    }
+                }
+                
+                if (uniqueImages.size < allImages.size) {
+                    Log.i(TAG, "loadRoom: Filtered ${allImages.size - uniqueImages.size} duplicate images from room $roomId")
+                }
+                
+                // Sort images by numeric order in filename (e.g., image_1, image_2, ..., image_10, image_11)
+                // Extract number from filename like "image_10.jpg" -> 10
+                fun extractImageNumber(uri: Uri): Int {
+                    val filename = uri.lastPathSegment ?: return Int.MAX_VALUE
+                    val match = """image_(\d+)""".toRegex().find(filename)
+                    return match?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE
+                }
+                
+                val sortedImages = uniqueImages.sortedBy { extractImageNumber(it) }
+                
+                if (sortedImages != uniqueImages) {
+                    Log.i(TAG, "loadRoom: Reordered images by numeric filename")
+                }
+                
+                if (sortedImages != uniqueImages) {
+                    Log.i(TAG, "loadRoom: Reordered images by numeric filename")
+                }
+                
                 // ĐẢM BẢO: KHÔNG loại bỏ ảnh đầu (coverUri) khỏi danh sách ảnh phòng!
                 // Nếu coverUri trùng với ảnh đầu, vẫn giữ nguyên trong danh sách hiển thị.
                 val translatedStatus = mutableMapOf<Uri, Boolean>()
-                val initialBatch = allImages.take(BATCH_SIZE)
-                val remainingImages = allImages.drop(BATCH_SIZE)
+                val initialBatch = sortedImages.take(BATCH_SIZE)
+                val remainingImages = sortedImages.drop(BATCH_SIZE)
 
                 // Load initial batch
                 val db = databaseHelper.readableDatabase
@@ -1286,6 +1323,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    @SuppressLint("SuspiciousIndentation")
     private suspend fun processTranslationQueue() {
     // Khi dịch bằng Mistral/Gemini cho toàn bộ phòng, dịch song song 2 ảnh, mỗi ảnh dùng 1 key khác nhau trong lượt đó
     val isParallelKeyMode = uiState.value.translationMode == TranslationMode.MISTRAL || uiState.value.translationMode == TranslationMode.GEMINI
