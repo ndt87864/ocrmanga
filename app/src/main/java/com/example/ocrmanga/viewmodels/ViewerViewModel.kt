@@ -462,7 +462,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         newImageUris.addAll(newUris)
         //log.i(TAG, "Đã thêm ${newUris.size} URI ảnh mới vào cuối")
 
-        if (uiState.value.translationEnabled && uiState.value.translationMode != TranslationMode.OFF) {
+        // Only auto-translate if both translation is enabled AND auto-translate setting is ON
+        if (uiState.value.translationEnabled && 
+            uiState.value.translationMode != TranslationMode.OFF && 
+            uiState.value.autoTranslateEnabled) {
             enqueueTranslation(newUris)
         }
     }
@@ -483,7 +486,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         newImageUris.addAll(newUris)
         //log.i(TAG, "Đã thêm ${newUris.size} URI ảnh mới vào đầu")
 
-        if (uiState.value.translationEnabled && uiState.value.translationMode != TranslationMode.OFF) {
+        // Only auto-translate if both translation is enabled AND auto-translate setting is ON
+        if (uiState.value.translationEnabled && 
+            uiState.value.translationMode != TranslationMode.OFF && 
+            uiState.value.autoTranslateEnabled) {
             enqueueTranslation(newUris)
         }
     }
@@ -505,7 +511,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         newImageUris.addAll(newUris)
         //log.i(TAG, "Đã thêm ${newUris.size} URI ảnh mới vào vị trí $insertIndex")
 
-        if (uiState.value.translationEnabled && uiState.value.translationMode != TranslationMode.OFF) {
+        // Only auto-translate if both translation is enabled AND auto-translate setting is ON
+        if (uiState.value.translationEnabled && 
+            uiState.value.translationMode != TranslationMode.OFF && 
+            uiState.value.autoTranslateEnabled) {
             enqueueTranslation(newUris)
         }
     }
@@ -522,6 +531,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 removedImageIds.clear()
                 newImageUris.clear()
                 uriToImageId.clear()
+                
+                // Load auto-translate setting for this room
+                val autoTranslate = databaseHelper.getAutoTranslateSetting(roomId)
                 
                 //log.i(TAG, "Đang tải phòng $roomId")
                 val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
@@ -614,7 +626,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         sourceLanguages = it.sourceLanguages + sourceLangsForBatch,
                         remainingImages = remainingImages,
                         // Tăng translationVersion để force UI update dragBlocksMap từ DB
-                        translationVersion = it.translationVersion + 1
+                        translationVersion = it.translationVersion + 1,
+                        autoTranslateEnabled = autoTranslate
                     )
                 }
                 // record last loaded room id so clear can delete files even if uiState changes later
@@ -1407,6 +1420,27 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
+     * Toggle auto-translate setting for current room
+     */
+    fun toggleAutoTranslate() {
+        val roomId = uiState.value.roomId ?: return
+        val newValue = !uiState.value.autoTranslateEnabled
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                databaseHelper.setAutoTranslateSetting(roomId, newValue)
+                _uiState.update { it.copy(autoTranslateEnabled = newValue) }
+                withContext(Dispatchers.Main) {
+                    val message = if (newValue) "Đã BẬT tự động dịch ảnh mới" else "Đã TẮT tự động dịch ảnh mới"
+                    Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error toggling auto-translate", e)
+            }
+        }
+    }
+
+    /**
      * Xóa toàn bộ session, ảnh, trạng thái dịch, trạng thái phòng, v.v. (reset sạch ViewModel)
      */
     /**
@@ -1901,5 +1935,6 @@ data class ViewerUiState(
     val translationTimer: Int = 0,
     val isLoadingMoreImages: Boolean = false,
     val remainingImages: List<Uri> = emptyList(),
-    val roomId: Long? = null
+    val roomId: Long? = null,
+    val autoTranslateEnabled: Boolean = true // Auto-translate new images when adding to room
 )

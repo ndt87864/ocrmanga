@@ -224,7 +224,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 15
+    private const val DATABASE_VERSION = 16
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -261,6 +261,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         private const val COLUMN_UPDATED_DATE = "updated_date"
         private const val COLUMN_IS_ACTIVE = "is_active"
         private const val COLUMN_API_KEY_TYPE = "type" // Thêm trường type
+
+    // Room settings table
+    const val TABLE_ROOM_SETTINGS = "room_settings"
+    const val COLUMN_SETTING_ROOM_ID = "room_id"
+    const val COLUMN_AUTO_TRANSLATE_NEW_IMAGES = "auto_translate_new_images" // 0 = disabled, 1 = enabled
 
     // Image blocks table (per-image text/overlay blocks)
     const val TABLE_IMAGE_BLOCKS = "image_blocks"
@@ -432,6 +437,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         
         // Index để tăng tốc truy vấn change_images theo image_id (đã có UNIQUE constraint, có thể skip)
         // db.execSQL("CREATE INDEX IF NOT EXISTS idx_change_images_image_id ON $TABLE_CHANGE_IMAGES($COLUMN_CHANGE_IMAGE_IMAGE_ID)")
+        
+        // Create table for room settings
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_ROOM_SETTINGS (
+                $COLUMN_SETTING_ROOM_ID INTEGER PRIMARY KEY,
+                $COLUMN_AUTO_TRANSLATE_NEW_IMAGES INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY ($COLUMN_SETTING_ROOM_ID) REFERENCES $TABLE_ROOMS($COLUMN_ROOM_ID) ON DELETE CASCADE
+            )
+            """
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -700,6 +716,31 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.i(TAG, "Đã tạo indexes để tăng tốc độ truy vấn")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể tạo indexes", e)
+            }
+        }
+        
+        // Add room_settings table in version 16
+        if (oldVersion < 16) {
+            try {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS $TABLE_ROOM_SETTINGS (
+                        $COLUMN_SETTING_ROOM_ID INTEGER PRIMARY KEY,
+                        $COLUMN_AUTO_TRANSLATE_NEW_IMAGES INTEGER NOT NULL DEFAULT 1,
+                        FOREIGN KEY ($COLUMN_SETTING_ROOM_ID) REFERENCES $TABLE_ROOMS($COLUMN_ROOM_ID) ON DELETE CASCADE
+                    )
+                    """
+                )
+                // Initialize settings for existing rooms with default enabled (1)
+                db.execSQL(
+                    """
+                    INSERT OR IGNORE INTO $TABLE_ROOM_SETTINGS ($COLUMN_SETTING_ROOM_ID, $COLUMN_AUTO_TRANSLATE_NEW_IMAGES)
+                    SELECT $COLUMN_ROOM_ID, 1 FROM $TABLE_ROOMS
+                    """
+                )
+                Log.i(TAG, "Đã tạo bảng $TABLE_ROOM_SETTINGS")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể tạo bảng $TABLE_ROOM_SETTINGS", e)
             }
         }
     }
@@ -1332,6 +1373,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
             db.setTransactionSuccessful()
             Log.i(TAG, "Successfully saved room $roomId with ${imageUris.size} images")
+            
+            // Initialize room settings with default auto-translate enabled
+            try {
+                setAutoTranslateSetting(roomId, true)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to initialize room settings for roomId=$roomId", e)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error saving manga room", e)
             return -1L
@@ -2507,6 +2555,58 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val isActive = if (cursor.moveToFirst()) cursor.getInt(0) == 1 else false
         cursor.close()
         return isActive
+    }
+
+    // --- Room Settings CRUD ---
+    
+    /**
+     * Get auto-translate setting for a room. Returns true (enabled) by default.
+     */
+    fun getAutoTranslateSetting(roomId: Long): Boolean {
+        val db = readableDatabase
+        try {
+            val cursor = db.rawQuery(
+                "SELECT $COLUMN_AUTO_TRANSLATE_NEW_IMAGES FROM $TABLE_ROOM_SETTINGS WHERE $COLUMN_SETTING_ROOM_ID = ?",
+                arrayOf(roomId.toString())
+            )
+            val result = if (cursor.moveToFirst()) {
+                cursor.getInt(0) == 1
+            } else {
+                // Default to enabled if no setting exists
+                true
+            }
+            cursor.close()
+            return result
+        } catch (e: Exception) {
+            Log.w(TAG, "Error getting auto-translate setting for roomId=$roomId", e)
+            return true // Default to enabled on error
+        }
+    }
+    
+    /**
+     * Set auto-translate setting for a room.
+     */
+    fun setAutoTranslateSetting(roomId: Long, enabled: Boolean) {
+        val db = writableDatabase
+        try {
+            val values = ContentValues().apply {
+                put(COLUMN_SETTING_ROOM_ID, roomId)
+                put(COLUMN_AUTO_TRANSLATE_NEW_IMAGES, if (enabled) 1 else 0)
+            }
+            val updated = db.update(
+                TABLE_ROOM_SETTINGS,
+                values,
+                "$COLUMN_SETTING_ROOM_ID = ?",
+                arrayOf(roomId.toString())
+            )
+            if (updated == 0) {
+                // Insert if not exists
+                db.insert(TABLE_ROOM_SETTINGS, null, values)
+            }
+            Log.i(TAG, "Set auto-translate for roomId=$roomId to $enabled")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting auto-translate for roomId=$roomId", e)
+        }
     }
 
     init {

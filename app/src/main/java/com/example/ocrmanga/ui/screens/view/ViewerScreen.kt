@@ -417,6 +417,23 @@ fun ViewerScreen(
                                     showMainMenu = false
                                 }
                             )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            if (uiState.autoTranslateEnabled) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                                            null,
+                                            modifier = Modifier.padding(end = 8.dp),
+                                            tint = if (uiState.autoTranslateEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                        )
+                                        Text(if (uiState.autoTranslateEnabled) "Tự động dịch ảnh mới: BẬT" else "Tự động dịch ảnh mới: TẮT")
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.toggleAutoTranslate()
+                                    showMainMenu = false
+                                }
+                            )
                         }
                     }
                     DropdownMenu(
