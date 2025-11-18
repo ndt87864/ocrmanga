@@ -323,6 +323,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             )
         """)
 
+        // Index để tăng tốc truy vấn images theo room_id
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_id ON $TABLE_IMAGES($COLUMN_ROOM_ID)")
+        
+        // Index để tăng tốc truy vấn images theo display_order trong room
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_order ON $TABLE_IMAGES($COLUMN_ROOM_ID, $COLUMN_DISPLAY_ORDER)")
+
         db.execSQL("""
             CREATE TABLE translations (
                 text_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -351,6 +357,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
+
+        // Index để tăng tốc truy vấn translations theo image_id
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_image_id ON translations($COLUMN_IMAGE_ID)")
+        
+        // Index để tăng tốc truy vấn translations pending delete
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_pending_delete ON translations($COLUMN_IMAGE_ID, pending_delete)")
 
         db.execSQL(
             """
@@ -398,6 +410,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             )
             """
         )
+        
+        // Index để tăng tốc truy vấn image_blocks theo image_id
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_image_blocks_image_id ON $TABLE_IMAGE_BLOCKS($COLUMN_BLOCK_IMAGE_ID)")
+        
         // Create table for tracking changed images
         db.execSQL(
             """
@@ -410,6 +426,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             )
             """
         )
+        
+        // Index để tăng tốc truy vấn change_images theo room_id và flag
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_change_images_room_flag ON $TABLE_CHANGE_IMAGES($COLUMN_CHANGE_IMAGE_ROOM_ID, $COLUMN_CHANGE_IMAGE_FLAG)")
+        
+        // Index để tăng tốc truy vấn change_images theo image_id (đã có UNIQUE constraint, có thể skip)
+        // db.execSQL("CREATE INDEX IF NOT EXISTS idx_change_images_image_id ON $TABLE_CHANGE_IMAGES($COLUMN_CHANGE_IMAGE_IMAGE_ID)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -655,6 +677,29 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.i(TAG, "Đã thêm cột pending_delete vào bảng translations")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm cột pending_delete (có thể đã tồn tại)", e)
+            }
+        }
+        
+        // Create indexes for better query performance in version 15
+        if (oldVersion < 15) {
+            try {
+                // Index cho bảng images
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_id ON $TABLE_IMAGES($COLUMN_ROOM_ID)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_order ON $TABLE_IMAGES($COLUMN_ROOM_ID, $COLUMN_DISPLAY_ORDER)")
+                
+                // Index cho bảng translations
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_image_id ON translations($COLUMN_IMAGE_ID)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_pending_delete ON translations($COLUMN_IMAGE_ID, pending_delete)")
+                
+                // Index cho bảng image_blocks
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_image_blocks_image_id ON $TABLE_IMAGE_BLOCKS($COLUMN_BLOCK_IMAGE_ID)")
+                
+                // Index cho bảng change_images
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_change_images_room_flag ON $TABLE_CHANGE_IMAGES($COLUMN_CHANGE_IMAGE_ROOM_ID, $COLUMN_CHANGE_IMAGE_FLAG)")
+                
+                Log.i(TAG, "Đã tạo indexes để tăng tốc độ truy vấn")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể tạo indexes", e)
             }
         }
     }
