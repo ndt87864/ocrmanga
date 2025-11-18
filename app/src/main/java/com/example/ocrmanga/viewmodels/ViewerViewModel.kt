@@ -196,6 +196,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     // Thêm hàm mới để cập nhật translatedTexts cho một uri cụ thể (sửa lỗi unresolved reference)
     fun updateTranslatedBlocks(uri: Uri, blocks: List<TextBlockInfo>) {
+        // Get current blocks to check if there's any actual change
+        val current = _uiState.value.translatedTexts[uri] ?: ("" to emptyList())
+        val currentBlocks = current.second
+        
         // Always update rotation from DragBlockState if available
         // Set applyMerge = false khi edit manual để không áp dụng logic chống chồng lấn
         val updatedBlocks = blocks.map { block ->
@@ -205,7 +209,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             // Set applyMerge = false vì đây là edit manual
             blockWithRotation.copy(applyMerge = false)
         }
-        val current = _uiState.value.translatedTexts[uri] ?: ("" to emptyList())
+        
+        // Check if blocks actually changed (size or content)
+        val hasChanges = currentBlocks.size != updatedBlocks.size ||
+            currentBlocks.zip(updatedBlocks).any { (old, new) ->
+                old.text != new.text ||
+                old.bounds != new.bounds ||
+                old.rotation != new.rotation ||
+                old.fontSize != new.fontSize
+            }
+        
+        // Only mark as dirty and changed if there are actual changes
+        if (!hasChanges) {
+            Log.d(TAG, "[UPDATE] No actual changes detected for uri=$uri, skipping mark")
+            return
+        }
+        
         val newPair = current.first to updatedBlocks
         _uiState.update {
             it.copy(
@@ -233,6 +252,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private val translationRepository = TranslationRepository(application)
     // prevent parallel auto-save runs
     private val autoSaveInProgress = AtomicBoolean(false)
+    // prevent auto-save when manual save is in progress
+    private val isManualSaving = AtomicBoolean(false)
+    // Track current auto-save job so we can cancel it when manual save starts
+    private var autoSaveJob: Job? = null
     private val databaseHelper = DatabaseHelper(application)
     // Track active jobs (translation / timer / io) so we can force-cancel them when clearing session
     private val activeJobs = ConcurrentLinkedQueue<Job>()
@@ -268,7 +291,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     // If a room accumulates >=5 changed images, automatically persist their pending edits.
     private fun maybeAutoSaveChangedImages(roomId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
+        autoSaveJob?.cancel() // Cancel any existing auto-save
+        autoSaveJob = viewModelScope.launch(Dispatchers.IO) {
             // prevent concurrent auto-save runs
             if (!autoSaveInProgress.compareAndSet(false, true)) {
                 Log.i(TAG, "Auto-save already in progress, skipping")
@@ -288,7 +312,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     Log.i(TAG, "Auto-save: Will save ${mapping.size} images (threshold: 5, changed: ${changedIds.size})")
                     if (mapping.isNotEmpty()) {
-                        val ok = databaseHelper.applyPendingChangesForRoom(roomId, mapping)
+                        // Pass clearChangedFlag=true to clear is_changed flag after auto-save.
+                        // If user wants to modify further, they can:
+                        // - Edit manually → adds to dirtyUris
+                        // - Retranslate → calls markImageChanged again
+                        val ok = databaseHelper.applyPendingChangesForRoom(roomId, mapping, clearChangedFlag = true)
                         if (ok) {
                             // Clear dirtyUris for images that were auto-saved
                             // NOTE: Do NOT clear deletedTranslationUris here because applyPendingChangesForRoom
@@ -485,6 +513,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun loadRoom(roomId: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Clear all is_changed flags for this room to start fresh
+                databaseHelper.clearAllChangedFlagsForRoom(roomId)
+                
                 // Clear tracking variables when loading a room
                 dirtyUris.clear()
                 deletedTranslationUris.clear()
@@ -920,6 +951,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun saveCurrentRoom() {
         viewModelScope.launch(Dispatchers.IO) {
+            isManualSaving.set(true)
+            // Cancel any auto-save in progress to avoid race condition
+            autoSaveJob?.cancel()
+            autoSaveJob = null
+            try {
             val imageCount = uiState.value.imageUris.size
             //log.i(TAG, "Đang lưu phòng hiện tại với $imageCount ảnh")
             if (imageCount == 0) {
@@ -1096,6 +1132,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Lưu thất bại!", Toast.LENGTH_SHORT).show()
                 }
+            }
+            } finally {
+                isManualSaving.set(false)
             }
         }
     }

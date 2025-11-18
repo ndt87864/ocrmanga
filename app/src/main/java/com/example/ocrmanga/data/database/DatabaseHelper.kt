@@ -899,6 +899,31 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     fun clearChangedFlagForImage(imageId: Long) = clearImageChange(imageId)
 
     /**
+     * Clear all is_changed flags for all images in a room.
+     * Called when loading a room to start fresh.
+     */
+    fun clearAllChangedFlagsForRoom(roomId: Long) {
+        val db = writableDatabase
+        try {
+            db.execSQL(
+                """
+                UPDATE $TABLE_CHANGE_IMAGES 
+                SET $COLUMN_CHANGE_IMAGE_FLAG = 0 
+                WHERE $COLUMN_CHANGE_IMAGE_IMAGE_ID IN (
+                    SELECT $COLUMN_IMAGE_ID 
+                    FROM $TABLE_IMAGES 
+                    WHERE $COLUMN_ROOM_ID = ?
+                )
+                """,
+                arrayOf(roomId.toString())
+            )
+            Log.i(TAG, "Cleared all is_changed flags for room $roomId")
+        } catch (e: Exception) {
+            Log.w(TAG, "clearAllChangedFlagsForRoom failed for roomId=$roomId", e)
+        }
+    }
+
+    /**
      * Đánh dấu tất cả bản dịch cũ của một imageId là pending_delete = 1
      * Được gọi khi bắt đầu retranslate một ảnh
      */
@@ -963,11 +988,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     /**
      * Apply pending changes for all images in a room where is_changed = 1.
      * For each changed imageId: re-save translations and image_blocks from provided translatedTexts map if present,
-     * or leave as-is if no translated data is provided. After applying, set is_changed = 0 for those images.
+     * or leave as-is if no translated data is provided.
      *
-     * This method assumes the caller prepares the translatedTexts mapping from imageId to its new translations/data.
+     * @param clearChangedFlag If true, clears is_changed=0 after saving (for manual save).
+     *                         If false, keeps the flag (for auto-save, so user can manually save later).
      */
-    fun applyPendingChangesForRoom(roomId: Long, translatedByImageId: Map<Long, Pair<String, List<TextBlockInfo>>>): Boolean {
+    fun applyPendingChangesForRoom(
+        roomId: Long, 
+        translatedByImageId: Map<Long, Pair<String, List<TextBlockInfo>>>,
+        clearChangedFlag: Boolean = true
+    ): Boolean {
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -1058,8 +1088,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     }
                 }
 
-                // clear change flag
-                clearImageChange(imageId)
+                // clear change flag only if requested (manual save)
+                // For auto-save, keep the flag so user can still see changes and manually save
+                if (clearChangedFlag) {
+                    clearImageChange(imageId)
+                }
             }
             db.setTransactionSuccessful()
             return true
