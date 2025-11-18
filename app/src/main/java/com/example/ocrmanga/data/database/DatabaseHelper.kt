@@ -1437,12 +1437,28 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             // Thêm ảnh mới và cập nhật thứ tự, trạng thái dịch
             val imagesDir = File(appContext.getExternalFilesDir(null), "images/$roomId")
             imagesDir.mkdirs()
+            
+            // Find the highest existing image number to avoid conflicts
+            var maxImageNumber = -1
+            oldImages.forEach { (_, oldUri) ->
+                try {
+                    val fileName = File(oldUri.path ?: "").name
+                    val match = Regex("image_(\\d+)\\.jpg").find(fileName)
+                    if (match != null) {
+                        val num = match.groupValues[1].toIntOrNull() ?: -1
+                        if (num > maxImageNumber) maxImageNumber = num
+                    }
+                } catch (e: Exception) { /* ignore */ }
+            }
+            var nextImageNumber = maxImageNumber + 1
+            
             imageUris.forEachIndexed { index, uri ->
                 val uriStr = uri.toString()
                 val isTranslated = if (translatedTexts.containsKey(uri)) 1 else 0
                 if (uri !in oldUris) {
-                    // Ảnh mới: chỉ copy nếu file chưa tồn tại trong thư mục phòng
-                    val fileName = "image_$index.jpg"
+                    // Ảnh mới: sử dụng số thứ tự tiếp theo để tránh trùng tên file
+                    val fileName = "image_${nextImageNumber}.jpg"
+                    nextImageNumber++
                     val newFile = File(imagesDir, fileName)
                     if (!newFile.exists()) {
                         val copied = copyImageToInternalStorage(uri, imagesDir, fileName)
@@ -1462,6 +1478,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     }
                     val imageId = db.insert(TABLE_IMAGES, null, imageValues)
                     if (imageId != -1L) {
+                        Log.i(TAG, "updateMangaRoom(new): Inserted new image imageId=$imageId fileName=$fileName uri=$uriStr")
                         // Tự động scale lại bounds nếu ảnh đã bị resize
                         // Ensure change record exists for this image
                         try { ensureChangeRecord(imageId, roomId) } catch (e: Exception) { /* ignore */ }
