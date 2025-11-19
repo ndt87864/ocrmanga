@@ -392,7 +392,6 @@ fun TranslationEditor(
                         // Debug logging to inspect computed values at runtime
                         if (selectedIdx != null && selectedIdx in dragBlocks.indices) {
                             val sel = dragBlocks[selectedIdx]
-                            android.util.Log.d("TranslationEditor", "displayedCurrentFont=$displayedCurrentFont displayedMaxFont=$displayedMaxFont displayedMinFont=$displayedMinFont rawCurrent=${sel.fontSize ?: sel.block.fontSize} rawMax=$maxFontForSelected")
                         }
 
                         // Keep buttons clickable so we can show a toast when user hits the limit,
@@ -780,7 +779,6 @@ fun TranslationEditor(
                     TextButton(onClick = {
                         val nonBlankParts = editedParts.map { it.trim() }.filter { it.isNotEmpty() }
                         if (nonBlankParts.isNotEmpty()) {
-                            android.util.Log.d("TranslationEditor", "Saving with font: $selectedFontName")
                             onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                                 val oldBlock = list[idx]
                                 val newBlocks = nonBlankParts.mapIndexed { index, text ->
@@ -932,11 +930,9 @@ fun TranslationEditor(
                 isOverlayDialog = false,
                 onColorSelected = { color ->
                     // Thêm log kiểm tra giá trị shadowColor
-                    android.util.Log.d("TranslationEditor", "onColorSelected: idx=$idx color=$color (ARGB=${color.toArgb()}) trước khi cập nhật: old=${dragBlocks[idx].textShadowColor}")
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
                         list[idx] = old.copy(textShadowColor = color)
-                        android.util.Log.d("TranslationEditor", "onColorSelected: idx=$idx đã cập nhật textShadowColor=${list[idx].textShadowColor}")
                     })
                     showShadowColorPicker = false
                 },

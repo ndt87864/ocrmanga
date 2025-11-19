@@ -137,12 +137,6 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
         val appDataDir = context.filesDir.parentFile!!
         val externalFilesDir = context.getExternalFilesDir(null)
         
-        // Log để debug
-        Log.d("RestoreManager", "App data dir: ${appDataDir.absolutePath}")
-        Log.d("RestoreManager", "External files dir: ${externalFilesDir?.absolutePath}")
-        Log.d("RestoreManager", "Android version: ${Build.VERSION.SDK_INT}")
-        Log.d("RestoreManager", "External files dir available: ${externalFilesDir != null}")
-        
         // Kiểm tra và tạo external images directory trước
         if (externalFilesDir != null) {
             val externalImagesDir = File(externalFilesDir, "images")
@@ -173,8 +167,6 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
             while (entry != null) {
                 val entryName = entry.name
                 val isDir = entry.isDirectory
-                
-                Log.d("RestoreManager", "Processing entry: $entryName, isDir: $isDir")
                 
                 val outFile: java.io.File? = when {
                     entryName.startsWith("images/") -> {
@@ -293,8 +285,6 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
             
             // Sửa quyền cho files directory
             fixPermissions(context.filesDir)
-            
-            Log.d("RestoreManager", "Fixed file permissions for Android 9")
             
         } catch (e: Exception) {
             Log.e("RestoreManager", "Error fixing file permissions", e)

@@ -19,3 +19,27 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Remove Log calls in release builds
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int i(...);
+    public static int w(...);
+    public static int d(...);
+    public static int e(...);
+}
+
+# Suppress warnings from Android framework and libraries
+-dontwarn android.**
+-dontwarn androidx.**
+-dontwarn com.google.**
+-dontwarn com.android.**
+-dontwarn org.jetbrains.**
+-dontwarn kotlin.**
+-dontwarn javax.**
+-dontwarn java.**
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn coil.**
+-dontwarn org.json.**
