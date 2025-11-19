@@ -51,6 +51,14 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
+            // Trả về số lượng ảnh đã thay đổi trong room
+            fun getNumChangedImages(roomId: Long): Int {
+                return try {
+                    databaseHelper.getNumChangedImages(roomId)
+                } catch (e: Exception) {
+                    0
+                }
+            }
         // Chuyển đổi trạng thái pendingDelete cho block của một ảnh
     fun togglePendingDelete(uri: Uri, blockId: Int, setPending: Boolean) {
         _uiState.update { state ->
@@ -287,7 +295,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     // Track which image URIs were edited since last save
     private val dirtyUris = mutableSetOf<Uri>()
     // Map from URI (string) to image_id in DB for current loaded room
-    private val uriToImageId = mutableMapOf<Uri, Long>()
+    val uriToImageId = mutableMapOf<Uri, Long>()
     // Track images that had translations deleted (OFF mode)
     private val deletedTranslationUris = mutableSetOf<Uri>()
     // Track images removed from room

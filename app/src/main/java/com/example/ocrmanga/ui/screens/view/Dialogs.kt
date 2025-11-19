@@ -252,7 +252,17 @@ fun Dialogs(
                                                     if (status == true) break
                                                     delay(200)
                                                 }
-                                                Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                                                // Kiểm tra nếu ảnh này là ảnh thứ 5 đã thay đổi thì không thông báo
+                                                val rid = viewModel.uiState.value.roomId
+                                                val imageId = viewModel.uriToImageId[uri]
+                                                var showToast = true
+                                                if (rid != null && imageId != null) {
+                                                    val numChanged = viewModel.getNumChangedImages(rid)
+                                                    if (numChanged >= 5) showToast = false
+                                                }
+                                                if (showToast) {
+                                                    Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                         }
                                         onImageMenuDismiss()

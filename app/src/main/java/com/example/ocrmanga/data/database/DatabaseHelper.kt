@@ -19,6 +19,14 @@ import java.io.File
 import java.io.FileOutputStream
 
 class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+        // Trả về số lượng ảnh đã thay đổi trong room
+        fun getNumChangedImages(roomId: Long): Int {
+            val db = readableDatabase
+            val cursor = db.rawQuery("SELECT COUNT(*) FROM change_images WHERE room_id = ? AND is_changed = 1", arrayOf(roomId.toString()))
+            val count = if (cursor.moveToFirst()) cursor.getInt(0) else 0
+            cursor.close()
+            return count
+        }
     // Sửa API key theo key và type cũ
     fun updateApiKeyWithType(oldKey: String, oldType: String, newKey: String, newType: String) {
         val db = writableDatabase
