@@ -223,14 +223,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val current = _uiState.value.translatedTexts[uri] ?: ("" to emptyList())
         val currentBlocks = current.second
         
-        // Always update rotation from DragBlockState if available
-        // Set applyMerge = false khi edit manual để không áp dụng logic chống chồng lấn
-        val updatedBlocks = blocks.map { block ->
-            val rot = if (block.rotation == null) 0f else block.rotation
-            Log.i(TAG, "[UPDATE] Block text='${block.text}' rotation=$rot for uri=$uri")
+        // Chỉ log và update các block thực sự thay đổi
+        val updatedBlocks = blocks.mapIndexed { idx, block ->
+            val oldBlock = currentBlocks.getOrNull(idx)
+            val rot = block.rotation ?: 0f
             val blockWithRotation = if (block.rotation == null) block.copy(rotation = 0f) else block
-            // Set applyMerge = false vì đây là edit manual
-            blockWithRotation.copy(applyMerge = false)
+            val finalBlock = blockWithRotation.copy(applyMerge = false)
+            if (oldBlock == null ||
+                oldBlock.text != finalBlock.text ||
+                oldBlock.bounds != finalBlock.bounds ||
+                oldBlock.rotation != finalBlock.rotation ||
+                oldBlock.fontSize != finalBlock.fontSize) {
+                Log.i(TAG, "[UPDATE] Block text='${finalBlock.text}' rotation=$rot for uri=$uri")
+            }
+            finalBlock
         }
         
         // Check if blocks actually changed (size or content)
