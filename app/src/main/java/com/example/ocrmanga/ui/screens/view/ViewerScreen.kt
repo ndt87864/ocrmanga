@@ -588,6 +588,7 @@ fun ViewerScreen(
                         textBoldness = dragBlock.textBoldness,
                         overlaySaturation = dragBlock.overlaySaturation,
                         textSaturation = dragBlock.textSaturation,
+                        lineSpacing = dragBlock.lineSpacing,
                         customBorderColor = dragBlock.textBorderColor?.toArgb(),
                         borderThickness = dragBlock.textBorderThickness,
                         borderAlpha = dragBlock.textBorderAlpha,

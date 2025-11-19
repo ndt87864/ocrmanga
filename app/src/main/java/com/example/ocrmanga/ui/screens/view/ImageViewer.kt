@@ -359,7 +359,10 @@ fun ImageViewer(
                     TranslationEditor(
                         dragBlocks = dragBlocks,
                         selectedIndex = selectedIndex,
-                        onDragBlocksChange = { newBlocks -> dragBlocks = newBlocks },
+                        onDragBlocksChange = { newBlocks -> 
+                            dragBlocks = newBlocks
+                            dragBlocksMap[uri] = newBlocks
+                        },
                         onSelectedIndexChange = { newIndex -> selectedIndex = newIndex },
                         onSave = {
                             // Lưu thay đổi và chuyển về chế độ xem

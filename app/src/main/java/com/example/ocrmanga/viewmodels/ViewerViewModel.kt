@@ -242,7 +242,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 old.text != new.text ||
                 old.bounds != new.bounds ||
                 old.rotation != new.rotation ||
-                old.fontSize != new.fontSize
+                old.fontSize != new.fontSize ||
+                old.lineSpacing != new.lineSpacing
             }
         
         // Only mark as dirty and changed if there are actual changes
