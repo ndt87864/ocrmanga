@@ -458,7 +458,7 @@ fun computeEditModeFontSize(block: com.example.ocrmanga.data.models.TextBlockInf
     return if (block.isVertical) (baseSize / 3f).coerceAtLeast(8f) else baseSize
 }
 
-fun DrawScope.drawText(
+fun drawTextOnCanvas(drawScope: DrawScope,
     text: String,
     x: Float,
     y: Float,
@@ -558,7 +558,7 @@ fun DrawScope.drawText(
     val fontMetrics = paint.fontMetrics
     val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
 
-    drawIntoCanvas { canvas ->
+    drawScope.drawIntoCanvas { canvas ->
         if (isVertical) {
             var currentX = x + width - lineHeight
             for (line in lines) {

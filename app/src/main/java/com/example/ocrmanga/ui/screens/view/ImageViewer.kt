@@ -33,7 +33,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -42,6 +41,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -446,12 +446,22 @@ fun ImageViewer(
                     // Precompute drawing regions off the UI thread to avoid heavy work during
                     // fast scrolling/recomposition. The produced list is used by drawWithCache.
                     val precomputedRegionsState = remember(uri, translationVersion) { mutableStateOf<List<PrecomputedRegion>>(emptyList()) }
-                    LaunchedEffect(uri, translationVersion, dragBlocks, imageWidth, imageHeight, isInWindow) {
+                    // Read configuration once in composable scope to avoid calling composable APIs inside coroutine
+                    val _configuration_for_screen = LocalConfiguration.current
+                    val _screenWidthDp_for_screen = _configuration_for_screen.screenWidthDp.toFloat()
+                    val _screenHeightDp_for_screen = _configuration_for_screen.screenHeightDp.toFloat()
+
+                    LaunchedEffect(uri, translationVersion, dragBlocks, imageWidth, imageHeight, isInWindow, _screenWidthDp_for_screen, _screenHeightDp_for_screen) {
                         if (!isInWindow) {
                             // clear when offscreen to reduce memory
                             precomputedRegionsState.value = emptyList()
                             return@LaunchedEffect
                         }
+                        // Tính scale factor dựa trên screen width để font size tự động thay đổi khi xoay màn hình
+                        val screenWidthDp = _screenWidthDp_for_screen
+                        val baseWidthDp = 360f // standard phone width in dp
+                        val screenScaleFactor = (screenWidthDp / baseWidthDp).coerceIn(0.5f, 2.0f) // clamp between 0.5 and 2.0
+                        
                         withContext(kotlinx.coroutines.Dispatchers.Default) {
                             val list = dragBlocks.mapNotNull { dragBlock ->
                                 val block = dragBlock.block
@@ -474,10 +484,13 @@ fun ImageViewer(
                                     )
                                 } else dragBlock.block.fontSize
 
+                                // Áp dụng screen scale factor để font size tự động thay đổi khi xoay màn hình
+                                val scaledFontSize = fontSize * screenScaleFactor
+
                                 PrecomputedRegion(
                                     block = block,
                                     rect = Rect(scaledLeft, scaledTop, scaledLeft + scaledWidth, scaledTop + scaledBlockHeight2),
-                                    fontSize = fontSize,
+                                    fontSize = scaledFontSize,
                                     rotation = dragBlock.rotation,
                                     whiteoutColor = dragBlock.whiteoutColor,
                                     textColor = dragBlock.textColor,
@@ -757,7 +770,8 @@ fun ImageViewer(
                                         val centerY = textTop + textHeight / 2
                                         rotate(rotation, Offset(centerX, centerY))
                                     }) {
-                                        drawText(
+                                        drawTextOnCanvas(
+                                            this,
                                             text = block.text,
                                             x = textLeft,
                                             y = textTop,
@@ -780,7 +794,8 @@ fun ImageViewer(
                                         )
                                     }
                                 } else {
-                                    drawText(
+                                    drawTextOnCanvas(
+                                        this,
                                         text = block.text,
                                         x = textLeft,
                                         y = textTop,
