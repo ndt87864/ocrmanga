@@ -169,10 +169,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             applyMerge = true
                         )
                     }
-                    // Debug log to help verify colors applied for retranslateImage
-                    fixedBlocks.forEachIndexed { idx, b ->
-                        Log.d(TAG, "[RETRANSLATE] uri=$uri block#$idx overlay=0x${b.customOverlayColor?.toUInt()?.toString(16)} text=0x${b.customTextColor?.toUInt()?.toString(16)} avgBg=${b.averageBackgroundColor}")
-                    }
+                    
                     _uiState.update {
                         it.copy(
                             translatedTexts = it.translatedTexts + (uri to (originalText to fixedBlocks)),
@@ -250,7 +247,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         
         // Only mark as dirty and changed if there are actual changes
         if (!hasChanges) {
-            Log.d(TAG, "[UPDATE] No actual changes detected for uri=$uri, skipping mark")
             return
         }
         
@@ -269,7 +265,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         if (rid != null && imageId != null) {
             try {
                 val numChanged = databaseHelper.markImageChanged(imageId, rid)
-                if (numChanged >= 5) maybeAutoSaveChangedImages(rid)
+                Log.i(TAG, "Updated translated blocks for image: $uri, total changed images: $numChanged")
+                if (numChanged >= 5) {
+                    Log.i(TAG, "Triggering auto-save after editing image: $uri, changed images: $numChanged")
+                    maybeAutoSaveChangedImages(rid)
+                }
             } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
         }
         //log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${updatedBlocks.size} blocks")
@@ -915,9 +915,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         // IMPORTANT: Ensure we only have ONE translation per image by checking if it already exists
                         if (!translations.containsKey(uri)) {
                             translations[uri] = originalTextForImage to textBlocks
-                            Log.d(TAG, "loadMoreImages: Loaded translation for uri=$uri with ${textBlocks.size} blocks, originalText='$originalTextForImage'")
-                        } else {
-                            Log.w(TAG, "loadMoreImages: DUPLICATE translation detected for uri=$uri - skipping")
                         }
                     }
                 }
@@ -1136,7 +1133,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         // Case 3: Có dirtyUris (từ edit manual) hoặc deletedTranslations → selective save
                         hasDirtyUris || hasDeletedTranslations -> {
                             val affectedUris = (dirtyUris + deletedTranslationUris).toSet()
-                            Log.d(TAG, "Selective save: ${affectedUris.size} affected images (edited or deleted translations)")
                             tempSavedCount = affectedUris.size
                             val ok = databaseHelper.updateMangaRoomSelective(currentRoomId, uniqueImageUris, uniqueTranslatedTexts, affectedUris.toList(), uriToImageId)
                             if (ok) {
@@ -1431,10 +1427,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                             applyMerge = true
                                         )
                                 }
-                                // Debug log for batch translated image
-                                fixedBlocks.forEachIndexed { idx, b ->
-                                    Log.d(TAG, "[BATCH_TRANSLATED] uri=$uri block#$idx overlay=0x${b.customOverlayColor?.toUInt()?.toString(16)} text=0x${b.customTextColor?.toUInt()?.toString(16)} avgBg=${b.averageBackgroundColor}")
-                                }
+                                
 
                         translatedTexts[uri] = original to fixedBlocks
 
@@ -1887,8 +1880,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 blocks.map { state ->
                     // copy visual edits from DragBlockState into TextBlockInfo so they persist
                     val b = state.block
-                    Log.d(TAG, "saveRoom: block state shadowColor=${state.textShadowColor?.toArgb()?.toString() ?: "null"} shadowAlpha=${state.textShadowAlpha} shadowRadius=${state.textShadowRadius}")
-                    
                     b.copy(
                         rotation = state.rotation,
                         shapeType = b.shapeType,
@@ -1919,8 +1910,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         // If room already exists, update selectively by image_id for only edited images
         if (dirtyUris.isNotEmpty() && uiState.value.roomId != null) {
-            Log.d(TAG, "saveRoom selective: dirtyUris=${dirtyUris.map { it.toString() }}")
-            Log.d(TAG, "saveRoom uriToImageId=${uriToImageId.entries.joinToString { "${it.key}=>${it.value}" }}")
             databaseHelper.updateMangaRoomSelective(roomId, currentState.imageUris, updatedTranslatedTexts, dirtyUris.toList(), uriToImageId)
             // clear dirty set after saving
             dirtyUris.clear()
