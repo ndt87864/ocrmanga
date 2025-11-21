@@ -1703,6 +1703,38 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
                 if (allImages.isEmpty()) return@withContext null
 
+                // Log view mode properties before export
+                Log.i(TAG, "========== EXPORT ZIP - VIEW MODE PROPERTIES (BEFORE EXPORT) ==========")
+                translations.forEach { (uri, pair) ->
+                    val (originalText, blocks) = pair
+                    Log.i(TAG, "Image: ${uri.lastPathSegment}")
+                    Log.i(TAG, "  Original text: ${originalText.take(100)}${if (originalText.length > 100) "..." else ""}")
+                    blocks.forEachIndexed { blockIdx, block ->
+                        Log.i(TAG, "  Block #$blockIdx:")
+                        Log.i(TAG, "    Text: '${block.text.take(50)}${if (block.text.length > 50) "..." else ""}'")
+                        Log.i(TAG, "    FontSize: ${block.fontSize}")
+                        Log.i(TAG, "    FontFamily: ${block.fontFamily}")
+                        Log.i(TAG, "    TextBoldness: ${block.textBoldness}")
+                        Log.i(TAG, "    TextSaturation: ${block.textSaturation}")
+                        Log.i(TAG, "    LineSpacing: ${block.lineSpacing}")
+                        Log.i(TAG, "    ShapeType: ${if (block.shapeType == 1) "Oval" else "Rectangle"}")
+                        Log.i(TAG, "    Rotation: ${block.rotation ?: 0f}")
+                        Log.i(TAG, "    OverlayAlpha: ${block.overlayAlpha}")
+                        Log.i(TAG, "    OverlaySaturation: ${block.overlaySaturation}")
+                        Log.i(TAG, "    CustomOverlayColor: ${block.customOverlayColor?.let { "0x${it.toString(16).padStart(8, '0')}" } ?: "null"}")
+                        Log.i(TAG, "    CustomTextColor: ${block.customTextColor?.let { "0x${it.toString(16).padStart(8, '0')}" } ?: "null"}")
+                        Log.i(TAG, "    BorderColor: ${block.customBorderColor?.let { "0x${it.toString(16).padStart(8, '0')}" } ?: "null"}")
+                        Log.i(TAG, "    BorderThickness: ${block.borderThickness}")
+                        Log.i(TAG, "    BorderAlpha: ${block.borderAlpha}")
+                        Log.i(TAG, "    ShadowColor: ${block.customShadowColor?.let { "0x${it.toString(16).padStart(8, '0')}" } ?: "null"}")
+                        Log.i(TAG, "    ShadowAlpha: ${block.shadowAlpha}")
+                        Log.i(TAG, "    ShadowRadius: ${block.shadowRadius}")
+                        Log.i(TAG, "    Bounds: [${block.bounds.left}, ${block.bounds.top}, ${block.bounds.right}, ${block.bounds.bottom}] (${block.bounds.width()}x${block.bounds.height()})")
+                        Log.i(TAG, "    IsVertical: ${block.isVertical}")
+                    }
+                }
+                Log.i(TAG, "========== END VIEW MODE PROPERTIES ==========")
+
                 val app = getApplication<Application>()
                 val timestamp = System.currentTimeMillis()
                 val fileName = "room_${roomId}_$timestamp.zip"
@@ -1749,7 +1781,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                         for (block in pair.second) {
                                             try {
                                                 val bounds = block.bounds
-                                                val overlayColor = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                                                val boundsWidth = (bounds.right - bounds.left).toFloat()
+                                                val boundsHeight = (bounds.bottom - bounds.top).toFloat()
+                                                
+                                                // Apply overlay saturation to overlay color
+                                                val rawOverlayColor = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                                                val overlayColor = if (block.overlaySaturation != 1.0f) {
+                                                    val hsv = FloatArray(3)
+                                                    androidx.core.graphics.ColorUtils.colorToHSL(rawOverlayColor, hsv)
+                                                    hsv[1] = (hsv[1] * block.overlaySaturation).coerceIn(0f, 1f)
+                                                    androidx.core.graphics.ColorUtils.HSLToColor(hsv)
+                                                } else {
+                                                    rawOverlayColor
+                                                }
+                                                
                                                 val overlayPaint = Paint().apply {
                                                     isAntiAlias = true
                                                     style = Paint.Style.FILL
@@ -1763,34 +1808,193 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     canvas.drawRect(rectF, overlayPaint)
                                                 }
 
-                                                // Draw text using StaticLayout to support multi-line
-                                                val textColor = block.customTextColor ?: computeDefaultTextColor(overlayColor or 0xFF000000.toInt(), block.averageBackgroundColor)
+                                                // Calculate text area with padding EXACTLY like view mode does
+                                                val isOval = block.shapeType == 1
+                                                val textPadding = if (isOval) 0.15f else 0f
+                                                val textWidth = boundsWidth * (1 - 2 * textPadding)
+                                                val textHeight = boundsHeight * (1 - 2 * textPadding)
+
+                                                // For export, calculate optimal fontSize with reasonable max to avoid text overflow
+                                                // Allow some growth but not too much to prevent missing text
+                                                Log.i(TAG, "Before calculateOptimalFontSize: textArea=${textWidth}x${textHeight}")
+                                                
+                                                val paint = android.text.TextPaint().apply {
+                                                    textSize = block.fontSize
+                                                    com.example.ocrmanga.ui.screens.view.getCachedTypefaceForExport(app, block.fontFamily)?.let { 
+                                                        typeface = it 
+                                                    }
+                                                }
+                                                
+                                                val effectiveWidth = if (block.isVertical) textHeight else textWidth
+                                                val effectiveHeight = if (block.isVertical) textWidth else textHeight
+                                                val safePadding = 4f.coerceAtMost(block.fontSize * 0.5f)
+                                                val availableWidth = (effectiveWidth - safePadding * 2f).coerceAtLeast(1f)
+                                                val availableHeight = (effectiveHeight - safePadding * 2f).coerceAtLeast(1f)
+                                                
+                                                // Calculate optimal fontSize with reasonable maxSize
+                                                // Allow growth up to 1.5x original size or 100pt (whichever is smaller)
+                                                val maxAllowedSize = minOf(block.fontSize * 1.5f, 100f).coerceAtLeast(block.fontSize)
+                                                val optimalFontSize = com.example.ocrmanga.ui.screens.view.calculateOptimalFontSize(
+                                                    text = block.text,
+                                                    width = availableWidth,
+                                                    height = availableHeight,
+                                                    minFontSize = 8f,
+                                                    maxFontSize = maxAllowedSize,
+                                                    shapeType = block.shapeType,
+                                                    context = app,
+                                                    fontFamilyName = block.fontFamily,
+                                                    extraSizeAllowance = 0f,
+                                                    horizontalPadding = safePadding,
+                                                    verticalPadding = safePadding
+                                                )
+                                                
+                                                // Wrap text with calculated fontSize
+                                                val wrappedText = com.example.ocrmanga.ui.screens.view.wrapText(
+                                                    text = block.text,
+                                                    width = availableWidth * 0.995f,
+                                                    fontSize = optimalFontSize,
+                                                    context = app,
+                                                    fontFamilyName = block.fontFamily
+                                                ).joinToString("\n")
+                                                
+                                                Log.i(TAG, "After calculateOptimalFontSize: optimalFontSize=$optimalFontSize (original=${block.fontSize}, max=$maxAllowedSize)")
+
+                                                // Draw text with all properties (font, boldness, border, shadow, line spacing)
+                                                val rawTextColor = block.customTextColor ?: computeDefaultTextColor(overlayColor or 0xFF000000.toInt(), block.averageBackgroundColor)
+                                                var textColor = if (block.textSaturation != 1.0f) {
+                                                    val hsv = FloatArray(3)
+                                                    androidx.core.graphics.ColorUtils.colorToHSL(rawTextColor, hsv)
+                                                    hsv[1] = (hsv[1] * block.textSaturation).coerceIn(0f, 1f)
+                                                    androidx.core.graphics.ColorUtils.HSLToColor(hsv)
+                                                } else {
+                                                    rawTextColor
+                                                }
+                                                
+                                                // Load custom font typeface
+                                                val typeface = try {
+                                                    com.example.ocrmanga.ui.screens.view.getCachedTypefaceForExport(app, block.fontFamily)
+                                                } catch (e: Exception) {
+                                                    null
+                                                }
+
+                                                // Create text paint with boldness
                                                 val tp = TextPaint().apply {
                                                     isAntiAlias = true
                                                     color = textColor
-                                                    textSize = if (block.fontSize > 0f) block.fontSize else 20f
-                                                    typeface = Typeface.DEFAULT
+                                                    textSize = optimalFontSize
+                                                    textAlign = Paint.Align.CENTER
+                                                    this.typeface = typeface ?: Typeface.DEFAULT
+                                                    
+                                                    // Apply boldness
+                                                    if (block.textBoldness > 1.0f) {
+                                                        style = Paint.Style.FILL_AND_STROKE
+                                                        strokeWidth = (block.textBoldness - 1.0f) * 2.0f
+                                                    } else if (block.textBoldness < 1.0f) {
+                                                        alpha = (255 * block.textBoldness).toInt().coerceIn(50, 255)
+                                                    }
                                                 }
 
-                                                val width = (bounds.right - bounds.left).coerceAtLeast(1)
-                                                val staticLayout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                                    StaticLayout.Builder.obtain(block.text, 0, block.text.length, tp, width)
-                                                        .setAlignment(Layout.Alignment.ALIGN_CENTER)
-                                                        .setIncludePad(false)
-                                                        .build()
-                                                } else {
-                                                    @Suppress("DEPRECATION")
-                                                    StaticLayout(block.text, tp, width, Layout.Alignment.ALIGN_CENTER, 1.0f, 0.0f, false)
-                                                }
+                                                // Create border paint if needed
+                                                var borderPaint = if (block.customBorderColor != null && block.borderThickness > 0f) {
+                                                    TextPaint().apply {
+                                                        isAntiAlias = true
+                                                        color = block.customBorderColor
+                                                        alpha = (block.borderAlpha * 255).toInt().coerceIn(0, 255)
+                                                        textSize = optimalFontSize
+                                                        textAlign = Paint.Align.CENTER
+                                                        style = Paint.Style.STROKE
+                                                        strokeWidth = block.borderThickness
+                                                        this.typeface = typeface ?: Typeface.DEFAULT
+                                                    }
+                                                } else null
+
+                                                // Create shadow paint if needed
+                                                var shadowPaint = if (block.customShadowColor != null) {
+                                                    TextPaint().apply {
+                                                        isAntiAlias = true
+                                                        color = block.customShadowColor
+                                                        alpha = (block.shadowAlpha * 255).toInt().coerceIn(0, 255)
+                                                        textSize = optimalFontSize
+                                                        textAlign = Paint.Align.CENTER
+                                                        style = Paint.Style.FILL
+                                                        this.typeface = typeface ?: Typeface.DEFAULT
+                                                        val radius = if (block.shadowRadius > 0f) block.shadowRadius else (optimalFontSize * 0.14f).coerceAtLeast(1f)
+                                                        val dx = optimalFontSize * 0.04f
+                                                        val dy = optimalFontSize * 0.04f
+                                                        setShadowLayer(radius, dx, dy, block.customShadowColor)
+                                                    }
+                                                } else null
+
+                                                // Log applied properties after calculation
+                                                Log.i(TAG, "========== EXPORT ZIP - APPLIED PROPERTIES (AFTER RENDER) ==========")
+                                                Log.i(TAG, "Image: ${uri.lastPathSegment}, Block bounds: [${bounds.left}, ${bounds.top}, ${bounds.right}, ${bounds.bottom}] (${boundsWidth}x${boundsHeight})")
+                                                Log.i(TAG, "Original FontSize: ${block.fontSize} -> Optimal FontSize: $optimalFontSize")
+                                                Log.i(TAG, "FontFamily: ${block.fontFamily}")
+                                                Log.i(TAG, "TextBoldness: ${block.textBoldness}")
+                                                Log.i(TAG, "TextSaturation: ${block.textSaturation}")
+                                                Log.i(TAG, "LineSpacing: ${block.lineSpacing}")
+                                                Log.i(TAG, "ShapeType: ${if (block.shapeType == 1) "Oval" else "Rectangle"}")
+                                                Log.i(TAG, "Rotation: ${block.rotation ?: 0f}")
+                                                Log.i(TAG, "OverlayAlpha: ${block.overlayAlpha}")
+                                                Log.i(TAG, "OverlaySaturation: ${block.overlaySaturation}")
+                                                Log.i(TAG, "Applied OverlayColor: 0x${overlayColor.toString(16).padStart(8, '0')}")
+                                                Log.i(TAG, "Applied TextColor: 0x${textColor.toString(16).padStart(8, '0')}")
+                                                Log.i(TAG, "Border: ${if (borderPaint != null) "Enabled (thickness=${block.borderThickness}, alpha=${block.borderAlpha})" else "Disabled"}")
+                                                Log.i(TAG, "Shadow: ${if (shadowPaint != null) "Enabled (radius=${block.shadowRadius}, alpha=${block.shadowAlpha})" else "Disabled"}")
+                                                Log.i(TAG, "WrappedText: '${wrappedText.take(100)}${if (wrappedText.length > 100) "..." else ""}'")
+                                                Log.i(TAG, "TextLines: ${wrappedText.split("\n").size}")
+                                                Log.i(TAG, "IsVertical: ${block.isVertical}")
+                                                Log.i(TAG, "========== END APPLIED PROPERTIES ==========")
 
                                                 canvas.save()
-                                                // rotate around center of the block if rotation specified
-                                                val cx = bounds.left + (bounds.right - bounds.left) / 2f
-                                                val cy = bounds.top + (bounds.bottom - bounds.top) / 2f
+                                                // Rotate around center of the block if rotation specified
+                                                val cx = bounds.left + boundsWidth / 2f
+                                                val cy = bounds.top + boundsHeight / 2f
                                                 val rotation = block.rotation ?: 0f
                                                 if (rotation != 0f) canvas.rotate(rotation, cx, cy)
-                                                canvas.translate(bounds.left.toFloat(), bounds.top.toFloat())
-                                                staticLayout.draw(canvas)
+
+                                                // Draw text line by line with proper positioning
+                                                val lines = wrappedText.split("\n")
+                                                val fontMetrics = tp.fontMetrics
+                                                val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * block.lineSpacing
+
+                                                if (block.isVertical) {
+                                                    // Vertical text rendering
+                                                    var currentX = bounds.left + boundsWidth - lineHeight
+                                                    for (line in lines) {
+                                                        if (line.isNotBlank() && currentX >= bounds.left) {
+                                                            canvas.save()
+                                                            canvas.translate(currentX, bounds.top.toFloat())
+                                                            canvas.rotate(90f)
+                                                            val lineWidth = tp.measureText(line)
+                                                            val centeredY = (boundsHeight - lineWidth) / 2
+                                                            // Draw shadow, then border, then text
+                                                            shadowPaint?.let { canvas.drawText(line, centeredY, -fontMetrics.ascent, it) }
+                                                            borderPaint?.let { canvas.drawText(line, centeredY, -fontMetrics.ascent, it) }
+                                                            canvas.drawText(line, centeredY, -fontMetrics.ascent, tp)
+                                                            canvas.restore()
+                                                            currentX -= lineHeight
+                                                        }
+                                                    }
+                                                } else {
+                                                    // Horizontal text rendering with vertical centering
+                                                    val margin = optimalFontSize * 0.01f
+                                                    val startY = bounds.top + margin - fontMetrics.ascent
+                                                    var currentY = startY
+                                                    
+                                                    for (line in lines) {
+                                                        if (line.isNotBlank()) {
+                                                            val centerX = bounds.left + boundsWidth / 2f
+                                                            // Draw shadow, then border, then text
+                                                            shadowPaint?.let { canvas.drawText(line, centerX, currentY, it) }
+                                                            borderPaint?.let { canvas.drawText(line, centerX, currentY, it) }
+                                                            canvas.drawText(line, centerX, currentY, tp)
+                                                        }
+                                                        currentY += lineHeight
+                                                        if (currentY + fontMetrics.descent > bounds.bottom - margin) break
+                                                    }
+                                                }
+
                                                 canvas.restore()
                                             } catch (e: Exception) {
                                                 Log.w(TAG, "Failed to render block for uri=$uri", e)

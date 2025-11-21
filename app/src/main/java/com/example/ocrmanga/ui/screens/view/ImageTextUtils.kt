@@ -71,6 +71,11 @@ private fun getCachedTypeface(context: Context, fontFamilyName: String?): Typefa
     }
 }
 
+// Public helper for export function to load typeface
+fun getCachedTypefaceForExport(context: Context, fontFamilyName: String?): Typeface? {
+    return getCachedTypeface(context, fontFamilyName)
+}
+
 
 fun getImageDimensions(context: Context, uri: Uri): Pair<Int, Int> {
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -543,6 +548,7 @@ fun drawTextOnCanvas(drawScope: DrawScope,
 
     // Đảm bảo text luôn nằm gọn trong overlay bằng cách tự động wrap và điều chỉnh font size nếu cần.
     // Sử dụng chung một logic cho cả chế độ xem và chế độ chỉnh sửa để giữ nhất quán
+    android.util.Log.i("ImageTextUtils", "drawTextOnCanvas BEFORE adjustWhiteoutBounds: fontSize=$fontSize, width=$width, height=$height, text='${text.take(30)}'")
     val (wrappedText, optimalFontSize) = adjustWhiteoutBounds(
         text = text,
         initialWidth = width,
@@ -550,8 +556,10 @@ fun drawTextOnCanvas(drawScope: DrawScope,
         fontSize = fontSize,
         isVertical = isVertical,
         context = context,
-        fontFamilyName = fontFamilyName
+        fontFamilyName = fontFamilyName,
+        shapeType = shapeType
     )
+    android.util.Log.i("ImageTextUtils", "drawTextOnCanvas AFTER adjustWhiteoutBounds: optimalFontSize=$optimalFontSize")
     paint.textSize = optimalFontSize
     borderPaint?.textSize = optimalFontSize
     val lines = wrappedText.split("\n")
@@ -614,7 +622,8 @@ fun adjustWhiteoutBounds(
     fontSize: Float,
     isVertical: Boolean,
     context: Context? = null,
-    fontFamilyName: String? = null
+    fontFamilyName: String? = null,
+    shapeType: Int = 0
 ): Pair<String, Float> {
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
@@ -644,7 +653,7 @@ fun adjustWhiteoutBounds(
         height = availableHeight,
         minFontSize = minSize,
         maxFontSize = maxSize,
-        shapeType = 0,
+        shapeType = shapeType,
         context = context,
         fontFamilyName = fontFamilyName,
         extraSizeAllowance = 0f,
