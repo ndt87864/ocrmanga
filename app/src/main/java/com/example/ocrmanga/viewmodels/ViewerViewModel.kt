@@ -1902,7 +1902,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         textSize = finalFontSizeForBitmap
                                                         textAlign = Paint.Align.CENTER
                                                         style = Paint.Style.STROKE
-                                                        strokeWidth = block.borderThickness
+                                                        // Scale borderThickness from view to bitmap coordinates
+                                                        strokeWidth = block.borderThickness / bitmapToViewScale
                                                         this.typeface = typeface ?: Typeface.DEFAULT
                                                     }
                                                 } else null
@@ -1917,7 +1918,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         textAlign = Paint.Align.CENTER
                                                         style = Paint.Style.FILL
                                                         this.typeface = typeface ?: Typeface.DEFAULT
-                                                        val radius = if (block.shadowRadius > 0f) block.shadowRadius else (finalFontSizeForBitmap * 0.14f).coerceAtLeast(1f)
+                                                        // Scale shadow parameters from view to bitmap coordinates
+                                                        val radius = if (block.shadowRadius > 0f) {
+                                                            block.shadowRadius / bitmapToViewScale
+                                                        } else {
+                                                            (finalFontSizeForBitmap * 0.14f).coerceAtLeast(1f)
+                                                        }
                                                         val dx = finalFontSizeForBitmap * 0.04f
                                                         val dy = finalFontSizeForBitmap * 0.04f
                                                         setShadowLayer(radius, dx, dy, block.customShadowColor)
