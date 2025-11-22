@@ -1978,8 +1978,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     }
                                                 } else {
                                                     // Horizontal text rendering with vertical centering
+                                                    val totalTextHeight = lines.size * lineHeight
                                                     val margin = optimalFontSize * 0.01f
-                                                    val startY = bounds.top + margin - fontMetrics.ascent
+                                                    val availableHeight = boundsHeight - margin * 2f
+                                                    
+                                                    // Calculate vertical centering: start position to center the text block
+                                                    val verticalOffset = if (totalTextHeight < availableHeight) {
+                                                        (availableHeight - totalTextHeight) / 2f
+                                                    } else {
+                                                        0f
+                                                    }
+                                                    val startY = bounds.top + margin + verticalOffset - fontMetrics.ascent
                                                     var currentY = startY
                                                     
                                                     for (line in lines) {
