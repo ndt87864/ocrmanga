@@ -213,8 +213,10 @@ class TranslationRepository(private val application: Application) {
             try {
                 val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
                 if (!response.isSuccessful) {
-                    Log.e("TranslationRepository", "Mistral API error: ${response.code} ${response.message}")
+                    val keyPrefix = mistralKey.take(10)
+                    Log.e("TranslationRepository", "[MISTRAL-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${response.code} ${response.message} | Lần thử: ${i + 1}/$maxTries")
                     if (response.code == 429) {
+                        Log.w("TranslationRepository", "[MISTRAL-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
                         // Nếu bị 429 thì thử key tiếp theo ngay lập tức
                         continue
                     }
@@ -242,7 +244,8 @@ class TranslationRepository(private val application: Application) {
                 return content?.trim()
             } catch (e: Exception) {
                 lastError = e
-                Log.e("TranslationRepository", "Mistral API exception: keyIndex=$i, key=${mistralKey}...: ${e.message}", e)
+                val keyPrefix = mistralKey.take(10)
+                Log.e("TranslationRepository", "[MISTRAL-EXCEPTION] Key bị lỗi: ${keyPrefix}... | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${i + 1}/$maxTries", e)
                 if (!mistralErrorToastShown) {
                     mistralErrorToastShown = true
                     withContext(Dispatchers.Main) {
@@ -342,8 +345,10 @@ class TranslationRepository(private val application: Application) {
             try {
                 val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
                 if (!response.isSuccessful) {
-                    Log.e("TranslationRepository", "Mistral API (multi-scale) error: ${response.code} ${response.message}")
+                    val keyPrefix = mistralKey.take(10)
+                    Log.e("TranslationRepository", "[MISTRAL-MULTI-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${response.code} ${response.message} | Lần thử: ${i + 1}/$maxTries")
                     if (response.code == 429) {
+                        Log.w("TranslationRepository", "[MISTRAL-MULTI-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
                         // Nếu bị 429 thì thử key tiếp theo ngay lập tức
                         continue
                     }
@@ -406,7 +411,8 @@ class TranslationRepository(private val application: Application) {
                 return translatedBlocks
             } catch (e: Exception) {
                 lastError = e
-                Log.e("TranslationRepository", "Mistral API (multi-scale) exception: keyIndex=$i, key=${mistralKey}...: ${e.message}", e)
+                val keyPrefix = mistralKey.take(10)
+                Log.e("TranslationRepository", "[MISTRAL-MULTI-EXCEPTION] Key bị lỗi: ${keyPrefix}... | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${i + 1}/$maxTries", e)
                 if (!mistralErrorToastShown) {
                     mistralErrorToastShown = true
                     withContext(Dispatchers.Main) {
@@ -1897,13 +1903,18 @@ class TranslationRepository(private val application: Application) {
                 }
             } catch (e: Exception) {
                 lastError = e
-                Log.e("TranslationRepository", "Dịch bằng Gemini thất bại với model=$modelName, keyIndex=$apiKeyIndex, key=${apiKey}...: ${e.message}")
+                val keyPrefix = apiKey?.take(10) ?: "unknown"
+                Log.e("TranslationRepository", "[GEMINI-ERROR] API key bị lỗi: ${keyPrefix}... | Model: $modelName | KeyIndex: $apiKeyIndex | Exception: ${e.javaClass.simpleName} - ${e.message}")
             }
             // Nếu chưa thử hết key/model thì tiếp tục, còn không thì break
         }
 
         // Nếu thử hết vẫn không dịch được, trả về văn bản gốc
-        lastError?.let { Log.e("TranslationRepository", "Tất cả key/model đều thất bại: ${it.message}") }
+        if (lastError != null) {
+            val errorMessage = lastError!!.message
+            Log.e("TranslationRepository", "[GEMINI-SUMMARY] Tất cả ${geminiApiKeys.size} key Gemini và ${geminiModels.size} model đều thất bại | Lỗi cuối: $errorMessage")
+            Log.e("TranslationRepository", "[GEMINI-SUMMARY] Keys đã thử: ${triedKeys.size}/${geminiApiKeys.size} | Models đã thử: ${triedModels.size}/${geminiModels.size}")
+        }
         return@withContext originalText
     }
 
@@ -2034,19 +2045,24 @@ class TranslationRepository(private val application: Application) {
                 return translatedBlocks
             } catch (e: Exception) {
                 val msg = e.message?.lowercase() ?: ""
+                val keyPrefix = useKey?.take(10) ?: "unknown"
                 // Nếu là lỗi 429 hoặc quota/throttling thì bỏ qua key này, không tăng attempt
                 if (msg.contains("429") || msg.contains("too many requests") || msg.contains("quota") || msg.contains("throttl")) {
-                    //Log.w("TranslationRepository", "[GEMINI] Bỏ qua API key #$apiKeyIndex (model $modelName) do lỗi 429/quota/throttling: ${e.message}")
+                    Log.w("TranslationRepository", "[GEMINI-MULTI-429] Key bị giới hạn: ${keyPrefix}... | Model: $modelName | KeyIndex: $apiKeyIndex | Lỗi: ${e.message} | Đã bỏ qua: ${skipped429 + 1}")
                     skipped429++
                     continue // thử key tiếp theo, không tăng attempt
                 }
                 lastError = e
-              //  Log.e("TranslationRepository", "Gemini API (multi-scale) exception: keyIndex=$apiKeyIndex, model=$modelName: ${e.message}", e)
+                Log.e("TranslationRepository", "[GEMINI-MULTI-ERROR] Key bị lỗi: ${keyPrefix}... | Model: $modelName | KeyIndex: $apiKeyIndex | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${attempt + 1}/$maxTries", e)
                 attempt++ // chỉ tăng attempt nếu không phải lỗi 429/quota
             }
         }
         
-        lastError?.let { Log.e("TranslationRepository", "Tất cả Gemini key/model đều thất bại: ${it.message}") }
+        if (lastError != null) {
+            val errorMessage = lastError.message
+            Log.e("TranslationRepository", "[GEMINI-MULTI-SUMMARY] Tất cả ${geminiApiKeys.size} key Gemini và ${geminiModels.size} model đều thất bại (multi-scale)")
+            Log.e("TranslationRepository", "[GEMINI-MULTI-SUMMARY] Tổng lần thử: $attempt/$maxTries | Keys bị 429/quota: $skipped429 | Lỗi cuối: $errorMessage")
+        }
         return null
     }
     
