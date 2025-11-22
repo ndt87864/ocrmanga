@@ -14,6 +14,7 @@ data class ImageBlock(
     val overlayBrightness: Float = 1.0f,
     val overlayAlpha: Float = 1.0f,
     val overlaySaturation: Float = 1.0f,
+    val overlayInset: Float = 0f,
     val textColor: Int? = null,
     val textBrightness: Float = 1.0f,
     val textBoldness: Float = 1.0f,

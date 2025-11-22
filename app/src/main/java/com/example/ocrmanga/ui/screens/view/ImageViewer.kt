@@ -69,7 +69,8 @@ data class DragBlockState(
     val textBorderAlpha: Float = 1.0f, // Độ trong suốt của viền chữ (0.0 - 1.0)
     val textShadowColor: Color? = null, // Màu đổ bóng chữ
     val textShadowAlpha: Float = 1.0f, // Độ trong suốt của đổ bóng (0.0 - 1.0)
-    val textShadowRadius: Float = 0f // Độ dày/blur radius của đổ bóng (px). 0 = tắt
+    val textShadowRadius: Float = 0f, // Độ dày/blur radius của đổ bóng (px). 0 = tắt
+    val overlayInset: Float = 0f // Khoảng cách inset của overlay (0.0 - max)
 )
 
 // Precomputed region used for drawing; computed off the main composition pass to
@@ -92,7 +93,8 @@ data class PrecomputedRegion(
     ,
     val textShadowColor: Color? = null,
     val textShadowAlpha: Float = 1.0f,
-    val textShadowRadius: Float = 0f
+    val textShadowRadius: Float = 0f,
+    val overlayInset: Float = 0f
 )
 
 @Composable
@@ -250,6 +252,7 @@ fun ImageViewer(
                         textShadowAlpha = block.shadowAlpha ?: 1.0f,
                         textShadowRadius = block.shadowRadius ?: 0f,
                         // lineSpacing already set above
+                        overlayInset = block.overlayInset
                     )
                 } else null
 
@@ -278,7 +281,8 @@ fun ImageViewer(
                             textBorderAlpha = it.borderAlpha,
                             textShadowColor = it.customShadowColor?.let { c -> Color(c or 0xFF000000.toInt()) },
                             textShadowAlpha = it.shadowAlpha ?: 1.0f,
-                            textShadowRadius = it.shadowRadius ?: 0f
+                            textShadowRadius = it.shadowRadius ?: 0f,
+                            overlayInset = it.overlayInset
                         )
                     } ?: emptyList()
 
@@ -301,6 +305,7 @@ fun ImageViewer(
                                     textShadowAlpha = match.textShadowAlpha,
                                     textShadowRadius = match.textShadowRadius,
                                     lineSpacing = match.lineSpacing,
+                                    overlayInset = match.overlayInset,
                                     // also preserve edited font size/offset if present
                                     fontSize = match.fontSize,
                                     rotation = match.rotation,
@@ -504,7 +509,8 @@ fun ImageViewer(
                                     textBorderAlpha = dragBlock.textBorderAlpha,
                                     textShadowColor = dragBlock.textShadowColor,
                                     textShadowAlpha = dragBlock.textShadowAlpha,
-                                    textShadowRadius = dragBlock.textShadowRadius
+                                    textShadowRadius = dragBlock.textShadowRadius,
+                                    overlayInset = dragBlock.overlayInset
                                 )
                             }
                             precomputedRegionsState.value = list
@@ -625,6 +631,18 @@ fun ImageViewer(
                                 val rect = region.rect
                                 val isOval = block.shapeType == 1
 
+                                // Áp dụng overlayInset để làm overlay nhỏ hơn
+                                val insetRect = if (region.overlayInset > 0f) {
+                                    Rect(
+                                        left = rect.left + region.overlayInset,
+                                        top = rect.top + region.overlayInset,
+                                        right = rect.right - region.overlayInset,
+                                        bottom = rect.bottom - region.overlayInset
+                                    ).takeIf { it.width > 0 && it.height > 0 } ?: rect
+                                } else {
+                                    rect
+                                }
+
                                 // Xác định block đang được chọn bằng so sánh object hoặc thuộc tính duy nhất
                                 val isSelected = selectedIndex != null
                                     && selectedIndex!! < dragBlocks.size
@@ -662,20 +680,20 @@ fun ImageViewer(
                                     if (isOval) {
                                         drawOval(
                                             color = finalOverlayColor,
-                                            topLeft = Offset(rect.left, rect.top),
-                                            size = Size(rect.width, rect.height)
+                                            topLeft = Offset(insetRect.left, insetRect.top),
+                                            size = Size(insetRect.width, insetRect.height)
                                         )
                                     } else {
                                         drawRect(
                                             color = finalOverlayColor,
-                                            topLeft = Offset(rect.left, rect.top),
-                                            size = Size(rect.width, rect.height)
+                                            topLeft = Offset(insetRect.left, insetRect.top),
+                                            size = Size(insetRect.width, insetRect.height)
                                         )
                                     }
                                 } else {
                                     // Sử dụng overlay bán trong suốt cho nền có màu
                                     drawTranslucentOverlay(
-                                        rect = rect,
+                                        rect = insetRect,
                                         backgroundType = block.backgroundType,
                                         averageBackgroundColor = block.averageBackgroundColor,
                                         originalTextColor = block.originalTextColor,

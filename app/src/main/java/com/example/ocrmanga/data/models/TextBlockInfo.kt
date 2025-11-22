@@ -30,6 +30,7 @@ data class TextBlockInfo(
     val textBoldness: Float = 1.0f, // Độ đậm text (0.5 - 2.0)
     val overlaySaturation: Float = 1.0f, // Độ bão hòa overlay (0.0 - 2.0)
     val textSaturation: Float = 1.0f, // Độ bão hòa text (0.0 - 2.0)
+    val overlayInset: Float = 0f, // Khoảng cách làm overlay nhỏ hơn bounds (0.0 - max, để xóa viền)
     val customBorderColor: Int? = null, // Màu viền chữ tùy chỉnh
     val borderThickness: Float = 0.0f, // Độ dày viền chữ (0.0 - 5.0)
     val borderAlpha: Float = 1.0f // Độ trong suốt viền chữ (0.0 - 1.0)

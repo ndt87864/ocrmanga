@@ -190,6 +190,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             var hasShadowRadius = false
             var hasFontFamily = false
             var hasFontSize = false
+            var hasOverlayInset = false
             while (c.moveToNext()) {
                 val columnName = c.getString(c.getColumnIndexOrThrow("name"))
                 when (columnName) {
@@ -198,6 +199,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     COLUMN_BLOCK_SHADOW_RADIUS -> hasShadowRadius = true
                     COLUMN_BLOCK_FONT_FAMILY -> hasFontFamily = true
                     COLUMN_BLOCK_FONT_SIZE -> hasFontSize = true
+                    COLUMN_BLOCK_OVERLAY_INSET -> hasOverlayInset = true
                 }
             }
             c.close()
@@ -216,6 +218,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
             if (!hasFontSize) {
                 try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_FONT_SIZE REAL DEFAULT 12.0") } catch (e: Exception) { /* ignore */ }
+            }
+            if (!hasOverlayInset) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Không thể tự động thêm cột vào bảng image_blocks", e)
@@ -281,6 +286,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     const val COLUMN_BLOCK_OVERLAY_BRIGHTNESS = "overlay_brightness"
     const val COLUMN_BLOCK_OVERLAY_ALPHA = "overlay_alpha"
     const val COLUMN_BLOCK_OVERLAY_SATURATION = "overlay_saturation"
+    const val COLUMN_BLOCK_OVERLAY_INSET = "overlay_inset"
     // Text color properties
     const val COLUMN_BLOCK_TEXT_COLOR = "text_color"
     const val COLUMN_BLOCK_TEXT_BRIGHTNESS = "text_brightness"
@@ -396,6 +402,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_BLOCK_OVERLAY_BRIGHTNESS REAL DEFAULT 1.0,
                 $COLUMN_BLOCK_OVERLAY_ALPHA REAL DEFAULT 1.0,
                 $COLUMN_BLOCK_OVERLAY_SATURATION REAL DEFAULT 1.0,
+                $COLUMN_BLOCK_OVERLAY_INSET REAL DEFAULT 0.0,
                 $COLUMN_BLOCK_TEXT_COLOR INTEGER,
                 $COLUMN_BLOCK_TEXT_BRIGHTNESS REAL DEFAULT 1.0,
                 $COLUMN_BLOCK_TEXT_BOLDNESS REAL DEFAULT 1.0,
@@ -580,6 +587,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         $COLUMN_BLOCK_OVERLAY_BRIGHTNESS REAL DEFAULT 1.0,
                         $COLUMN_BLOCK_OVERLAY_ALPHA REAL DEFAULT 1.0,
                         $COLUMN_BLOCK_OVERLAY_SATURATION REAL DEFAULT 1.0,
+                        $COLUMN_BLOCK_OVERLAY_INSET REAL DEFAULT 0.0,
                         $COLUMN_BLOCK_TEXT_COLOR INTEGER,
                         $COLUMN_BLOCK_TEXT_BRIGHTNESS REAL DEFAULT 1.0,
                         $COLUMN_BLOCK_TEXT_BOLDNESS REAL DEFAULT 1.0,
@@ -742,6 +750,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                          overlayBrightness: Float = 1.0f,
                          overlayAlpha: Float = 1.0f,
                          overlaySaturation: Float = 1.0f,
+                         overlayInset: Float = 0f,
                          textColor: Int? = null,
                          textBrightness: Float = 1.0f,
                          textBoldness: Float = 1.0f,
@@ -774,6 +783,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put(COLUMN_BLOCK_OVERLAY_BRIGHTNESS, overlayBrightness)
                             put(COLUMN_BLOCK_OVERLAY_ALPHA, overlayAlpha)
                             put(COLUMN_BLOCK_OVERLAY_SATURATION, overlaySaturation)
+                            put(COLUMN_BLOCK_OVERLAY_INSET, overlayInset)
                             put(COLUMN_BLOCK_TEXT_COLOR, textColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
                             put(COLUMN_BLOCK_TEXT_BRIGHTNESS, textBrightness)
                             put(COLUMN_BLOCK_TEXT_BOLDNESS, textBoldness)
@@ -822,6 +832,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val overlayBrightness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_OVERLAY_BRIGHTNESS), 1.0f)
         val overlayAlpha = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_OVERLAY_ALPHA), 1.0f)
         val overlaySat = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_OVERLAY_SATURATION), 1.0f)
+        val overlayInset = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_OVERLAY_INSET), 0f)
         val textColor = cursor.getIntOrNull(idx(COLUMN_BLOCK_TEXT_COLOR))
         val textBrightness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_TEXT_BRIGHTNESS), 1.0f)
         val textBoldness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_TEXT_BOLDNESS), 1.0f)
@@ -850,6 +861,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             overlayBrightness = overlayBrightness,
             overlayAlpha = overlayAlpha,
             overlaySaturation = overlaySat,
+            overlayInset = overlayInset,
             textColor = textColor,
             textBrightness = textBrightness,
             textBoldness = textBoldness,
@@ -1129,6 +1141,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     overlayBrightness = 1.0f,
                                     overlayAlpha = textBlock.overlayAlpha,
                                     overlaySaturation = textBlock.overlaySaturation,
+                                    overlayInset = textBlock.overlayInset,
                                     textColor = textBlock.customTextColor ?: textBlock.originalTextColor,
                                     textBrightness = 1.0f,
                                     textBoldness = textBlock.textBoldness,
@@ -1300,6 +1313,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             overlayBrightness = 1.0f,
                                             overlayAlpha = textBlock.overlayAlpha,
                                             overlaySaturation = textBlock.overlaySaturation,
+                                            overlayInset = textBlock.overlayInset,
                                             textColor = textColor,
                                             textBrightness = 1.0f,
                                             textBoldness = textBlock.textBoldness,
@@ -1702,7 +1716,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize,
                                             // ✅ Truyền lineSpacing từ TextBlockInfo
-                                            lineSpacing = textBlock.lineSpacing
+                                            lineSpacing = textBlock.lineSpacing,
+                                            overlayInset = textBlock.overlayInset
                                         )
                                             // translations for existing image updated => clear change flag
                                             try { clearImageChange(resolvedId) } catch (e: Exception) { /* ignore */ }
@@ -1977,7 +1992,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     fontFamily = textBlock.fontFamily,
                                     fontSize = textBlock.fontSize,
                                     // ✅ Truyền lineSpacing từ TextBlockInfo
-                                    lineSpacing = textBlock.lineSpacing
+                                    lineSpacing = textBlock.lineSpacing,
+                                    overlayInset = textBlock.overlayInset
                                 )
                                 // Clear change flag after successful save
                                 try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
@@ -2217,6 +2233,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val overlayColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_COLOR)) else customOverlayColor ?: averageBackgroundColor
                         val overlayAlphaBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ALPHA)).toFloat() } catch (e: Exception) { overlayAlpha }
                         val overlaySatBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_SATURATION)).toFloat() } catch (e: Exception) { overlaySaturation }
+                        val overlayInsetBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET)).toFloat() } catch (e: Exception) { 0f }
                         
                         // Ưu tiên customTextColor từ translations, chỉ dùng textColorBlock từ image_blocks nếu khác null
                         // QUAN TRỌNG: Nếu cả customTextColor và textColorBlock đều null, 
@@ -2267,7 +2284,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 shadowAlpha = shadowAlphaBlock,
                                 shadowRadius = shadowRadiusBlock,
                             fontFamily = finalFontFamily,
-                            applyMerge = applyMerge
+                            applyMerge = applyMerge,
+                            overlayInset = overlayInsetBlock
                             // keep other fields default/null
                         ))
                         blockCursor.close()

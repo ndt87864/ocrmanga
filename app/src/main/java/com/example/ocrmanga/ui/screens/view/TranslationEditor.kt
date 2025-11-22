@@ -93,6 +93,8 @@ fun TranslationEditor(
     var showShadowColorPicker by remember { mutableStateOf(false) }
     // State cho chỉnh khoảng cách dòng
     var showLineSpacingDialog by remember { mutableStateOf(false) }
+    // State cho chỉnh overlay inset
+    var showOverlayInsetDialog by remember { mutableStateOf(false) }
     // Lưu giá trị lineSpacing hiện tại của block đang chọn để truyền vào form
     var initialLineSpacing by remember { mutableStateOf(1.0f) }
 
@@ -664,6 +666,22 @@ fun TranslationEditor(
                                 )
                             }
 
+                            // Nút chỉnh overlay inset
+                            IconButton(
+                                onClick = {
+                                    if (isBlockSelected && selectedIndex != null) {
+                                        showOverlayInsetDialog = true
+                                    }
+                                },
+                                enabled = isBlockSelected
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Crop,
+                                    contentDescription = "Chỉnh overlay inset",
+                                    tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                                )
+                            }
+
                             // Nút reset màu về mặc định
                             IconButton(
                                 onClick = {
@@ -677,6 +695,7 @@ fun TranslationEditor(
                                                 textBoldness = 1.0f,
                                                 overlaySaturation = 1.0f,
                                                 textSaturation = 1.0f,
+                                                overlayInset = 0f,
                                                 textBorderColor = null,
                                                 textBorderThickness = 0.0f,
                                                 textBorderAlpha = 1.0f
@@ -986,6 +1005,44 @@ fun TranslationEditor(
                 },
                 dismissButton = {
                     TextButton(onClick = { showLineSpacingDialog = false }) { Text("Hủy") }
+                }
+            )
+        }
+
+        // Dialog chỉnh overlay inset
+        if (showOverlayInsetDialog && isBlockSelected && selectedIndex != null) {
+            val idx = selectedIndex
+            val currentInset = dragBlocks[idx].overlayInset
+            var insetValue by remember(currentInset) { mutableStateOf(currentInset) }
+            AlertDialog(
+                onDismissRequest = { showOverlayInsetDialog = false },
+                title = { Text("Chỉnh overlay inset") },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("Điều chỉnh khoảng cách inset của overlay (làm overlay nhỏ hơn)", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Slider(
+                            value = insetValue,
+                            onValueChange = { insetValue = it },
+                            valueRange = 0f..50f, // Max 50px inset
+                            steps = 100, // step = 0.5px
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = "Inset: ${"%.1f".format(insetValue)} px", style = MaterialTheme.typography.bodySmall)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                            val old = list[idx]
+                            list[idx] = old.copy(overlayInset = insetValue)
+                        })
+                        showOverlayInsetDialog = false
+                    }) { Text("Áp dụng") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showOverlayInsetDialog = false }) { Text("Hủy") }
                 }
             )
         }

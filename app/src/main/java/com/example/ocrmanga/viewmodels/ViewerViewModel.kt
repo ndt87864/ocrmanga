@@ -243,7 +243,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 old.bounds != new.bounds ||
                 old.rotation != new.rotation ||
                 old.fontSize != new.fontSize ||
-                old.lineSpacing != new.lineSpacing
+                old.lineSpacing != new.lineSpacing ||
+                old.overlayInset != new.overlayInset ||
+                old.overlayAlpha != new.overlayAlpha ||
+                old.textBoldness != new.textBoldness ||
+                old.overlaySaturation != new.overlaySaturation ||
+                old.textSaturation != new.textSaturation ||
+                old.customOverlayColor != new.customOverlayColor ||
+                old.customTextColor != new.customTextColor ||
+                old.customBorderColor != new.customBorderColor ||
+                old.borderThickness != new.borderThickness ||
+                old.borderAlpha != new.borderAlpha ||
+                old.customShadowColor != new.customShadowColor ||
+                old.shadowAlpha != new.shadowAlpha ||
+                old.shadowRadius != new.shadowRadius ||
+                old.fontFamily != new.fontFamily ||
+                old.shapeType != new.shapeType
             }
         
         // Only mark as dirty and changed if there are actual changes
