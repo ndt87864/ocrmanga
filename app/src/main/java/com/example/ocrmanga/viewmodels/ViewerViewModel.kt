@@ -1957,16 +1957,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 val fontMetrics = tp.fontMetrics
                                                 val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * block.lineSpacing
 
+                                                // Calculate text drawing area with padding (exactly like view mode)
+                                                // textPadding is already calculated as ratio (0.15 for oval, 0 for rect)
+                                                val textPaddingPx = boundsWidth * textPadding
+                                                val textLeft = bounds.left.toFloat() + textPaddingPx
+                                                val textTop = bounds.top.toFloat() + textPaddingPx
+                                                val textDrawWidth = boundsWidth - 2 * textPaddingPx
+                                                val textDrawHeight = boundsHeight - 2 * textPaddingPx
+
                                                 if (block.isVertical) {
-                                                    // Vertical text rendering
-                                                    var currentX = bounds.left + boundsWidth - lineHeight
+                                                    // Vertical text rendering with padding
+                                                    var currentX = textLeft + textDrawWidth - lineHeight
                                                     for (line in lines) {
-                                                        if (line.isNotBlank() && currentX >= bounds.left) {
+                                                        if (line.isNotBlank() && currentX >= textLeft) {
                                                             canvas.save()
-                                                            canvas.translate(currentX, bounds.top.toFloat())
+                                                            canvas.translate(currentX, textTop)
                                                             canvas.rotate(90f)
                                                             val lineWidth = tp.measureText(line)
-                                                            val centeredY = (boundsHeight - lineWidth) / 2
+                                                            val centeredY = (textDrawHeight - lineWidth) / 2
                                                             // Draw shadow, then border, then text
                                                             shadowPaint?.let { canvas.drawText(line, centeredY, -fontMetrics.ascent, it) }
                                                             borderPaint?.let { canvas.drawText(line, centeredY, -fontMetrics.ascent, it) }
@@ -1976,30 +1984,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         }
                                                     }
                                                 } else {
-                                                    // Horizontal text rendering with vertical centering
-                                                    val totalTextHeight = lines.size * lineHeight
+                                                    // Horizontal text rendering - use same logic as view mode for consistency
                                                     val margin = finalFontSizeForBitmap * 0.01f
-                                                    val availableHeight = boundsHeight - margin * 2f
-                                                    
-                                                    // Calculate vertical centering: start position to center the text block
-                                                    val verticalOffset = if (totalTextHeight < availableHeight) {
-                                                        (availableHeight - totalTextHeight) / 2f
-                                                    } else {
-                                                        0f
-                                                    }
-                                                    val startY = bounds.top + margin + verticalOffset - fontMetrics.ascent
+                                                    // Start from top with margin, exactly like view mode does
+                                                    val startY = textTop + margin - fontMetrics.ascent
                                                     var currentY = startY
                                                     
                                                     for (line in lines) {
                                                         if (line.isNotBlank()) {
-                                                            val centerX = bounds.left + boundsWidth / 2f
+                                                            val centerX = textLeft + textDrawWidth / 2f
                                                             // Draw shadow, then border, then text
                                                             shadowPaint?.let { canvas.drawText(line, centerX, currentY, it) }
                                                             borderPaint?.let { canvas.drawText(line, centerX, currentY, it) }
                                                             canvas.drawText(line, centerX, currentY, tp)
                                                         }
                                                         currentY += lineHeight
-                                                        if (currentY + fontMetrics.descent > bounds.bottom - margin) break
+                                                        if (currentY + fontMetrics.descent > textTop + textDrawHeight - margin) break
                                                     }
                                                 }
 
