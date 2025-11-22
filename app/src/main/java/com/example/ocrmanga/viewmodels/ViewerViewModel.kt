@@ -925,7 +925,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         ))
                     }
                     textCursor.close()
-                    Log.i(TAG, "loadMoreImages: Query returned ${textBlocks.size} translation blocks for uri=$uri")
                     if (textBlocks.isNotEmpty()) {
                         // Use original text from image level (already fetched above)
                         // IMPORTANT: Ensure we only have ONE translation per image by checking if it already exists
@@ -1717,41 +1716,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
                 if (allImages.isEmpty()) return@withContext null
-
-/*
-                // Log view mode properties before export
-                Log.i(TAG, "========== EXPORT ZIP - VIEW MODE PROPERTIES (BEFORE EXPORT) ==========")
-                translations.forEach { (uri, pair) ->
-                    val (originalText, blocks) = pair
-                    Log.i(TAG, "Image: ${uri.lastPathSegment}")
-                    Log.i(TAG, "  Original text: ${originalText.take(100)}${if (originalText.length > 100) "..." else ""}")
-                    blocks.forEachIndexed { blockIdx, block ->
-                        Log.i(TAG, "  Block #$blockIdx:")
-                        Log.i(TAG, "    Text: '${block.text.take(50)}${if (block.text.length > 50) "..." else ""}'")
-                        Log.i(TAG, "    FontSize: ${block.fontSize}")
-                        Log.i(TAG, "    FontFamily: ${block.fontFamily}")
-                        Log.i(TAG, "    TextBoldness: ${block.textBoldness}")
-                        Log.i(TAG, "    TextSaturation: ${block.textSaturation}")
-                        Log.i(TAG, "    LineSpacing: ${block.lineSpacing}")
-                        Log.i(TAG, "    ShapeType: ${if (block.shapeType == 1) "Oval" else "Rectangle"}")
-                        Log.i(TAG, "    Rotation: ${block.rotation ?: 0f}")
-                        Log.i(TAG, "    OverlayAlpha: ${block.overlayAlpha}")
-                        Log.i(TAG, "    OverlaySaturation: ${block.overlaySaturation}")
-                        Log.i(TAG, "    CustomOverlayColor: ${block.customOverlayColor?.let { "0x${it.toString(16).padStart(8, '0')}" } ?: "null"}")
-                        Log.i(TAG, "    CustomTextColor: ${block.customTextColor?.let { "0x${it.toString(16).padStart(8, '0')}" } ?: "null"}")
-                        Log.i(TAG, "    BorderColor: ${block.customBorderColor?.let { "0x${it.toString(16).padStart(8, '0')}" } ?: "null"}")
-                        Log.i(TAG, "    BorderThickness: ${block.borderThickness}")
-                        Log.i(TAG, "    BorderAlpha: ${block.borderAlpha}")
-                        Log.i(TAG, "    ShadowColor: ${block.customShadowColor?.let { "0x${it.toString(16).padStart(8, '0')}" } ?: "null"}")
-                        Log.i(TAG, "    ShadowAlpha: ${block.shadowAlpha}")
-                        Log.i(TAG, "    ShadowRadius: ${block.shadowRadius}")
-                        Log.i(TAG, "    Bounds: [${block.bounds.left}, ${block.bounds.top}, ${block.bounds.right}, ${block.bounds.bottom}] (${block.bounds.width()}x${block.bounds.height()})")
-                        Log.i(TAG, "    IsVertical: ${block.isVertical}")
-                    }
-                }
-                Log.i(TAG, "========== END VIEW MODE PROPERTIES ==========")
-*/
-
                 val app = getApplication<Application>()
                 val timestamp = System.currentTimeMillis()
                 val fileName = "room_${roomId}_$timestamp.zip"
@@ -1824,9 +1788,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 } else {
                                                     canvas.drawRect(rectF, overlayPaint)
                                                 }
-
-                                                // ✅ QUAN TRỌNG: Export làm việc với pixel bitmap gốc, view làm việc với pixel đã scale xuống màn hình
-                                                // Để đồng bộ, cần scale bounds xuống giống view mode trước khi tính textArea
                                                 val displayMetrics = app.resources.displayMetrics
                                                 val screenWidthPx = displayMetrics.widthPixels.toFloat()
                                                 val bitmapToViewScale = screenWidthPx / src.width.toFloat()
@@ -1849,10 +1810,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 // fontSize = base * screenScale (giống view mode)
                                                 val baseFontSize = block.fontSize
                                                 val scaledFontSize = baseFontSize * screenScaleFactor
-                                                
-                                                Log.i(TAG, "Export scale: bitmapWidth=${src.width}, screenWidth=$screenWidthPx, bitmapToViewScale=$bitmapToViewScale, screenScale=$screenScaleFactor")
-                                                Log.i(TAG, "Export fontSize: base=$baseFontSize, scaled=$scaledFontSize | textArea: ${textWidth}x${textHeight}")
-                                                
+
                                                 // Áp dụng adjustWhiteoutBounds với scaled fontSize và scaled textArea
                                                 val effectiveWidth = if (block.isVertical) textHeight else textWidth
                                                 val effectiveHeight = if (block.isVertical) textWidth else textHeight
@@ -1870,8 +1828,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 
                                                 // Dùng optimalFontSize trực tiếp, nhưng scale lên cho bitmap coordinates
                                                 val finalFontSizeForBitmap = optimalFontSize / bitmapToViewScale
-                                                
-                                                Log.i(TAG, "Export fontSize FINAL: optimal=$optimalFontSize → bitmap=$finalFontSizeForBitmap (scale=${1/bitmapToViewScale}x), wrappedLines=${wrappedText.split("\n").size}")
 
                                                 // Draw text with all properties (font, boldness, border, shadow, line spacing)
                                                 val rawTextColor = block.customTextColor ?: computeDefaultTextColor(overlayColor or 0xFF000000.toInt(), block.averageBackgroundColor)
@@ -1945,27 +1901,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     }
                                                 } else null
 
-                                                // Log applied properties after calculation
-                                                /*Log.i(TAG, "========== EXPORT ZIP - APPLIED PROPERTIES (AFTER RENDER) ==========")
-                                                Log.i(TAG, "Image: ${uri.lastPathSegment}, Block bounds: [${bounds.left}, ${bounds.top}, ${bounds.right}, ${bounds.bottom}] (${boundsWidth}x${boundsHeight})")
-                                                Log.i(TAG, "Original FontSize: ${block.fontSize} -> Optimal FontSize: $optimalFontSize")
-                                                Log.i(TAG, "FontFamily: ${block.fontFamily}")
-                                                Log.i(TAG, "TextBoldness: ${block.textBoldness}")
-                                                Log.i(TAG, "TextSaturation: ${block.textSaturation}")
-                                                Log.i(TAG, "LineSpacing: ${block.lineSpacing}")
-                                                Log.i(TAG, "ShapeType: ${if (block.shapeType == 1) "Oval" else "Rectangle"}")
-                                                Log.i(TAG, "Rotation: ${block.rotation ?: 0f}")
-                                                Log.i(TAG, "OverlayAlpha: ${block.overlayAlpha}")
-                                                Log.i(TAG, "OverlaySaturation: ${block.overlaySaturation}")
-                                                Log.i(TAG, "Applied OverlayColor: 0x${overlayColor.toString(16).padStart(8, '0')}")
-                                                Log.i(TAG, "Applied TextColor: 0x${textColor.toString(16).padStart(8, '0')}")
-                                                Log.i(TAG, "Border: ${if (borderPaint != null) "Enabled (thickness=${block.borderThickness}, alpha=${block.borderAlpha})" else "Disabled"}")
-                                                Log.i(TAG, "Shadow: ${if (shadowPaint != null) "Enabled (radius=${block.shadowRadius}, alpha=${block.shadowAlpha})" else "Disabled"}")
-                                                Log.i(TAG, "WrappedText: '${wrappedText.take(100)}${if (wrappedText.length > 100) "..." else ""}'")
-                                                Log.i(TAG, "TextLines: ${wrappedText.split("\n").size}")
-                                                Log.i(TAG, "IsVertical: ${block.isVertical}")
-                                                Log.i(TAG, "========== END APPLIED PROPERTIES ==========")
-*/
                                                 canvas.save()
                                                 // Rotate around center of the block if rotation specified
                                                 val cx = bounds.left + boundsWidth / 2f

@@ -546,9 +546,6 @@ fun drawTextOnCanvas(drawScope: DrawScope,
         }
     } else null
 
-    // Đảm bảo text luôn nằm gọn trong overlay bằng cách tự động wrap và điều chỉnh font size nếu cần.
-    // Sử dụng chung một logic cho cả chế độ xem và chế độ chỉnh sửa để giữ nhất quán
-    android.util.Log.i("ImageTextUtils", "drawTextOnCanvas BEFORE adjustWhiteoutBounds: fontSize=$fontSize, width=$width, height=$height, text='${text.take(30)}'")
     val (wrappedText, optimalFontSize) = adjustWhiteoutBounds(
         text = text,
         initialWidth = width,
@@ -559,7 +556,6 @@ fun drawTextOnCanvas(drawScope: DrawScope,
         fontFamilyName = fontFamilyName,
         shapeType = shapeType
     )
-    android.util.Log.i("ImageTextUtils", "drawTextOnCanvas AFTER adjustWhiteoutBounds: optimalFontSize=$optimalFontSize")
     paint.textSize = optimalFontSize
     borderPaint?.textSize = optimalFontSize
     val lines = wrappedText.split("\n")
