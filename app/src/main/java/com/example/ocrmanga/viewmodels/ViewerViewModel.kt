@@ -1703,6 +1703,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
                 if (allImages.isEmpty()) return@withContext null
 
+/*
                 // Log view mode properties before export
                 Log.i(TAG, "========== EXPORT ZIP - VIEW MODE PROPERTIES (BEFORE EXPORT) ==========")
                 translations.forEach { (uri, pair) ->
@@ -1734,6 +1735,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
                 Log.i(TAG, "========== END VIEW MODE PROPERTIES ==========")
+*/
 
                 val app = getApplication<Application>()
                 val timestamp = System.currentTimeMillis()
@@ -1808,56 +1810,53 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     canvas.drawRect(rectF, overlayPaint)
                                                 }
 
+                                                // ✅ QUAN TRỌNG: Export làm việc với pixel bitmap gốc, view làm việc với pixel đã scale xuống màn hình
+                                                // Để đồng bộ, cần scale bounds xuống giống view mode trước khi tính textArea
+                                                val displayMetrics = app.resources.displayMetrics
+                                                val screenWidthPx = displayMetrics.widthPixels.toFloat()
+                                                val bitmapToViewScale = screenWidthPx / src.width.toFloat()
+                                                
+                                                // Scale bounds từ bitmap coordinate → view coordinate
+                                                val scaledWidth = boundsWidth * bitmapToViewScale
+                                                val scaledHeight = boundsHeight * bitmapToViewScale
+                                                
                                                 // Calculate text area with padding EXACTLY like view mode does
                                                 val isOval = block.shapeType == 1
                                                 val textPadding = if (isOval) 0.15f else 0f
-                                                val textWidth = boundsWidth * (1 - 2 * textPadding)
-                                                val textHeight = boundsHeight * (1 - 2 * textPadding)
-
-                                                // For export, calculate optimal fontSize with reasonable max to avoid text overflow
-                                                // Allow some growth but not too much to prevent missing text
-                                                Log.i(TAG, "Before calculateOptimalFontSize: textArea=${textWidth}x${textHeight}")
+                                                val textWidth = scaledWidth * (1 - 2 * textPadding)
+                                                val textHeight = scaledHeight * (1 - 2 * textPadding)
                                                 
-                                                val paint = android.text.TextPaint().apply {
-                                                    textSize = block.fontSize
-                                                    com.example.ocrmanga.ui.screens.view.getCachedTypefaceForExport(app, block.fontFamily)?.let { 
-                                                        typeface = it 
-                                                    }
-                                                }
+                                                // Tính screenScaleFactor để điều chỉnh theo màn hình device
+                                                val screenWidthDp = screenWidthPx / displayMetrics.density
+                                                val baseWidthDp = 360f
+                                                val screenScaleFactor = (screenWidthDp / baseWidthDp).coerceIn(0.5f, 2.0f)
                                                 
+                                                // fontSize = base * screenScale (giống view mode)
+                                                val baseFontSize = block.fontSize
+                                                val scaledFontSize = baseFontSize * screenScaleFactor
+                                                
+                                                Log.i(TAG, "Export scale: bitmapWidth=${src.width}, screenWidth=$screenWidthPx, bitmapToViewScale=$bitmapToViewScale, screenScale=$screenScaleFactor")
+                                                Log.i(TAG, "Export fontSize: base=$baseFontSize, scaled=$scaledFontSize | textArea: ${textWidth}x${textHeight}")
+                                                
+                                                // Áp dụng adjustWhiteoutBounds với scaled fontSize và scaled textArea
                                                 val effectiveWidth = if (block.isVertical) textHeight else textWidth
                                                 val effectiveHeight = if (block.isVertical) textWidth else textHeight
-                                                val safePadding = 4f.coerceAtMost(block.fontSize * 0.5f)
-                                                val availableWidth = (effectiveWidth - safePadding * 2f).coerceAtLeast(1f)
-                                                val availableHeight = (effectiveHeight - safePadding * 2f).coerceAtLeast(1f)
                                                 
-                                                // Calculate optimal fontSize with reasonable maxSize
-                                                // Allow growth up to 1.5x original size or 100pt (whichever is smaller)
-                                                val maxAllowedSize = minOf(block.fontSize * 1.5f, 100f).coerceAtLeast(block.fontSize)
-                                                val optimalFontSize = com.example.ocrmanga.ui.screens.view.calculateOptimalFontSize(
+                                                val (wrappedText, optimalFontSize) = com.example.ocrmanga.ui.screens.view.adjustWhiteoutBounds(
                                                     text = block.text,
-                                                    width = availableWidth,
-                                                    height = availableHeight,
-                                                    minFontSize = 8f,
-                                                    maxFontSize = maxAllowedSize,
-                                                    shapeType = block.shapeType,
+                                                    initialWidth = effectiveWidth,
+                                                    initialHeight = effectiveHeight,
+                                                    fontSize = scaledFontSize,
+                                                    isVertical = block.isVertical,
                                                     context = app,
                                                     fontFamilyName = block.fontFamily,
-                                                    extraSizeAllowance = 0f,
-                                                    horizontalPadding = safePadding,
-                                                    verticalPadding = safePadding
+                                                    shapeType = block.shapeType
                                                 )
                                                 
-                                                // Wrap text with calculated fontSize
-                                                val wrappedText = com.example.ocrmanga.ui.screens.view.wrapText(
-                                                    text = block.text,
-                                                    width = availableWidth * 0.995f,
-                                                    fontSize = optimalFontSize,
-                                                    context = app,
-                                                    fontFamilyName = block.fontFamily
-                                                ).joinToString("\n")
+                                                // Dùng optimalFontSize trực tiếp, nhưng scale lên cho bitmap coordinates
+                                                val finalFontSizeForBitmap = optimalFontSize / bitmapToViewScale
                                                 
-                                                Log.i(TAG, "After calculateOptimalFontSize: optimalFontSize=$optimalFontSize (original=${block.fontSize}, max=$maxAllowedSize)")
+                                                Log.i(TAG, "Export fontSize FINAL: optimal=$optimalFontSize → bitmap=$finalFontSizeForBitmap (scale=${1/bitmapToViewScale}x), wrappedLines=${wrappedText.split("\n").size}")
 
                                                 // Draw text with all properties (font, boldness, border, shadow, line spacing)
                                                 val rawTextColor = block.customTextColor ?: computeDefaultTextColor(overlayColor or 0xFF000000.toInt(), block.averageBackgroundColor)
@@ -1881,7 +1880,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 val tp = TextPaint().apply {
                                                     isAntiAlias = true
                                                     color = textColor
-                                                    textSize = optimalFontSize
+                                                    textSize = finalFontSizeForBitmap
                                                     textAlign = Paint.Align.CENTER
                                                     this.typeface = typeface ?: Typeface.DEFAULT
                                                     
@@ -1900,7 +1899,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         isAntiAlias = true
                                                         color = block.customBorderColor
                                                         alpha = (block.borderAlpha * 255).toInt().coerceIn(0, 255)
-                                                        textSize = optimalFontSize
+                                                        textSize = finalFontSizeForBitmap
                                                         textAlign = Paint.Align.CENTER
                                                         style = Paint.Style.STROKE
                                                         strokeWidth = block.borderThickness
@@ -1914,19 +1913,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         isAntiAlias = true
                                                         color = block.customShadowColor
                                                         alpha = (block.shadowAlpha * 255).toInt().coerceIn(0, 255)
-                                                        textSize = optimalFontSize
+                                                        textSize = finalFontSizeForBitmap
                                                         textAlign = Paint.Align.CENTER
                                                         style = Paint.Style.FILL
                                                         this.typeface = typeface ?: Typeface.DEFAULT
-                                                        val radius = if (block.shadowRadius > 0f) block.shadowRadius else (optimalFontSize * 0.14f).coerceAtLeast(1f)
-                                                        val dx = optimalFontSize * 0.04f
-                                                        val dy = optimalFontSize * 0.04f
+                                                        val radius = if (block.shadowRadius > 0f) block.shadowRadius else (finalFontSizeForBitmap * 0.14f).coerceAtLeast(1f)
+                                                        val dx = finalFontSizeForBitmap * 0.04f
+                                                        val dy = finalFontSizeForBitmap * 0.04f
                                                         setShadowLayer(radius, dx, dy, block.customShadowColor)
                                                     }
                                                 } else null
 
                                                 // Log applied properties after calculation
-                                                Log.i(TAG, "========== EXPORT ZIP - APPLIED PROPERTIES (AFTER RENDER) ==========")
+                                                /*Log.i(TAG, "========== EXPORT ZIP - APPLIED PROPERTIES (AFTER RENDER) ==========")
                                                 Log.i(TAG, "Image: ${uri.lastPathSegment}, Block bounds: [${bounds.left}, ${bounds.top}, ${bounds.right}, ${bounds.bottom}] (${boundsWidth}x${boundsHeight})")
                                                 Log.i(TAG, "Original FontSize: ${block.fontSize} -> Optimal FontSize: $optimalFontSize")
                                                 Log.i(TAG, "FontFamily: ${block.fontFamily}")
@@ -1945,7 +1944,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 Log.i(TAG, "TextLines: ${wrappedText.split("\n").size}")
                                                 Log.i(TAG, "IsVertical: ${block.isVertical}")
                                                 Log.i(TAG, "========== END APPLIED PROPERTIES ==========")
-
+*/
                                                 canvas.save()
                                                 // Rotate around center of the block if rotation specified
                                                 val cx = bounds.left + boundsWidth / 2f
@@ -1979,7 +1978,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 } else {
                                                     // Horizontal text rendering with vertical centering
                                                     val totalTextHeight = lines.size * lineHeight
-                                                    val margin = optimalFontSize * 0.01f
+                                                    val margin = finalFontSizeForBitmap * 0.01f
                                                     val availableHeight = boundsHeight - margin * 2f
                                                     
                                                     // Calculate vertical centering: start position to center the text block
