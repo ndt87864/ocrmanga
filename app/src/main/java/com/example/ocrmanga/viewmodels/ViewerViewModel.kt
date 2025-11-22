@@ -2005,10 +2005,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         }
                                                     }
                                                 } else {
-                                                    // Horizontal text rendering - use same logic as view mode for consistency
-                                                    val margin = finalFontSizeForBitmap * 0.01f
-                                                    // Start from top with margin, exactly like view mode does
-                                                    val startY = textTop + margin - fontMetrics.ascent
+                                                    // Horizontal text rendering - center text vertically with equal top/bottom margins
+                                                    val totalTextHeight = lines.size * lineHeight
+                                                    // Calculate margin to center text block vertically (equal spacing top and bottom)
+                                                    val verticalMargin = (textDrawHeight - totalTextHeight) / 2f
+                                                    // Start Y position: top of text area + vertical margin - ascent to position baseline correctly
+                                                    val startY = textTop + verticalMargin - fontMetrics.ascent
                                                     var currentY = startY
                                                     
                                                     for (line in lines) {
@@ -2020,7 +2022,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                             canvas.drawText(line, centerX, currentY, tp)
                                                         }
                                                         currentY += lineHeight
-                                                        if (currentY + fontMetrics.descent > textTop + textDrawHeight - margin) break
+                                                        // Stop if we exceed available space
+                                                        if (currentY + fontMetrics.descent > textTop + textDrawHeight - verticalMargin) break
                                                     }
                                                 }
 

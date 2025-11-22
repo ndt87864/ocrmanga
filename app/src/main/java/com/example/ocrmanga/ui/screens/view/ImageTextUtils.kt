@@ -589,14 +589,12 @@ fun drawTextOnCanvas(drawScope: DrawScope,
                 }
             }
         } else {
-            // Center the block of lines vertically within the overlay and add a small
-            // margin so text doesn't touch the top/bottom edges. This makes viewing
-            // and editing feel less cramped.
+            // Center the block of lines vertically within the overlay with equal top/bottom margins
             val totalTextHeight = lines.size * lineHeight
-            // Tối thiểu hóa margin để tận dụng tối đa vùng overlay (chỉ 1% margin)
-            val margin = fontSize * 0.01f // margin rất nhỏ, gần như sát edge
-            val availableHeight = (height - margin * 2f).coerceAtLeast(lineHeight)
-            val startY = y + margin - fontMetrics.ascent // bắt đầu từ gần đỉnh overlay
+            // Calculate margin to center text block vertically (equal spacing top and bottom)
+            val verticalMargin = (height - totalTextHeight) / 2f
+            // Start Y position: top of overlay + vertical margin - ascent to position baseline correctly
+            val startY = y + verticalMargin - fontMetrics.ascent
 
             var currentY = startY
             for (line in lines) {
@@ -608,7 +606,8 @@ fun drawTextOnCanvas(drawScope: DrawScope,
                     canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
                 }
                 currentY += lineHeight
-                if (currentY + fontMetrics.descent > y + height - margin) break
+                // Stop if we exceed available space
+                if (currentY + fontMetrics.descent > y + height - verticalMargin) break
             }
 
         }
