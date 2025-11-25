@@ -102,7 +102,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             
-            startTranslationTimer(uri)
+            // Cập nhật trạng thái dịch - bắt đầu quét ảnh
+            updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.SCANNING)
             _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
             if (mode == TranslationMode.OFF) {
@@ -149,14 +150,21 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         translationVersion = state.translationVersion + 1
                     )
                 }
-                stopTranslationTimer()
+                // Xóa trạng thái dịch cho ảnh này
+                clearTranslationStatus(uri)
                 return@launch
             }
 
             // Nếu không phải OFF, tiến hành dịch bình thường
             if (mode != TranslationMode.OFF) {
                 try {
-                    val result = translationRepository.translateImage(uri, mode)
+                    // Callback để cập nhật trạng thái từ repository
+                    val statusCallback: (com.example.ocrmanga.data.models.TranslationStatus) -> Unit = { status ->
+                        updateTranslationStatus(uri, status)
+                    }
+                    
+                    val result = translationRepository.translateImage(uri, mode, statusCallback)
+                    
                     // Ensure blocks have overlay/text colors set similarly to queued translations
                     val (originalText, blocks) = result
                     val fixedBlocks = blocks.map { block ->
@@ -179,6 +187,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             translationVersion = it.translationVersion + 1
                         )
                     }
+                    
+                    // Cập nhật trạng thái: hoàn tất
+                    updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
+                    // Delay ngắn để hiển thị trạng thái hoàn tất trước khi xóa
+                    delay(1000)
+                    clearTranslationStatus(uri)
+                    
                     // Mark as dirty and set DB change flag if this image belongs to a saved room
                     dirtyUris.add(uri)
                     val rid = _uiState.value.roomId
@@ -199,6 +214,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "[RETRANSLATE] Translation failed for uri=$uri", e)
+                    // Xóa trạng thái dịch khi lỗi
+                    clearTranslationStatus(uri)
                     // Nếu dịch thất bại, hủy trạng thái pending_delete để giữ bản dịch cũ
                     if (imageId != null) {
                         try {
@@ -210,7 +227,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             }
-            stopTranslationTimer()
         }
     }
 
@@ -324,6 +340,33 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private val removedImageIds = mutableSetOf<Long>()
     private var translationJob: Job? = null
     private var timerJob: Job? = null
+
+    /**
+     * Cập nhật trạng thái dịch cho một ảnh cụ thể
+     */
+    fun updateTranslationStatus(uri: Uri, status: com.example.ocrmanga.data.models.TranslationStatus) {
+        _uiState.update { state ->
+            state.copy(translatingImages = state.translatingImages + (uri to status))
+        }
+    }
+
+    /**
+     * Xóa trạng thái dịch của một ảnh (khi dịch xong hoặc lỗi)
+     */
+    fun clearTranslationStatus(uri: Uri) {
+        _uiState.update { state ->
+            state.copy(translatingImages = state.translatingImages - uri)
+        }
+    }
+
+    /**
+     * Xóa tất cả trạng thái dịch
+     */
+    fun clearAllTranslationStatus() {
+        _uiState.update { state ->
+            state.copy(translatingImages = emptyMap())
+        }
+    }
 
     /**
      * Register a Job created by this ViewModel so it can be cancelled when clearing session.
@@ -1389,6 +1432,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
             if (batch.isEmpty()) break
 
+            // Đặt trạng thái SCANNING cho tất cả ảnh trong batch
+            batch.forEach { uri ->
+                updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.SCANNING)
+            }
+
             // Lấy key cho từng ảnh trong batch (nếu là Mistral/Gemini)
             val keysForBatch: List<String?> = if (isParallelKeyMode) {
                 val repo = translationRepository
@@ -1407,23 +1455,21 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val results = kotlinx.coroutines.coroutineScope {
                 batch.mapIndexed { idx, uri ->
                     val key = keysForBatch.getOrNull(idx)
+                    // Callback để cập nhật trạng thái từ repository
+                    val statusCallback: (com.example.ocrmanga.data.models.TranslationStatus) -> Unit = { status ->
+                        updateTranslationStatus(uri, status)
+                    }
                     async(Dispatchers.IO) {
                         try {
-                            startTranslationTimer(uri)
                             val (original, translatedBlocks, sourceLang) = translationRepository.recognizeAndTranslateText(
                                 uri,
                                 uiState.value.translationMode,
-                                key
+                                key,
+                                statusCallback
                             )
-                            if (uiState.value.currentTranslatingImage == uri) {
-                                stopTranslationTimer()
-                            }
                             Triple(uri, original, translatedBlocks to sourceLang)
                         } catch (e: Exception) {
                             Log.e(TAG, "Lỗi khi dịch ảnh $uri", e)
-                            if (uiState.value.currentTranslatingImage == uri) {
-                                stopTranslationTimer()
-                            }
                             Triple(uri, "", Pair(emptyList<TextBlockInfo>(), ""))
                         }
                     }
@@ -1433,6 +1479,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             results.forEach { result ->
                 val (uri, original, pair) = result
                 val (translatedBlocks, sourceLang) = pair
+                
                 if (uiState.value.imageUris.contains(uri)) {
                     if (original.isNotEmpty() || (translatedBlocks as? List<*>)?.isNotEmpty() == true) {
                                 val fixedBlocks = (translatedBlocks as List<TextBlockInfo>).map { block ->
@@ -1462,7 +1509,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 translationVersion = it.translationVersion + 1
                             )
                         }
-                        //log.i(TAG, "Đã dịch ảnh $uri")
+                        
+                        // Cập nhật trạng thái COMPLETED
+                        updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
                     } else {
                         Log.w(TAG, "Không nhận diện được văn bản trong ảnh $uri")
                         // Nếu không nhận diện được văn bản, đánh dấu ảnh đã được xử lý
@@ -1476,12 +1525,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 translationVersion = it.translationVersion + 1
                             )
                         }
+                        // Xóa trạng thái vì không có văn bản để dịch
+                        clearTranslationStatus(uri)
                     }
-                } // Nếu ảnh đã bị xóa thì bỏ qua
+                } else {
+                    // Ảnh đã bị xóa, clear trạng thái
+                    clearTranslationStatus(uri)
+                }
             }
+            
+            // Delay ngắn để hiển thị trạng thái COMPLETED trước khi xóa
+            delay(800)
+            results.forEach { (uri, _, _) ->
+                clearTranslationStatus(uri)
+            }
+            
             // Sau mỗi đợt, delay ngắn hơn để tăng tốc
             if (translationQueue.isNotEmpty()) {
-                delay(500) // Giảm từ 2s xuống 0.5s
+                delay(200) // Giảm xuống còn 0.2s
             }
         }
         _uiState.update {
@@ -1492,9 +1553,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
         newImageUris.clear()
-        withContext(Dispatchers.Main) {
-            Toast.makeText(getApplication(), "Dịch hoàn tất!", Toast.LENGTH_SHORT).show()
-        }
+        // Xóa tất cả trạng thái dịch còn lại
+        clearAllTranslationStatus()
     }
 
     /**
@@ -2174,5 +2234,7 @@ data class ViewerUiState(
     val roomId: Long? = null,
     val autoTranslateEnabled: Boolean = true, // Auto-translate new images when adding to room
     val isSavingRoom: Boolean = false, // Loading state for room saving
-    val isExportingRoom: Boolean = false // Loading state for room exporting
+    val isExportingRoom: Boolean = false, // Loading state for room exporting
+    // Map theo dõi trạng thái dịch của từng ảnh (Uri -> TranslationStatus)
+    val translatingImages: Map<Uri, com.example.ocrmanga.data.models.TranslationStatus> = emptyMap()
 )

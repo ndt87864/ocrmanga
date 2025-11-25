@@ -58,8 +58,12 @@ class TranslationRepository(private val application: Application) {
     }
 
     // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
-    suspend fun translateImage(imageUri: Uri, mode: TranslationMode): Pair<String, List<TextBlockInfo>> {
-        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode)
+    suspend fun translateImage(
+        imageUri: Uri, 
+        mode: TranslationMode,
+        onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null
+    ): Pair<String, List<TextBlockInfo>> {
+        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode, null, onStatusUpdate)
         return Pair(translatedText, translatedBlocks)
     }
 
@@ -504,7 +508,12 @@ class TranslationRepository(private val application: Application) {
         return Pair(contrastBitmap, scaleFactor)
     }
 
-    suspend fun recognizeAndTranslateText(imageUri: Uri, mode: TranslationMode, apiKey: String? = null): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
+    suspend fun recognizeAndTranslateText(
+        imageUri: Uri, 
+        mode: TranslationMode, 
+        apiKey: String? = null,
+        onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null
+    ): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
         if (mode == TranslationMode.OFF) {
             //log.i("TranslationRepository", "Chế độ dịch đã tắt, bỏ qua việc dịch cho $imageUri")
             return@withContext Triple("", emptyList(), "zh")
@@ -547,6 +556,11 @@ class TranslationRepository(private val application: Application) {
             return@withContext Triple(it.first, it.second, detectLanguage(it.first) ?: "zh")
         }
 
+        // Thông báo: bắt đầu quét ảnh (OCR)
+        withContext(Dispatchers.Main) {
+            onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.SCANNING)
+        }
+
         var bitmap: Bitmap? = null
         var fullText: String = ""
         var resultText: String = ""
@@ -584,6 +598,11 @@ class TranslationRepository(private val application: Application) {
 
             sourceLanguage = detectLanguage(fullText) ?: "zh"
             //log.i("TranslationRepository", "Ngôn ngữ nguồn được phát hiện: $sourceLanguage")
+
+            // Thông báo: bắt đầu dịch văn bản
+            withContext(Dispatchers.Main) {
+                onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
+            }
 
             // --- LOGIC MỚI CHO MISTRAL: THU THẬP TẤT CẢ KẾT QUẢ OCR TỪ CÁC SCALE ---
             if (mode == TranslationMode.MISTRAL) {
@@ -625,6 +644,11 @@ class TranslationRepository(private val application: Application) {
                 }
                 
                 //Log.i("TranslationRepository", "[MISTRAL] Số bản dịch nhận được: ${translatedTexts.size}")
+                
+                // Thông báo: đang phân phối bản dịch trở lại tọa độ
+                withContext(Dispatchers.Main) {
+                    onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.DISTRIBUTING)
+                }
                 
                 // Ánh xạ các bản dịch vào các text blocks tương ứng
                 val blocks = mutableListOf<TextBlockInfo>()
@@ -718,6 +742,11 @@ class TranslationRepository(private val application: Application) {
                 }
                 
                 //Log.i("TranslationRepository", "[GEMINI] Số bản dịch nhận được: ${translatedTexts.size}")
+                
+                // Thông báo: đang phân phối bản dịch trở lại tọa độ
+                withContext(Dispatchers.Main) {
+                    onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.DISTRIBUTING)
+                }
                 
                 // Ánh xạ các bản dịch vào các text blocks tương ứng
                 val blocks = mutableListOf<TextBlockInfo>()
@@ -842,6 +871,11 @@ class TranslationRepository(private val application: Application) {
                     }
                 }
                 blocks.addAll(deferredBlocks.awaitAll())
+            }
+
+            // Thông báo: đang phân phối bản dịch trở lại tọa độ
+            withContext(Dispatchers.Main) {
+                onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.DISTRIBUTING)
             }
 
             resultText = blocks.joinToString("\n") { it.text }

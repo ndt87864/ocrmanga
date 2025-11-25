@@ -50,6 +50,8 @@ import coil.request.ImageRequest
 import coil.ImageLoader
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
+import com.example.ocrmanga.ui.screens.view.TranslationOverlay
+import com.example.ocrmanga.data.models.TranslationStatus
 import java.io.IOException
 
 data class DragBlockState(
@@ -123,7 +125,9 @@ fun ImageViewer(
     // accessor to retrieve an ad-hoc reload token (timestamp) for a uri so caller can force reloads
     getReloadTokenForUri: (Uri) -> Long? = { null },
     isLoadingMoreImages: Boolean = false,
-    remainingImagesCount: Int = 0
+    remainingImagesCount: Int = 0,
+    // Map trạng thái dịch của từng ảnh để hiển thị overlay thông báo
+    translatingImages: Map<Uri, com.example.ocrmanga.data.models.TranslationStatus> = emptyMap()
 ) {
     val context = LocalContext.current
     // Determine appropriate read permission for the current OS
@@ -385,6 +389,9 @@ fun ImageViewer(
                     var originalImageHeight by remember { mutableStateOf(0f) }
                     var isImageLoaded by remember { mutableStateOf(false) }
                     var imageLoadState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
+                    
+                    // Lấy trạng thái dịch của ảnh hiện tại
+                    val translationStatus = translatingImages[uri] ?: com.example.ocrmanga.data.models.TranslationStatus.IDLE
 
                     // Only load image dimensions when visible to avoid I/O during fast scroll
                     if (isInWindow) {
@@ -838,6 +845,12 @@ fun ImageViewer(
                             }
                         }
                     }
+                    
+                    // Hiển thị overlay thông báo khi đang dịch ảnh này
+                    TranslationOverlay(
+                        status = translationStatus,
+                        modifier = Modifier.matchParentSize()
+                    )
                 }
             }
         }

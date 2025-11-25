@@ -555,51 +555,12 @@ fun ViewerScreen(
             showSpeedSlider = showSpeedSlider
         )
         
-        // Hiển thị bộ đếm thời gian khi đang dịch
-        if (uiState.translationTimer > 0 && uiState.currentTranslatingImage != null) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Translate,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    val minutes = uiState.translationTimer / 60
-                    val seconds = uiState.translationTimer % 60
-                    val timeString = if (minutes > 0) {
-                        "${minutes}m ${seconds}s"
-                    } else {
-                        "${seconds}s"
-                    }
-                    val imageProgress = "${uiState.currentTranslatingImageIndex}/${uiState.imageUris.size}"
-                    Text(
-                        text = "Đang dịch ảnh $imageProgress... ($timeString)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        }
-        
         ImageViewer(
             imageUris = uiState.imageUris,
             translatedTexts = uiState.translatedTexts,
             translationEnabled = uiState.translationEnabled,
             translatedStatus = uiState.translatedStatus,
+            translatingImages = uiState.translatingImages,
             editTranslationMode = editTranslationMode,
             dragBlocksMap = dragBlocksMap,
             onEditTranslationModeToggle = { editTranslationMode = it },
