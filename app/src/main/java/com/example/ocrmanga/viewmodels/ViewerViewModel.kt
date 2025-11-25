@@ -258,9 +258,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 old.text != new.text ||
                 old.bounds != new.bounds ||
                 old.rotation != new.rotation ||
+                old.overlayRotation != new.overlayRotation ||
                 old.fontSize != new.fontSize ||
                 old.lineSpacing != new.lineSpacing ||
                 old.overlayInset != new.overlayInset ||
+                old.overlayInsetHorizontal != new.overlayInsetHorizontal ||
+                old.overlayInsetVertical != new.overlayInsetVertical ||
                 old.overlayAlpha != new.overlayAlpha ||
                 old.textBoldness != new.textBoldness ||
                 old.overlaySaturation != new.overlaySaturation ||

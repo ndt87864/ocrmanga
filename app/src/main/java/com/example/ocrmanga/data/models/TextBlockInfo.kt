@@ -33,6 +33,7 @@ data class TextBlockInfo(
     val overlayInset: Float = 0f, // Khoảng cách làm overlay nhỏ hơn bounds (0.0 - max, để xóa viền) - deprecated, dùng overlayInsetHorizontal và overlayInsetVertical
     val overlayInsetHorizontal: Float = 0f, // Inset theo chiều ngang (trái/phải)
     val overlayInsetVertical: Float = 0f, // Inset theo chiều dọc (trên/dưới)
+    val overlayRotation: Float? = null, // Góc xoay riêng của overlay (độ), null = dùng rotation của text
     val customBorderColor: Int? = null, // Màu viền chữ tùy chỉnh
     val borderThickness: Float = 0.0f, // Độ dày viền chữ (0.0 - 5.0)
     val borderAlpha: Float = 1.0f // Độ trong suốt viền chữ (0.0 - 1.0)

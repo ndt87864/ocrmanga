@@ -88,6 +88,7 @@ fun ViewerScreen(
                         dragBlock.block.copy(
                         fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
                         rotation = dragBlock.rotation,
+                        overlayRotation = dragBlock.overlayRotation,
                         shapeType = dragBlock.block.shapeType,
                         customOverlayColor = dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor,
                         customTextColor = dragBlock.textColor?.toArgb()
@@ -112,13 +113,15 @@ fun ViewerScreen(
                     ) 
                 })
             }
-            // Xóa dragBlocksMap để force rebuild với tọa độ mới và offset = Zero
-            dragBlocksMap.clear()
+            // KHÔNG clear dragBlocksMap ở đây vì LaunchedEffect rebuild sẽ chạy đồng thời
+            // và có thể đọc uiState.translatedTexts cũ trước khi updateTranslatedBlocks hoàn tất
+            // Thay vào đó, để LaunchedEffect rebuild tự cập nhật khi translatedTexts thay đổi
         }
     }
 
     // Initialize dragBlocksMap for all uris from translatedTexts
     // Ưu tiên dữ liệu mới từ translation mode thay vì giữ nguyên dragBlocksMap cũ
+    // LaunchedEffect này sẽ tự động rebuild dragBlocksMap khi translatedTexts thay đổi
     LaunchedEffect(uiState.imageUris, uiState.translatedTexts, uiState.translationVersion, editTranslationMode) {
         uiState.imageUris.forEach { uri ->
             val currentTranslatedBlocks = uiState.translatedTexts[uri]?.second
@@ -152,6 +155,7 @@ fun ViewerScreen(
                             offset = androidx.compose.ui.geometry.Offset.Zero,
                             fontSize = block.fontSize,
                             rotation = block.rotation ?: 0f,
+                            overlayRotation = block.overlayRotation,
                             whiteoutColor = Color(overlayColorInt),
                             textColor = Color(textColorInt),
                             overlayAlpha = block.overlayAlpha,
@@ -391,6 +395,7 @@ fun ViewerScreen(
                                                 dragBlock.block.copy(
                                                     fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
                                                     rotation = dragBlock.rotation,
+                                                    overlayRotation = dragBlock.overlayRotation,
                                                     shapeType = dragBlock.block.shapeType,
                                                     customOverlayColor = dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor,
                                                     customTextColor = dragBlock.textColor?.toArgb()
@@ -595,11 +600,16 @@ fun ViewerScreen(
             dragBlocksMap = dragBlocksMap,
             onEditTranslationModeToggle = { editTranslationMode = it },
             onSaveTranslation = { uri, blocks ->
+                Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
+                blocks.forEachIndexed { idx, dragBlock ->
+                    Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation}")
+                }
                 viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
                     // Bounds đã được cập nhật khi drag trong ImageViewer, không cần cộng offset nữa
                     dragBlock.block.copy(
                         fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
                         rotation = dragBlock.rotation,
+                        overlayRotation = dragBlock.overlayRotation,
                         shapeType = dragBlock.block.shapeType,
                         fontFamily = dragBlock.block.fontFamily, // Lưu font family khi save translation
                         customOverlayColor = dragBlock.whiteoutColor?.toArgb(),

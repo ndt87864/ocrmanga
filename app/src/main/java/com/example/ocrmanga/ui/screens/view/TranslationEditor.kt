@@ -82,6 +82,9 @@ fun TranslationEditor(
     var showEditBlockDialog by remember { mutableStateOf(false) }
     var isRotatingClockwise by remember { mutableStateOf(false) }
     var isRotatingCounterClockwise by remember { mutableStateOf(false) }
+    // State cho xoay overlay
+    var isOverlayRotatingClockwise by remember { mutableStateOf(false) }
+    var isOverlayRotatingCounterClockwise by remember { mutableStateOf(false) }
     
     // State cho màu sắc
     var showOverlayColorPicker by remember { mutableStateOf(false) }
@@ -125,6 +128,40 @@ fun TranslationEditor(
                         val old = list[idx]
                         val newRot = (old.rotation - rotationSpeed) % 360f
                         list[idx] = old.copy(rotation = newRot)
+                    })
+                }
+            }
+            delay(rotationInterval)
+        }
+    }
+
+    // LaunchedEffect cho xoay overlay theo chiều kim đồng hồ
+    LaunchedEffect(isOverlayRotatingClockwise, selectedIndex) {
+        while (isOverlayRotatingClockwise && selectedIndex != null && isBlockSelected) {
+            selectedIndex.let { idx ->
+                if (idx < dragBlocks.size) {
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        val newOverlayRot = ((old.overlayRotation ?: 0f) + rotationSpeed) % 360f
+                        android.util.Log.d("TranslationEditor", "[ROTATE OVERLAY CW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
+                        list[idx] = old.copy(overlayRotation = newOverlayRot)
+                    })
+                }
+            }
+            delay(rotationInterval)
+        }
+    }
+
+    // LaunchedEffect cho xoay overlay ngược chiều kim đồng hồ
+    LaunchedEffect(isOverlayRotatingCounterClockwise, selectedIndex) {
+        while (isOverlayRotatingCounterClockwise && selectedIndex != null && isBlockSelected) {
+            selectedIndex.let { idx ->
+                if (idx < dragBlocks.size) {
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        val newOverlayRot = ((old.overlayRotation ?: 0f) - rotationSpeed) % 360f
+                        android.util.Log.d("TranslationEditor", "[ROTATE OVERLAY CCW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
+                        list[idx] = old.copy(overlayRotation = newOverlayRot)
                     })
                 }
             }
@@ -562,6 +599,8 @@ fun TranslationEditor(
                                     tint = if (dragBlocks.isNotEmpty()) MaterialTheme.colorScheme.onBackground else Color.Gray
                                 )
                             }
+                        
+                        // Xoay TEXT theo chiều kim đồng hồ
                         Box(
                             modifier = Modifier.size(40.dp).pointerInput(Unit) {
                                 awaitEachGesture {
@@ -571,13 +610,14 @@ fun TranslationEditor(
                             },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.RotateRight, "Xoay theo chiều kim đồng hồ", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                            Icon(Icons.Default.RotateRight, "Xoay text theo chiều kim đồng hồ", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
                             if (isBlockSelected) {
                                 val rot = selectedIndex?.let { dragBlocks[it].rotation } ?: 0f
                                 Text("${rot.toInt()}°", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.BottomCenter))
                             }
                         }
 
+                        // Xoay TEXT ngược chiều kim đồng hồ
                         Box(
                             modifier = Modifier.size(40.dp).pointerInput(Unit) {
                                 awaitEachGesture {
@@ -587,10 +627,52 @@ fun TranslationEditor(
                             },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.RotateLeft, "Xoay ngược chiều kim đồng hồ", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                            Icon(Icons.Default.RotateLeft, "Xoay text ngược chiều kim đồng hồ", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
                             if (isBlockSelected) {
                                 val rot = selectedIndex?.let { dragBlocks[it].rotation } ?: 0f
                                 Text("${rot.toInt()}°", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.BottomCenter))
+                            }
+                        }
+
+                        // Divider nhỏ giữa text và overlay
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(32.dp)
+                                .background(Color.Gray.copy(alpha = 0.3f))
+                        )
+
+                        // Xoay OVERLAY theo chiều kim đồng hồ
+                        Box(
+                            modifier = Modifier.size(40.dp).pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    if (isBlockSelected) { isOverlayRotatingClockwise = true; waitForUpOrCancellation(); isOverlayRotatingClockwise = false }
+                                }
+                            },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Crop, "Xoay overlay theo chiều kim đồng hồ", tint = if (isBlockSelected) Color(0xFF4CAF50) else Color.Gray)
+                            if (isBlockSelected) {
+                                val overlayRot = selectedIndex?.let { dragBlocks[it].overlayRotation ?: 0f } ?: 0f
+                                Text("${overlayRot.toInt()}°", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.BottomCenter))
+                            }
+                        }
+
+                        // Xoay OVERLAY ngược chiều kim đồng hồ
+                        Box(
+                            modifier = Modifier.size(40.dp).pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    if (isBlockSelected) { isOverlayRotatingCounterClockwise = true; waitForUpOrCancellation(); isOverlayRotatingCounterClockwise = false }
+                                }
+                            },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.CropRotate, "Xoay overlay ngược chiều kim đồng hồ", tint = if (isBlockSelected) Color(0xFF4CAF50) else Color.Gray)
+                            if (isBlockSelected) {
+                                val overlayRot = selectedIndex?.let { dragBlocks[it].overlayRotation ?: 0f } ?: 0f
+                                Text("${overlayRot.toInt()}°", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.BottomCenter))
                             }
                         }
                     }

@@ -17,6 +17,7 @@ data class ImageBlock(
     val overlayInset: Float = 0f,
     val overlayInsetHorizontal: Float = 0f,
     val overlayInsetVertical: Float = 0f,
+    val overlayRotation: Float? = null, // Góc xoay riêng của overlay
     val textColor: Int? = null,
     val textBrightness: Float = 1.0f,
     val textBoldness: Float = 1.0f,
