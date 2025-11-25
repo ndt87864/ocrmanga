@@ -339,63 +339,89 @@ fun ViewerScreen(
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Save, null, modifier = Modifier.padding(end = 8.dp))
+                                    Box(modifier = Modifier.size(24.dp)) {
+                                        if (uiState.isSavingRoom) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        } else {
+                                            Icon(Icons.Default.Save, null, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text("Lưu bộ ảnh")
                                 }
                             },
                             onClick = {
-                                dragBlocksMap.forEach { (uri: Uri, blocks: List<DragBlockState>) ->
-                                    viewModel.updateTranslatedBlocks(
-                                        uri,
-                                        blocks.map { dragBlock ->
-                                            dragBlock.block.copy(
-                                                fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
-                                                rotation = dragBlock.rotation,
-                                                shapeType = dragBlock.block.shapeType,
-                                                customOverlayColor = dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor,
-                                                customTextColor = dragBlock.textColor?.toArgb()
-                                                    ?: dragBlock.block.customTextColor
-                                                    ?: computeDefaultTextColor(dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor, dragBlock.block.averageBackgroundColor),
-                                                overlayAlpha = dragBlock.overlayAlpha,
-                                                textBoldness = dragBlock.textBoldness,
-                                                overlaySaturation = dragBlock.overlaySaturation,
-                                                textSaturation = dragBlock.textSaturation,
-                                                overlayInset = dragBlock.overlayInset,
-                                                customBorderColor = dragBlock.textBorderColor?.toArgb(),
-                                                borderThickness = dragBlock.textBorderThickness,
-                                                borderAlpha = dragBlock.textBorderAlpha,
-                                                // persist shadow edits too
-                                                customShadowColor = dragBlock.textShadowColor?.toArgb(),
-                                                shadowAlpha = dragBlock.textShadowAlpha,
-                                                shadowRadius = dragBlock.textShadowRadius
-                                            )
-                                        }
-                                    )
+                                if (!uiState.isSavingRoom) {
+                                    dragBlocksMap.forEach { (uri: Uri, blocks: List<DragBlockState>) ->
+                                        viewModel.updateTranslatedBlocks(
+                                            uri,
+                                            blocks.map { dragBlock ->
+                                                dragBlock.block.copy(
+                                                    fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
+                                                    rotation = dragBlock.rotation,
+                                                    shapeType = dragBlock.block.shapeType,
+                                                    customOverlayColor = dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor,
+                                                    customTextColor = dragBlock.textColor?.toArgb()
+                                                        ?: dragBlock.block.customTextColor
+                                                        ?: computeDefaultTextColor(dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor, dragBlock.block.averageBackgroundColor),
+                                                    overlayAlpha = dragBlock.overlayAlpha,
+                                                    textBoldness = dragBlock.textBoldness,
+                                                    overlaySaturation = dragBlock.overlaySaturation,
+                                                    textSaturation = dragBlock.textSaturation,
+                                                    overlayInset = dragBlock.overlayInset,
+                                                    customBorderColor = dragBlock.textBorderColor?.toArgb(),
+                                                    borderThickness = dragBlock.textBorderThickness,
+                                                    borderAlpha = dragBlock.textBorderAlpha,
+                                                    // persist shadow edits too
+                                                    customShadowColor = dragBlock.textShadowColor?.toArgb(),
+                                                    shadowAlpha = dragBlock.textShadowAlpha,
+                                                    shadowRadius = dragBlock.textShadowRadius
+                                                )
+                                            }
+                                        )
+                                    }
+                                    viewModel.saveCurrentRoom()
+                                    showMainMenu = false
                                 }
-                                viewModel.saveCurrentRoom()
-                                showMainMenu = false
                             }
                         )
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Share, null, modifier = Modifier.padding(end = 8.dp))
+                                    Box(modifier = Modifier.size(24.dp)) {
+                                        if (uiState.isExportingRoom) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        } else {
+                                            Icon(Icons.Default.Share, null, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text("Xuất phòng (ZIP)")
                                 }
                             },
                             onClick = {
-                                // Export current room's translated images as a zip
-                                showMainMenu = false
-                                val rid = uiState.roomId
-                                if (rid == null) {
-                                    Toast.makeText(context, "Không có phòng để xuất", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    coroutineScope.launch {
-                                        val path = viewModel.exportRoomAsZip(rid)
-                                        if (path != null) {
-                                            Toast.makeText(context, "Đã xuất: $path", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            Toast.makeText(context, "Không có ảnh đã dịch để xuất hoặc xuất thất bại", Toast.LENGTH_SHORT).show()
+                                if (!uiState.isExportingRoom) {
+                                    // Export current room's translated images as a zip
+                                    showMainMenu = false
+                                    val rid = uiState.roomId
+                                    if (rid == null) {
+                                        Toast.makeText(context, "Không có phòng để xuất", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        coroutineScope.launch {
+                                            val path = viewModel.exportRoomAsZip(rid)
+                                            if (path != null) {
+                                                Toast.makeText(context, "Đã xuất: $path", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "Không có ảnh đã dịch để xuất hoặc xuất thất bại", Toast.LENGTH_SHORT).show()
+                                            }
                                         }
                                     }
                                 }

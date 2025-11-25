@@ -1042,6 +1042,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun saveCurrentRoom() {
         viewModelScope.launch(Dispatchers.IO) {
             isManualSaving.set(true)
+            // Set loading state
+            _uiState.update { it.copy(isSavingRoom = true) }
             // Cancel any auto-save in progress to avoid race condition
             autoSaveJob?.cancel()
             autoSaveJob = null
@@ -1224,6 +1226,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
             } finally {
                 isManualSaving.set(false)
+                // Reset loading state
+                _uiState.update { it.copy(isSavingRoom = false) }
             }
         }
     }
@@ -1713,6 +1717,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      */
     suspend fun exportRoomAsZip(roomId: Long): String? {
         return withContext(Dispatchers.IO) {
+            // Set loading state
+            _uiState.update { it.copy(isExportingRoom = true) }
             try {
                 val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
                 if (allImages.isEmpty()) return@withContext null
@@ -2038,6 +2044,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 Log.e(TAG, "exportRoomAsZip failed for room $roomId", e)
                 null
+            } finally {
+                // Reset loading state
+                _uiState.update { it.copy(isExportingRoom = false) }
             }
         }
     }
@@ -2163,5 +2172,7 @@ data class ViewerUiState(
     val isLoadingMoreImages: Boolean = false,
     val remainingImages: List<Uri> = emptyList(),
     val roomId: Long? = null,
-    val autoTranslateEnabled: Boolean = true // Auto-translate new images when adding to room
+    val autoTranslateEnabled: Boolean = true, // Auto-translate new images when adding to room
+    val isSavingRoom: Boolean = false, // Loading state for room saving
+    val isExportingRoom: Boolean = false // Loading state for room exporting
 )
