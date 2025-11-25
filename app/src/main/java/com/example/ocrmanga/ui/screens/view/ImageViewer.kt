@@ -72,7 +72,9 @@ data class DragBlockState(
     val textShadowColor: Color? = null, // Màu đổ bóng chữ
     val textShadowAlpha: Float = 1.0f, // Độ trong suốt của đổ bóng (0.0 - 1.0)
     val textShadowRadius: Float = 0f, // Độ dày/blur radius của đổ bóng (px). 0 = tắt
-    val overlayInset: Float = 0f // Khoảng cách inset của overlay (0.0 - max)
+    val overlayInset: Float = 0f, // Khoảng cách inset của overlay (0.0 - max) - deprecated
+    val overlayInsetHorizontal: Float = 0f, // Inset theo chiều ngang
+    val overlayInsetVertical: Float = 0f // Inset theo chiều dọc
 )
 
 // Precomputed region used for drawing; computed off the main composition pass to
@@ -96,7 +98,9 @@ data class PrecomputedRegion(
     val textShadowColor: Color? = null,
     val textShadowAlpha: Float = 1.0f,
     val textShadowRadius: Float = 0f,
-    val overlayInset: Float = 0f
+    val overlayInset: Float = 0f,
+    val overlayInsetHorizontal: Float = 0f,
+    val overlayInsetVertical: Float = 0f
 )
 
 @Composable
@@ -256,7 +260,9 @@ fun ImageViewer(
                         textShadowAlpha = block.shadowAlpha ?: 1.0f,
                         textShadowRadius = block.shadowRadius ?: 0f,
                         // lineSpacing already set above
-                        overlayInset = block.overlayInset
+                        overlayInset = block.overlayInset,
+                        overlayInsetHorizontal = block.overlayInsetHorizontal,
+                        overlayInsetVertical = block.overlayInsetVertical
                     )
                 } else null
 
@@ -286,7 +292,9 @@ fun ImageViewer(
                             textShadowColor = it.customShadowColor?.let { c -> Color(c or 0xFF000000.toInt()) },
                             textShadowAlpha = it.shadowAlpha ?: 1.0f,
                             textShadowRadius = it.shadowRadius ?: 0f,
-                            overlayInset = it.overlayInset
+                            overlayInset = it.overlayInset,
+                            overlayInsetHorizontal = it.overlayInsetHorizontal,
+                            overlayInsetVertical = it.overlayInsetVertical
                         )
                     } ?: emptyList()
 
@@ -310,6 +318,8 @@ fun ImageViewer(
                                     textShadowRadius = match.textShadowRadius,
                                     lineSpacing = match.lineSpacing,
                                     overlayInset = match.overlayInset,
+                                    overlayInsetHorizontal = match.overlayInsetHorizontal,
+                                    overlayInsetVertical = match.overlayInsetVertical,
                                     // also preserve edited font size/offset if present
                                     fontSize = match.fontSize,
                                     rotation = match.rotation,
@@ -517,7 +527,9 @@ fun ImageViewer(
                                     textShadowColor = dragBlock.textShadowColor,
                                     textShadowAlpha = dragBlock.textShadowAlpha,
                                     textShadowRadius = dragBlock.textShadowRadius,
-                                    overlayInset = dragBlock.overlayInset
+                                    overlayInset = dragBlock.overlayInset,
+                                    overlayInsetHorizontal = dragBlock.overlayInsetHorizontal,
+                                    overlayInsetVertical = dragBlock.overlayInsetVertical
                                 )
                             }
                             precomputedRegionsState.value = list
@@ -638,13 +650,15 @@ fun ImageViewer(
                                 val rect = region.rect
                                 val isOval = block.shapeType == 1
 
-                                // Áp dụng overlayInset để làm overlay nhỏ hơn
-                                val insetRect = if (region.overlayInset > 0f) {
+                                // Áp dụng overlayInset riêng cho từng chiều
+                                val insetH = region.overlayInsetHorizontal
+                                val insetV = region.overlayInsetVertical
+                                val insetRect = if (insetH > 0f || insetV > 0f) {
                                     Rect(
-                                        left = rect.left + region.overlayInset,
-                                        top = rect.top + region.overlayInset,
-                                        right = rect.right - region.overlayInset,
-                                        bottom = rect.bottom - region.overlayInset
+                                        left = rect.left + insetH,
+                                        top = rect.top + insetV,
+                                        right = rect.right - insetH,
+                                        bottom = rect.bottom - insetV
                                     ).takeIf { it.width > 0 && it.height > 0 } ?: rect
                                 } else {
                                     rect

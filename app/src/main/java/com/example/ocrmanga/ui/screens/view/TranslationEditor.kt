@@ -1012,31 +1012,96 @@ fun TranslationEditor(
         // Dialog chỉnh overlay inset
         if (showOverlayInsetDialog && isBlockSelected && selectedIndex != null) {
             val idx = selectedIndex
-            val currentInset = dragBlocks[idx].overlayInset
-            var insetValue by remember(currentInset) { mutableStateOf(currentInset) }
+            val currentInsetH = dragBlocks[idx].overlayInsetHorizontal
+            val currentInsetV = dragBlocks[idx].overlayInsetVertical
+            var insetMode by remember { mutableStateOf(0) } // 0=Tất cả, 1=Chiều rộng, 2=Chiều cao
+            var insetValueH by remember(currentInsetH) { mutableStateOf(currentInsetH) }
+            var insetValueV by remember(currentInsetV) { mutableStateOf(currentInsetV) }
+            val insetModeOptions = listOf("Tất cả", "Chiều rộng", "Chiều cao")
+            
             AlertDialog(
                 onDismissRequest = { showOverlayInsetDialog = false },
                 title = { Text("Chỉnh overlay inset") },
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text("Điều chỉnh khoảng cách inset của overlay (làm overlay nhỏ hơn)", style = MaterialTheme.typography.bodyMedium)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Slider(
-                            value = insetValue,
-                            onValueChange = { insetValue = it },
-                            valueRange = 0f..50f, // Max 50px inset
-                            steps = 100, // step = 0.5px
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        // Chọn chế độ inset
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
-                        )
+                        ) {
+                            insetModeOptions.forEachIndexed { index, label ->
+                                FilterChip(
+                                    selected = insetMode == index,
+                                    onClick = { insetMode = index },
+                                    label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        when (insetMode) {
+                            0 -> {
+                                // Tất cả - 1 slider điều chỉnh cả 2
+                                Text("Inset tất cả:", style = MaterialTheme.typography.labelMedium)
+                                Slider(
+                                    value = insetValueH,
+                                    onValueChange = { 
+                                        insetValueH = it
+                                        insetValueV = it
+                                    },
+                                    valueRange = 0f..50f,
+                                    steps = 100,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(text = "${"%.1f".format(insetValueH)} px", style = MaterialTheme.typography.bodySmall)
+                            }
+                            1 -> {
+                                // Chiều rộng (ngang)
+                                Text("Inset chiều rộng (trái/phải):", style = MaterialTheme.typography.labelMedium)
+                                Slider(
+                                    value = insetValueH,
+                                    onValueChange = { insetValueH = it },
+                                    valueRange = 0f..50f,
+                                    steps = 100,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(text = "${"%.1f".format(insetValueH)} px", style = MaterialTheme.typography.bodySmall)
+                            }
+                            2 -> {
+                                // Chiều cao (dọc)
+                                Text("Inset chiều cao (trên/dưới):", style = MaterialTheme.typography.labelMedium)
+                                Slider(
+                                    value = insetValueV,
+                                    onValueChange = { insetValueV = it },
+                                    valueRange = 0f..50f,
+                                    steps = 100,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(text = "${"%.1f".format(insetValueV)} px", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = "Inset: ${"%.1f".format(insetValue)} px", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = "Hiện tại: Ngang = ${"%.1f".format(insetValueH)} px, Dọc = ${"%.1f".format(insetValueV)} px",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = {
                         onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                             val old = list[idx]
-                            list[idx] = old.copy(overlayInset = insetValue)
+                            list[idx] = old.copy(
+                                overlayInset = maxOf(insetValueH, insetValueV), // Giữ tương thích ngược
+                                overlayInsetHorizontal = insetValueH,
+                                overlayInsetVertical = insetValueV
+                            )
                         })
                         showOverlayInsetDialog = false
                     }) { Text("Áp dụng") }
