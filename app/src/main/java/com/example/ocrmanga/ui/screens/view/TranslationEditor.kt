@@ -1136,7 +1136,7 @@ fun TranslationEditor(
                                         insetValueV = it
                                     },
                                     valueRange = 0f..50f,
-                                    steps = 100,
+                                    steps = 250,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Text(text = "${"%.1f".format(insetValueH)} px", style = MaterialTheme.typography.bodySmall)
@@ -1148,7 +1148,7 @@ fun TranslationEditor(
                                     value = insetValueH,
                                     onValueChange = { insetValueH = it },
                                     valueRange = 0f..50f,
-                                    steps = 100,
+                                    steps = 250,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Text(text = "${"%.1f".format(insetValueH)} px", style = MaterialTheme.typography.bodySmall)
@@ -1160,7 +1160,7 @@ fun TranslationEditor(
                                     value = insetValueV,
                                     onValueChange = { insetValueV = it },
                                     valueRange = 0f..50f,
-                                    steps = 100,
+                                    steps = 250,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Text(text = "${"%.1f".format(insetValueV)} px", style = MaterialTheme.typography.bodySmall)
