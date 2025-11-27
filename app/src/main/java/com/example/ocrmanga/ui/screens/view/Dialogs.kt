@@ -187,34 +187,39 @@ fun Dialogs(
                     Spacer(Modifier.height(8.dp))
                     listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL).forEach { mode ->
                         if (mode == TranslationMode.OFF) {
+                            // Kiểm tra xem tất cả block đã bị ẩn chưa để quyết định hiển thị ON hay OFF
+                            val allBlocksHidden = blocks.isNotEmpty() && blocks.all { it.pendingDelete }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
                                         val uri = imageMenuUri
-                                        val hasPendingDelete = blocks.all { it.pendingDelete }
-                                        if (uri != null) {
-                                            if (hasPendingDelete) {
-                                                // Hiện lại toàn bộ bản dịch
+                                        if (uri != null && blocks.isNotEmpty()) {
+                                            if (allBlocksHidden) {
+                                                // Hiện lại toàn bộ bản dịch (đang ẩn -> bật lại)
                                                 blocks.forEach { block ->
                                                     viewModel.togglePendingDelete(uri, block.bounds.hashCode(), false)
                                                 }
                                                 Toast.makeText(context, "Đã bật lại bản dịch", Toast.LENGTH_SHORT).show()
                                             } else {
-                                                // Ẩn toàn bộ bản dịch
+                                                // Ẩn toàn bộ bản dịch (đang hiện -> tắt)
                                                 blocks.forEach { block ->
                                                     viewModel.togglePendingDelete(uri, block.bounds.hashCode(), true)
                                                 }
                                                 Toast.makeText(context, "Đã tắt bản dịch", Toast.LENGTH_SHORT).show()
                                             }
+                                        } else if (uri != null && blocks.isEmpty()) {
+                                            Toast.makeText(context, "Ảnh này chưa có bản dịch", Toast.LENGTH_SHORT).show()
                                         }
                                         onImageMenuDismiss()
                                     }
                                     .padding(vertical = 4.dp)
                             ) {
                                 Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Text(if (hasPendingDelete) "ON" else "OFF", modifier = Modifier.padding(start = 8.dp))
+                                // Hiển thị "ON" nếu tất cả đang ẩn (để người dùng biết bấm sẽ bật lại)
+                                // Hiển thị "OFF" nếu đang hiển thị (để người dùng biết bấm sẽ tắt)
+                                Text(if (allBlocksHidden) "ON" else "OFF", modifier = Modifier.padding(start = 8.dp))
                             }
                         } else {
                             Row(

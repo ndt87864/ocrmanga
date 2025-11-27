@@ -497,7 +497,7 @@ fun ImageViewer(
                         val screenScaleFactor = (screenWidthDp / baseWidthDp).coerceIn(0.5f, 2.0f) // clamp between 0.5 and 2.0
                         
                         withContext(kotlinx.coroutines.Dispatchers.Default) {
-                            val list = dragBlocks.mapNotNull { dragBlock ->
+                            val list = dragBlocks.filter { !it.block.pendingDelete }.mapNotNull { dragBlock ->
                                 val block = dragBlock.block
                                 if (block.text.isBlank()) return@mapNotNull null
                                 val blockImageWidth = block.originalImageWidth?.toFloat() ?: originalImageWidth

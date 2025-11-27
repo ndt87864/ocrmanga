@@ -181,23 +181,36 @@ class TranslationRepository(private val application: Application) {
         for (i in 0 until maxTries) {
             val mistralKey = getNextMistralApiKey() ?: return null
         val prompt = "\n" +
-            "                    Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .\n" +
-            "                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác và đồng bộ nhất sang tiếng Việt: $text\n" +
-            "                    Yêu cầu khi dịch :" +
-            "                           1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.\n" +
-            "                           2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .\n" +
-            "                           3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .\n" +
-            "                           4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được ( ghi nguyên gốc  từ không dịch được và dịch các từ còn lại).\n" +
-            "                           5. Khi trả về văn bản gốc do không thể dịch , chỉ trả về văn bản ( giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được .\n" +
-            "                           6. không trả về nhiều bản dịch khác nhau cho cùng một văn bản .VD:Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả?\n" +
-            "                            -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?\n" +
-            "                           7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác , hãy chỉ trả về văn bản gốc trong 2 trường hợp này .\n" +
-            "                           8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.\n" +
-            "                           9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa .\n"+
-            "                           10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép (\"), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.\n" +
-            "                           11. Các bản dịch trong cùng một ảnh phải có sự thống nhất, liên kết với nhau về xưng hô, ngữ cảnh, tránh trường hợp mỗi câu một kiểu dịch khác nhau. Ví dụ: 1. Mày đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> sai; 1. Cậu đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> đúng.\n" +
-            "                           12.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .\n" +
-            "                    Chỉ trả về 1 bản dịch chính xác duy nhất ."
+            "                    Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.\n" +
+            "                    \n" +
+            "                    Nhiệm vụ: Phân tích, khôi phục và dịch văn bản sau sang tiếng Việt: $text\n" +
+            "                    \n" +
+            "                    === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH (BẮT BUỘC) ===\n" +
+            "                    \n" +
+            "                    BƯỚC 1 - KHÔI PHỤC TỪ VÔ NGHĨA:\n" +
+            "                    - Kiểm tra văn bản có từ/cụm từ vô nghĩa, bị nhận dạng sai không\n" +
+            "                    - Nếu phát hiện từ vô nghĩa, hãy suy luận từ ngữ cảnh câu để khôi phục nội dung đúng\n" +
+            "                    - Ưu tiên: Suy luận ngữ cảnh > Giữ nguyên nếu không thể khôi phục\n" +
+            "                    \n" +
+            "                    BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN:\n" +
+            "                    - Kiểm tra xem thứ tự các từ có hợp lý về mặt ngữ nghĩa và ngữ pháp không\n" +
+            "                    - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa\n" +
+            "                    \n" +
+            "                    === YÊU CẦU KHI DỊCH ===\n" +
+            "                    1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.\n" +
+            "                    2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh.\n" +
+            "                    3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.\n" +
+            "                    4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).\n" +
+            "                    5. Khi trả về văn bản gốc do không thể dịch, chỉ trả về văn bản (giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được.\n" +
+            "                    6. Không trả về nhiều bản dịch khác nhau cho cùng một văn bản. VD: Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả? -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh. VD: Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?\n" +
+            "                    7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác, hãy chỉ trả về văn bản gốc trong 2 trường hợp này.\n" +
+            "                    8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.\n" +
+            "                    9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.\n" +
+            "                    10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép (\"), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.\n" +
+            "                    11. Các bản dịch phải có sự thống nhất về xưng hô, ngữ cảnh.\n" +
+            "                    12. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.\n" +
+            "                    \n" +
+            "                    Chỉ trả về 1 bản dịch chính xác duy nhất."
 
             // Build JSON body using Gson to avoid invalid JSON
             val gson = com.google.gson.Gson()
@@ -297,7 +310,7 @@ class TranslationRepository(private val application: Application) {
             val mistralKey = apiKey ?: getNextMistralApiKey() ?: return null
             
             val prompt = """
-                Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ.
+                Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
                 
                 Nhiệm vụ: Dưới đây là các kết quả quét OCR từ cùng một ảnh truyện tranh/manga với các độ phóng đại (scale) khác nhau. Hãy phân tích, tổng hợp và chọn lọc thông tin chính xác nhất từ tất cả các kết quả này, sau đó trả về bản dịch tiếng Việt cho TỪNG BLOCK theo đúng thứ tự.
                 
@@ -307,7 +320,26 @@ class TranslationRepository(private val application: Application) {
                 Các text blocks gốc cần dịch (đã được đánh số):
                 $numberedBlocks
                 
-                Yêu cầu khi dịch:
+                === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH (BẮT BUỘC) ===
+                
+                BƯỚC 1 - KHÔI PHỤC TỪ VÔ NGHĨA:
+                - Kiểm tra từng block xem có từ/cụm từ vô nghĩa, bị nhận dạng sai không (ví dụ: ký tự lạ, từ không tồn tại trong ngôn ngữ gốc, từ bị đứt đoạn)
+                - Nếu phát hiện từ vô nghĩa, hãy so sánh với các kết quả OCR từ scale khác để tìm từ đúng
+                - Nếu không tìm được từ đúng từ các scale khác, hãy suy luận từ ngữ cảnh câu và các block xung quanh để khôi phục nội dung hợp lý
+                - Ưu tiên: OCR từ scale khác > Suy luận ngữ cảnh > Giữ nguyên nếu không thể khôi phục
+                
+                BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN OCR:
+                - Kiểm tra xem thứ tự các từ trong mỗi block có hợp lý về mặt ngữ nghĩa và ngữ pháp không
+                - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa
+                - Đảm bảo văn bản sau khi sắp xếp tuân theo cấu trúc ngữ pháp của ngôn ngữ gốc (Nhật/Trung/Hàn)
+                - Với văn bản dọc (vertical), chú ý đọc từ trên xuống dưới, từ phải sang trái
+                
+                BƯỚC 3 - KIỂM TRA NGỮ CẢNH LIÊN BLOCK:
+                - Xem xét mối quan hệ ngữ nghĩa giữa các block trong cùng một ảnh
+                - Đảm bảo các block có sự liên kết logic (đối thoại, hội thoại, sự kiện)
+                - Nếu một block đơn lẻ không có nghĩa nhưng kết hợp với block khác thì có nghĩa, hãy điều chỉnh cho phù hợp
+                
+                === YÊU CẦU KHI DỊCH ===
                 1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
                 2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác.
                 3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
@@ -2223,20 +2255,35 @@ class TranslationRepository(private val application: Application) {
                 )
 
                 val prompt = """
-                    Vai trò : Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ .
-                    Nhiệm vụ : Hãy tổ hợp lại văn bản và  trả về 1 bản dịch lại cho chính xác nhất sang tiếng Việt: $originalText
-                    Yêu cầu khi dịch :1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
-                           2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu , tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác .
-                           3. Không trả về thêm các chú thích khi dịch , bản dịch khác màn bạn phân vân hoặc không chắc chắn .
-                           4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được ( ghi nguyên gốc  từ không dịch được và dịch các từ còn lại).
-                           5. không trả về nhiều bản dịch khác nhau cho cùng một văn bản .VD:Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả?
-                            -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này .VD:Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
-                           6. Không trả về lí do không dịch được hoặc lí do dịch không chính xác , hãy chỉ trả về văn bản gốc trong 2 trường hợp này .
-                           7.Tuyệt đối tuân thủ các yêu cầu trên , coi nó là chân lý , không được phép sai lệch , vi phạm yêu cầu .
-                           8. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa .
-                           9. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép (\"), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.\n" +
-                           10. Các bản dịch trong cùng một ảnh phải có sự thống nhất, liên kết với nhau về xưng hô, ngữ cảnh, tránh trường hợp mỗi câu một kiểu dịch khác nhau. Ví dụ: 1. Mày đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> sai; 1. Cậu đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> đúng.\n" +
-                    "Chỉ trả về 1 bản dịch chính xác duy nhất ."
+                    Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
+                    
+                    Nhiệm vụ: Phân tích, khôi phục và dịch văn bản sau sang tiếng Việt: $originalText
+                    
+                    === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH (BẮT BUỘC) ===
+                    
+                    BƯỚC 1 - KHÔI PHỤC TỪ VÔ NGHĨA:
+                    - Kiểm tra văn bản có từ/cụm từ vô nghĩa, bị nhận dạng sai không (ký tự lạ, từ không tồn tại, từ bị đứt đoạn)
+                    - Nếu phát hiện từ vô nghĩa, hãy suy luận từ ngữ cảnh câu để khôi phục nội dung đúng
+                    - Ưu tiên: Suy luận ngữ cảnh > Giữ nguyên nếu không thể khôi phục
+                    
+                    BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN:
+                    - Kiểm tra xem thứ tự các từ có hợp lý về mặt ngữ nghĩa và ngữ pháp không
+                    - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa
+                    - Đảm bảo văn bản sau khi sắp xếp tuân theo cấu trúc ngữ pháp của ngôn ngữ gốc
+                    
+                    === YÊU CẦU KHI DỊCH ===
+                    1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
+                    2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh.
+                    3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
+                    4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).
+                    5. Không trả về nhiều bản dịch khác nhau cho cùng một văn bản. VD: Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả? -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh. VD: Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
+                    6. Không trả về lí do không dịch được hoặc lí do dịch không chính xác, hãy chỉ trả về văn bản gốc trong 2 trường hợp này.
+                    7. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
+                    8. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.
+                    9. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép ("), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.
+                    10. Các bản dịch phải có sự thống nhất về xưng hô, ngữ cảnh.
+                    
+                    Chỉ trả về 1 bản dịch chính xác duy nhất.
                 """.trimIndent()
 
                 val response = generativeModel.generateContent(prompt)
@@ -2317,7 +2364,7 @@ class TranslationRepository(private val application: Application) {
                 )
                 
                 val prompt = """
-                    Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ.
+                    Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
                     
                     Nhiệm vụ: Dưới đây là các kết quả quét OCR từ cùng một ảnh truyện tranh/manga với các độ phóng đại (scale) khác nhau. Hãy phân tích, tổng hợp và chọn lọc thông tin chính xác nhất từ tất cả các kết quả này, sau đó trả về bản dịch tiếng Việt cho TỪNG BLOCK theo đúng thứ tự.
                     
@@ -2327,7 +2374,26 @@ class TranslationRepository(private val application: Application) {
                     Các text blocks gốc cần dịch (đã được đánh số):
                     $numberedBlocks
                     
-                    Yêu cầu khi dịch:
+                    === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH (BẮT BUỘC) ===
+                    
+                    BƯỚC 1 - KHÔI PHỤC TỪ VÔ NGHĨA:
+                    - Kiểm tra từng block xem có từ/cụm từ vô nghĩa, bị nhận dạng sai không (ví dụ: ký tự lạ, từ không tồn tại trong ngôn ngữ gốc, từ bị đứt đoạn)
+                    - Nếu phát hiện từ vô nghĩa, hãy so sánh với các kết quả OCR từ scale khác để tìm từ đúng
+                    - Nếu không tìm được từ đúng từ các scale khác, hãy suy luận từ ngữ cảnh câu và các block xung quanh để khôi phục nội dung hợp lý
+                    - Ưu tiên: OCR từ scale khác > Suy luận ngữ cảnh > Giữ nguyên nếu không thể khôi phục
+                    
+                    BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN OCR:
+                    - Kiểm tra xem thứ tự các từ trong mỗi block có hợp lý về mặt ngữ nghĩa và ngữ pháp không
+                    - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa
+                    - Đảm bảo văn bản sau khi sắp xếp tuân theo cấu trúc ngữ pháp của ngôn ngữ gốc (Nhật/Trung/Hàn)
+                    - Với văn bản dọc (vertical), chú ý đọc từ trên xuống dưới, từ phải sang trái
+                    
+                    BƯỚC 3 - KIỂM TRA NGỮ CẢNH LIÊN BLOCK:
+                    - Xem xét mối quan hệ ngữ nghĩa giữa các block trong cùng một ảnh
+                    - Đảm bảo các block có sự liên kết logic (đối thoại, hội thoại, sự kiện)
+                    - Nếu một block đơn lẻ không có nghĩa nhưng kết hợp với block khác thì có nghĩa, hãy điều chỉnh cho phù hợp
+                    
+                    === YÊU CẦU KHI DỊCH ===
                     1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
                     2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác.
                     3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
