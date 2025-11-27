@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
 import android.net.Uri
@@ -508,6 +509,313 @@ class TranslationRepository(private val application: Application) {
         return Pair(contrastBitmap, scaleFactor)
     }
 
+    /**
+     * Enum định nghĩa hướng văn bản
+     */
+    enum class TextOrientation {
+        HORIZONTAL,      // Văn bản ngang (trái sang phải)
+        VERTICAL_RTL,    // Văn bản dọc (phải sang trái) - Kiểu manga Nhật
+        VERTICAL_LTR     // Văn bản dọc (trái sang phải) - Kiểu Trung Quốc truyền thống
+    }
+
+    /**
+     * Xoay ảnh theo góc cho trước (90, -90, 180 độ)
+     * @param bitmap Ảnh gốc
+     * @param rotationDegrees Góc xoay (90 = xoay phải, -90 = xoay trái)
+     * @return Ảnh đã xoay
+     */
+    private fun rotateImageForVerticalText(bitmap: Bitmap, rotationDegrees: Int): Bitmap {
+        val matrix = Matrix()
+        matrix.postRotate(rotationDegrees.toFloat())
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    /**
+     * Chuyển đổi tọa độ bounds sau khi xoay ảnh
+     * @param bounds Tọa độ trên ảnh đã xoay (từ OCR)
+     * @param originalWidth Chiều rộng ảnh gốc (trước khi xoay) = W
+     * @param originalHeight Chiều cao ảnh gốc (trước khi xoay) = H
+     * @param rotationApplied Góc đã xoay ảnh (90 = xoay CW, -90 = xoay CCW)
+     * @return Tọa độ trên ảnh gốc
+     * 
+     * Giải thích chi tiết:
+     * 
+     * ẢNH GỐC (W x H):           SAU XOAY 90° CW (H x W):
+     * ┌─────────────┐            ┌───────────┐
+     * │ A ───────► B│            │ C       A │
+     * │ │           │    →       │ │       │ │
+     * │ ▼           │            │ ▼       ▼ │
+     * │ C ───────► D│            │ D ────► B │
+     * └─────────────┘            └───────────┘
+     *   
+     * Xoay 90° CW:
+     * - Ảnh gốc W x H → Ảnh xoay H x W
+     * - Điểm (x, y) trên ảnh GỐC → (H - 1 - y, x) trên ảnh XOAY
+     * - Điểm (x', y') trên ảnh XOAY → (y', H - 1 - x') trên ảnh GỐC
+     *   Với H = originalHeight
+     *   
+     * Xoay 90° CCW (-90°):
+     * - Ảnh gốc W x H → Ảnh xoay H x W  
+     * - Điểm (x, y) trên ảnh GỐC → (y, W - 1 - x) trên ảnh XOAY
+     * - Điểm (x', y') trên ảnh XOAY → (W - 1 - y', x') trên ảnh GỐC
+     *   Với W = originalWidth
+     */
+    private fun transformBoundsAfterRotation(
+        bounds: Rect,
+        originalWidth: Int,
+        originalHeight: Int,
+        rotationApplied: Int
+    ): Rect {
+        return when (rotationApplied) {
+            90 -> {
+                // Đã xoay 90° CW: ảnh xoay có kích thước (H x W)
+                // Điểm (x', y') trên ảnh xoay → (y', H - x') trên ảnh gốc
+                // Với H = originalHeight
+                // 
+                // Rect trên ảnh xoay: (left', top', right', bottom')
+                // → Rect trên ảnh gốc:
+                //   newLeft   = top'
+                //   newTop    = H - right'
+                //   newRight  = bottom'
+                //   newBottom = H - left'
+                Rect(
+                    bounds.top,                          // newLeft = top' 
+                    originalHeight - bounds.right,       // newTop = H - right'
+                    bounds.bottom,                       // newRight = bottom'
+                    originalHeight - bounds.left         // newBottom = H - left'
+                )
+            }
+            -90 -> {
+                // Đã xoay 90° CCW: ảnh xoay có kích thước (H x W)
+                // Điểm (x', y') trên ảnh xoay → (W - y', x') trên ảnh gốc
+                // Với W = originalWidth
+                //
+                // Rect trên ảnh xoay: (left', top', right', bottom')
+                // → Rect trên ảnh gốc:
+                //   newLeft   = W - bottom'
+                //   newTop    = left'
+                //   newRight  = W - top'
+                //   newBottom = right'
+                Rect(
+                    originalWidth - bounds.bottom,       // newLeft = W - bottom'
+                    bounds.left,                         // newTop = left'
+                    originalWidth - bounds.top,          // newRight = W - top'
+                    bounds.right                         // newBottom = right'
+                )
+            }
+            else -> bounds
+        }
+    }
+
+    /**
+     * Chuyển đổi danh sách TextBlockInfo sau khi xoay ảnh
+     * @param blocks Danh sách blocks từ ảnh đã xoay
+     * @param originalWidth Chiều rộng ảnh gốc (trước khi xoay)
+     * @param originalHeight Chiều cao ảnh gốc (trước khi xoay)
+     * @param rotationApplied Góc đã xoay (90 = CW, -90 = CCW)
+     */
+    private fun transformBlocksAfterRotation(
+        blocks: List<TextBlockInfo>,
+        originalWidth: Int,
+        originalHeight: Int,
+        rotationApplied: Int
+    ): List<TextBlockInfo> {
+        return blocks.map { block ->
+            val newBounds = transformBoundsAfterRotation(
+                block.bounds,
+                originalWidth,
+                originalHeight,
+                rotationApplied
+            )
+            block.copy(
+                bounds = newBounds,
+                originalImageWidth = originalWidth,
+                originalImageHeight = originalHeight
+            )
+        }
+    }
+
+    /**
+     * Phát hiện hướng văn bản nâng cao dựa trên aspect ratio và layout
+     * @param bitmap Ảnh cần phân tích
+     * @return TextOrientation
+     */
+    private fun detectTextOrientationAdvanced(bitmap: Bitmap): TextOrientation {
+        // Thử quét nhanh với Japanese recognizer để detect orientation
+        try {
+            val inputImage = InputImage.fromBitmap(bitmap, 0)
+            // Sử dụng coroutine blocking vì đây là hàm private helper
+            val textResult = kotlinx.coroutines.runBlocking {
+                japaneseRecognizer.process(inputImage).await()
+            }
+            
+            if (textResult.textBlocks.isEmpty()) return TextOrientation.HORIZONTAL
+            
+            // Tính aspect ratio của các text blocks
+            var verticalBlockCount = 0
+            var horizontalBlockCount = 0
+            var totalBlocks = 0
+            
+            for (block in textResult.textBlocks) {
+                val bounds = block.boundingBox ?: continue
+                val width = bounds.width().toFloat()
+                val height = bounds.height().toFloat()
+                if (width <= 0 || height <= 0) continue
+                
+                totalBlocks++
+                val aspectRatio = height / width
+                
+                if (aspectRatio > 1.8f) {
+                    // Block cao hơn rộng nhiều => có thể là vertical text
+                    verticalBlockCount++
+                } else if (aspectRatio < 0.6f) {
+                    // Block rộng hơn cao nhiều => horizontal text
+                    horizontalBlockCount++
+                }
+            }
+            
+            // Nếu đa số blocks là vertical => văn bản dọc
+            if (totalBlocks > 0 && verticalBlockCount > horizontalBlockCount && 
+                verticalBlockCount >= totalBlocks * 0.4) {
+                // Kiểm tra layout từ phải sang trái (đặc trưng manga Nhật)
+                val sortedByRight = textResult.textBlocks
+                    .mapNotNull { it.boundingBox }
+                    .sortedByDescending { it.right }
+                
+                // Nếu blocks được sắp xếp từ phải sang trái => RTL
+                return TextOrientation.VERTICAL_RTL
+            }
+            
+        } catch (e: Exception) {
+            Log.w("TranslationRepository", "Không thể detect text orientation: ${e.message}")
+        }
+        
+        return TextOrientation.HORIZONTAL
+    }
+
+    /**
+     * Quét văn bản với cả ảnh gốc và ảnh xoay, chọn kết quả tốt nhất
+     * Đặc biệt hữu ích cho văn bản dọc trong manga/comic
+     */
+    private suspend fun recognizeTextWithRotationStrategy(
+        bitmap: Bitmap,
+        rotationDegrees: Int,
+        onlyPreview: Boolean = false,
+        forceScript: String? = null
+    ): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
+        // Detect orientation trước
+        val detectedOrientation = detectTextOrientationAdvanced(bitmap)
+        
+        Log.i("TranslationRepository", "[ROTATION-STRATEGY] Detected orientation: $detectedOrientation")
+        
+        // Nếu là horizontal, quét bình thường
+        if (detectedOrientation == TextOrientation.HORIZONTAL) {
+            return@withContext recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript)
+        }
+        
+        // Nếu là vertical text, thử quét cả ảnh gốc và ảnh xoay
+        val results = mutableListOf<Triple<String, List<TextBlockInfo>, Double>>()
+        
+        // 1. Quét ảnh gốc
+        try {
+            val (text, blocks) = recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript)
+            val score = calculateOcrScore(text, blocks)
+            results.add(Triple(text, blocks, score))
+            Log.i("TranslationRepository", "[ROTATION-STRATEGY] Original: text length=${text.length}, blocks=${blocks.size}, score=$score")
+        } catch (e: Exception) {
+            Log.w("TranslationRepository", "[ROTATION-STRATEGY] Original scan failed: ${e.message}")
+        }
+        
+        // 2. Quét ảnh xoay 90° CW (chuyển vertical thành horizontal)
+        var rotated90: Bitmap? = null
+        try {
+            rotated90 = rotateImageForVerticalText(bitmap, 90)
+            val (text90, blocks90) = recognizeText(rotated90, 0, onlyPreview, forceScript)
+            
+            // Transform bounds về tọa độ gốc (đã xoay 90° CW)
+            val transformedBlocks = transformBlocksAfterRotation(
+                blocks90,
+                bitmap.width,
+                bitmap.height,
+                90  // Góc đã xoay là 90° CW
+            )
+            
+            val score = calculateOcrScore(text90, transformedBlocks)
+            results.add(Triple(text90, transformedBlocks, score))
+            Log.i("TranslationRepository", "[ROTATION-STRATEGY] Rotated 90°: text length=${text90.length}, blocks=${transformedBlocks.size}, score=$score")
+        } catch (e: Exception) {
+            Log.w("TranslationRepository", "[ROTATION-STRATEGY] Rotated 90° scan failed: ${e.message}")
+        } finally {
+            rotated90?.recycle()
+        }
+        
+        // 3. Quét ảnh xoay -90° CCW (cho trường hợp đặc biệt)
+        var rotatedMinus90: Bitmap? = null
+        try {
+            rotatedMinus90 = rotateImageForVerticalText(bitmap, -90)
+            val (textMinus90, blocksMinus90) = recognizeText(rotatedMinus90, 0, onlyPreview, forceScript)
+            
+            // Transform bounds về tọa độ gốc (đã xoay -90° CCW)
+            val transformedBlocks = transformBlocksAfterRotation(
+                blocksMinus90,
+                bitmap.width,
+                bitmap.height,
+                -90  // Góc đã xoay là -90° CCW
+            )
+            
+            val score = calculateOcrScore(textMinus90, transformedBlocks)
+            results.add(Triple(textMinus90, transformedBlocks, score))
+            Log.i("TranslationRepository", "[ROTATION-STRATEGY] Rotated -90°: text length=${textMinus90.length}, blocks=${transformedBlocks.size}, score=$score")
+        } catch (e: Exception) {
+            Log.w("TranslationRepository", "[ROTATION-STRATEGY] Rotated -90° scan failed: ${e.message}")
+        } finally {
+            rotatedMinus90?.recycle()
+        }
+        
+        // Chọn kết quả tốt nhất dựa trên score
+        val bestResult = results.maxByOrNull { it.third }
+        
+        if (bestResult != null) {
+            Log.i("TranslationRepository", "[ROTATION-STRATEGY] Best result: score=${bestResult.third}, text length=${bestResult.first.length}")
+            return@withContext Pair(bestResult.first, bestResult.second)
+        }
+        
+        // Fallback: quét bình thường
+        return@withContext recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript)
+    }
+
+    /**
+     * Tính điểm đánh giá chất lượng kết quả OCR
+     * Dựa trên: số ký tự Asian, số blocks, độ dài text
+     */
+    private fun calculateOcrScore(text: String, blocks: List<TextBlockInfo>): Double {
+        if (text.isEmpty()) return 0.0
+        
+        // Đếm số ký tự Asian (CJK)
+        val asianPattern = Regex("[\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]")
+        val asianCharCount = asianPattern.findAll(text).count()
+        
+        // Đếm số ký tự Latin và số
+        val alphaNumPattern = Regex("[a-zA-Z0-9]")
+        val alphaNumCount = alphaNumPattern.findAll(text).count()
+        
+        // Score = ưu tiên ký tự Asian + độ dài text + số blocks
+        val asianScore = asianCharCount * 2.0
+        val textLengthScore = text.length / 10.0
+        val blockScore = blocks.size * 5.0
+        
+        // Penalty cho quá nhiều ký tự không hợp lệ
+        val invalidChars = text.count { c ->
+            !asianPattern.matches(c.toString()) && 
+            !alphaNumPattern.matches(c.toString()) && 
+            !c.isWhitespace() && 
+            c !in ".,!?、。！？「」『』（）()\"'"
+        }
+        val invalidPenalty = invalidChars * 0.5
+        
+        return asianScore + textLengthScore + blockScore - invalidPenalty
+    }
+
     suspend fun recognizeAndTranslateText(
         imageUri: Uri, 
         mode: TranslationMode, 
@@ -584,7 +892,14 @@ class TranslationRepository(private val application: Application) {
             //log.i("TranslationRepository", "[PREVIEW] Phát hiện script: $detectedScript")
 
             // Quét chính xác với recognizer phù hợp
-            val (rawText, textBlocks) = recognizeText(bitmap, rotationDegrees, forceScript = detectedScript)
+            // Sử dụng chiến lược xoay ảnh cho văn bản dọc (tiếng Nhật/Trung/Hàn)
+            val useRotationStrategy = detectedScript in listOf("ja", "zh", "ko")
+            val (rawText, textBlocks) = if (useRotationStrategy) {
+                Log.i("TranslationRepository", "[ROTATION] Sử dụng chiến lược xoay ảnh cho script: $detectedScript")
+                recognizeTextWithRotationStrategy(bitmap, rotationDegrees, forceScript = detectedScript)
+            } else {
+                recognizeText(bitmap, rotationDegrees, forceScript = detectedScript)
+            }
             fullText = rawText
             hasOCR = true
             //log.i("TranslationRepository", "[INPUT] Văn bản gốc: $fullText, số khối: ${textBlocks.size}")

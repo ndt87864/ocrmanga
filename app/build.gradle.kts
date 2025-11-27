@@ -94,7 +94,7 @@ dependencies {
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
-    implementation ("com.google.mlkit:language-id:16.1.1")
+    implementation ("com.google.mlkit:language-id:17.0.4")
     implementation ("androidx.compose.material:material-icons-extended:1.6.1")
     // Room dependencies
     implementation ("org.json:json:20230227")
