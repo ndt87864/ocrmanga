@@ -616,6 +616,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // Clear all is_changed flags for this room to start fresh
                 databaseHelper.clearAllChangedFlagsForRoom(roomId)
                 
+                // Clear pendingDelete status for all translations in this room to ensure blocks return to normal state
+                databaseHelper.clearPendingDeleteStatusForRoom(roomId)
+                
                 // Clear tracking variables when loading a room
                 dirtyUris.clear()
                 deletedTranslationUris.clear()

@@ -1073,6 +1073,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
+    fun clearPendingDeleteStatusForRoom(roomId: Long) {
+        val db = writableDatabase
+        try {
+            val values = ContentValues().apply { put("pending_delete", 0) }
+            val rowsUpdated = db.update("translations", values, "$COLUMN_IMAGE_ID IN (SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ?) AND pending_delete = 1", arrayOf(roomId.toString()))
+            Log.i(TAG, "Cleared pending_delete for $rowsUpdated translations in room $roomId")
+        } catch (e: Exception) {
+            Log.w(TAG, "clearPendingDeleteStatusForRoom failed for roomId=$roomId", e)
+        }
+    }
+
     // Get list of image IDs with is_changed = 1 for a specific room
     fun getChangedImageIdsForRoom(roomId: Long): List<Long> {
         val db = readableDatabase
