@@ -17,6 +17,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import android.content.Intent
 import android.util.Log
 import com.example.ocrmanga.data.models.TranslationMode
@@ -50,7 +51,7 @@ fun Dialogs(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    // Launcher to pick a single image to replace the selected image
+    // Launcher to pick a single image from file picker (OpenDocument)
     val replaceImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri: Uri? ->
@@ -64,6 +65,21 @@ fun Dialogs(
                 // Call ViewModel to replace uri
                 viewModel.replaceImageUri(imageMenuUri, uri)
                 Toast.makeText(context, "Đã chọn ảnh thay thế", Toast.LENGTH_SHORT).show()
+            } else if (uri == null) {
+                Toast.makeText(context, "Không có ảnh được chọn", Toast.LENGTH_SHORT).show()
+            }
+            onImageMenuDismiss()
+        }
+    )
+    
+    // Launcher to pick a single image from gallery (PickVisualMedia - photo picker)
+    val replaceImageFromGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri: Uri? ->
+            if (uri != null && imageMenuUri != null) {
+                // Call ViewModel to replace uri
+                viewModel.replaceImageUri(imageMenuUri, uri)
+                Toast.makeText(context, "Đã chọn ảnh thay thế từ thư viện", Toast.LENGTH_SHORT).show()
             } else if (uri == null) {
                 Toast.makeText(context, "Không có ảnh được chọn", Toast.LENGTH_SHORT).show()
             }
@@ -280,28 +296,45 @@ fun Dialogs(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    // Replace image option
+                    // Replace image from file option
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // Launch image picker to replace current image
+                                // Launch file picker to replace current image
                                 try {
-                                    // Launch OpenDocument for a single image; OpenDocument expects an Array<String> of MIME types
                                     replaceImageLauncher.launch(arrayOf("image/*"))
                                 } catch (e: Exception) {
-                                    // Fallback to generic ACTION_OPEN_DOCUMENT intent via system picker
-                                    val intent = DatabaseHelper.createImagePickerIntent()
-                                    // Can't start activity here; let caller handle if necessary
-                                    Toast.makeText(context, "Không thể mở trình chọn ảnh", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Không thể mở trình chọn file", Toast.LENGTH_SHORT).show()
                                     onImageMenuDismiss()
                                 }
                             }
                             .padding(vertical = 8.dp)
                     ) {
                         Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Text("Thay thế ảnh", modifier = Modifier.padding(start = 8.dp))
+                        Text("Thay thế ảnh (từ file)", modifier = Modifier.padding(start = 8.dp))
+                    }
+                    // Replace image from gallery option (photo picker)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                // Launch photo picker to replace current image
+                                try {
+                                    replaceImageFromGalleryLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Không thể mở thư viện ảnh", Toast.LENGTH_SHORT).show()
+                                    onImageMenuDismiss()
+                                }
+                            }
+                            .padding(vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Text("Thay thế ảnh (từ thư viện)", modifier = Modifier.padding(start = 8.dp))
                     }
                 }
             },

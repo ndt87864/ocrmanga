@@ -413,14 +413,18 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             // NOTE: Do NOT clear deletedTranslationUris here because applyPendingChangesForRoom
                             // only saves NEW translations, it does NOT handle deletion of old translations.
                             // Deletion is handled separately in saveCurrentRoom's selective save (case 3).
-                            val currentTranslated = _uiState.value.translatedTexts
-                            currentTranslated.forEach { (uri, _) ->
+                            val savedTranslated = _uiState.value.translatedTexts
+                            savedTranslated.forEach { (uri, _) ->
                                 val imgId = uriToImageId[uri]
                                 if (imgId != null && imgId in changedIds) {
                                     dirtyUris.remove(uri)
                                 }
                             }
                             Log.i(TAG, "Auto-saved ${mapping.size} changed images for room $roomId (threshold reached), cleared from dirtyUris")
+                            
+                            // Clear memory and reload from DB after auto-save to free memory and sync with DB
+                            Log.i(TAG, "Auto-save: Clearing memory and reloading room $roomId from DB")
+                            clearMemoryAndReloadRoom(roomId)
                         } else {
                             Log.w(TAG, "Auto-save failed for room $roomId mappingSize=${mapping.size}")
                         }
@@ -610,174 +614,198 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun loadRoom(roomId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // Clear all is_changed flags for this room to start fresh
-                databaseHelper.clearAllChangedFlagsForRoom(roomId)
-                
-                // Clear pendingDelete status for all translations in this room to ensure blocks return to normal state
-                databaseHelper.clearPendingDeleteStatusForRoom(roomId)
-                
-                // Clear tracking variables when loading a room
-                dirtyUris.clear()
-                deletedTranslationUris.clear()
-                removedImageIds.clear()
-                newImageUris.clear()
-                uriToImageId.clear()
-                
-                // Load auto-translate setting for this room
-                val autoTranslate = databaseHelper.getAutoTranslateSetting(roomId)
-                
-                //log.i(TAG, "Đang tải phòng $roomId")
-                val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
-                
-                // Filter out duplicate URIs, keeping only the first occurrence
-                val uniqueImages = mutableListOf<Uri>()
-                val seenUris = mutableSetOf<String>()
-                allImages.forEach { uri ->
-                    val uriString = uri.toString()
-                    if (!seenUris.contains(uriString)) {
-                        uniqueImages.add(uri)
-                        seenUris.add(uriString)
-                    } else {
-                        Log.w(TAG, "loadRoom: Skipping duplicate URI: $uriString")
+    /**
+     * Clear all in-memory caches and reload room from DB to ensure clean state.
+     * Called after manual save or auto-save to free memory and sync with DB.
+     */
+    private suspend fun clearMemoryAndReloadRoom(roomId: Long) {
+        Log.i(TAG, "clearMemoryAndReloadRoom: Clearing memory and reloading room $roomId from DB")
+        
+        // 1) Clear in-memory translation repository cache
+        try {
+            translationRepository.clearSession()
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to clear translationRepository session", e)
+        }
+        
+        // 2) Clear tracking variables
+        dirtyUris.clear()
+        deletedTranslationUris.clear()
+        removedImageIds.clear()
+        newImageUris.clear()
+        uriToImageId.clear()
+        translationQueue.clear()
+        
+        // 3) Clear Coil image cache to free memory
+        try {
+            val context = getApplication<Application>()
+            val imageLoader = coil.Coil.imageLoader(context)
+            imageLoader.memoryCache?.clear()
+            Log.i(TAG, "Cleared Coil memory cache")
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to clear Coil memory cache", e)
+        }
+        
+        // 4) Clear UI state temporarily
+        _uiState.update { currentState ->
+            currentState.copy(
+                imageUris = emptyList(),
+                translatedTexts = emptyMap(),
+                sourceLanguages = emptyMap(),
+                translatedStatus = emptyMap(),
+                remainingImages = emptyList()
+            )
+        }
+        
+        // 5) Force garbage collection to reclaim memory
+        System.gc()
+        
+        // 6) Small delay to allow UI to update and GC to run
+        delay(100)
+        
+        // 7) Reload room from DB with fresh state
+        loadRoomInternal(roomId)
+        
+        Log.i(TAG, "clearMemoryAndReloadRoom: Completed reload of room $roomId")
+    }
+
+    /**
+     * Internal function to load room from DB. Used by both loadRoom() and clearMemoryAndReloadRoom().
+     */
+    private suspend fun loadRoomInternal(roomId: Long) {
+        try {
+            // Clear all is_changed flags for this room to start fresh
+            databaseHelper.clearAllChangedFlagsForRoom(roomId)
+            
+            // Clear pendingDelete status for all translations in this room to ensure blocks return to normal state
+            databaseHelper.clearPendingDeleteStatusForRoom(roomId)
+            
+            // Clear tracking variables when loading a room
+            dirtyUris.clear()
+            deletedTranslationUris.clear()
+            removedImageIds.clear()
+            newImageUris.clear()
+            uriToImageId.clear()
+            
+            // Load auto-translate setting for this room
+            val autoTranslate = databaseHelper.getAutoTranslateSetting(roomId)
+            
+            val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
+            
+            // Filter out duplicate URIs, keeping only the first occurrence
+            val uniqueImages = mutableListOf<Uri>()
+            val seenUris = mutableSetOf<String>()
+            allImages.forEach { uri ->
+                val uriString = uri.toString()
+                if (!seenUris.contains(uriString)) {
+                    uniqueImages.add(uri)
+                    seenUris.add(uriString)
+                } else {
+                    Log.w(TAG, "loadRoomInternal: Skipping duplicate URI: $uriString")
+                }
+            }
+            
+            if (uniqueImages.size < allImages.size) {
+                Log.i(TAG, "loadRoomInternal: Filtered ${allImages.size - uniqueImages.size} duplicate images from room $roomId")
+            }
+            
+            // Sort images by numeric order in filename
+            fun extractImageNumber(uri: Uri): Int {
+                val filename = uri.lastPathSegment ?: return Int.MAX_VALUE
+                val match = """image_(\d+)""".toRegex().find(filename)
+                return match?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE
+            }
+            
+            val sortedImages = uniqueImages.sortedBy { extractImageNumber(it) }
+            
+            val translatedStatus = mutableMapOf<Uri, Boolean>()
+            val initialBatch = sortedImages.take(BATCH_SIZE)
+            val remainingImages = sortedImages.drop(BATCH_SIZE)
+
+            // Load initial batch
+            val db = databaseHelper.readableDatabase
+            val cursor = db.rawQuery(
+                """
+                SELECT ${DatabaseHelper.COLUMN_IMAGE_ID}, ${DatabaseHelper.COLUMN_IMAGE_URI}, ${DatabaseHelper.COLUMN_IS_TRANSLATED} 
+                FROM ${DatabaseHelper.TABLE_IMAGES} 
+                WHERE ${DatabaseHelper.COLUMN_ROOM_ID} = ? 
+                ORDER BY ${DatabaseHelper.COLUMN_DISPLAY_ORDER} 
+                LIMIT $BATCH_SIZE
+                """, arrayOf(roomId.toString())
+            )
+
+            while (cursor.moveToNext()) {
+                val imageId = cursor.getLong(0)
+                val uriStr = cursor.getString(1)
+                val isTranslated = cursor.getInt(2) == 1
+                val uri = Uri.parse(uriStr)
+                translatedStatus[uri] = isTranslated
+                uriToImageId[uri] = imageId
+                try {
+                    uriToImageId[Uri.parse(uriStr)] = imageId
+                } catch (e: Exception) { /* ignore */ }
+                try {
+                    val last = Uri.parse(uriStr).lastPathSegment
+                    if (!last.isNullOrBlank()) {
+                        uriToImageId[Uri.fromParts("filename", last, null)] = imageId
                     }
-                }
-                
-                if (uniqueImages.size < allImages.size) {
-                    Log.i(TAG, "loadRoom: Filtered ${allImages.size - uniqueImages.size} duplicate images from room $roomId")
-                }
-                
-                // Sort images by numeric order in filename (e.g., image_1, image_2, ..., image_10, image_11)
-                // Extract number from filename like "image_10.jpg" -> 10
-                fun extractImageNumber(uri: Uri): Int {
-                    val filename = uri.lastPathSegment ?: return Int.MAX_VALUE
-                    val match = """image_(\d+)""".toRegex().find(filename)
-                    return match?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE
-                }
-                
-                val sortedImages = uniqueImages.sortedBy { extractImageNumber(it) }
-                
-                if (sortedImages != uniqueImages) {
-                    Log.i(TAG, "loadRoom: Reordered images by numeric filename")
-                }
-                
-                if (sortedImages != uniqueImages) {
-                    Log.i(TAG, "loadRoom: Reordered images by numeric filename")
-                }
-                
-                // ĐẢM BẢO: KHÔNG loại bỏ ảnh đầu (coverUri) khỏi danh sách ảnh phòng!
-                // Nếu coverUri trùng với ảnh đầu, vẫn giữ nguyên trong danh sách hiển thị.
-                val translatedStatus = mutableMapOf<Uri, Boolean>()
-                val initialBatch = sortedImages.take(BATCH_SIZE)
-                val remainingImages = sortedImages.drop(BATCH_SIZE)
+                } catch (e: Exception) { /* ignore */ }
+            }
+            cursor.close()
 
-                // Load initial batch
-                val db = databaseHelper.readableDatabase
-                val cursor = db.rawQuery(
-                    """
-                    SELECT ${DatabaseHelper.COLUMN_IMAGE_ID}, ${DatabaseHelper.COLUMN_IMAGE_URI}, ${DatabaseHelper.COLUMN_IS_TRANSLATED} 
-                    FROM ${DatabaseHelper.TABLE_IMAGES} 
-                    WHERE ${DatabaseHelper.COLUMN_ROOM_ID} = ? 
-                    ORDER BY ${DatabaseHelper.COLUMN_DISPLAY_ORDER} 
-                    LIMIT $BATCH_SIZE
-                    """, arrayOf(roomId.toString())
-                )
-
-                while (cursor.moveToNext()) {
-                    val imageId = cursor.getLong(0)
-                    val uriStr = cursor.getString(1)
-                    val isTranslated = cursor.getInt(2) == 1
-                    val uri = Uri.parse(uriStr)
-                    translatedStatus[uri] = isTranslated
-                    // populate map for later selective save
-                    uriToImageId[uri] = imageId
-                    try {
-                        uriToImageId[Uri.parse(uriStr)] = imageId
-                    } catch (e: Exception) { /* ignore */ }
-                    // also index by lastPathSegment / filename to help match content:// vs file://
-                    try {
-                        val last = Uri.parse(uriStr).lastPathSegment
-                        if (!last.isNullOrBlank()) {
-                            uriToImageId[Uri.fromParts("filename", last, null)] = imageId
-                        }
-                    } catch (e: Exception) { /* ignore */ }
-                }
-                cursor.close()
-
-                // Tự động set rotation = 0f cho block chưa có rotation (phòng cũ)
-                val fixedTranslations = translations.mapValues { (uri, pair) ->
-                    val (originalText, blocks) = pair
-                    val fixedBlocks = blocks.map { block ->
-                        val withRotation = if (block.rotation == null) block.copy(rotation = 0f) else block
-                        val baseOverlay = withRotation.customOverlayColor ?: 0xFFFFFFFF.toInt()
-                        val textColor = withRotation.customTextColor ?: computeDefaultTextColor(baseOverlay, withRotation.averageBackgroundColor)
-                        // QUAN TRỌNG: Set applyMerge = false khi load từ DB để không áp dụng logic chống chồng lấn
-                        withRotation.copy(
-                            customOverlayColor = baseOverlay, 
-                            customTextColor = textColor,
-                            applyMerge = false
-                        )
-                    }
-                    // Log loaded shadow values for each block to verify persistence
-                    fixedBlocks.forEachIndexed { idx, b ->
-                        if (b.customShadowColor != null || b.shadowRadius > 0f || b.shadowAlpha != 1.0f) {
-                            Log.i(TAG, "loadRoom: uri=$uri blockIndex=$idx shadowColor=${b.customShadowColor?.toString() ?: "null"} shadowAlpha=${b.shadowAlpha} shadowRadius=${b.shadowRadius}")
-                        }
-                    }
-                    originalText to fixedBlocks
-                }
-                // Only include translations that actually exist in DB for the initial batch.
-                // Do NOT insert empty translation entries for images that have no saved
-                // translations; those images should simply be displayed without overlays.
-                val translationsForBatch: Map<Uri, Pair<String, List<TextBlockInfo>>> =
-                    fixedTranslations.filterKeys { uri -> uri in initialBatch }
-
-                // Keep sourceLanguages only for those URIs that had translations loaded.
-                val sourceLangsForBatch: Map<Uri, String> = translationsForBatch.keys.associateWith { "zh" }
-
-                // Ensure translatedStatus contains an explicit value for each uri in the batch.
-                // If DB indicated the image was translated (or we loaded a translation), honor that;
-                // otherwise leave the image as not-translated (false) so UI will just show the image.
-                val statusForBatch = initialBatch.associateWith { uri ->
-                    translatedStatus[uri] ?: translationsForBatch.containsKey(uri)
-                }
-
-                _uiState.update {
-                    it.copy(
-                        imageUris = initialBatch, // Ảnh bìa vẫn nằm trong danh sách này
-                        translatedTexts = it.translatedTexts + translationsForBatch,
-                        translationEnabled = fixedTranslations.isNotEmpty(),
-                        translationMode = if (fixedTranslations.isNotEmpty()) TranslationMode.OFFLINE else TranslationMode.OFF,
-                        isTranslating = false,
-                        roomId = roomId,
-                        translatedStatus = it.translatedStatus + statusForBatch,
-                        sourceLanguages = it.sourceLanguages + sourceLangsForBatch,
-                        remainingImages = remainingImages,
-                        // Tăng translationVersion để force UI update dragBlocksMap từ DB
-                        translationVersion = it.translationVersion + 1,
-                        autoTranslateEnabled = autoTranslate
+            // Fix rotation and colors for blocks
+            val fixedTranslations = translations.mapValues { (uri, pair) ->
+                val (originalText, blocks) = pair
+                val fixedBlocks = blocks.map { block ->
+                    val withRotation = if (block.rotation == null) block.copy(rotation = 0f) else block
+                    val baseOverlay = withRotation.customOverlayColor ?: 0xFFFFFFFF.toInt()
+                    val textColor = withRotation.customTextColor ?: computeDefaultTextColor(baseOverlay, withRotation.averageBackgroundColor)
+                    withRotation.copy(
+                        customOverlayColor = baseOverlay, 
+                        customTextColor = textColor,
+                        applyMerge = false
                     )
                 }
-                // record last loaded room id so clear can delete files even if uiState changes later
-                lastLoadedRoomId = roomId
-                //log.i(TAG, "Đã tải batch đầu tiên của phòng $roomId với ${initialBatch.size} ảnh")
-                // Log độ nghiêng (rotation) cho từng block bản dịch
-                fixedTranslations.forEach { (uri, pair) ->
-                    val blocks = pair.second
-                    blocks.forEachIndexed { idx, block ->
-                        //log.i(TAG, "[LOAD] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Lỗi khi tải phòng $roomId", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Tải phòng thất bại!", Toast.LENGTH_SHORT).show()
-                }
-                // On failure, ensure we don't keep a stale lastLoadedRoomId
-                lastLoadedRoomId = null
+                originalText to fixedBlocks
             }
+            
+            val translationsForBatch: Map<Uri, Pair<String, List<TextBlockInfo>>> =
+                fixedTranslations.filterKeys { uri -> uri in initialBatch }
+
+            val sourceLangsForBatch: Map<Uri, String> = translationsForBatch.keys.associateWith { "zh" }
+
+            val statusForBatch = initialBatch.associateWith { uri ->
+                translatedStatus[uri] ?: translationsForBatch.containsKey(uri)
+            }
+
+            _uiState.update {
+                it.copy(
+                    imageUris = initialBatch,
+                    translatedTexts = translationsForBatch,
+                    translationEnabled = fixedTranslations.isNotEmpty(),
+                    translationMode = if (fixedTranslations.isNotEmpty()) TranslationMode.OFFLINE else TranslationMode.OFF,
+                    isTranslating = false,
+                    roomId = roomId,
+                    translatedStatus = statusForBatch,
+                    sourceLanguages = sourceLangsForBatch,
+                    remainingImages = remainingImages,
+                    translationVersion = it.translationVersion + 1,
+                    autoTranslateEnabled = autoTranslate
+                )
+            }
+            lastLoadedRoomId = roomId
+        } catch (e: Exception) {
+            Log.e(TAG, "Lỗi khi tải phòng $roomId", e)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Tải phòng thất bại!", Toast.LENGTH_SHORT).show()
+            }
+            lastLoadedRoomId = null
+        }
+    }
+
+    fun loadRoom(roomId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            loadRoomInternal(roomId)
         }
     }
 
@@ -1261,6 +1289,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     lastLoadedRoomId = roomId
                     galleryViewModel.notifyDataSaved()
                     loadAllRoomIds()
+                    
+                    // Clear memory and reload from DB to ensure clean state
+                    // Only reload if there were actual changes saved (not skipped)
+                    if (savedCount != -1) {
+                        Log.i(TAG, "saveCurrentRoom: Clearing memory and reloading room $roomId from DB")
+                        clearMemoryAndReloadRoom(roomId)
+                    }
                 } else {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Lưu thất bại!", Toast.LENGTH_SHORT).show()
