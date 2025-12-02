@@ -1681,39 +1681,27 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             db.update(TABLE_IMAGES, imageUpdateValues, "$COLUMN_IMAGE_ID = ?", arrayOf(resolvedId.toString()))
                             
                             try { deleteBlocksForImage(resolvedId) } catch (e: Exception) { /* ignore */ }
-                            // Lấy lại kích thước ảnh đã lưu
-                            val imageFile = File(Uri.parse(uriStr).path ?: "")
-                            val savedBitmap = android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath)
-                            val savedWidth = savedBitmap?.width
-                            val savedHeight = savedBitmap?.height
-                            val originalWidth = textBlocks.firstOrNull()?.originalImageWidth
-                            val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
-                            val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
-                            val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
+                            // DO NOT scale blocks - keep original coordinates relative to originalImageWidth/Height
+                            // ImageViewer handles scaling at display time
                             var insertedCount = 0
                             textBlocks.forEach { textBlock ->
                                 val origRect = textBlock.bounds
-                                val scaledRect = if (scaleX != 1f || scaleY != 1f) {
-                                    android.graphics.Rect(
-                                        (origRect.left * scaleX).toInt(),
-                                        (origRect.top * scaleY).toInt(),
-                                        (origRect.right * scaleX).toInt(),
-                                        (origRect.bottom * scaleY).toInt()
-                                    )
-                                } else origRect
+                                // Use original bounds without scaling
+                                val finalRect = origRect
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, resolvedId)
                                     // DO NOT store original_text per block
                                     // put("original_text", textBlock.originalText ?: originalText)
                                     put("translated_text", textBlock.text)
-                                    put("bounds_left", scaledRect.left)
-                                    put("bounds_top", scaledRect.top)
-                                    put("bounds_right", scaledRect.right)
-                                    put("bounds_bottom", scaledRect.bottom)
+                                    put("bounds_left", finalRect.left)
+                                    put("bounds_top", finalRect.top)
+                                    put("bounds_right", finalRect.right)
+                                    put("bounds_bottom", finalRect.bottom)
                                     put("font_size", textBlock.fontSize)
                                     put("rotation", textBlock.rotation ?: 0f)
-                                    put("original_image_width", savedWidth)
-                                    put("original_image_height", savedHeight)
+                                    // Keep original image dimensions from block
+                                    put("original_image_width", textBlock.originalImageWidth)
+                                    put("original_image_height", textBlock.originalImageHeight)
                                     put("shape_type", textBlock.shapeType)
                                     put("background_type", textBlock.backgroundType.ordinal)
                                     put("average_background_color", textBlock.averageBackgroundColor)
@@ -1732,14 +1720,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 if (inserted != -1L) {
                                     insertedCount++
                                     try {
-                                        val blockWidth = scaledRect.right - scaledRect.left
-                                        val blockHeight = scaledRect.bottom - scaledRect.top
+                                        val blockWidth = finalRect.right - finalRect.left
+                                        val blockHeight = finalRect.bottom - finalRect.top
                                         val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
                                         val textColor = textBlock.customTextColor ?: (textBlock.originalTextColor ?: 0xFF000000.toInt())
                                         insertImageBlock(
                                             imageId = resolvedId,
-                                            x = scaledRect.left,
-                                            y = scaledRect.top,
+                                            x = finalRect.left,
+                                            y = finalRect.top,
                                             width = blockWidth,
                                             height = blockHeight,
                                             overlayType = textBlock.shapeType,
@@ -1777,7 +1765,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     }
                                 }
                             }
-                            savedBitmap?.recycle()
                         }
                     }
                 }
@@ -1957,42 +1944,30 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
                 // insert new translations if present
                 translatedTexts[dirtyUri]?.let { (originalText, textBlocks) ->
-                    // find saved file size info if needed
-                    val imageFile = File(Uri.parse((imageIdMap.entries.find { it.value == imageId }?.key) ?: uriStr).path ?: "")
-                    val savedBitmap = android.graphics.BitmapFactory.decodeFile(imageFile.absolutePath)
-                    val savedWidth = savedBitmap?.width
-                    val savedHeight = savedBitmap?.height
+                    // DO NOT scale blocks based on saved file size anymore.
+                    // Blocks retain their original coordinates relative to originalImageWidth/Height.
+                    // ImageViewer handles scaling at display time.
 
                     var insertedCount = 0
                     textBlocks.forEachIndexed { idx, textBlock ->
                         val origRect = textBlock.bounds
-                        // Attempt to scale if original sizes provided
-                        val originalWidth = textBlock.originalImageWidth
-                        val originalHeight = textBlock.originalImageHeight
-                        val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
-                        val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
-                        val scaledRect = if (scaleX != 1f || scaleY != 1f) {
-                            android.graphics.Rect(
-                                (origRect.left * scaleX).toInt(),
-                                (origRect.top * scaleY).toInt(),
-                                (origRect.right * scaleX).toInt(),
-                                (origRect.bottom * scaleY).toInt()
-                            )
-                        } else origRect
+                        // Use original bounds without scaling
+                        val finalRect = origRect
 
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
                             // DO NOT store original_text per block - it's at image level now
                             // put("original_text", textBlock.originalText ?: originalText)
                             put("translated_text", textBlock.text)
-                            put("bounds_left", scaledRect.left)
-                            put("bounds_top", scaledRect.top)
-                            put("bounds_right", scaledRect.right)
-                            put("bounds_bottom", scaledRect.bottom)
+                            put("bounds_left", finalRect.left)
+                            put("bounds_top", finalRect.top)
+                            put("bounds_right", finalRect.right)
+                            put("bounds_bottom", finalRect.bottom)
                             put("font_size", textBlock.fontSize)
                             put("rotation", textBlock.rotation ?: 0f)
-                            put("original_image_width", savedWidth)
-                            put("original_image_height", savedHeight)
+                            // Keep original image dimensions from block - don't override with saved file size
+                            put("original_image_width", textBlock.originalImageWidth)
+                            put("original_image_height", textBlock.originalImageHeight)
                             put("shape_type", textBlock.shapeType)
                             put("background_type", textBlock.backgroundType.ordinal)
                             put("average_background_color", textBlock.averageBackgroundColor)
@@ -2011,14 +1986,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 if (inserted != -1L) {
                                 insertedCount++
                             try {
-                                val blockWidth = scaledRect.right - scaledRect.left
-                                val blockHeight = scaledRect.bottom - scaledRect.top
+                                val blockWidth = finalRect.right - finalRect.left
+                                val blockHeight = finalRect.bottom - finalRect.top
                                 val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
                                 val textColor = textBlock.customTextColor ?: textBlock.originalTextColor
                                 insertImageBlock(
                                     imageId = imageId,
-                                    x = scaledRect.left,
-                                    y = scaledRect.top,
+                                    x = finalRect.left,
+                                    y = finalRect.top,
                                     width = blockWidth,
                                     height = blockHeight,
                                     overlayType = textBlock.shapeType,
@@ -2056,7 +2031,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             }
                         }
                     }
-                    savedBitmap?.recycle()
                 }
             }
 

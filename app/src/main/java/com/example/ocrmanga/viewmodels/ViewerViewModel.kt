@@ -1319,12 +1319,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      * updating the stored URI in DB. Also updates in-memory mappings and UI state.
      * If the image was not associated with a stored image_id, the ViewModel will
      * simply swap the URI in the UI state.
+     * 
+     * IMPORTANT: When replacing an image, we update the originalImageWidth/Height 
+     * in translation blocks to match the new image dimensions so that coordinates
+     * remain consistent after saving and reloading from DB.
      */
     fun replaceImageUri(oldUri: Uri, newUri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Update DB if we have an imageId mapping. Ask DB helper to copy the
                 // new image into the room's images folder and return the stored app URI.
+                // NOTE: We only replace the image file/URI, NOT the block coordinates.
+                // Block coordinates remain unchanged - they are relative to originalImageWidth/Height
+                // and ImageViewer will scale them appropriately when displaying.
                 val imageId = uriToImageId.entries.find { it.key.toString() == oldUri.toString() }?.value
                 val finalUri: Uri = if (imageId != null && _uiState.value.roomId != null) {
                     try {
@@ -1351,7 +1358,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     newUri
                 }
 
-                // Atomically update UI state so we don't race with other updates
+                // Atomically update UI state - only swap URI, keep blocks unchanged
                 _uiState.update { state ->
                     val current = state.imageUris.toMutableList()
                     val indexInState = current.indexOfFirst { it.toString() == oldUri.toString() }
@@ -1361,9 +1368,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     current[indexInState] = finalUri
 
+                    // Simply move translations to new URI key without modifying block coordinates
                     val newTranslatedTexts = state.translatedTexts.toMutableMap()
                     val oldTextKey = newTranslatedTexts.keys.find { it.toString() == oldUri.toString() }
                     if (oldTextKey != null) {
+                        // Keep blocks exactly as they are - no scaling needed
+                        // ImageViewer will use block.originalImageWidth/Height for proper scaling
                         newTranslatedTexts[finalUri] = newTranslatedTexts.remove(oldTextKey)!!
                     }
 
@@ -1384,11 +1394,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         imageUris = current,
                         translatedTexts = newTranslatedTexts,
                         translatedStatus = newTranslatedStatus,
-                        sourceLanguages = newSourceLangs
+                        sourceLanguages = newSourceLangs,
+                        translationVersion = state.translationVersion + 1
                     )
                 }
 
-                // Mark as dirty so caller may save if desired
+                // Mark the new URI as dirty so saveRoom will process it
+                // This ensures translations are saved with the correct URI reference
                 val oldKeys = dirtyUris.filter { it.toString() == oldUri.toString() }
                 oldKeys.forEach { dirtyUris.remove(it) }
                 dirtyUris.add(finalUri)
