@@ -602,7 +602,7 @@ fun ViewerScreen(
             onSaveTranslation = { uri, blocks ->
                 Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
                 blocks.forEachIndexed { idx, dragBlock ->
-                    Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation}")
+                    Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation} inset=${dragBlock.overlayInset} insetH=${dragBlock.overlayInsetHorizontal} insetV=${dragBlock.overlayInsetVertical}")
                 }
                 viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
                     // Bounds đã được cập nhật khi drag trong ImageViewer, không cần cộng offset nữa

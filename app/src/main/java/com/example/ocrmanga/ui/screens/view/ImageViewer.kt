@@ -278,8 +278,8 @@ fun ImageViewer(
             LaunchedEffect(uri, isInWindow, translationVersion, translatedTexts[uri], editTranslationMode) {
                 if (isInWindow && !editTranslationMode) {
                     Log.d("ImageViewer", "[REBUILD dragBlocks] uri=$uri editTranslationMode=$editTranslationMode")
-                    val rawNewBlocks = translatedTexts[uri]?.second?.map {
-                        Log.d("ImageViewer", "[REBUILD] Block overlayRotation=${it.overlayRotation} from translatedTexts")
+                    val rawNewBlocks = translatedTexts[uri]?.second?.mapIndexed { idx, it ->
+                        Log.d("ImageViewer", "[REBUILD] idx=$idx overlayRotation=${it.overlayRotation} inset=${it.overlayInset} insetH=${it.overlayInsetHorizontal} insetV=${it.overlayInsetVertical} from translatedTexts")
                         DragBlockState(
                             block = it,
                             fontSize = null,
@@ -305,41 +305,55 @@ fun ImageViewer(
                     } ?: emptyList()
 
                     // Merge user-edited visual properties (if any) from previously stored dragBlocksMap
+                    // ✅ Ưu tiên giá trị từ DB (nb) - chỉ preserve từ existing nếu DB chưa có giá trị
                     val existing = dragBlocksMap[uri]
+                    Log.d("ImageViewer", "[MERGE] uri=$uri existing=${existing?.size ?: 0} rawNewBlocks=${rawNewBlocks.size}")
                     val merged = if (existing != null && existing.isNotEmpty()) {
-                        rawNewBlocks.map { nb ->
+                        rawNewBlocks.mapIndexed { idx, nb ->
                             // try to find a matching existing block by bounds + text
                             val match = existing.find { eb ->
                                 eb.block.bounds == nb.block.bounds && eb.block.text == nb.block.text
                             }
                             if (match != null) {
+                                // Preserve applyMerge from edited block
+                                val preserveApplyMerge = match.block.applyMerge
+                                
+                                // ✅ Ưu tiên giá trị từ DB nếu DB có giá trị khác default
+                                // Chỉ lấy từ match (old) nếu DB không có (= default) VÀ match có giá trị khác default
+                                val finalInset = if (nb.overlayInset != 0f) nb.overlayInset else match.overlayInset
+                                val finalInsetH = if (nb.overlayInsetHorizontal != 0f) nb.overlayInsetHorizontal else match.overlayInsetHorizontal
+                                val finalInsetV = if (nb.overlayInsetVertical != 0f) nb.overlayInsetVertical else match.overlayInsetVertical
+                                
+                                Log.d("ImageViewer", "[MERGE] idx=$idx nb.inset=${nb.overlayInset} match.inset=${match.overlayInset} final=$finalInset")
+                                
+                                val finalLineSpacing = if (nb.lineSpacing != 1.0f && nb.lineSpacing != 1.1f && nb.lineSpacing != 2f) nb.lineSpacing else match.lineSpacing
+                                val finalShadowColor = nb.textShadowColor ?: match.textShadowColor
+                                val finalShadowAlpha = if (nb.textShadowAlpha != 1.0f) nb.textShadowAlpha else match.textShadowAlpha
+                                val finalShadowRadius = if (nb.textShadowRadius != 0f) nb.textShadowRadius else match.textShadowRadius
+                                val finalRotation = if (nb.rotation != 0f) nb.rotation else match.rotation
+                                val finalOverlayRotation = nb.overlayRotation ?: match.overlayRotation
+                                val finalFontSize = nb.fontSize ?: match.fontSize
+                                
                                 nb.copy(
                                     block = nb.block.copy(
-                                        // Preserve applyMerge flag from edited block (should be false after edit)
-                                        applyMerge = match.block.applyMerge
+                                        applyMerge = preserveApplyMerge
                                     ),
-                                    // preserve any user-set shadow properties and custom lineSpacing
-                                    textShadowColor = match.textShadowColor,
-                                    textShadowAlpha = match.textShadowAlpha,
-                                    textShadowRadius = match.textShadowRadius,
-                                    lineSpacing = match.lineSpacing,
-                                    overlayInset = match.overlayInset,
-                                    overlayInsetHorizontal = match.overlayInsetHorizontal,
-                                    overlayInsetVertical = match.overlayInsetVertical,
-                                    // also preserve edited font size/offset if present
-                                    fontSize = match.fontSize,
-                                    rotation = match.rotation,
-                                    overlayRotation = match.overlayRotation,
-                                    // keep any manual offset made during editing
-                                    offset = match.offset
+                                    textShadowColor = finalShadowColor,
+                                    textShadowAlpha = finalShadowAlpha,
+                                    textShadowRadius = finalShadowRadius,
+                                    lineSpacing = finalLineSpacing,
+                                    overlayInset = finalInset,
+                                    overlayInsetHorizontal = finalInsetH,
+                                    overlayInsetVertical = finalInsetV,
+                                    fontSize = finalFontSize,
+                                    rotation = finalRotation,
+                                    overlayRotation = finalOverlayRotation,
+                                    // Chỉ preserve offset nếu user đã drag
+                                    offset = if (match.offset != androidx.compose.ui.geometry.Offset.Zero) match.offset else nb.offset
                                 )
                             } else {
-                                // ✅ Không tìm thấy match - giữ nguyên applyMerge từ block (từ DB)
-                                nb.copy(
-                                    block = nb.block.copy(
-                                        applyMerge = nb.block.applyMerge
-                                    )
-                                )
+                                // ✅ Không tìm thấy match - giữ nguyên giá trị từ DB
+                                nb
                             }
                         }
                     } else rawNewBlocks
@@ -602,6 +616,12 @@ fun ImageViewer(
                                                                 OverlaySaturation: ${selectedBlock.overlaySaturation}
                                                                 TextSaturation: ${selectedBlock.textSaturation}
                                                                 LineSpacing: ${selectedBlock.lineSpacing}
+                                                                OverlayInset: ${selectedBlock.overlayInset}
+                                                                OverlayInsetH: ${selectedBlock.overlayInsetHorizontal}
+                                                                OverlayInsetV: ${selectedBlock.overlayInsetVertical}
+                                                                BlockInset: ${selectedBlock.block.overlayInset}
+                                                                BlockInsetH: ${selectedBlock.block.overlayInsetHorizontal}
+                                                                BlockInsetV: ${selectedBlock.block.overlayInsetVertical}
                                                                 BorderColor: 0x${selectedBlock.textBorderColor?.value?.toString(16) ?: "null"}
                                                                 BorderThickness: ${selectedBlock.textBorderThickness}
                                                                 BorderAlpha: ${selectedBlock.textBorderAlpha}

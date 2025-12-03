@@ -925,6 +925,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         var finalShadowColor: Int? = null
                         var finalShadowAlpha: Float? = null
                         var finalShadowRadius: Float? = null
+                        // INSET: khai báo biến để lưu giá trị inset từ DB
+                        var finalOverlayInset = 0f
+                        var finalOverlayInsetH = 0f
+                        var finalOverlayInsetV = 0f
+                        var finalOverlayRotation: Float? = null
+                        var finalLineSpacing = 1.1f
 
                         if (foundImageId != null) {
                             try {
@@ -966,6 +972,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_SHADOW_RADIUS)
                                if (!blockCursor.isNull(idx)) finalShadowRadius = blockCursor.getDouble(idx).toFloat()
                            } catch (_: Exception) {}
+                           // INSET: đọc các giá trị inset từ image_blocks
+                           try {
+                               val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_OVERLAY_INSET)
+                               if (!blockCursor.isNull(idx)) finalOverlayInset = blockCursor.getDouble(idx).toFloat()
+                           } catch (_: Exception) {}
+                           try {
+                               val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL)
+                               if (!blockCursor.isNull(idx)) finalOverlayInsetH = blockCursor.getDouble(idx).toFloat()
+                           } catch (_: Exception) {}
+                           try {
+                               val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_OVERLAY_INSET_VERTICAL)
+                               if (!blockCursor.isNull(idx)) finalOverlayInsetV = blockCursor.getDouble(idx).toFloat()
+                           } catch (_: Exception) {}
+                           // LINE_SPACING: đọc khoảng cách dòng
+                           try {
+                               val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_LINE_SPACING)
+                               if (!blockCursor.isNull(idx)) finalLineSpacing = blockCursor.getDouble(idx).toFloat()
+                           } catch (_: Exception) {}
                                 }
                                 blockCursor.close()
                             } catch (e: Exception) {
@@ -1000,6 +1024,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             customShadowColor = finalShadowColor,
                             shadowAlpha = finalShadowAlpha ?: 1.0f,
                             shadowRadius = finalShadowRadius ?: 0f,
+                            // INSET: set các giá trị inset từ DB
+                            overlayInset = finalOverlayInset,
+                            overlayInsetHorizontal = finalOverlayInsetH,
+                            overlayInsetVertical = finalOverlayInsetV,
+                            overlayRotation = finalOverlayRotation,
+                            lineSpacing = finalLineSpacing,
                             // QUAN TRỌNG: Set applyMerge = false khi load từ DB
                             applyMerge = false
                         ))
@@ -2179,6 +2209,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val b = state.block
                     b.copy(
                         rotation = state.rotation,
+                        overlayRotation = state.overlayRotation, // ✅ Copy overlay rotation
                         shapeType = b.shapeType,
                         customOverlayColor = state.whiteoutColor?.toArgb() ?: b.customOverlayColor,
                         customTextColor = state.textColor?.toArgb()
@@ -2188,6 +2219,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         textBoldness = state.textBoldness,
                         overlaySaturation = state.overlaySaturation,
                         textSaturation = state.textSaturation,
+                        // ✅ Copy overlay inset properties
+                        overlayInset = state.overlayInset,
+                        overlayInsetHorizontal = state.overlayInsetHorizontal,
+                        overlayInsetVertical = state.overlayInsetVertical,
                         customBorderColor = state.textBorderColor?.toArgb() ?: b.customBorderColor,
                         borderThickness = state.textBorderThickness,
                         borderAlpha = state.textBorderAlpha,

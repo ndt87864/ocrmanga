@@ -791,6 +791,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         if (shadowColor != null || shadowAlpha != 1.0f || shadowRadius != 0f) {
             Log.i("DatabaseHelper", "LƯU SHADOW: imageId=$imageId shadowColor=$shadowColor shadowAlpha=$shadowAlpha shadowRadius=$shadowRadius")
         }
+        // Log inset values for debugging
+        if (overlayInset != 0f || overlayInsetHorizontal != 0f || overlayInsetVertical != 0f) {
+            Log.i("DatabaseHelper", "LƯU INSET: imageId=$imageId x=$x y=$y w=$width h=$height inset=$overlayInset insetH=$overlayInsetHorizontal insetV=$overlayInsetVertical")
+        }
         val values = ContentValues().apply {
                             put(COLUMN_BLOCK_IMAGE_ID, imageId)
                             put(COLUMN_BLOCK_X, x)
@@ -1971,6 +1975,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
                     var insertedCount = 0
                     blocksToSave.forEachIndexed { idx, textBlock ->
+                        // Log inset values being saved
+                        if (textBlock.overlayInset != 0f || textBlock.overlayInsetHorizontal != 0f || textBlock.overlayInsetVertical != 0f) {
+                            Log.i(TAG, "updateMangaRoomSelective: Block[$idx] inset=${textBlock.overlayInset} insetH=${textBlock.overlayInsetHorizontal} insetV=${textBlock.overlayInsetVertical}")
+                        }
                         val origRect = textBlock.bounds
                         // Use original bounds without scaling
                         val finalRect = origRect
@@ -2285,6 +2293,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val overlayInsetBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET)).toFloat() } catch (e: Exception) { 0f }
                         val overlayInsetHorizontalBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL)).toFloat() } catch (e: Exception) { overlayInsetBlock }
                         val overlayInsetVerticalBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_VERTICAL)).toFloat() } catch (e: Exception) { overlayInsetBlock }
+                        
+                        // Log inset values for debugging
+                        if (overlayInsetBlock != 0f || overlayInsetHorizontalBlock != 0f || overlayInsetVerticalBlock != 0f) {
+                            Log.i(TAG, "ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInsetBlock insetH=$overlayInsetHorizontalBlock insetV=$overlayInsetVerticalBlock")
+                        }
                         
                         // Ưu tiên customTextColor từ translations, chỉ dùng textColorBlock từ image_blocks nếu khác null
                         // QUAN TRỌNG: Nếu cả customTextColor và textColorBlock đều null, 
