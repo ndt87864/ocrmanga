@@ -985,6 +985,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_OVERLAY_INSET_VERTICAL)
                                if (!blockCursor.isNull(idx)) finalOverlayInsetV = blockCursor.getDouble(idx).toFloat()
                            } catch (_: Exception) {}
+                           // OVERLAY_ROTATION: đọc góc xoay overlay
+                           try {
+                               val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_OVERLAY_ROTATION)
+                               if (!blockCursor.isNull(idx)) finalOverlayRotation = blockCursor.getDouble(idx).toFloat()
+                           } catch (_: Exception) {}
                            // LINE_SPACING: đọc khoảng cách dòng
                            try {
                                val idx = blockCursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BLOCK_LINE_SPACING)

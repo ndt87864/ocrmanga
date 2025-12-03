@@ -225,6 +225,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             // Thêm cột overlay_inset_horizontal và overlay_inset_vertical
             try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
             try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_VERTICAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
+            // Thêm cột overlay_rotation cho xoay overlay riêng biệt
+            try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_ROTATION REAL") } catch (e: Exception) { /* ignore */ }
         } catch (e: Exception) {
             Log.w(TAG, "Không thể tự động thêm cột vào bảng image_blocks", e)
         }
@@ -292,6 +294,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     const val COLUMN_BLOCK_OVERLAY_INSET = "overlay_inset"
     const val COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL = "overlay_inset_horizontal"
     const val COLUMN_BLOCK_OVERLAY_INSET_VERTICAL = "overlay_inset_vertical"
+    const val COLUMN_BLOCK_OVERLAY_ROTATION = "overlay_rotation"
     // Text color properties
     const val COLUMN_BLOCK_TEXT_COLOR = "text_color"
     const val COLUMN_BLOCK_TEXT_BRIGHTNESS = "text_brightness"
@@ -410,6 +413,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_BLOCK_OVERLAY_INSET REAL DEFAULT 0.0,
                 $COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL REAL DEFAULT 0.0,
                 $COLUMN_BLOCK_OVERLAY_INSET_VERTICAL REAL DEFAULT 0.0,
+                $COLUMN_BLOCK_OVERLAY_ROTATION REAL,
                 $COLUMN_BLOCK_TEXT_COLOR INTEGER,
                 $COLUMN_BLOCK_TEXT_BRIGHTNESS REAL DEFAULT 1.0,
                 $COLUMN_BLOCK_TEXT_BOLDNESS REAL DEFAULT 1.0,
@@ -770,6 +774,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                          overlayInset: Float = 0f,
                          overlayInsetHorizontal: Float = 0f,
                          overlayInsetVertical: Float = 0f,
+                         overlayRotation: Float? = null,
                          textColor: Int? = null,
                          textBrightness: Float = 1.0f,
                          textBoldness: Float = 1.0f,
@@ -809,6 +814,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put(COLUMN_BLOCK_OVERLAY_INSET, overlayInset)
                             put(COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL, overlayInsetHorizontal)
                             put(COLUMN_BLOCK_OVERLAY_INSET_VERTICAL, overlayInsetVertical)
+                            overlayRotation?.let { put(COLUMN_BLOCK_OVERLAY_ROTATION, it) }
                             put(COLUMN_BLOCK_TEXT_COLOR, textColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
                             put(COLUMN_BLOCK_TEXT_BRIGHTNESS, textBrightness)
                             put(COLUMN_BLOCK_TEXT_BOLDNESS, textBoldness)
@@ -860,6 +866,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val overlayInset = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_OVERLAY_INSET), 0f)
         val overlayInsetH = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL), 0f)
         val overlayInsetV = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_OVERLAY_INSET_VERTICAL), 0f)
+        val overlayRotation = cursor.getFloatOrNull(idx(COLUMN_BLOCK_OVERLAY_ROTATION))
         val textColor = cursor.getIntOrNull(idx(COLUMN_BLOCK_TEXT_COLOR))
         val textBrightness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_TEXT_BRIGHTNESS), 1.0f)
         val textBoldness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_TEXT_BOLDNESS), 1.0f)
@@ -891,6 +898,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             overlayInset = overlayInset,
             overlayInsetHorizontal = overlayInsetH,
             overlayInsetVertical = overlayInsetV,
+            overlayRotation = overlayRotation,
             textColor = textColor,
             textBrightness = textBrightness,
             textBoldness = textBoldness,
@@ -1189,6 +1197,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     overlayInset = textBlock.overlayInset,
                                     overlayInsetHorizontal = textBlock.overlayInsetHorizontal,
                                     overlayInsetVertical = textBlock.overlayInsetVertical,
+                                    overlayRotation = textBlock.overlayRotation,
                                     textColor = textBlock.customTextColor ?: textBlock.originalTextColor,
                                     textBrightness = 1.0f,
                                     textBoldness = textBlock.textBoldness,
@@ -1368,6 +1377,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             overlayInset = textBlock.overlayInset,
                                             overlayInsetHorizontal = textBlock.overlayInsetHorizontal,
                                             overlayInsetVertical = textBlock.overlayInsetVertical,
+                                            overlayRotation = textBlock.overlayRotation,
                                             textColor = textColor,
                                             textBrightness = 1.0f,
                                             textBoldness = textBlock.textBoldness,
@@ -1596,6 +1606,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             overlayInset = textBlock.overlayInset,
                                             overlayInsetHorizontal = textBlock.overlayInsetHorizontal,
                                             overlayInsetVertical = textBlock.overlayInsetVertical,
+                                            overlayRotation = textBlock.overlayRotation,
                                             textColor = textColor,
                                             textBrightness = 1.0f,
                                             textBoldness = textBlock.textBoldness,
@@ -1759,6 +1770,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             overlayInset = textBlock.overlayInset,
                                             overlayInsetHorizontal = textBlock.overlayInsetHorizontal,
                                             overlayInsetVertical = textBlock.overlayInsetVertical,
+                                            overlayRotation = textBlock.overlayRotation,
                                             textColor = textColor,
                                             textBrightness = 1.0f,
                                             textBoldness = textBlock.textBoldness,
@@ -2033,6 +2045,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     overlayInset = textBlock.overlayInset,
                                     overlayInsetHorizontal = textBlock.overlayInsetHorizontal,
                                     overlayInsetVertical = textBlock.overlayInsetVertical,
+                                    overlayRotation = textBlock.overlayRotation,
                                     textColor = textColor,
                                     textBrightness = 1.0f,
                                     textBoldness = textBlock.textBoldness,
@@ -2722,6 +2735,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             if (index < 0 || isNull(index)) default else getFloat(index)
         } catch (e: Exception) {
             default
+        }
+    }
+    
+    private fun android.database.Cursor.getFloatOrNull(index: Int): Float? {
+        return try {
+            if (index < 0 || isNull(index)) null else getFloat(index)
+        } catch (e: Exception) {
+            null
         }
     }
 }
