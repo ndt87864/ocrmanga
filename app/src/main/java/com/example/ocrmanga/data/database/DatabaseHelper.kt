@@ -1133,7 +1133,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     }
                     db.update(TABLE_IMAGES, imageUpdateValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                     
-                    textBlocks.forEach { textBlock ->
+                    // Filter out blocks marked for deletion (pendingDelete = true)
+                    val blocksToSave = textBlocks.filter { !it.pendingDelete }
+                    Log.i(TAG, "applyPendingChangesForRoom: imageId=$imageId totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
+                    
+                    blocksToSave.forEach { textBlock ->
                         val bounds = textBlock.bounds
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
@@ -1279,9 +1283,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                         try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
                         
+                        // Filter out blocks marked for deletion (pendingDelete = true)
+                        val blocksToSave = textBlocks.filter { !it.pendingDelete }
+                        Log.i(TAG, "saveMangaRoom: imageId=$imageId totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
+                        
                         // Lấy kích thước gốc từ textBlock đầu tiên (nếu có)
-                        val originalWidth = textBlocks.firstOrNull()?.originalImageWidth
-                        val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
+                        val originalWidth = blocksToSave.firstOrNull()?.originalImageWidth
+                        val originalHeight = blocksToSave.firstOrNull()?.originalImageHeight
                         // Lấy kích thước ảnh đã lưu
                         val savedBitmap = android.graphics.BitmapFactory.decodeFile(newFile.absolutePath)
                         val savedWidth = savedBitmap?.width
@@ -1289,7 +1297,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
                         val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
                         var insertedCount = 0
-                        textBlocks.forEach { textBlock ->
+                        blocksToSave.forEach { textBlock ->
                             val origRect = textBlock.bounds
                             val scaledRect = if (scaleX != 1f || scaleY != 1f) {
                                 android.graphics.Rect(
@@ -1511,8 +1519,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                             try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
                             
-                            val originalWidth = textBlocks.firstOrNull()?.originalImageWidth
-                            val originalHeight = textBlocks.firstOrNull()?.originalImageHeight
+                            // Filter out blocks marked for deletion (pendingDelete = true)
+                            val blocksToSave = textBlocks.filter { !it.pendingDelete }
+                            Log.i(TAG, "updateMangaRoom (new image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
+                            
+                            val originalWidth = blocksToSave.firstOrNull()?.originalImageWidth
+                            val originalHeight = blocksToSave.firstOrNull()?.originalImageHeight
                             val savedBitmap = android.graphics.BitmapFactory.decodeFile(newFile.absolutePath)
                             val savedWidth = savedBitmap?.width
                             val savedHeight = savedBitmap?.height
@@ -1521,7 +1533,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             // Remove any existing blocks for this image so we replace with fresh ones
                             try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
                             var insertedCount = 0
-                            textBlocks.forEach { textBlock ->
+                            blocksToSave.forEach { textBlock ->
                                 val origRect = textBlock.bounds
                                 val scaledRect = if (scaleX != 1f || scaleY != 1f) {
                                     android.graphics.Rect(
@@ -1683,8 +1695,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             try { deleteBlocksForImage(resolvedId) } catch (e: Exception) { /* ignore */ }
                             // DO NOT scale blocks - keep original coordinates relative to originalImageWidth/Height
                             // ImageViewer handles scaling at display time
+                            
+                            // Filter out blocks marked for deletion (pendingDelete = true)
+                            val blocksToSave = textBlocks.filter { !it.pendingDelete }
+                            Log.i(TAG, "updateMangaRoom (existing image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
+                            
                             var insertedCount = 0
-                            textBlocks.forEach { textBlock ->
+                            blocksToSave.forEach { textBlock ->
                                 val origRect = textBlock.bounds
                                 // Use original bounds without scaling
                                 val finalRect = origRect
@@ -1947,9 +1964,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     // DO NOT scale blocks based on saved file size anymore.
                     // Blocks retain their original coordinates relative to originalImageWidth/Height.
                     // ImageViewer handles scaling at display time.
+                    
+                    // Filter out blocks that are marked for deletion (pendingDelete = true)
+                    val blocksToSave = textBlocks.filter { !it.pendingDelete }
+                    Log.i(TAG, "updateMangaRoomSelective: uri=$dirtyUri totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size} (filtered ${textBlocks.size - blocksToSave.size} pendingDelete blocks)")
 
                     var insertedCount = 0
-                    textBlocks.forEachIndexed { idx, textBlock ->
+                    blocksToSave.forEachIndexed { idx, textBlock ->
                         val origRect = textBlock.bounds
                         // Use original bounds without scaling
                         val finalRect = origRect

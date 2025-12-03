@@ -72,6 +72,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             )
         }
+        // Mark this URI as dirty so save will detect the change
+        dirtyUris.add(uri)
+        Log.i(TAG, "togglePendingDelete: Marked uri=$uri as dirty (pendingDelete=$setPending)")
     }
     // Dịch lại 1 ảnh (re-translate single image)
     // IMPORTANT: This will DELETE all existing translations for this image before creating new ones
