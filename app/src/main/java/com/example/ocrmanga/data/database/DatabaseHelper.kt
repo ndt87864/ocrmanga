@@ -2846,6 +2846,74 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
+    /**
+     * Simple file swap: Just overwrite the old image file with new content.
+     * Does NOT change anything in the database (URI, translations, blocks all preserved).
+     * This is the simplest and safest way to replace an image.
+     */
+    fun replaceImageFileOnly(imageId: Long, newUri: Uri): Uri? {
+        try {
+            // Find the current stored URI for this image
+            val db = readableDatabase
+            val cur = db.rawQuery(
+                "SELECT $COLUMN_ROOM_ID, $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_IMAGE_ID = ?", 
+                arrayOf(imageId.toString())
+            )
+            if (!cur.moveToFirst()) {
+                cur.close()
+                Log.w(TAG, "replaceImageFileOnly: imageId not found: $imageId")
+                return null
+            }
+            val roomId = cur.getLong(0)
+            val oldUriStr = cur.getString(1)
+            cur.close()
+
+            // Parse the old URI to get the file path
+            val oldUri = Uri.parse(oldUriStr)
+            val oldFilePath = oldUri.path
+            if (oldFilePath.isNullOrBlank()) {
+                Log.e(TAG, "replaceImageFileOnly: Cannot parse file path from URI: $oldUriStr")
+                return null
+            }
+
+            val oldFile = File(oldFilePath)
+            if (!oldFile.exists()) {
+                Log.e(TAG, "replaceImageFileOnly: Old file does not exist: $oldFilePath")
+                return null
+            }
+
+            // Copy the new image content to overwrite the old file (same filename)
+            val parentDir = oldFile.parentFile
+            val fileName = oldFile.name
+            
+            if (parentDir == null) {
+                Log.e(TAG, "replaceImageFileOnly: Cannot get parent directory")
+                return null
+            }
+
+            // Delete the old file first
+            oldFile.delete()
+
+            // Copy new content with same filename
+            val copiedFile = copyImageToInternalStorage(newUri, parentDir, fileName)
+            if (copiedFile == null || !copiedFile.exists()) {
+                Log.e(TAG, "replaceImageFileOnly: Failed to copy new image to $parentDir/$fileName")
+                return null
+            }
+
+            // Try to delete the source file if it's a temporary file
+            try { deleteOriginalImage(newUri) } catch (e: Exception) { /* ignore */ }
+
+            Log.d(TAG, "replaceImageFileOnly: Successfully replaced $oldFilePath with content from $newUri")
+            
+            // Return the same URI as before (file was overwritten in place)
+            return oldUri
+        } catch (e: Exception) {
+            Log.e(TAG, "replaceImageFileOnly failed for imageId=$imageId", e)
+            return null
+        }
+    }
+
     fun getAllRooms(): List<Triple<Long, String, Uri>> {
         val db = readableDatabase
         val cursor = db.rawQuery("SELECT $COLUMN_ROOM_ID, $COLUMN_TITLE, $COLUMN_COVER_URI FROM $TABLE_ROOMS ORDER BY $COLUMN_ROOM_ID DESC", null)

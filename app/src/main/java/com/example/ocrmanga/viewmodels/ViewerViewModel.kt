@@ -1422,83 +1422,41 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun replaceImageUri(oldUri: Uri, newUri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Update DB if we have an imageId mapping. Ask DB helper to copy the
-                // new image into the room's images folder and return the stored app URI.
-                // NOTE: We only replace the image file/URI, NOT the block coordinates.
-                // Block coordinates remain unchanged - they are relative to originalImageWidth/Height
-                // and ImageViewer will scale them appropriately when displaying.
+                // SIMPLE LOGIC: Just swap the file content, keep the same URL in DB
+                // This preserves ALL translations, insets, bounds, etc. automatically
                 val imageId = uriToImageId.entries.find { it.key.toString() == oldUri.toString() }?.value
-                val finalUri: Uri = if (imageId != null && _uiState.value.roomId != null) {
-                    try {
-                        val stored = databaseHelper.replaceImageWithCopy(imageId, newUri)
-                        val result = stored ?: newUri
-                        if (stored != null) {
-                            // bump version so UI invalidates Coil cache and reloads the new file
-                            bumpImageVersion(imageId)
-                            // bump reload token for the oldUri and the resulting stored uri string
-                            bumpReloadTokenForUri(oldUri)
-                            stored?.let { bumpReloadTokenForUri(it) }
+                
+                if (imageId != null && _uiState.value.roomId != null) {
+                    // Call DB helper to overwrite the old file with new content
+                    // The stored URI remains the same, so all translations/blocks are preserved
+                    val stored = databaseHelper.replaceImageFileOnly(imageId, newUri)
+                    if (stored != null) {
+                        // bump version so UI invalidates Coil cache and reloads the new file
+                        bumpImageVersion(imageId)
+                        // bump reload token for the URI to force UI refresh
+                        bumpReloadTokenForUri(oldUri)
+                    } else {
+                        Log.e(TAG, "replaceImageUri: Failed to replace file for imageId=$imageId")
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(getApplication(), "Thay thế ảnh thất bại", Toast.LENGTH_SHORT).show()
                         }
-                        // update uriToImageId mapping by string equality (remove old entries)
-                        val keysToRemove = uriToImageId.keys.filter { it.toString() == oldUri.toString() }
-                        keysToRemove.forEach { uriToImageId.remove(it) }
-                        uriToImageId[ Uri.parse(result.toString()) ] = imageId
-                        result
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to update DB image uri for imageId=$imageId", e)
-                        newUri
+                        return@launch
                     }
                 } else {
-                    // Not a stored image; just use newUri directly
-                    newUri
+                    // Not a stored image - cannot use simple file swap
+                    Log.w(TAG, "replaceImageUri: imageId not found for $oldUri, cannot replace")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(getApplication(), "Không tìm thấy ảnh trong DB", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
                 }
 
-                // Atomically update UI state - only swap URI, keep blocks unchanged
+                // Update UI state - just bump version to trigger refresh, no URI changes needed
                 _uiState.update { state ->
-                    val current = state.imageUris.toMutableList()
-                    val indexInState = current.indexOfFirst { it.toString() == oldUri.toString() }
-                    if (indexInState == -1) {
-                        Log.w(TAG, "replaceImageUri: oldUri not found in state during update: $oldUri")
-                        return@update state
-                    }
-                    current[indexInState] = finalUri
-
-                    // Simply move translations to new URI key without modifying block coordinates
-                    val newTranslatedTexts = state.translatedTexts.toMutableMap()
-                    val oldTextKey = newTranslatedTexts.keys.find { it.toString() == oldUri.toString() }
-                    if (oldTextKey != null) {
-                        // Keep blocks exactly as they are - no scaling needed
-                        // ImageViewer will use block.originalImageWidth/Height for proper scaling
-                        newTranslatedTexts[finalUri] = newTranslatedTexts.remove(oldTextKey)!!
-                    }
-
-                    val newTranslatedStatus = state.translatedStatus.toMutableMap()
-                    val oldStatusKey = newTranslatedStatus.keys.find { it.toString() == oldUri.toString() }
-                    if (oldStatusKey != null) {
-                        newTranslatedStatus[finalUri] = newTranslatedStatus.remove(oldStatusKey) ?: false
-                    }
-
-                    val newSourceLangs = state.sourceLanguages.toMutableMap()
-                    val oldLangKey = newSourceLangs.keys.find { it.toString() == oldUri.toString() }
-                    if (oldLangKey != null) {
-                        newSourceLangs[finalUri] = newSourceLangs.remove(oldLangKey) ?: ""
-                    }
-
-                    // Return updated state with preserved ordering
                     state.copy(
-                        imageUris = current,
-                        translatedTexts = newTranslatedTexts,
-                        translatedStatus = newTranslatedStatus,
-                        sourceLanguages = newSourceLangs,
                         translationVersion = state.translationVersion + 1
                     )
                 }
-
-                // Mark the new URI as dirty so saveRoom will process it
-                // This ensures translations are saved with the correct URI reference
-                val oldKeys = dirtyUris.filter { it.toString() == oldUri.toString() }
-                oldKeys.forEach { dirtyUris.remove(it) }
-                dirtyUris.add(finalUri)
 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Đã thay thế ảnh", Toast.LENGTH_SHORT).show()
