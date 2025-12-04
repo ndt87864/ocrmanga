@@ -78,18 +78,19 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     // If there are suspiciously many translations (e.g., > 20), likely duplicates
                     // Keep only the most recent ones by deleting older entries
                     if (count > 20) {
-                        // Get distinct bounds to see how many unique blocks we should have
-                        val uniqueBlocksCursor = db.rawQuery("""
-                            SELECT COUNT(DISTINCT bounds_left || ',' || bounds_top || ',' || bounds_right || ',' || bounds_bottom)
-                            FROM translations WHERE $COLUMN_IMAGE_ID = ?
+                        // Get expected number of blocks from image_blocks table
+                        val blockCountCursor = db.rawQuery("""
+                            SELECT COUNT(*) FROM $TABLE_IMAGE_BLOCKS 
+                            WHERE $COLUMN_BLOCK_IMAGE_ID = ?
                         """, arrayOf(imageId.toString()))
                         var expectedBlocks = count
-                        if (uniqueBlocksCursor.moveToFirst()) {
-                            expectedBlocks = uniqueBlocksCursor.getInt(0)
+                        if (blockCountCursor.moveToFirst()) {
+                            expectedBlocks = blockCountCursor.getInt(0)
+                            if (expectedBlocks == 0) expectedBlocks = count / 2 // fallback
                         }
-                        uniqueBlocksCursor.close()
+                        blockCountCursor.close()
                         
-                        // If actual count is much more than expected unique blocks, we have duplicates
+                        // If actual count is much more than expected blocks, we have duplicates
                         if (count > expectedBlocks * 2) {
                             db.execSQL("""
                                 DELETE FROM translations 
@@ -234,7 +235,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 17
+    private const val DATABASE_VERSION = 18
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -348,31 +349,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         // Index để tăng tốc truy vấn images theo display_order trong room
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_order ON $TABLE_IMAGES($COLUMN_ROOM_ID, $COLUMN_DISPLAY_ORDER)")
 
+        // translations: CHỈ lưu text_id, image_id, translated_text
+        // Tất cả thông tin khác (bounds, colors, fonts...) lưu trong image_blocks
         db.execSQL("""
             CREATE TABLE translations (
                 text_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COLUMN_IMAGE_ID INTEGER,
-                original_text TEXT,
                 translated_text TEXT,
-                bounds_left INTEGER,
-                bounds_top INTEGER,
-                bounds_right INTEGER,
-                bounds_bottom INTEGER,
-                font_size REAL,
-                rotation REAL DEFAULT 0,
-                original_image_width INTEGER, -- New column
-                original_image_height INTEGER, -- New column
-                shape_type INTEGER DEFAULT 0, -- New column: 0 = rectangle, 1 = oval
-                background_type INTEGER DEFAULT 0, -- New column: 0 = WHITE, 1 = COLORED, 2 = TRANSPARENT
-                average_background_color INTEGER, -- New column: màu nền trung bình (nullable)
-                original_text_color INTEGER, -- New column: màu chữ gốc (nullable)
-                custom_overlay_color INTEGER, -- New column: màu overlay tùy chỉnh (nullable)
-                custom_text_color INTEGER, -- New column: màu text tùy chỉnh (nullable)
-                overlay_alpha REAL DEFAULT 1.0, -- New column: độ trong suốt overlay
-                text_boldness REAL DEFAULT 1.0, -- New column: độ đậm text
-                overlay_saturation REAL DEFAULT 1.0, -- New column: độ bão hòa overlay
-                text_saturation REAL DEFAULT 1.0, -- New column: độ bão hòa text
-                pending_delete INTEGER DEFAULT 0, -- New column: đánh dấu pending delete khi retranslate
+                pending_delete INTEGER DEFAULT 0,
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
@@ -759,6 +743,44 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.i(TAG, "Đã thêm cột overlay_rotation vào bảng translations")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm cột overlay_rotation (có thể đã tồn tại)", e)
+            }
+        }
+        
+        // Version 18: Đơn giản hóa bảng translations - chỉ giữ text_id, image_id, translated_text, pending_delete
+        // Tất cả thông tin khác (bounds, colors, fonts...) đã có trong image_blocks
+        if (oldVersion < 18) {
+            try {
+                // 1. Tạo bảng mới với cấu trúc đơn giản
+                db.execSQL("""
+                    CREATE TABLE translations_new (
+                        text_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        $COLUMN_IMAGE_ID INTEGER,
+                        translated_text TEXT,
+                        pending_delete INTEGER DEFAULT 0,
+                        FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
+                    )
+                """)
+                
+                // 2. Copy dữ liệu từ bảng cũ sang bảng mới (chỉ lấy các cột cần thiết)
+                db.execSQL("""
+                    INSERT INTO translations_new (text_id, $COLUMN_IMAGE_ID, translated_text, pending_delete)
+                    SELECT text_id, $COLUMN_IMAGE_ID, translated_text, COALESCE(pending_delete, 0)
+                    FROM translations
+                """)
+                
+                // 3. Xóa bảng cũ
+                db.execSQL("DROP TABLE translations")
+                
+                // 4. Đổi tên bảng mới
+                db.execSQL("ALTER TABLE translations_new RENAME TO translations")
+                
+                // 5. Tạo lại index
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_image_id ON translations($COLUMN_IMAGE_ID)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_pending_delete ON translations($COLUMN_IMAGE_ID, pending_delete)")
+                
+                Log.i(TAG, "Đã migrate bảng translations sang cấu trúc mới (chỉ text_id, image_id, translated_text, pending_delete)")
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi khi migrate bảng translations", e)
             }
         }
     }
@@ -1216,14 +1238,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     
                     blocksToSave.forEach { textBlock ->
                         val bounds = textBlock.bounds
+                        // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
                         val textValues = ContentValues().apply {
-                            // translations: CHỈ lưu translated_text và bounds
                             put(COLUMN_IMAGE_ID, imageId)
                             put("translated_text", textBlock.text)
-                            put("bounds_left", bounds.left)
-                            put("bounds_top", bounds.top)
-                            put("bounds_right", bounds.right)
-                            put("bounds_bottom", bounds.bottom)
                         }
                             val inserted = db.insert("translations", null, textValues)
                             if (inserted != -1L) {
@@ -1367,14 +1385,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     (origRect.bottom * scaleY).toInt()
                                 )
                             } else origRect
-                            // translations: CHỈ lưu translated_text và bounds
+                            // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
                             val textValues = ContentValues().apply {
                                 put(COLUMN_IMAGE_ID, imageId)
                                 put("translated_text", textBlock.text)
-                                put("bounds_left", scaledRect.left)
-                                put("bounds_top", scaledRect.top)
-                                put("bounds_right", scaledRect.right)
-                                put("bounds_bottom", scaledRect.bottom)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -1639,14 +1653,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             
                             blocksToSave.forEach { textBlock ->
                                 val origRect = textBlock.bounds
-                                // translations: CHỈ lưu translated_text và bounds
+                                // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, imageId)
                                     put("translated_text", textBlock.text)
-                                    put("bounds_left", origRect.left)
-                                    put("bounds_top", origRect.top)
-                                    put("bounds_right", origRect.right)
-                                    put("bounds_bottom", origRect.bottom)
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -1734,14 +1744,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 val origRect = textBlock.bounds
                                 // Use original bounds without scaling
                                 val finalRect = origRect
-                                // translations: CHỈ lưu translated_text và bounds
+                                // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, resolvedId)
                                     put("translated_text", textBlock.text)
-                                    put("bounds_left", finalRect.left)
-                                    put("bounds_top", finalRect.top)
-                                    put("bounds_right", finalRect.right)
-                                    put("bounds_bottom", finalRect.bottom)
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -2202,14 +2208,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         // Use original bounds without scaling
                         val finalRect = origRect
 
-                        // translations: CHỈ lưu translated_text và bounds
+                        // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
                             put("translated_text", textBlock.text)
-                            put("bounds_left", finalRect.left)
-                            put("bounds_top", finalRect.top)
-                            put("bounds_right", finalRect.right)
-                            put("bounds_bottom", finalRect.bottom)
                         }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -2457,13 +2459,28 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             images.add(uri)
             orders.add(order)
 
-            // 2. Lấy TẤT CẢ dữ liệu từ bảng image_blocks (bounds, overlay, font, v.v.)
+            // 2. Lấy TẤT CẢ translated_text từ bảng translations (theo thứ tự text_id)
+            val translationsCursor = db.rawQuery("""
+                SELECT translated_text FROM translations 
+                WHERE $COLUMN_IMAGE_ID = ?
+                AND (pending_delete IS NULL OR pending_delete = 0)
+                ORDER BY text_id ASC
+            """, arrayOf(imageId.toString()))
+            val translatedTexts = mutableListOf<String>()
+            while (translationsCursor.moveToNext()) {
+                translatedTexts.add(translationsCursor.getString(0) ?: "")
+            }
+            translationsCursor.close()
+
+            // 3. Lấy TẤT CẢ dữ liệu từ bảng image_blocks (theo thứ tự block_id)
             val blockCursor = db.rawQuery("""
                 SELECT * FROM $TABLE_IMAGE_BLOCKS 
                 WHERE $COLUMN_BLOCK_IMAGE_ID = ?
+                ORDER BY $COLUMN_BLOCK_ID ASC
             """, arrayOf(imageId.toString()))
             
             val textBlocks = mutableListOf<TextBlockInfo>()
+            var blockIndex = 0
             while (blockCursor.moveToNext()) {
                 // Lấy bounds từ image_blocks
                 val x = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_X))
@@ -2472,21 +2489,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val height = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_HEIGHT))
                 val bounds = Rect(x, y, x + width, y + height)
                 
-                // 3. Lấy translated_text từ bảng translations (CHỈ lấy text, match bằng bounds)
-                val translationCursor = db.rawQuery("""
-                    SELECT translated_text FROM translations 
-                    WHERE $COLUMN_IMAGE_ID = ? 
-                    AND bounds_left = ? AND bounds_top = ? 
-                    AND bounds_right = ? AND bounds_bottom = ?
-                    AND (pending_delete IS NULL OR pending_delete = 0)
-                """, arrayOf(imageId.toString(), x.toString(), y.toString(), (x + width).toString(), (y + height).toString()))
-                
-                val translatedText = if (translationCursor.moveToFirst()) {
-                    translationCursor.getString(0) ?: ""
-                } else {
-                    ""
-                }
-                translationCursor.close()
+                // Match translated_text theo thứ tự index (translations và blocks được insert cùng thứ tự)
+                val translatedText = if (blockIndex < translatedTexts.size) translatedTexts[blockIndex] else ""
+                blockIndex++
                 
                 // Lấy tất cả thuộc tính overlay từ image_blocks
                 val overlayColor = try { 
@@ -2612,13 +2617,28 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val originalTextForImage = imageCursor.getString(1) ?: ""
             imageCursor.close()
             
-            // 2. Lấy TẤT CẢ dữ liệu từ bảng image_blocks (bounds, overlay, font, v.v.)
+            // 2. Lấy TẤT CẢ translated_text từ bảng translations (theo thứ tự text_id)
+            val translationsCursor = db.rawQuery("""
+                SELECT translated_text FROM translations 
+                WHERE $COLUMN_IMAGE_ID = ?
+                AND (pending_delete IS NULL OR pending_delete = 0)
+                ORDER BY text_id ASC
+            """, arrayOf(imageId.toString()))
+            val translatedTexts = mutableListOf<String>()
+            while (translationsCursor.moveToNext()) {
+                translatedTexts.add(translationsCursor.getString(0) ?: "")
+            }
+            translationsCursor.close()
+
+            // 3. Lấy TẤT CẢ dữ liệu từ bảng image_blocks (theo thứ tự block_id)
             val blockCursor = db.rawQuery("""
                 SELECT * FROM $TABLE_IMAGE_BLOCKS 
                 WHERE $COLUMN_BLOCK_IMAGE_ID = ?
+                ORDER BY $COLUMN_BLOCK_ID ASC
             """, arrayOf(imageId.toString()))
             
             val textBlocks = mutableListOf<TextBlockInfo>()
+            var blockIndex = 0
             while (blockCursor.moveToNext()) {
                 // Lấy bounds từ image_blocks
                 val x = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_X))
@@ -2627,21 +2647,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val height = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_HEIGHT))
                 val bounds = Rect(x, y, x + width, y + height)
                 
-                // 3. Lấy translated_text từ bảng translations (match bằng bounds)
-                val translationCursor = db.rawQuery("""
-                    SELECT translated_text FROM translations 
-                    WHERE $COLUMN_IMAGE_ID = ? 
-                    AND bounds_left = ? AND bounds_top = ? 
-                    AND bounds_right = ? AND bounds_bottom = ?
-                    AND (pending_delete IS NULL OR pending_delete = 0)
-                """, arrayOf(imageId.toString(), x.toString(), y.toString(), (x + width).toString(), (y + height).toString()))
-                
-                val translatedText = if (translationCursor.moveToFirst()) {
-                    translationCursor.getString(0) ?: ""
-                } else {
-                    ""
-                }
-                translationCursor.close()
+                // Match translated_text theo thứ tự index (translations và blocks được insert cùng thứ tự)
+                val translatedText = if (blockIndex < translatedTexts.size) translatedTexts[blockIndex] else ""
+                blockIndex++
                 
                 // Lấy tất cả thuộc tính overlay từ image_blocks
                 val overlayColor = try { 
