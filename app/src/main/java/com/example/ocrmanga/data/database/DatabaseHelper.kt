@@ -1895,6 +1895,89 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
     
     /**
+     * Strict cleanup: Xóa tất cả ảnh duplicate trong room trước khi load.
+     * Đảm bảo:
+     * 1. Không có 2 image_id nào dùng chung 1 URI
+     * 2. Không có 2 image_id nào dùng chung 1 filename
+     * 3. Không có image_id nào xuất hiện 2 lần
+     */
+    private fun cleanupDuplicateImagesStrict(roomId: Long) {
+        val db = writableDatabase
+        try {
+            Log.i(TAG, "cleanupDuplicateImagesStrict: Starting strict cleanup for room $roomId")
+            
+            // First, run normal cleanup
+            cleanupDuplicateImages(roomId)
+            
+            // Second, check for any remaining duplicates by filename
+            val cursor = db.rawQuery(
+                """
+                SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER
+                FROM $TABLE_IMAGES
+                WHERE $COLUMN_ROOM_ID = ?
+                ORDER BY $COLUMN_DISPLAY_ORDER ASC, $COLUMN_IMAGE_ID ASC
+                """,
+                arrayOf(roomId.toString())
+            )
+            
+            val seenFilenames = mutableMapOf<String, Long>() // filename -> kept imageId
+            val duplicatesToDelete = mutableListOf<Long>()
+            
+            while (cursor.moveToNext()) {
+                val imageId = cursor.getLong(0)
+                val imageUri = cursor.getString(1)
+                val filename = try {
+                    Uri.parse(imageUri).lastPathSegment ?: imageUri
+                } catch (e: Exception) { imageUri }
+                
+                val existingId = seenFilenames[filename]
+                if (existingId != null && existingId != imageId) {
+                    // Found duplicate filename with different image_id
+                    duplicatesToDelete.add(imageId)
+                    Log.w(TAG, "cleanupDuplicateImagesStrict: Found duplicate filename=$filename, keeping imageId=$existingId, deleting imageId=$imageId")
+                } else if (existingId == null) {
+                    seenFilenames[filename] = imageId
+                }
+            }
+            cursor.close()
+            
+            // Delete duplicates
+            if (duplicatesToDelete.isNotEmpty()) {
+                Log.w(TAG, "cleanupDuplicateImagesStrict: Deleting ${duplicatesToDelete.size} strict duplicates")
+                duplicatesToDelete.forEach { imageId ->
+                    db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                }
+            }
+            
+            // Third, re-index display_order to be sequential (0, 1, 2, ...)
+            val remainingCursor = db.rawQuery(
+                """
+                SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES
+                WHERE $COLUMN_ROOM_ID = ?
+                ORDER BY $COLUMN_DISPLAY_ORDER ASC, $COLUMN_IMAGE_ID ASC
+                """,
+                arrayOf(roomId.toString())
+            )
+            var newOrder = 0
+            while (remainingCursor.moveToNext()) {
+                val imageId = remainingCursor.getLong(0)
+                val values = ContentValues().apply {
+                    put(COLUMN_DISPLAY_ORDER, newOrder)
+                }
+                db.update(TABLE_IMAGES, values, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                newOrder++
+            }
+            remainingCursor.close()
+            
+            Log.i(TAG, "cleanupDuplicateImagesStrict: Completed, room $roomId now has $newOrder images")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in cleanupDuplicateImagesStrict for room $roomId", e)
+        }
+    }
+    
+    /**
      * Cleanup and sync room images to ensure DB count matches expected count.
      * Call this when loading a room to fix any inconsistencies.
      */
@@ -2324,6 +2407,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     fun getMangaRoom(roomId: Long): Triple<List<Uri>, List<Int>, Map<Uri, Pair<String, List<TextBlockInfo>>>> {
         val db = writableDatabase
         
+        // ===== CLEANUP DUPLICATES TRƯỚC KHI LOAD =====
+        cleanupDuplicateImagesStrict(roomId)
+        
         // Xóa tất cả bản dịch có pending_delete = 1 cho room này
         db.execSQL("""
             DELETE FROM translations 
@@ -2343,7 +2429,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val orders = mutableListOf<Int>()
         val translations = mutableMapOf<Uri, Pair<String, MutableList<TextBlockInfo>>>()
 
-        val seenUris = mutableSetOf<String>()
+        val seenUris = mutableSetOf<String>() // Track URIs đã thấy
+        val seenImageIds = mutableSetOf<Long>() // Track image_id đã thấy
+        val seenFilenames = mutableSetOf<String>() // Track filename đã thấy
+        
         val imageCursor = db.rawQuery("""
             SELECT $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER, $COLUMN_IMAGE_ID, $COLUMN_ORIGINAL_TEXT
             FROM $TABLE_IMAGES 
@@ -2353,11 +2442,31 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
         while (imageCursor.moveToNext()) {
             val uriStr = imageCursor.getString(0)
-            if (seenUris.contains(uriStr)) continue // Bỏ qua uri đã xuất hiện
+            val imageId = imageCursor.getLong(2)
+            val filename = try { Uri.parse(uriStr).lastPathSegment ?: uriStr } catch (e: Exception) { uriStr }
+            
+            // Skip nếu đã thấy image_id này
+            if (seenImageIds.contains(imageId)) {
+                Log.w(TAG, "getMangaRoom: Skip duplicate image_id=$imageId")
+                continue
+            }
+            // Skip nếu đã thấy URI này
+            if (seenUris.contains(uriStr)) {
+                Log.w(TAG, "getMangaRoom: Skip duplicate uri=$uriStr")
+                continue
+            }
+            // Skip nếu đã thấy filename này (tránh trường hợp URI khác nhưng cùng file)
+            if (seenFilenames.contains(filename)) {
+                Log.w(TAG, "getMangaRoom: Skip duplicate filename=$filename")
+                continue
+            }
+            
+            seenImageIds.add(imageId)
             seenUris.add(uriStr)
+            seenFilenames.add(filename)
+            
             val uri = Uri.parse(uriStr)
             val order = imageCursor.getInt(1)
-            val imageId = imageCursor.getLong(2)
             val originalTextForImage = imageCursor.getString(3) ?: "" // Get original OCR text from image level
 
             images.add(uri)

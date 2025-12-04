@@ -689,30 +689,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             removedImageIds.clear()
             newImageUris.clear()
             uriToImageId.clear()
+            isLoadingMore.set(false) // Reset loading guard
             
             // Load auto-translate setting for this room
             val autoTranslate = databaseHelper.getAutoTranslateSetting(roomId)
             
+            // getMangaRoom đã cleanup duplicates trong DB, nên allImages đã unique
             val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
             
-            // Filter out duplicate URIs, keeping only the first occurrence (by filename)
-            val uniqueImages = mutableListOf<Uri>()
-            val seenFilenames = mutableSetOf<String>()
-            allImages.forEach { uri ->
-                val filename = uri.lastPathSegment ?: uri.toString()
-                if (!seenFilenames.contains(filename)) {
-                    uniqueImages.add(uri)
-                    seenFilenames.add(filename)
-                } else {
-                    Log.w(TAG, "loadRoomInternal: Skipping duplicate filename: $filename")
-                }
-            }
-            
-            if (uniqueImages.size < allImages.size) {
-                Log.i(TAG, "loadRoomInternal: Filtered ${allImages.size - uniqueImages.size} duplicate images from room $roomId")
-                // Sync DB to match the expected unique count
-                databaseHelper.cleanupAndSyncRoomImages(roomId, uniqueImages.size)
-            }
+            Log.i(TAG, "loadRoomInternal: Room $roomId has ${allImages.size} images after DB cleanup")
             
             // Sort images by numeric order in filename
             fun extractImageNumber(uri: Uri): Int {
@@ -721,7 +706,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 return match?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE
             }
             
-            val sortedImages = uniqueImages.sortedBy { extractImageNumber(it) }
+            val sortedImages = allImages.sortedBy { extractImageNumber(it) }
             
             val translatedStatus = mutableMapOf<Uri, Boolean>()
             val initialBatch = sortedImages.take(BATCH_SIZE)
@@ -739,16 +724,21 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 """, arrayOf(roomId.toString())
             )
 
+            val seenImageIdsInBatch = mutableSetOf<Long>()
             while (cursor.moveToNext()) {
                 val imageId = cursor.getLong(0)
+                // Skip if we've already seen this imageId
+                if (seenImageIdsInBatch.contains(imageId)) {
+                    Log.w(TAG, "loadRoomInternal: Skipping duplicate imageId=$imageId in batch query")
+                    continue
+                }
+                seenImageIdsInBatch.add(imageId)
+                
                 val uriStr = cursor.getString(1)
                 val isTranslated = cursor.getInt(2) == 1
                 val uri = Uri.parse(uriStr)
                 translatedStatus[uri] = isTranslated
                 uriToImageId[uri] = imageId
-                try {
-                    uriToImageId[Uri.parse(uriStr)] = imageId
-                } catch (e: Exception) { /* ignore */ }
                 try {
                     val last = Uri.parse(uriStr).lastPathSegment
                     if (!last.isNullOrBlank()) {
@@ -798,6 +788,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     autoTranslateEnabled = autoTranslate
                 )
             }
+            Log.i(TAG, "loadRoomInternal completed: initialBatch=${initialBatch.size} remainingImages=${remainingImages.size} total=${initialBatch.size + remainingImages.size}")
             lastLoadedRoomId = roomId
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi khi tải phòng $roomId", e)
@@ -814,20 +805,29 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // Guard against concurrent loadMoreImages calls
+    private val isLoadingMore = AtomicBoolean(false)
+    
     fun loadMoreImages() {
         val remainingImages = uiState.value.remainingImages
         if (remainingImages.isEmpty()) return
+        
+        // Prevent concurrent calls
+        if (!isLoadingMore.compareAndSet(false, true)) {
+            Log.w(TAG, "loadMoreImages: Already loading, skipping")
+            return
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
-            // Bắt đầu trạng thái loading
-            _uiState.update { it.copy(isLoadingMoreImages = true) }
-            
-            val batch = remainingImages.take(BATCH_SIZE)
-            val newRemaining = remainingImages.drop(BATCH_SIZE)
-            val translatedStatus = mutableMapOf<Uri, Boolean>()
-            val translations = mutableMapOf<Uri, Pair<String, List<TextBlockInfo>>>()
-
             try {
+                // Bắt đầu trạng thái loading
+                _uiState.update { it.copy(isLoadingMoreImages = true) }
+                
+                val batch = remainingImages.take(BATCH_SIZE)
+                val newRemaining = remainingImages.drop(BATCH_SIZE)
+                val translatedStatus = mutableMapOf<Uri, Boolean>()
+                val translations = mutableMapOf<Uri, Pair<String, List<TextBlockInfo>>>()
+
                 val db = databaseHelper.readableDatabase
                 batch.forEach { uri ->
                     val cursor = db.rawQuery(
@@ -1052,8 +1052,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 _uiState.update {
+                    // Filter out any URIs that already exist to prevent duplicates
+                    val existingUriStrings = it.imageUris.map { u -> u.toString() }.toSet()
+                    val newBatch = batch.filter { uri -> !existingUriStrings.contains(uri.toString()) }
+                    
+                    Log.i(TAG, "loadMoreImages: batch=${batch.size} newBatch=${newBatch.size} existing=${it.imageUris.size} remaining=${newRemaining.size}")
+                    
                     it.copy(
-                        imageUris = it.imageUris + batch,
+                        imageUris = it.imageUris + newBatch,
                         translatedTexts = it.translatedTexts + translations,
                         translatedStatus = it.translatedStatus + translatedStatus,
                         remainingImages = newRemaining,
@@ -1062,11 +1068,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         translationVersion = it.translationVersion + 1
                     )
                 }
-                //log.i(TAG, "Đã tải thêm ${batch.size} ảnh, còn lại ${newRemaining.size}")
+                Log.i(TAG, "loadMoreImages completed: total imageUris=${uiState.value.imageUris.size}")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi tải thêm ảnh", e)
                 // Tắt loading ngay cả khi có lỗi
                 _uiState.update { it.copy(isLoadingMoreImages = false) }
+            } finally {
+                isLoadingMore.set(false)
             }
         }
     }
