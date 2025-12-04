@@ -1217,31 +1217,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     blocksToSave.forEach { textBlock ->
                         val bounds = textBlock.bounds
                         val textValues = ContentValues().apply {
+                            // translations: CHỈ lưu translated_text và bounds
                             put(COLUMN_IMAGE_ID, imageId)
-                            // DO NOT store original_text per block anymore
-                            // put("original_text", textBlock.originalText ?: originalText)
                             put("translated_text", textBlock.text)
                             put("bounds_left", bounds.left)
                             put("bounds_top", bounds.top)
                             put("bounds_right", bounds.right)
                             put("bounds_bottom", bounds.bottom)
-                            put("font_size", textBlock.fontSize)
-                            put("rotation", textBlock.rotation ?: 0f)
-                            put("original_image_width", textBlock.originalImageWidth)
-                            put("original_image_height", textBlock.originalImageHeight)
-                            put("shape_type", textBlock.shapeType)
-                            put("background_type", textBlock.backgroundType.ordinal)
-                            put("average_background_color", textBlock.averageBackgroundColor)
-                            put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt())
-                            put("custom_overlay_color", textBlock.customOverlayColor)
-                            put("custom_text_color", textBlock.customTextColor)
-                            put("overlay_alpha", textBlock.overlayAlpha)
-                            put("text_boldness", textBlock.textBoldness)
-                            put("overlay_saturation", textBlock.overlaySaturation)
-                            put("text_saturation", textBlock.textSaturation)
-                            put("apply_merge", if (textBlock.applyMerge) 1 else 0)
-                            put("pending_delete", 0)
-                            put("overlay_rotation", textBlock.overlayRotation)
                         }
                             val inserted = db.insert("translations", null, textValues)
                             if (inserted != -1L) {
@@ -1385,32 +1367,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     (origRect.bottom * scaleY).toInt()
                                 )
                             } else origRect
+                            // translations: CHỈ lưu translated_text và bounds
                             val textValues = ContentValues().apply {
                                 put(COLUMN_IMAGE_ID, imageId)
-                                // DO NOT store original_text here anymore - it's now at image level
-                                // put("original_text", textBlock.originalText ?: originalText)
                                 put("translated_text", textBlock.text)
                                 put("bounds_left", scaledRect.left)
                                 put("bounds_top", scaledRect.top)
                                 put("bounds_right", scaledRect.right)
                                 put("bounds_bottom", scaledRect.bottom)
-                                put("font_size", textBlock.fontSize)
-                                put("rotation", textBlock.rotation ?: 0f)
-                                put("original_image_width", savedWidth)
-                                put("original_image_height", savedHeight)
-                                put("shape_type", textBlock.shapeType)
-                                put("background_type", textBlock.backgroundType.ordinal)
-                                put("average_background_color", textBlock.averageBackgroundColor)
-                                put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
-                                put("custom_overlay_color", textBlock.customOverlayColor)
-                                put("custom_text_color", textBlock.customTextColor)
-                                put("overlay_alpha", textBlock.overlayAlpha)
-                                put("text_boldness", textBlock.textBoldness)
-                                put("overlay_saturation", textBlock.overlaySaturation)
-                                put("text_saturation", textBlock.textSaturation)
-                                put("apply_merge", if (textBlock.applyMerge) 1 else 0)
-                                put("pending_delete", 0)
-                                put("overlay_rotation", textBlock.overlayRotation)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -1675,6 +1639,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             
                             blocksToSave.forEach { textBlock ->
                                 val origRect = textBlock.bounds
+                                // translations: CHỈ lưu translated_text và bounds
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, imageId)
                                     put("translated_text", textBlock.text)
@@ -1682,23 +1647,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("bounds_top", origRect.top)
                                     put("bounds_right", origRect.right)
                                     put("bounds_bottom", origRect.bottom)
-                                    put("font_size", textBlock.fontSize)
-                                    put("rotation", textBlock.rotation ?: 0f)
-                                    put("original_image_width", textBlock.originalImageWidth)
-                                    put("original_image_height", textBlock.originalImageHeight)
-                                    put("shape_type", textBlock.shapeType)
-                                    put("background_type", textBlock.backgroundType.ordinal)
-                                    put("average_background_color", textBlock.averageBackgroundColor)
-                                    put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt())
-                                    put("custom_overlay_color", textBlock.customOverlayColor)
-                                    put("custom_text_color", textBlock.customTextColor)
-                                    put("overlay_alpha", textBlock.overlayAlpha)
-                                    put("text_boldness", textBlock.textBoldness)
-                                    put("overlay_saturation", textBlock.overlaySaturation)
-                                    put("text_saturation", textBlock.textSaturation)
-                                    put("apply_merge", if (textBlock.applyMerge) 1 else 0)
-                                    put("pending_delete", 0)
-                                    put("overlay_rotation", textBlock.overlayRotation)
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -1786,33 +1734,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 val origRect = textBlock.bounds
                                 // Use original bounds without scaling
                                 val finalRect = origRect
+                                // translations: CHỈ lưu translated_text và bounds
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, resolvedId)
-                                    // DO NOT store original_text per block
-                                    // put("original_text", textBlock.originalText ?: originalText)
                                     put("translated_text", textBlock.text)
                                     put("bounds_left", finalRect.left)
                                     put("bounds_top", finalRect.top)
                                     put("bounds_right", finalRect.right)
                                     put("bounds_bottom", finalRect.bottom)
-                                    put("font_size", textBlock.fontSize)
-                                    put("rotation", textBlock.rotation ?: 0f)
-                                    // Keep original image dimensions from block
-                                    put("original_image_width", textBlock.originalImageWidth)
-                                    put("original_image_height", textBlock.originalImageHeight)
-                                    put("shape_type", textBlock.shapeType)
-                                    put("background_type", textBlock.backgroundType.ordinal)
-                                    put("average_background_color", textBlock.averageBackgroundColor)
-                                    put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
-                                    put("custom_overlay_color", textBlock.customOverlayColor)
-                                    put("custom_text_color", textBlock.customTextColor)
-                                    put("overlay_alpha", textBlock.overlayAlpha)
-                                    put("text_boldness", textBlock.textBoldness)
-                                    put("overlay_saturation", textBlock.overlaySaturation)
-                                    put("text_saturation", textBlock.textSaturation)
-                                    put("apply_merge", if (textBlock.applyMerge) 1 else 0)
-                                    put("pending_delete", 0)
-                                    put("overlay_rotation", textBlock.overlayRotation)
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -2273,33 +2202,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         // Use original bounds without scaling
                         val finalRect = origRect
 
+                        // translations: CHỈ lưu translated_text và bounds
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
-                            // DO NOT store original_text per block - it's at image level now
-                            // put("original_text", textBlock.originalText ?: originalText)
                             put("translated_text", textBlock.text)
                             put("bounds_left", finalRect.left)
                             put("bounds_top", finalRect.top)
                             put("bounds_right", finalRect.right)
                             put("bounds_bottom", finalRect.bottom)
-                            put("font_size", textBlock.fontSize)
-                            put("rotation", textBlock.rotation ?: 0f)
-                            // Keep original image dimensions from block - don't override with saved file size
-                            put("original_image_width", textBlock.originalImageWidth)
-                            put("original_image_height", textBlock.originalImageHeight)
-                            put("shape_type", textBlock.shapeType)
-                            put("background_type", textBlock.backgroundType.ordinal)
-                            put("average_background_color", textBlock.averageBackgroundColor)
-                            put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt())
-                            put("custom_overlay_color", textBlock.customOverlayColor)
-                            put("custom_text_color", textBlock.customTextColor)
-                            put("overlay_alpha", textBlock.overlayAlpha)
-                            put("text_boldness", textBlock.textBoldness)
-                            put("overlay_saturation", textBlock.overlaySaturation)
-                            put("text_saturation", textBlock.textSaturation)
-                            put("apply_merge", if (textBlock.applyMerge) 1 else 0)
-                            put("pending_delete", 0)
-                            put("overlay_rotation", textBlock.overlayRotation)
                         }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -2507,6 +2417,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val seenImageIds = mutableSetOf<Long>() // Track image_id đã thấy
         val seenFilenames = mutableSetOf<String>() // Track filename đã thấy
         
+        // 1. Lấy thông tin từ bảng images
         val imageCursor = db.rawQuery("""
             SELECT $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER, $COLUMN_IMAGE_ID, $COLUMN_ORIGINAL_TEXT
             FROM $TABLE_IMAGES 
@@ -2541,197 +2452,128 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             
             val uri = Uri.parse(uriStr)
             val order = imageCursor.getInt(1)
-            val originalTextForImage = imageCursor.getString(3) ?: "" // Get original OCR text from image level
+            val originalTextForImage = imageCursor.getString(3) ?: ""
 
             images.add(uri)
             orders.add(order)
 
-            val textCursor = db.rawQuery("""
-                SELECT translated_text, bounds_left, bounds_top, bounds_right, bounds_bottom, font_size, rotation, original_image_width, original_image_height, shape_type, background_type, average_background_color, original_text_color, custom_overlay_color, custom_text_color, overlay_alpha, text_boldness, overlay_saturation, text_saturation, apply_merge, overlay_rotation
-                FROM translations 
-                WHERE $COLUMN_IMAGE_ID = ? AND (pending_delete IS NULL OR pending_delete = 0)
+            // 2. Lấy TẤT CẢ dữ liệu từ bảng image_blocks (bounds, overlay, font, v.v.)
+            val blockCursor = db.rawQuery("""
+                SELECT * FROM $TABLE_IMAGE_BLOCKS 
+                WHERE $COLUMN_BLOCK_IMAGE_ID = ?
             """, arrayOf(imageId.toString()))
-
+            
             val textBlocks = mutableListOf<TextBlockInfo>()
-            while (textCursor.moveToNext()) {
-                val translatedText = textCursor.getString(0)
-                val bounds = Rect(
-                    textCursor.getInt(1),
-                    textCursor.getInt(2),
-                    textCursor.getInt(3),
-                    textCursor.getInt(4)
-                )
-                val fontSize = textCursor.getFloat(5)
-                val rotation = if (textCursor.columnCount > 6) textCursor.getFloat(6) else 0f
-                val originalImageWidth = if (textCursor.columnCount > 7) textCursor.getInt(7) else null
-                val originalImageHeight = if (textCursor.columnCount > 8) textCursor.getInt(8) else null
-                val shapeType = if (textCursor.columnCount > 9) textCursor.getInt(9) else 0
-                val backgroundTypeOrdinal = if (textCursor.columnCount > 10) textCursor.getInt(10) else 0
-                val averageBackgroundColor = if (textCursor.columnCount > 11) {
-                    val value = textCursor.getInt(11)
-                    if (textCursor.isNull(11)) null else value
-                } else null
-                val originalTextColor = if (textCursor.columnCount > 12) {
-                    val value = textCursor.getInt(12)
-                    if (textCursor.isNull(12)) null else value
-                } else null
-                val customOverlayColor = if (textCursor.columnCount > 13) {
-                    val value = textCursor.getInt(13)
-                    if (textCursor.isNull(13)) null else value
-                } else null
-                val customTextColor = if (textCursor.columnCount > 14) {
-                    val value = textCursor.getInt(14)
-                    if (textCursor.isNull(14)) null else value
-                } else null
+            while (blockCursor.moveToNext()) {
+                // Lấy bounds từ image_blocks
+                val x = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_X))
+                val y = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_Y))
+                val width = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_WIDTH))
+                val height = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_HEIGHT))
+                val bounds = Rect(x, y, x + width, y + height)
                 
+                // 3. Lấy translated_text từ bảng translations (CHỈ lấy text, match bằng bounds)
+                val translationCursor = db.rawQuery("""
+                    SELECT translated_text FROM translations 
+                    WHERE $COLUMN_IMAGE_ID = ? 
+                    AND bounds_left = ? AND bounds_top = ? 
+                    AND bounds_right = ? AND bounds_bottom = ?
+                    AND (pending_delete IS NULL OR pending_delete = 0)
+                """, arrayOf(imageId.toString(), x.toString(), y.toString(), (x + width).toString(), (y + height).toString()))
                 
-                
-                val overlayAlpha = if (textCursor.columnCount > 15) textCursor.getFloat(15) else 1.0f
-                val textBoldness = if (textCursor.columnCount > 16) textCursor.getFloat(16) else 1.0f
-                val overlaySaturation = if (textCursor.columnCount > 17) textCursor.getFloat(17) else 1.0f
-                val textSaturation = if (textCursor.columnCount > 18) textCursor.getFloat(18) else 1.0f
-                val applyMerge = if (textCursor.columnCount > 19) textCursor.getInt(19) == 1 else true
-                // Đọc overlay_rotation từ cột index 20
-                val overlayRotation = if (textCursor.columnCount > 20 && !textCursor.isNull(20)) textCursor.getFloat(20) else null
-                val backgroundType = BackgroundType.values().getOrNull(backgroundTypeOrdinal) ?: BackgroundType.WHITE
-                // Try to find a matching image_blocks row for more persistent styling
-                try {
-                    val bw = bounds.right - bounds.left
-                    val bh = bounds.bottom - bounds.top
-                    val blockCursor = db.rawQuery(
-                        "SELECT * FROM $TABLE_IMAGE_BLOCKS WHERE $COLUMN_BLOCK_IMAGE_ID = ? AND $COLUMN_BLOCK_X = ? AND $COLUMN_BLOCK_Y = ? AND $COLUMN_BLOCK_WIDTH = ? AND $COLUMN_BLOCK_HEIGHT = ?",
-                        arrayOf(imageId.toString(), bounds.left.toString(), bounds.top.toString(), bw.toString(), bh.toString())
-                    )
-                    if (blockCursor.moveToFirst()) {
-                        // read overrides from image_blocks
-                        val overlayColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_COLOR)) else customOverlayColor ?: averageBackgroundColor
-                        val overlayAlphaBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ALPHA)).toFloat() } catch (e: Exception) { overlayAlpha }
-                        val overlaySatBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_SATURATION)).toFloat() } catch (e: Exception) { overlaySaturation }
-                        val overlayInsetBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET)).toFloat() } catch (e: Exception) { 0f }
-                        val overlayInsetHorizontalBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL)).toFloat() } catch (e: Exception) { overlayInsetBlock }
-                        val overlayInsetVerticalBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_VERTICAL)).toFloat() } catch (e: Exception) { overlayInsetBlock }
-                        
-                        // Log inset values for debugging
-                        if (overlayInsetBlock != 0f || overlayInsetHorizontalBlock != 0f || overlayInsetVerticalBlock != 0f) {
-                            Log.i(TAG, "ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInsetBlock insetH=$overlayInsetHorizontalBlock insetV=$overlayInsetVerticalBlock")
-                        }
-                        
-                        // Ưu tiên customTextColor từ translations, chỉ dùng textColorBlock từ image_blocks nếu khác null
-                        // QUAN TRỌNG: Nếu cả customTextColor và textColorBlock đều null, 
-                        // hãy giữ null để ImageViewer tính toán màu dựa trên brightness của overlay
-                        // KHÔNG nên dùng originalTextColor làm fallback vì nó là màu từ OCR (ảnh gốc), 
-                        // không phải màu dựa trên overlay hiện tại
-                        val textColorFromImageBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR))) {
-                            val color = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR))
-                            if (color != 0) color else null // Nếu là 0, coi là null (không được lưu)
-                        } else null
-                        val finalTextColor = customTextColor ?: textColorFromImageBlock ?: originalTextColor ?: 0xFF000000.toInt() // Mặc định màu đen
-                        
-                        val textBoldBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_BOLDNESS)).toFloat() } catch (e: Exception) { textBoldness }
-                        val textSatBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_SATURATION)).toFloat() } catch (e: Exception) { textSaturation }
-                        val rotationBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_ROTATION)).toFloat() } catch (e: Exception) { rotation }
-                        val fontFamilyBlock = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_FONT_FAMILY)) } catch (e: Exception) { null }
-                        val finalFontFamily = if (fontFamilyBlock.isNullOrBlank()) "mto_astro_city" else fontFamilyBlock
-                        val fontSizeBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_FONT_SIZE)).toFloat() } catch (e: Exception) { fontSize }
-                        val borderColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_COLOR)) else null
-                            val borderThicknessBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_THICKNESS)).toFloat() } catch (e: Exception) { 0f }
-                            val shadowColorBlock = if (!blockCursor.isNull(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR))) blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR)) else null
-                            val shadowAlphaBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
-                            val shadowRadiusBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_RADIUS)).toFloat() } catch (e: Exception) { 0f }
-                            val lineSpacingBlock = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_LINE_SPACING)).toFloat() } catch (e: Exception) { 1.0f }
-                            // Đọc overlayRotation từ image_blocks, fallback về translations nếu không có
-                            val overlayRotationBlock = try { 
-                                val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ROTATION)
-                                if (!blockCursor.isNull(idx)) blockCursor.getDouble(idx).toFloat() else overlayRotation
-                            } catch (e: Exception) { overlayRotation }
-                            // Log shadow values loaded from image_blocks for debugging
-
-                        textBlocks.add(TextBlockInfo(
-                            text = translatedText,
-                            bounds = bounds,
-                            fontSize = fontSizeBlock,
-                            lineSpacing = lineSpacingBlock,
-                            rotation = rotationBlock,
-                            originalImageWidth = originalImageWidth,
-                            originalImageHeight = originalImageHeight,
-                            shapeType = shapeType,
-                            backgroundType = backgroundType,
-                            averageBackgroundColor = averageBackgroundColor,
-                            originalTextColor = originalTextColor,
-                            customOverlayColor = overlayColorBlock,
-                                customTextColor = finalTextColor,
-                            overlayAlpha = overlayAlphaBlock,
-                            textBoldness = textBoldBlock,
-                            overlaySaturation = overlaySatBlock,
-                            textSaturation = textSatBlock,
-                            customBorderColor = borderColorBlock,
-                            borderThickness = borderThicknessBlock,
-                                customShadowColor = shadowColorBlock,
-                                shadowAlpha = shadowAlphaBlock,
-                                shadowRadius = shadowRadiusBlock,
-                            fontFamily = finalFontFamily,
-                            applyMerge = applyMerge,
-                            overlayInsetHorizontal = overlayInsetHorizontalBlock,
-                            overlayInsetVertical = overlayInsetVerticalBlock,
-                            overlayRotation = overlayRotationBlock
-                            // keep other fields default/null
-                        ))
-                        blockCursor.close()
-                    } else {
-                        blockCursor.close()
-                        // No block override found; use values from translations
-                        textBlocks.add(TextBlockInfo(
-                            text = translatedText,
-                            bounds = bounds,
-                            fontSize = fontSize,
-                            lineSpacing = 1.0f,
-                            rotation = rotation,
-                            originalImageWidth = originalImageWidth,
-                            originalImageHeight = originalImageHeight,
-                            shapeType = shapeType,
-                            backgroundType = backgroundType,
-                            averageBackgroundColor = averageBackgroundColor,
-                            originalTextColor = originalTextColor,
-                            customOverlayColor = customOverlayColor,
-                            customTextColor = customTextColor,
-                            overlayAlpha = overlayAlpha,
-                            textBoldness = textBoldness,
-                            overlaySaturation = overlaySaturation,
-                            textSaturation = textSaturation,
-                            applyMerge = applyMerge,
-                            overlayRotation = overlayRotation
-                        ))
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error while querying image_blocks for image $imageId", e)
-                    // fallback to original values
-                    textBlocks.add(TextBlockInfo(
-                        text = translatedText,
-                        bounds = bounds,
-                        fontSize = fontSize,
-                        lineSpacing = 1.0f,
-                        rotation = rotation,
-                        originalImageWidth = originalImageWidth,
-                        originalImageHeight = originalImageHeight,
-                        shapeType = shapeType,
-                        backgroundType = backgroundType,
-                        averageBackgroundColor = averageBackgroundColor,
-                        originalTextColor = originalTextColor,
-                        customOverlayColor = customOverlayColor,
-                        customTextColor = customTextColor,
-                        overlayAlpha = overlayAlpha,
-                        textBoldness = textBoldness,
-                        overlaySaturation = overlaySaturation,
-                        textSaturation = textSaturation,
-                        applyMerge = applyMerge,
-                        overlayRotation = overlayRotation
-                    ))
+                val translatedText = if (translationCursor.moveToFirst()) {
+                    translationCursor.getString(0) ?: ""
+                } else {
+                    ""
                 }
+                translationCursor.close()
+                
+                // Lấy tất cả thuộc tính overlay từ image_blocks
+                val overlayColor = try { 
+                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_COLOR)
+                    if (!blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
+                } catch (e: Exception) { null }
+                
+                val overlayAlpha = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
+                val overlaySaturation = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_SATURATION)).toFloat() } catch (e: Exception) { 1.0f }
+                val overlayInset = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET)).toFloat() } catch (e: Exception) { 0f }
+                val overlayInsetH = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL)).toFloat() } catch (e: Exception) { overlayInset }
+                val overlayInsetV = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_VERTICAL)).toFloat() } catch (e: Exception) { overlayInset }
+                val overlayRotation = try { 
+                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ROTATION)
+                    if (!blockCursor.isNull(idx)) blockCursor.getDouble(idx).toFloat() else null
+                } catch (e: Exception) { null }
+                val overlayType = try { blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_TYPE)) } catch (e: Exception) { 0 }
+                
+                val textColor = try { 
+                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR)
+                    if (!blockCursor.isNull(idx)) {
+                        val c = blockCursor.getInt(idx)
+                        if (c != 0) c else null
+                    } else null
+                } catch (e: Exception) { null }
+                val textBoldness = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_BOLDNESS)).toFloat() } catch (e: Exception) { 1.0f }
+                val textSaturation = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_SATURATION)).toFloat() } catch (e: Exception) { 1.0f }
+                
+                val fontSize = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_FONT_SIZE)).toFloat() } catch (e: Exception) { 14f }
+                val fontFamily = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_FONT_FAMILY)) } catch (e: Exception) { null }
+                val rotation = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_ROTATION)).toFloat() } catch (e: Exception) { 0f }
+                val lineSpacing = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_LINE_SPACING)).toFloat() } catch (e: Exception) { 1.0f }
+                
+                val borderColor = try { 
+                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_COLOR)
+                    if (!blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
+                } catch (e: Exception) { null }
+                val borderThickness = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_THICKNESS)).toFloat() } catch (e: Exception) { 0f }
+                
+                val shadowColor = try { 
+                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR)
+                    if (!blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
+                } catch (e: Exception) { null }
+                val shadowAlpha = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
+                val shadowRadius = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_RADIUS)).toFloat() } catch (e: Exception) { 0f }
+                
+                // Log để debug
+                if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {
+                    Log.i(TAG, "getMangaRoom ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInset insetH=$overlayInsetH insetV=$overlayInsetV")
+                }
+                
+                val finalTextColor = textColor ?: 0xFF000000.toInt()
+                val finalFontFamily = if (fontFamily.isNullOrBlank()) "mto_astro_city" else fontFamily
+                
+                textBlocks.add(TextBlockInfo(
+                    text = translatedText,
+                    bounds = bounds,
+                    fontSize = fontSize,
+                    lineSpacing = lineSpacing,
+                    rotation = rotation,
+                    originalImageWidth = null,
+                    originalImageHeight = null,
+                    shapeType = overlayType,
+                    backgroundType = BackgroundType.WHITE,
+                    averageBackgroundColor = overlayColor,
+                    originalTextColor = null,
+                    customOverlayColor = overlayColor,
+                    customTextColor = finalTextColor,
+                    overlayAlpha = overlayAlpha,
+                    textBoldness = textBoldness,
+                    overlaySaturation = overlaySaturation,
+                    textSaturation = textSaturation,
+                    customBorderColor = borderColor,
+                    borderThickness = borderThickness,
+                    customShadowColor = shadowColor,
+                    shadowAlpha = shadowAlpha,
+                    shadowRadius = shadowRadius,
+                    fontFamily = finalFontFamily,
+                    applyMerge = false,
+                    overlayInsetHorizontal = overlayInsetH,
+                    overlayInsetVertical = overlayInsetV,
+                    overlayRotation = overlayRotation
+                ))
             }
-            textCursor.close()
+            blockCursor.close()
+            
             if (textBlocks.isNotEmpty()) {
-                // Use original text from image level
-                // IMPORTANT: Only add if not already present (prevent duplicates)
                 if (!translations.containsKey(uri)) {
                     translations[uri] = originalTextForImage to textBlocks
                 }
