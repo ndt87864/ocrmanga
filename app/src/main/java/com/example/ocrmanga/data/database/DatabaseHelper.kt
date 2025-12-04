@@ -121,66 +121,83 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         migrateRoomImageLinks()
         // Clean up any duplicate translations that might exist
         cleanupDuplicateTranslations()
-        // Tự động thêm cột rotation vào bảng translations nếu chưa có
+        // Bảng translations giờ chỉ có: text_id, image_id, translated_text, pending_delete
+        // Tất cả thông tin khác (rotation, shape_type, colors, v.v.) đã chuyển sang image_blocks
         try {
             val db = writableDatabase
+            
+            // Kiểm tra nếu bảng translations còn các cột thừa (rotation, shape_type, overlay_rotation, v.v.)
+            // thì recreate bảng với cấu trúc đơn giản
             val cursor = db.rawQuery("PRAGMA table_info(translations)", null)
             var hasRotation = false
             var hasShapeType = false
+            var hasOverlayRotation = false
             while (cursor.moveToNext()) {
                 val columnName = cursor.getString(cursor.getColumnIndexOrThrow("name"))
-                if (columnName == "rotation") {
-                    hasRotation = true
-                }
-                if (columnName == "shape_type") {
-                    hasShapeType = true
-                }
+                if (columnName == "rotation") hasRotation = true
+                if (columnName == "shape_type") hasShapeType = true
+                if (columnName == "overlay_rotation") hasOverlayRotation = true
             }
             cursor.close()
-            if (!hasRotation) {
-                db.execSQL("ALTER TABLE translations ADD COLUMN rotation REAL DEFAULT 0")
-            }
-            if (!hasShapeType) {
-                db.execSQL("ALTER TABLE translations ADD COLUMN shape_type INTEGER DEFAULT 0")
-                // Cập nhật tất cả dữ liệu cũ có shape_type NULL hoặc chưa có giá trị về 0 (hình chữ nhật)
+            
+            // Nếu còn cột thừa, recreate bảng translations
+            if (hasRotation || hasShapeType || hasOverlayRotation) {
+                Log.i(TAG, "Phát hiện cột thừa trong translations, recreate bảng...")
                 try {
-                    db.execSQL("UPDATE translations SET shape_type = 0 WHERE shape_type IS NULL")
+                    // 1. Tạo bảng mới với cấu trúc đơn giản
+                    db.execSQL("DROP TABLE IF EXISTS translations_new")
+                    db.execSQL("""
+                        CREATE TABLE translations_new (
+                            text_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            $COLUMN_IMAGE_ID INTEGER,
+                            translated_text TEXT,
+                            pending_delete INTEGER DEFAULT 0,
+                            apply_merge INTEGER DEFAULT 1,
+                            FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
+                        )
+                    """)
+                    
+                    // 2. Copy dữ liệu từ bảng cũ sang bảng mới
+                    db.execSQL("""
+                        INSERT INTO translations_new (text_id, $COLUMN_IMAGE_ID, translated_text, pending_delete, apply_merge)
+                        SELECT text_id, $COLUMN_IMAGE_ID, translated_text, COALESCE(pending_delete, 0), COALESCE(apply_merge, 1)
+                        FROM translations
+                    """)
+                    
+                    // 3. Xóa bảng cũ
+                    db.execSQL("DROP TABLE translations")
+                    
+                    // 4. Đổi tên bảng mới
+                    db.execSQL("ALTER TABLE translations_new RENAME TO translations")
+                    
+                    // 5. Tạo lại index
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_image_id ON translations($COLUMN_IMAGE_ID)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_pending_delete ON translations($COLUMN_IMAGE_ID, pending_delete)")
+                    
+                    Log.i(TAG, "Đã recreate bảng translations thành công")
                 } catch (e: Exception) {
-                    Log.w(TAG, "Không thể cập nhật shape_type cho dữ liệu cũ", e)
+                    Log.e(TAG, "Lỗi khi recreate bảng translations", e)
                 }
             }
             
-            // Kiểm tra và thêm cột apply_merge nếu chưa có
-            var hasApplyMerge = false
-            val cursor2 = db.rawQuery("PRAGMA table_info(translations)", null)
-            while (cursor2.moveToNext()) {
-                val columnName = cursor2.getString(cursor2.getColumnIndexOrThrow("name"))
-                if (columnName == "apply_merge") {
-                    hasApplyMerge = true
-                }
-            }
-            cursor2.close()
-            if (!hasApplyMerge) {
-                db.execSQL("ALTER TABLE translations ADD COLUMN apply_merge INTEGER DEFAULT 1")
-            }
-            
-            // Kiểm tra và thêm cột pending_delete nếu chưa có
+            // Kiểm tra và thêm cột pending_delete nếu chưa có (cho backward compatibility)
             var hasPendingDelete = false
+            var hasApplyMerge = false
             val cursor3 = db.rawQuery("PRAGMA table_info(translations)", null)
             while (cursor3.moveToNext()) {
                 val colName = cursor3.getString(cursor3.getColumnIndexOrThrow("name"))
-                if (colName == "pending_delete") {
-                    hasPendingDelete = true
-                    break
-                }
+                if (colName == "pending_delete") hasPendingDelete = true
+                if (colName == "apply_merge") hasApplyMerge = true
             }
             cursor3.close()
             if (!hasPendingDelete) {
                 db.execSQL("ALTER TABLE translations ADD COLUMN pending_delete INTEGER DEFAULT 0")
-                
+            }
+            if (!hasApplyMerge) {
+                db.execSQL("ALTER TABLE translations ADD COLUMN apply_merge INTEGER DEFAULT 1")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Không thể tự động thêm cột vào bảng translations", e)
+            Log.w(TAG, "Không thể tự động xử lý bảng translations", e)
         }
         // Ensure image_blocks has newer shadow / font columns when upgrading from older DBs
         try {
@@ -349,7 +366,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         // Index để tăng tốc truy vấn images theo display_order trong room
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_order ON $TABLE_IMAGES($COLUMN_ROOM_ID, $COLUMN_DISPLAY_ORDER)")
 
-        // translations: CHỈ lưu text_id, image_id, translated_text
+        // translations: CHỈ lưu text_id, image_id, translated_text, pending_delete, apply_merge
         // Tất cả thông tin khác (bounds, colors, fonts...) lưu trong image_blocks
         db.execSQL("""
             CREATE TABLE translations (
@@ -357,6 +374,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_IMAGE_ID INTEGER,
                 translated_text TEXT,
                 pending_delete INTEGER DEFAULT 0,
+                apply_merge INTEGER DEFAULT 1,
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
@@ -746,7 +764,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
         }
         
-        // Version 18: Đơn giản hóa bảng translations - chỉ giữ text_id, image_id, translated_text, pending_delete
+        // Version 18: Đơn giản hóa bảng translations - chỉ giữ text_id, image_id, translated_text, pending_delete, apply_merge
         // Tất cả thông tin khác (bounds, colors, fonts...) đã có trong image_blocks
         if (oldVersion < 18) {
             try {
@@ -757,14 +775,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         $COLUMN_IMAGE_ID INTEGER,
                         translated_text TEXT,
                         pending_delete INTEGER DEFAULT 0,
+                        apply_merge INTEGER DEFAULT 1,
                         FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
                     )
                 """)
                 
                 // 2. Copy dữ liệu từ bảng cũ sang bảng mới (chỉ lấy các cột cần thiết)
                 db.execSQL("""
-                    INSERT INTO translations_new (text_id, $COLUMN_IMAGE_ID, translated_text, pending_delete)
-                    SELECT text_id, $COLUMN_IMAGE_ID, translated_text, COALESCE(pending_delete, 0)
+                    INSERT INTO translations_new (text_id, $COLUMN_IMAGE_ID, translated_text, pending_delete, apply_merge)
+                    SELECT text_id, $COLUMN_IMAGE_ID, translated_text, COALESCE(pending_delete, 0), COALESCE(apply_merge, 1)
                     FROM translations
                 """)
                 
@@ -778,7 +797,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_image_id ON translations($COLUMN_IMAGE_ID)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_pending_delete ON translations($COLUMN_IMAGE_ID, pending_delete)")
                 
-                Log.i(TAG, "Đã migrate bảng translations sang cấu trúc mới (chỉ text_id, image_id, translated_text, pending_delete)")
+                Log.i(TAG, "Đã migrate bảng translations sang cấu trúc mới (text_id, image_id, translated_text, pending_delete, apply_merge)")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi migrate bảng translations", e)
             }
