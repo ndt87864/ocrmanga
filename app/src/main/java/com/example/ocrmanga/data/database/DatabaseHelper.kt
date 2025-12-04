@@ -1512,7 +1512,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             // Lấy danh sách ảnh cũ trong DB
             val oldImages = mutableListOf<Pair<Long, Uri>>() // Pair<imageId, uri>
             val imageIdMap = mutableMapOf<String, Long>() // uri.toString() -> imageId
-            val cursor = db.rawQuery("SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
+            val cursor = db.rawQuery("SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ? ORDER BY $COLUMN_DISPLAY_ORDER", arrayOf(roomId.toString()))
             while (cursor.moveToNext()) {
                 val imageId = cursor.getLong(0)
                 val uri = Uri.parse(cursor.getString(1))
@@ -1520,16 +1520,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 imageIdMap[uri.toString()] = imageId
             }
             cursor.close()
-            val oldUris = oldImages.map { it.second }
 
-            // Xóa ảnh đã bị loại khỏi danh sách mới
-            // Use filename/lastPathSegment matching to avoid deleting images when URI forms differ
+            // Helper function to extract filename
             fun lastNameOf(uri: Uri?): String? {
                 return try {
                     uri?.lastPathSegment ?: java.io.File(uri.toString()).name
                 } catch (e: Exception) { null }
             }
+            
+            // Helper function to extract image number from filename (e.g., "image_5.jpg" -> 5)
+            fun extractImageNumber(uri: Uri?): Int? {
+                val filename = lastNameOf(uri) ?: return null
+                val match = Regex("image_(\\d+)\\.(jpg|jpeg|png|webp)", RegexOption.IGNORE_CASE).find(filename)
+                return match?.groupValues?.get(1)?.toIntOrNull()
+            }
 
+            // Xóa ảnh đã bị loại khỏi danh sách mới
             oldImages.forEach { (imageId, uri) ->
                 val exactPresent = imageUris.any { it.toString() == uri.toString() }
                 val name = lastNameOf(uri)
@@ -1538,135 +1544,152 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     newName != null && (newName == name || newUri.toString().endsWith(name))
                 } else false
                 if (!exactPresent && !namePresent) {
+                    Log.i(TAG, "updateMangaRoom: Deleting removed image imageId=$imageId uri=$uri")
                     db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
                     db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                    // Xóa file vật lý nếu ảnh không còn được dùng
+                    // Xóa file vật lý
                     val file = File(Uri.parse(uri.toString()).path ?: "")
                     if (file.exists()) file.delete()
                 }
             }
 
-            // Thêm ảnh mới và cập nhật thứ tự, trạng thái dịch
             val imagesDir = File(appContext.getExternalFilesDir(null), "images/$roomId")
             imagesDir.mkdirs()
             
-            // Find the highest existing image number to avoid conflicts
-            var maxImageNumber = -1
-            oldImages.forEach { (_, oldUri) ->
-                try {
-                    val fileName = File(oldUri.path ?: "").name
-                    val match = Regex("image_(\\d+)\\.jpg").find(fileName)
-                    if (match != null) {
-                        val num = match.groupValues[1].toIntOrNull() ?: -1
-                        if (num > maxImageNumber) maxImageNumber = num
-                    }
-                } catch (e: Exception) { /* ignore */ }
-            }
-            var nextImageNumber = maxImageNumber + 1
-            
-            // Build a map of old filenames to imageId for better matching
+            // Build map of old filenames to imageId
             val oldFilenameToImageId = mutableMapOf<String, Long>()
+            val oldImageIdToFilename = mutableMapOf<Long, String>()
             oldImages.forEach { (imageId, oldUri) ->
                 val filename = lastNameOf(oldUri)
                 if (filename != null) {
                     oldFilenameToImageId[filename] = imageId
+                    oldImageIdToFilename[imageId] = filename
                 }
             }
             
+            // Xác định ảnh mới và ảnh cũ
+            data class ImageInfo(val index: Int, val uri: Uri, val isNew: Boolean, val existingImageId: Long?)
+            val imageInfos = mutableListOf<ImageInfo>()
+            
             imageUris.forEachIndexed { index, uri ->
                 val uriStr = uri.toString()
-                val isTranslated = if (translatedTexts.containsKey(uri)) 1 else 0
                 val uriFilename = lastNameOf(uri)
                 
-                // Check if this URI matches an existing image (by URI string or filename)
+                // Check if this URI matches an existing image
                 val exactMatch = imageIdMap[uriStr]
                 val filenameMatch = if (uriFilename != null) oldFilenameToImageId[uriFilename] else null
                 val existingImageId = exactMatch ?: filenameMatch
                 
-                // Also check if there's an image at this display_order
-                val orderCursor = db.rawQuery(
-                    "SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ? AND $COLUMN_DISPLAY_ORDER = ?",
-                    arrayOf(roomId.toString(), index.toString())
-                )
-                val imageIdAtOrder = if (orderCursor.moveToFirst()) orderCursor.getLong(0) else null
-                orderCursor.close()
+                val isNew = existingImageId == null
+                imageInfos.add(ImageInfo(index, uri, isNew, existingImageId))
                 
-                // Determine if this is truly a NEW image or an existing one
-                val isNewImage = existingImageId == null && imageIdAtOrder == null
-                
-                if (isNewImage) {
-                    // Ảnh mới: sử dụng số thứ tự tiếp theo để tránh trùng tên file
-                    Log.i(TAG, "updateMangaRoom: NEW image at index $index, uri=$uriStr")
-                    val fileName = "image_${nextImageNumber}.jpg"
-                    nextImageNumber++
-                    val newFile = File(imagesDir, fileName)
-                    if (!newFile.exists()) {
-                        val copied = copyImageToInternalStorage(uri, imagesDir, fileName)
-                        if (copied == null) {
-                            Log.e(TAG, "Không thể copy ảnh mới $uri vào phòng $roomId")
+                if (isNew) {
+                    Log.i(TAG, "updateMangaRoom: NEW image detected at index $index, uri=$uriStr")
+                } else {
+                    Log.i(TAG, "updateMangaRoom: EXISTING image at index $index, imageId=$existingImageId, uri=$uriStr")
+                }
+            }
+            
+            // ====== RENAME LOGIC: Đổi tên file để đảm bảo thứ tự đúng ======
+            // Step 1: Rename all existing files to temp names to avoid conflicts
+            val tempRenames = mutableMapOf<Long, File>() // imageId -> tempFile
+            imageInfos.filter { !it.isNew && it.existingImageId != null }.forEach { info ->
+                val imageId = info.existingImageId!!
+                val oldFilename = oldImageIdToFilename[imageId]
+                if (oldFilename != null) {
+                    val oldFile = File(imagesDir, oldFilename)
+                    if (oldFile.exists()) {
+                        val tempFile = File(imagesDir, "temp_${imageId}_$oldFilename")
+                        if (oldFile.renameTo(tempFile)) {
+                            tempRenames[imageId] = tempFile
                         }
                     }
-                    val newUri = if (newFile.exists()) Uri.fromFile(newFile) else uri
-                    // Get original OCR text for this image
+                }
+            }
+            
+            // Step 2: Rename temp files and new files to final names based on new index
+            imageInfos.forEach { info ->
+                val targetFilename = "image_${info.index}.jpg"
+                val targetFile = File(imagesDir, targetFilename)
+                
+                if (info.isNew) {
+                    // Copy new image to target location
+                    val copied = copyImageToInternalStorage(info.uri, imagesDir, targetFilename)
+                    if (copied != null) {
+                        Log.i(TAG, "updateMangaRoom: Copied new image to $targetFilename")
+                    } else {
+                        Log.e(TAG, "updateMangaRoom: Failed to copy new image ${info.uri} to $targetFilename")
+                    }
+                } else {
+                    // Rename from temp to final
+                    val imageId = info.existingImageId!!
+                    val tempFile = tempRenames[imageId]
+                    if (tempFile != null && tempFile.exists()) {
+                        // Delete target if exists (shouldn't happen but just in case)
+                        if (targetFile.exists()) targetFile.delete()
+                        if (tempFile.renameTo(targetFile)) {
+                            Log.i(TAG, "updateMangaRoom: Renamed ${tempFile.name} to $targetFilename for imageId=$imageId")
+                        } else {
+                            Log.e(TAG, "updateMangaRoom: Failed to rename ${tempFile.name} to $targetFilename")
+                        }
+                    }
+                }
+            }
+            
+            // ====== DATABASE UPDATE ======
+            imageInfos.forEach { info ->
+                val index = info.index
+                val uri = info.uri
+                val isTranslated = if (translatedTexts.containsKey(uri)) 1 else 0
+                val targetFilename = "image_${index}.jpg"
+                val targetFile = File(imagesDir, targetFilename)
+                val newUri = if (targetFile.exists()) Uri.fromFile(targetFile) else uri
+                
+                if (info.isNew) {
+                    // Insert new image
                     val originalOcrText = translatedTexts[uri]?.first ?: ""
                     val imageValues = ContentValues().apply {
                         put(COLUMN_ROOM_ID, roomId)
                         put(COLUMN_IMAGE_URI, newUri.toString())
                         put(COLUMN_DISPLAY_ORDER, index)
                         put(COLUMN_IS_TRANSLATED, isTranslated)
-                        put(COLUMN_ORIGINAL_TEXT, originalOcrText) // Store OCR text at image level
+                        put(COLUMN_ORIGINAL_TEXT, originalOcrText)
                     }
                     val imageId = db.insert(TABLE_IMAGES, null, imageValues)
                     if (imageId != -1L) {
-                        // Tự động scale lại bounds nếu ảnh đã bị resize
-                        // Ensure change record exists for this image
+                        Log.i(TAG, "updateMangaRoom: Inserted new image with imageId=$imageId at index $index")
                         try { ensureChangeRecord(imageId, roomId) } catch (e: Exception) { /* ignore */ }
+                        
+                        // Insert translations if any
                         translatedTexts[uri]?.let { (originalText, textBlocks) ->
-                            // IMPORTANT: Delete ALL existing translations for this image first
-                            val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                            try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
+                            // Update original_text at image level
+                            val imageUpdateValues = ContentValues().apply {
+                                put(COLUMN_ORIGINAL_TEXT, originalText)
+                            }
+                            db.update(TABLE_IMAGES, imageUpdateValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                             
-                            // Filter out blocks marked for deletion (pendingDelete = true)
+                            // Filter out blocks marked for deletion
                             val blocksToSave = textBlocks.filter { !it.pendingDelete }
                             Log.i(TAG, "updateMangaRoom (new image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
                             
-                            val originalWidth = blocksToSave.firstOrNull()?.originalImageWidth
-                            val originalHeight = blocksToSave.firstOrNull()?.originalImageHeight
-                            val savedBitmap = android.graphics.BitmapFactory.decodeFile(newFile.absolutePath)
-                            val savedWidth = savedBitmap?.width
-                            val savedHeight = savedBitmap?.height
-                            val scaleX = if (originalWidth != null && savedWidth != null && originalWidth > 0) savedWidth.toFloat() / originalWidth else 1f
-                            val scaleY = if (originalHeight != null && savedHeight != null && originalHeight > 0) savedHeight.toFloat() / originalHeight else 1f
-                            // Remove any existing blocks for this image so we replace with fresh ones
-                            try { deleteBlocksForImage(imageId) } catch (e: Exception) { /* ignore */ }
-                            var insertedCount = 0
                             blocksToSave.forEach { textBlock ->
                                 val origRect = textBlock.bounds
-                                val scaledRect = if (scaleX != 1f || scaleY != 1f) {
-                                    android.graphics.Rect(
-                                        (origRect.left * scaleX).toInt(),
-                                        (origRect.top * scaleY).toInt(),
-                                        (origRect.right * scaleX).toInt(),
-                                        (origRect.bottom * scaleY).toInt()
-                                    )
-                                } else origRect
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, imageId)
-                                    // DO NOT store original_text here - it's at image level now
-                                    // put("original_text", textBlock.originalText ?: originalText)
                                     put("translated_text", textBlock.text)
-                                    put("bounds_left", scaledRect.left)
-                                    put("bounds_top", scaledRect.top)
-                                    put("bounds_right", scaledRect.right)
-                                    put("bounds_bottom", scaledRect.bottom)
+                                    put("bounds_left", origRect.left)
+                                    put("bounds_top", origRect.top)
+                                    put("bounds_right", origRect.right)
+                                    put("bounds_bottom", origRect.bottom)
                                     put("font_size", textBlock.fontSize)
                                     put("rotation", textBlock.rotation ?: 0f)
-                                    put("original_image_width", savedWidth)
-                                    put("original_image_height", savedHeight)
+                                    put("original_image_width", textBlock.originalImageWidth)
+                                    put("original_image_height", textBlock.originalImageHeight)
                                     put("shape_type", textBlock.shapeType)
                                     put("background_type", textBlock.backgroundType.ordinal)
                                     put("average_background_color", textBlock.averageBackgroundColor)
-                                    put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt()) // Mặc định màu đen nếu null
+                                    put("original_text_color", textBlock.originalTextColor ?: 0xFF000000.toInt())
                                     put("custom_overlay_color", textBlock.customOverlayColor)
                                     put("custom_text_color", textBlock.customTextColor)
                                     put("overlay_alpha", textBlock.overlayAlpha)
@@ -1679,16 +1702,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
-                                    insertedCount++
                                     try {
-                                        val blockWidth = scaledRect.right - scaledRect.left
-                                        val blockHeight = scaledRect.bottom - scaledRect.top
+                                        val blockWidth = origRect.right - origRect.left
+                                        val blockHeight = origRect.bottom - origRect.top
                                         val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
-                                        val textColor = textBlock.customTextColor ?: textBlock.originalTextColor
+                                        val textColor = textBlock.customTextColor ?: (textBlock.originalTextColor ?: 0xFF000000.toInt())
                                         insertImageBlock(
                                             imageId = imageId,
-                                            x = scaledRect.left,
-                                            y = scaledRect.top,
+                                            x = origRect.left,
+                                            y = origRect.top,
                                             width = blockWidth,
                                             height = blockHeight,
                                             overlayType = textBlock.shapeType,
@@ -1708,45 +1730,35 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             borderBrightness = 1.0f,
                                             borderBoldness = textBlock.borderAlpha,
                                             borderThickness = textBlock.borderThickness,
-                                            // Persist shadow properties if present on the TextBlockInfo
                                             shadowColor = textBlock.customShadowColor,
                                             shadowAlpha = textBlock.shadowAlpha ?: 1.0f,
                                             shadowRadius = textBlock.shadowRadius ?: 0f,
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize,
-                                            // ✅ Truyền lineSpacing từ TextBlockInfo
                                             lineSpacing = textBlock.lineSpacing
                                         )
-                                        // After inserting translations for this image, clear change flag
-                                        try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
-                                        // Delete pending translations after successful save
-                                        try { deletePendingTranslations(imageId) } catch (e: Exception) { /* ignore */ }
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
                                     }
                                 }
                             }
-                            savedBitmap?.recycle()
+                            // Clear change flag after saving
+                            try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
+                            try { deletePendingTranslations(imageId) } catch (e: Exception) { /* ignore */ }
                         }
                     }
                 } else {
-                    // Ảnh cũ: cập nhật thứ tự, trạng thái dịch
-                    // Use the imageId we already found (existingImageId or imageIdAtOrder)
-                    val imageId = existingImageId ?: imageIdAtOrder
+                    // Ảnh cũ: cập nhật thứ tự, trạng thái dịch, và URI mới (sau khi rename)
+                    val imageId = info.existingImageId!!
                     
-                    if (imageId == null) {
-                        // This should not happen since we checked isNewImage above
-                        Log.e(TAG, "updateMangaRoom: Unexpected null imageId for existing image at index $index, uri=$uriStr")
-                        return@forEachIndexed
-                    }
+                    Log.i(TAG, "updateMangaRoom: EXISTING image at index $index, imageId=$imageId")
                     
-                    Log.i(TAG, "updateMangaRoom: EXISTING image at index $index, imageId=$imageId, uri=$uriStr")
-                    
-                    // Only update display_order and is_translated, DO NOT change the URI
+                    // Update display_order, is_translated, AND the new URI (file was renamed)
                     val imageValues = ContentValues().apply {
                         put(COLUMN_DISPLAY_ORDER, index)
                         put(COLUMN_IS_TRANSLATED, isTranslated)
+                        put(COLUMN_IMAGE_URI, newUri.toString()) // Update to new URI after rename
                     }
                     db.update(TABLE_IMAGES, imageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                     
@@ -1833,25 +1845,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             borderBrightness = 1.0f,
                                             borderBoldness = textBlock.borderAlpha,
                                             borderThickness = textBlock.borderThickness,
-                                            // Persist shadow properties if present on the TextBlockInfo
                                             shadowColor = textBlock.customShadowColor,
                                             shadowAlpha = textBlock.shadowAlpha ?: 1.0f,
                                             shadowRadius = textBlock.shadowRadius ?: 0f,
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize,
-                                            // ✅ Truyền lineSpacing từ TextBlockInfo
                                             lineSpacing = textBlock.lineSpacing
                                         )
-                                            // translations for existing image updated => clear change flag
-                                            try { clearImageChange(resolvedId) } catch (e: Exception) { /* ignore */ }
-                                            // Delete pending translations after successful save
-                                            try { deletePendingTranslations(resolvedId) } catch (e: Exception) { /* ignore */ }
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
                                     }
                                 }
                             }
+                            // Clear change flag after saving
+                            try { clearImageChange(resolvedId) } catch (e: Exception) { /* ignore */ }
+                            try { deletePendingTranslations(resolvedId) } catch (e: Exception) { /* ignore */ }
                         }
                     }
                 }
