@@ -1241,10 +1241,41 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         return@launch
                     }
                 } else {
-                    // Not a stored image - cannot use simple file swap
-                    Log.w(TAG, "replaceImageUri: imageId not found for $oldUri, cannot replace")
+                    // Not a stored image - swap URI directly in UI state
+                    Log.i(TAG, "replaceImageUri: imageId not found for $oldUri, swapping URI in UI state")
+                    
+                    // Swap URI trong imageUris list
+                    val oldIndex = _uiState.value.imageUris.indexOfFirst { it.toString() == oldUri.toString() }
+                    if (oldIndex == -1) {
+                        Log.e(TAG, "replaceImageUri: oldUri not found in imageUris list")
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(getApplication(), "Không tìm thấy ảnh", Toast.LENGTH_SHORT).show()
+                        }
+                        return@launch
+                    }
+                    
+                    // Swap translations từ oldUri sang newUri
+                    val oldTranslation = _uiState.value.translatedTexts[oldUri]
+                    
+                    _uiState.update { state ->
+                        val newImageUris = state.imageUris.toMutableList()
+                        newImageUris[oldIndex] = newUri
+                        
+                        val newTranslatedTexts = state.translatedTexts.toMutableMap()
+                        newTranslatedTexts.remove(oldUri)
+                        if (oldTranslation != null) {
+                            newTranslatedTexts[newUri] = oldTranslation
+                        }
+                        
+                        state.copy(
+                            imageUris = newImageUris,
+                            translatedTexts = newTranslatedTexts,
+                            translationVersion = state.translationVersion + 1
+                        )
+                    }
+                    
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Không tìm thấy ảnh trong DB", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(getApplication(), "Đã thay thế ảnh", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
