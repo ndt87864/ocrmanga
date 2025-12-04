@@ -1499,11 +1499,39 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
             var nextImageNumber = maxImageNumber + 1
             
+            // Build a map of old filenames to imageId for better matching
+            val oldFilenameToImageId = mutableMapOf<String, Long>()
+            oldImages.forEach { (imageId, oldUri) ->
+                val filename = lastNameOf(oldUri)
+                if (filename != null) {
+                    oldFilenameToImageId[filename] = imageId
+                }
+            }
+            
             imageUris.forEachIndexed { index, uri ->
                 val uriStr = uri.toString()
                 val isTranslated = if (translatedTexts.containsKey(uri)) 1 else 0
-                if (uri !in oldUris) {
+                val uriFilename = lastNameOf(uri)
+                
+                // Check if this URI matches an existing image (by URI string or filename)
+                val exactMatch = imageIdMap[uriStr]
+                val filenameMatch = if (uriFilename != null) oldFilenameToImageId[uriFilename] else null
+                val existingImageId = exactMatch ?: filenameMatch
+                
+                // Also check if there's an image at this display_order
+                val orderCursor = db.rawQuery(
+                    "SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ? AND $COLUMN_DISPLAY_ORDER = ?",
+                    arrayOf(roomId.toString(), index.toString())
+                )
+                val imageIdAtOrder = if (orderCursor.moveToFirst()) orderCursor.getLong(0) else null
+                orderCursor.close()
+                
+                // Determine if this is truly a NEW image or an existing one
+                val isNewImage = existingImageId == null && imageIdAtOrder == null
+                
+                if (isNewImage) {
                     // Ảnh mới: sử dụng số thứ tự tiếp theo để tránh trùng tên file
+                    Log.i(TAG, "updateMangaRoom: NEW image at index $index, uri=$uriStr")
                     val fileName = "image_${nextImageNumber}.jpg"
                     nextImageNumber++
                     val newFile = File(imagesDir, fileName)
@@ -1639,66 +1667,27 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     }
                 } else {
                     // Ảnh cũ: cập nhật thứ tự, trạng thái dịch
-                    // Try to resolve imageId by exact URI, then by filename fallback
-                    var imageId = imageIdMap[uriStr]
+                    // Use the imageId we already found (existingImageId or imageIdAtOrder)
+                    val imageId = existingImageId ?: imageIdAtOrder
+                    
                     if (imageId == null) {
-                        // attempt filename-based match
-                        try {
-                            val fileName = Uri.parse(uriStr).lastPathSegment ?: java.io.File(uriStr).name
-                            val entry = imageIdMap.entries.find { (k, _) ->
-                                val kName = try { Uri.parse(k).lastPathSegment ?: java.io.File(k).name } catch (e: Exception) { java.io.File(k).name }
-                                k == uriStr || kName == fileName || k.endsWith(fileName)
-                            }
-                            if (entry != null) imageId = entry.value
-                        } catch (e: Exception) { /* ignore */ }
+                        // This should not happen since we checked isNewImage above
+                        Log.e(TAG, "updateMangaRoom: Unexpected null imageId for existing image at index $index, uri=$uriStr")
+                        return@forEachIndexed
                     }
-                    if (imageId == null) {
-                        // Not found; treat as new image (insert)
-                        val fileName = "image_$index.jpg"
-                        val newFile = File(imagesDir, fileName)
-                        if (!newFile.exists()) {
-                            val copied = copyImageToInternalStorage(uri, imagesDir, fileName)
-                            if (copied == null) {
-                                Log.e(TAG, "Không thể copy ảnh mới $uri vào phòng $roomId (fallback insert)")
-                            }
-                        }
-                        val newUri = if (newFile.exists()) Uri.fromFile(newFile) else uri
-                        val imageValues = ContentValues().apply {
-                            put(COLUMN_ROOM_ID, roomId)
-                            put(COLUMN_IMAGE_URI, newUri.toString())
-                            put(COLUMN_DISPLAY_ORDER, index)
-                            put(COLUMN_IS_TRANSLATED, isTranslated)
-                        }
-                        val insertedId = db.insert(TABLE_IMAGES, null, imageValues)
-                        if (insertedId != -1L) {
-                            try { ensureChangeRecord(insertedId, roomId) } catch (e: Exception) { /* ignore */ }
-                        }
-                    } else {
-                        val imageValues = ContentValues().apply {
-                            put(COLUMN_DISPLAY_ORDER, index)
-                            put(COLUMN_IS_TRANSLATED, isTranslated)
-                        }
-                        db.update(TABLE_IMAGES, imageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                        // If stored URI differs from provided, update stored URI to the new one (normalized)
-                        try {
-                            val storedUriCursor = db.rawQuery("SELECT $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                            if (storedUriCursor.moveToFirst()) {
-                                val storedUriStr = storedUriCursor.getString(0)
-                                if (storedUriStr != uriStr) {
-                                    val updateV = ContentValues().apply { put(COLUMN_IMAGE_URI, uriStr) }
-                                    db.update(TABLE_IMAGES, updateV, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                                }
-                            }
-                            storedUriCursor.close()
-                        } catch (e: Exception) { /* ignore */ }
+                    
+                    Log.i(TAG, "updateMangaRoom: EXISTING image at index $index, imageId=$imageId, uri=$uriStr")
+                    
+                    // Only update display_order and is_translated, DO NOT change the URI
+                    val imageValues = ContentValues().apply {
+                        put(COLUMN_DISPLAY_ORDER, index)
+                        put(COLUMN_IS_TRANSLATED, isTranslated)
                     }
+                    db.update(TABLE_IMAGES, imageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    
                     // Nếu có bản dịch mới, xóa bản dịch cũ và thêm lại
                     if (translatedTexts.containsKey(uri)) {
                         val resolvedId = imageId
-                        if (resolvedId == null) {
-                            Log.w(TAG, "Skipping translation insert for uri=$uri because imageId could not be resolved")
-                            return@forEachIndexed
-                        }
                         val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(resolvedId.toString()))
                         translatedTexts[uri]?.let { (originalText, textBlocks) ->
                             // Update original_text at image level
@@ -1829,36 +1818,66 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     private fun cleanupDuplicateImages(roomId: Long) {
         val db = writableDatabase
         try {
-            // Find all images in this room
+            // Find all images in this room with translation counts
+            // Order by display_order first, then by translation_count DESC (keep the one with more translations)
+            // then by image_id ASC (keep the older one if same translations)
             val cursor = db.rawQuery(
                 """
-                SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI 
-                FROM $TABLE_IMAGES 
-                WHERE $COLUMN_ROOM_ID = ? 
-                ORDER BY $COLUMN_DISPLAY_ORDER
+                SELECT i.$COLUMN_IMAGE_ID, i.$COLUMN_IMAGE_URI, i.$COLUMN_DISPLAY_ORDER,
+                       (SELECT COUNT(*) FROM translations t WHERE t.$COLUMN_IMAGE_ID = i.$COLUMN_IMAGE_ID) as translation_count
+                FROM $TABLE_IMAGES i
+                WHERE i.$COLUMN_ROOM_ID = ? 
+                ORDER BY i.$COLUMN_DISPLAY_ORDER ASC, translation_count DESC, i.$COLUMN_IMAGE_ID ASC
                 """,
                 arrayOf(roomId.toString())
             )
             
-            val seenUris = mutableSetOf<String>()
+            // Extract filename from URI for comparison
+            fun extractFilename(uri: String): String {
+                return try {
+                    Uri.parse(uri).lastPathSegment ?: java.io.File(uri).name
+                } catch (e: Exception) {
+                    uri
+                }
+            }
+            
+            val seenFilenames = mutableSetOf<String>() // Track by filename to catch URI format differences
+            val seenDisplayOrders = mutableMapOf<Int, Long>() // display_order -> kept imageId
             val duplicateImageIds = mutableListOf<Long>()
             
             while (cursor.moveToNext()) {
                 val imageId = cursor.getLong(0)
                 val imageUri = cursor.getString(1)
+                val displayOrder = cursor.getInt(2)
+                val translationCount = cursor.getInt(3)
+                val filename = extractFilename(imageUri)
                 
-                if (seenUris.contains(imageUri)) {
-                    // This is a duplicate
+                // Check for duplicate filename (catches same file with different URI formats)
+                val isDuplicateFilename = seenFilenames.contains(filename)
+                // Check for duplicate display_order
+                val existingIdAtOrder = seenDisplayOrders[displayOrder]
+                val isDuplicateOrder = existingIdAtOrder != null
+                
+                if (isDuplicateFilename) {
+                    // Duplicate filename - mark as duplicate
                     duplicateImageIds.add(imageId)
+                    Log.w(TAG, "cleanupDuplicateImages: Marking imageId=$imageId as duplicate (duplicate filename: $filename, uri=$imageUri)")
+                } else if (isDuplicateOrder) {
+                    // Duplicate display_order - the first one we saw (with more translations due to ORDER BY) is kept
+                    duplicateImageIds.add(imageId)
+                    Log.w(TAG, "cleanupDuplicateImages: Marking imageId=$imageId as duplicate (duplicate order: $displayOrder, keeping imageId=${existingIdAtOrder}, this has $translationCount translations)")
                 } else {
-                    seenUris.add(imageUri)
+                    seenFilenames.add(filename)
+                    seenDisplayOrders[displayOrder] = imageId
                 }
             }
             cursor.close()
             
             // Delete all duplicate entries
             if (duplicateImageIds.isNotEmpty()) {
+                Log.w(TAG, "cleanupDuplicateImages: Found ${duplicateImageIds.size} duplicate images in room $roomId, deleting...")
                 duplicateImageIds.forEach { imageId ->
+                    Log.w(TAG, "cleanupDuplicateImages: Deleting duplicate imageId=$imageId")
                     // Delete translations for this duplicate
                     db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                     // Delete image_blocks for this duplicate
@@ -1866,9 +1885,63 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     // Delete the image record itself
                     db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                 }
+                Log.i(TAG, "cleanupDuplicateImages: Deleted ${duplicateImageIds.size} duplicate images from room $roomId")
+            } else {
+                Log.i(TAG, "cleanupDuplicateImages: No duplicate images found in room $roomId")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error cleaning up duplicate images for room $roomId", e)
+        }
+    }
+    
+    /**
+     * Cleanup and sync room images to ensure DB count matches expected count.
+     * Call this when loading a room to fix any inconsistencies.
+     */
+    fun cleanupAndSyncRoomImages(roomId: Long, expectedCount: Int) {
+        val db = writableDatabase
+        try {
+            // First run normal duplicate cleanup
+            cleanupDuplicateImages(roomId)
+            
+            // Count images after cleanup
+            val countCursor = db.rawQuery(
+                "SELECT COUNT(*) FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ?",
+                arrayOf(roomId.toString())
+            )
+            val actualCount = if (countCursor.moveToFirst()) countCursor.getInt(0) else 0
+            countCursor.close()
+            
+            Log.i(TAG, "cleanupAndSyncRoomImages: Room $roomId has $actualCount images in DB, expected $expectedCount")
+            
+            if (actualCount > expectedCount) {
+                // More images in DB than expected - remove extras
+                // Keep only images with display_order < expectedCount
+                val extraCursor = db.rawQuery(
+                    """
+                    SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES 
+                    WHERE $COLUMN_ROOM_ID = ? AND $COLUMN_DISPLAY_ORDER >= ?
+                    ORDER BY $COLUMN_DISPLAY_ORDER DESC
+                    """,
+                    arrayOf(roomId.toString(), expectedCount.toString())
+                )
+                val extraIds = mutableListOf<Long>()
+                while (extraCursor.moveToNext()) {
+                    extraIds.add(extraCursor.getLong(0))
+                }
+                extraCursor.close()
+                
+                if (extraIds.isNotEmpty()) {
+                    Log.w(TAG, "cleanupAndSyncRoomImages: Removing ${extraIds.size} extra images with display_order >= $expectedCount")
+                    extraIds.forEach { imageId ->
+                        db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                        db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                        db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in cleanupAndSyncRoomImages for room $roomId", e)
         }
     }
 
@@ -1893,13 +1966,19 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val imageIdMap = mutableMapOf<String, Long>()
             // start with caller-provided mapping (if available) to improve matching
             callerUriToImageId.forEach { (k, v) -> imageIdMap[k.toString()] = v }
+            Log.i(TAG, "updateMangaRoomSelective: callerUriToImageId has ${callerUriToImageId.size} entries")
+            
             val cursor = db.rawQuery("SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
+            var dbImageCount = 0
             while (cursor.moveToNext()) {
                 val imageId = cursor.getLong(0)
                 val uri = cursor.getString(1)
                 imageIdMap[uri] = imageId
+                dbImageCount++
             }
             cursor.close()
+            Log.i(TAG, "updateMangaRoomSelective: DB has $dbImageCount images for room $roomId, total imageIdMap size=${imageIdMap.size}")
+            Log.i(TAG, "updateMangaRoomSelective: dirtyUris=${dirtyUris.map { it.toString() }}")
 
             // Update display order and is_translated flags for all images
             imageUris.forEachIndexed { index, uri ->
@@ -1923,6 +2002,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             dirtyUris.forEach { dirtyUri ->
                 val uriStr = dirtyUri.toString()
                 var imageId = imageIdMap[uriStr]
+                Log.i(TAG, "updateMangaRoomSelective: Processing dirtyUri=$uriStr exactMatch=${imageId != null}")
+                
                 if (imageId == null) {
                     try {
                         val fileName = Uri.parse(uriStr).lastPathSegment ?: java.io.File(uriStr).name
@@ -1930,42 +2011,82 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             val kName = try { Uri.parse(k).lastPathSegment ?: java.io.File(k).name } catch (e: Exception) { java.io.File(k).name }
                             k == uriStr || kName == fileName || k.endsWith(fileName)
                         }
-                        if (entry != null) imageId = entry.value
+                        if (entry != null) {
+                            imageId = entry.value
+                            Log.i(TAG, "updateMangaRoomSelective: Found imageId=$imageId via filename match (fileName=$fileName, matchedKey=${entry.key})")
+                        }
                     } catch (e: Exception) {
-                        // ignore
+                        Log.w(TAG, "updateMangaRoomSelective: Exception during filename matching for $uriStr", e)
+                    }
+                }
+                
+                // Try to match by display_order/index position as last resort
+                if (imageId == null) {
+                    val index = imageUris.indexOf(dirtyUri)
+                    if (index >= 0) {
+                        // Try to find image with this display_order
+                        val orderCursor = db.rawQuery(
+                            "SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ? AND $COLUMN_DISPLAY_ORDER = ?",
+                            arrayOf(roomId.toString(), index.toString())
+                        )
+                        if (orderCursor.moveToFirst()) {
+                            imageId = orderCursor.getLong(0)
+                            Log.i(TAG, "updateMangaRoomSelective: Found imageId=$imageId via display_order=$index")
+                        }
+                        orderCursor.close()
                     }
                 }
 
                 // If imageId is null, treat this as a new image: copy into room folder and insert into images
                 if (imageId == null) {
-                    try {
-                        val index = imageUris.indexOf(dirtyUri).coerceAtLeast(0)
-                        val fileName = "image_${index}.jpg"
-                        val newFile = copyImageToInternalStorage(dirtyUri, imagesDir, fileName)
-                        val newUri = if (newFile != null && newFile.exists()) Uri.fromFile(newFile) else dirtyUri
-                        // Get original OCR text for this image
-                        val originalOcrText = translatedTexts[dirtyUri]?.first ?: ""
-                        val imageValues = ContentValues().apply {
-                            put(COLUMN_ROOM_ID, roomId)
-                            put(COLUMN_IMAGE_URI, newUri.toString())
-                            put(COLUMN_DISPLAY_ORDER, index)
-                            put(COLUMN_IS_TRANSLATED, if (translatedTexts.containsKey(dirtyUri)) 1 else 0)
-                            put(COLUMN_ORIGINAL_TEXT, originalOcrText) // Store OCR text at image level
-                        }
-                        val insertedImageId = db.insert(TABLE_IMAGES, null, imageValues)
-                        if (insertedImageId != -1L) {
-                            imageId = insertedImageId
-                            imageIdMap[newUri.toString()] = imageId
-                            // remove original file if necessary
-                            try { deleteOriginalImage(dirtyUri) } catch (e: Exception) { /* ignore */ }
-                        } else {
-                            Log.e(TAG, "Không thể chèn ảnh mới cho uri $uriStr vào phòng $roomId")
-                            // skip processing this dirtyUri
+                    Log.w(TAG, "updateMangaRoomSelective: No imageId found for dirtyUri=$uriStr, treating as NEW image (this may cause duplicates!)")
+                    
+                    // SAFETY CHECK: Before inserting a new image, verify there's no existing image at this index
+                    // to prevent duplicate entries
+                    val index = imageUris.indexOf(dirtyUri).coerceAtLeast(0)
+                    val existingCursor = db.rawQuery(
+                        "SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ? AND $COLUMN_DISPLAY_ORDER = ?",
+                        arrayOf(roomId.toString(), index.toString())
+                    )
+                    if (existingCursor.moveToFirst()) {
+                        // There's already an image at this index - use it instead of creating a new one
+                        imageId = existingCursor.getLong(0)
+                        val existingUri = existingCursor.getString(1)
+                        Log.w(TAG, "updateMangaRoomSelective: Found existing image at index $index (imageId=$imageId, uri=$existingUri), using it instead of creating new")
+                        existingCursor.close()
+                    } else {
+                        existingCursor.close()
+                        
+                        // No existing image at this index - create new one
+                        try {
+                            val fileName = "image_${index}.jpg"
+                            val newFile = copyImageToInternalStorage(dirtyUri, imagesDir, fileName)
+                            val newUri = if (newFile != null && newFile.exists()) Uri.fromFile(newFile) else dirtyUri
+                            // Get original OCR text for this image
+                            val originalOcrText = translatedTexts[dirtyUri]?.first ?: ""
+                            val imageValues = ContentValues().apply {
+                                put(COLUMN_ROOM_ID, roomId)
+                                put(COLUMN_IMAGE_URI, newUri.toString())
+                                put(COLUMN_DISPLAY_ORDER, index)
+                                put(COLUMN_IS_TRANSLATED, if (translatedTexts.containsKey(dirtyUri)) 1 else 0)
+                                put(COLUMN_ORIGINAL_TEXT, originalOcrText) // Store OCR text at image level
+                            }
+                            val insertedImageId = db.insert(TABLE_IMAGES, null, imageValues)
+                            if (insertedImageId != -1L) {
+                                imageId = insertedImageId
+                                imageIdMap[newUri.toString()] = imageId
+                                // remove original file if necessary
+                                try { deleteOriginalImage(dirtyUri) } catch (e: Exception) { /* ignore */ }
+                                Log.i(TAG, "updateMangaRoomSelective: Successfully inserted new image at index $index (imageId=$imageId)")
+                            } else {
+                                Log.e(TAG, "Không thể chèn ảnh mới cho uri $uriStr vào phòng $roomId")
+                                // skip processing this dirtyUri
+                                return@forEach
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Lỗi khi chèn ảnh mới cho uri $uriStr", e)
                             return@forEach
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Lỗi khi chèn ảnh mới cho uri $uriStr", e)
-                        return@forEach
                     }
                 }
                 val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
@@ -2512,11 +2633,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     val prevFile = try { File(Uri.parse(oldUriStr).path ?: "") } catch (e: Exception) { null }
                     if (prevFile != null && prevFile.exists()) {
                         val parent = prevFile.parentFile
-                        if (parent != null && parent.absolutePath.startsWith(imagesDir.absolutePath) && prevFile.absolutePath != storedFile.absolutePath) {
+                        if (parent != null && storedFile != null && parent.absolutePath.startsWith(imagesDir.absolutePath) && prevFile.absolutePath != storedFile!!.absolutePath) {
                             prevFile.delete()
                         }
                     }
                 } catch (e: Exception) { /* ignore */ }
+            }
+
+            // storedFile should not be null here, but check anyway
+            if (storedFile == null) {
+                Log.e(TAG, "replaceImageWithCopy: storedFile is null after processing")
+                return null
             }
 
             val storedUri = Uri.fromFile(storedFile)

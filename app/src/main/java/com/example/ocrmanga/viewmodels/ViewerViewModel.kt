@@ -695,21 +695,23 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             
             val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
             
-            // Filter out duplicate URIs, keeping only the first occurrence
+            // Filter out duplicate URIs, keeping only the first occurrence (by filename)
             val uniqueImages = mutableListOf<Uri>()
-            val seenUris = mutableSetOf<String>()
+            val seenFilenames = mutableSetOf<String>()
             allImages.forEach { uri ->
-                val uriString = uri.toString()
-                if (!seenUris.contains(uriString)) {
+                val filename = uri.lastPathSegment ?: uri.toString()
+                if (!seenFilenames.contains(filename)) {
                     uniqueImages.add(uri)
-                    seenUris.add(uriString)
+                    seenFilenames.add(filename)
                 } else {
-                    Log.w(TAG, "loadRoomInternal: Skipping duplicate URI: $uriString")
+                    Log.w(TAG, "loadRoomInternal: Skipping duplicate filename: $filename")
                 }
             }
             
             if (uniqueImages.size < allImages.size) {
                 Log.i(TAG, "loadRoomInternal: Filtered ${allImages.size - uniqueImages.size} duplicate images from room $roomId")
+                // Sync DB to match the expected unique count
+                databaseHelper.cleanupAndSyncRoomImages(roomId, uniqueImages.size)
             }
             
             // Sort images by numeric order in filename
