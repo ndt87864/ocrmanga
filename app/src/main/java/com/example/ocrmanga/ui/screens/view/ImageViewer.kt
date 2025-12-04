@@ -535,6 +535,11 @@ fun ImageViewer(
                                 // Áp dụng screen scale factor để font size tự động thay đổi khi xoay màn hình
                                 val scaledFontSize = fontSize * screenScaleFactor
 
+                                // Scale overlay inset theo cùng tỉ lệ với rect để giữ đúng tỉ lệ khi xoay màn hình
+                                val scaledInsetH = dragBlock.overlayInsetHorizontal * scale
+                                val scaledInsetV = dragBlock.overlayInsetVertical * scale
+                                val scaledInset = dragBlock.overlayInset * scale
+
                                 PrecomputedRegion(
                                     block = block,
                                     rect = Rect(scaledLeft, scaledTop, scaledLeft + scaledWidth, scaledTop + scaledBlockHeight2),
@@ -554,9 +559,9 @@ fun ImageViewer(
                                     textShadowColor = dragBlock.textShadowColor,
                                     textShadowAlpha = dragBlock.textShadowAlpha,
                                     textShadowRadius = dragBlock.textShadowRadius,
-                                    overlayInset = dragBlock.overlayInset,
-                                    overlayInsetHorizontal = dragBlock.overlayInsetHorizontal,
-                                    overlayInsetVertical = dragBlock.overlayInsetVertical
+                                    overlayInset = scaledInset,
+                                    overlayInsetHorizontal = scaledInsetH,
+                                    overlayInsetVertical = scaledInsetV
                                 )
                             }
                             precomputedRegionsState.value = list
