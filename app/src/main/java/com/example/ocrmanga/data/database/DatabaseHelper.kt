@@ -950,6 +950,71 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             db.endTransaction()
         }
     }
+    
+    /**
+     * Xóa hoàn toàn một ảnh khỏi room, bao gồm:
+     * - Translations của ảnh
+     * - Image blocks của ảnh
+     * - Record trong bảng images
+     * - File vật lý của ảnh
+     */
+    fun deleteImageFromRoom(imageId: Long) {
+        val db = writableDatabase
+        try {
+            db.beginTransaction()
+            
+            // Lấy URI của ảnh để xóa file vật lý sau
+            var imageUri: String? = null
+            val cursor = db.rawQuery(
+                "SELECT $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_IMAGE_ID = ?",
+                arrayOf(imageId.toString())
+            )
+            if (cursor.moveToFirst()) {
+                imageUri = cursor.getString(0)
+            }
+            cursor.close()
+            
+            // Xóa tất cả translations của ảnh
+            val deletedTranslations = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            Log.i(TAG, "deleteImageFromRoom: Deleted $deletedTranslations translations for imageId=$imageId")
+            
+            // Xóa tất cả image_blocks của ảnh
+            val deletedBlocks = db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            Log.i(TAG, "deleteImageFromRoom: Deleted $deletedBlocks image_blocks for imageId=$imageId")
+            
+            // Xóa change record nếu có
+            try {
+                db.delete(TABLE_CHANGE_IMAGES, "$COLUMN_CHANGE_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            } catch (e: Exception) { /* ignore */ }
+            
+            // Xóa pending translations nếu có
+            try { deletePendingTranslations(imageId) } catch (e: Exception) { /* ignore */ }
+            
+            // Xóa record trong bảng images
+            val deletedImages = db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+            Log.i(TAG, "deleteImageFromRoom: Deleted $deletedImages image record for imageId=$imageId")
+            
+            db.setTransactionSuccessful()
+            
+            // Xóa file vật lý sau khi transaction thành công
+            if (imageUri != null) {
+                try {
+                    val file = File(Uri.parse(imageUri).path ?: "")
+                    if (file.exists()) {
+                        val deleted = file.delete()
+                        Log.i(TAG, "deleteImageFromRoom: Physical file deleted=$deleted for $imageUri")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "deleteImageFromRoom: Failed to delete physical file $imageUri", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting image from room: imageId=$imageId", e)
+            throw e
+        } finally {
+            db.endTransaction()
+        }
+    }
 
     // Ensure a change_images record exists for an image (initially is_changed = 0)
     fun ensureChangeRecord(imageId: Long, roomId: Long) {

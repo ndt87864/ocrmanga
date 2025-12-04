@@ -556,9 +556,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translatedStatus = it.translatedStatus + newUris.associateWith { false }
             )
         }
-        newImageUris.clear()
+        // Không clear, chỉ add thêm vào để track tất cả ảnh mới
         newImageUris.addAll(newUris)
-        //log.i(TAG, "Đã thêm ${newUris.size} URI ảnh mới vào cuối")
+        Log.i(TAG, "addNewImageUris: Added ${newUris.size} new URIs, total newImageUris=${newImageUris.size}")
 
         // Only auto-translate if both translation is enabled AND auto-translate setting is ON
         if (uiState.value.translationEnabled && 
@@ -580,9 +580,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translatedStatus = it.translatedStatus + newUris.associateWith { false }
             )
         }
-        newImageUris.clear()
+        // Không clear, chỉ add thêm vào để track tất cả ảnh mới
         newImageUris.addAll(newUris)
-        //log.i(TAG, "Đã thêm ${newUris.size} URI ảnh mới vào đầu")
+        Log.i(TAG, "addNewImageUrisAtStart: Added ${newUris.size} new URIs, total newImageUris=${newImageUris.size}")
 
         // Only auto-translate if both translation is enabled AND auto-translate setting is ON
         if (uiState.value.translationEnabled && 
@@ -605,9 +605,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translatedStatus = it.translatedStatus + newUris.associateWith { false }
             )
         }
-        newImageUris.clear()
+        // Không clear, chỉ add thêm vào để track tất cả ảnh mới
         newImageUris.addAll(newUris)
-        //log.i(TAG, "Đã thêm ${newUris.size} URI ảnh mới vào vị trí $insertIndex")
+        Log.i(TAG, "addNewImageUrisAtIndex: Added ${newUris.size} new URIs at index $insertIndex, total newImageUris=${newImageUris.size}")
 
         // Only auto-translate if both translation is enabled AND auto-translate setting is ON
         if (uiState.value.translationEnabled && 
@@ -1263,11 +1263,23 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             }
                             ok
                         }
-                        // Case 2: Có ảnh bị xóa khỏi phòng → update to remove images
+                        // Case 2: Có ảnh bị xóa khỏi phòng → xóa trực tiếp từ DB trước rồi update
                         hasRemovedImages -> {
-                            Log.i(TAG, "Removing ${removedImageIds.size} images from room")
+                            Log.i(TAG, "Removing ${removedImageIds.size} images from room: $removedImageIds")
                             tempSavedCount = removedImageIds.size
                             isRemovalOperation = true
+                            
+                            // Xóa trực tiếp các ảnh trong removedImageIds từ DB
+                            removedImageIds.forEach { imageId ->
+                                try {
+                                    databaseHelper.deleteImageFromRoom(imageId)
+                                    Log.i(TAG, "Deleted image from DB: imageId=$imageId")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Failed to delete image $imageId", e)
+                                }
+                            }
+                            
+                            // Sau đó update room để đảm bảo consistency
                             val ok = databaseHelper.updateMangaRoom(currentRoomId, uniqueImageUris, uniqueTranslatedTexts)
                             if (ok) removedImageIds.clear()
                             ok
@@ -1653,7 +1665,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 totalImagesToTranslate = 0
             )
         }
-        newImageUris.clear()
+        // KHÔNG clear newImageUris ở đây vì cần giữ để save
+        // newImageUris sẽ được clear sau khi save thành công
+        Log.i(TAG, "processTranslationQueue completed, keeping newImageUris=${newImageUris.size} for save")
         // Xóa tất cả trạng thái dịch còn lại
         clearAllTranslationStatus()
     }
