@@ -20,6 +20,7 @@ class ThemePreferences(private val context: Context) {
         private val DYNAMIC_COLOR_KEY = booleanPreferencesKey("dynamic_color")
         private val CUSTOM_PRIMARY_COLOR_KEY = stringPreferencesKey("custom_primary_color")
         private val USE_CUSTOM_COLOR_KEY = booleanPreferencesKey("use_custom_color")
+        private val DEFAULT_TRANSLATION_FONT_KEY = stringPreferencesKey("default_translation_font")
     }
     
     val themeVariant: Flow<ThemeVariant> = context.dataStore.data.map { preferences ->
@@ -45,6 +46,10 @@ class ThemePreferences(private val context: Context) {
     
     val useCustomColor: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[USE_CUSTOM_COLOR_KEY] ?: false
+    }
+    
+    val defaultTranslationFont: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[DEFAULT_TRANSLATION_FONT_KEY] ?: "mto_comic_2"
     }
     
     suspend fun setThemeVariant(variant: ThemeVariant) {
@@ -78,6 +83,12 @@ class ThemePreferences(private val context: Context) {
     suspend fun setUseCustomColor(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[USE_CUSTOM_COLOR_KEY] = enabled
+        }
+    }
+    
+    suspend fun setDefaultTranslationFont(fontFamily: String) {
+        context.dataStore.edit { preferences ->
+            preferences[DEFAULT_TRANSLATION_FONT_KEY] = fontFamily
         }
     }
 }

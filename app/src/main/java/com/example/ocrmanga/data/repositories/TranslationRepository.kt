@@ -47,8 +47,26 @@ import com.google.gson.stream.JsonReader
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.io.StringReader
 import com.example.ocrmanga.ui.screens.view.analyzeBackgroundAndTextColor
+import com.example.ocrmanga.ui.theme.ThemePreferences
+import kotlinx.coroutines.flow.first
 
 class TranslationRepository(private val application: Application) {
+    
+    private val themePreferences = ThemePreferences(application)
+    
+    /**
+     * Lấy font mặc định và lineSpacing tương ứng từ cài đặt người dùng
+     */
+    private suspend fun getDefaultFontSettings(): Pair<String, Float> {
+        val fontFamily = themePreferences.defaultTranslationFont.first()
+        val lineSpacing = when (fontFamily) {
+            "mto_comic_1", "mto_comic_2" -> 1.1f
+            "mto_augie" -> 2.0f
+            "mighty_zero" -> 0.92f
+            else -> 1.0f
+        }
+        return fontFamily to lineSpacing
+    }
 
     // Public helpers so UI/ViewModel can check availability of API keys
     fun hasGeminiApiKeys(): Boolean {
@@ -950,6 +968,9 @@ class TranslationRepository(private val application: Application) {
                     onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.DISTRIBUTING)
                 }
                 
+                // Lấy font mặc định từ cài đặt
+                val (defaultFontMistral, defaultLineSpacingMistral) = getDefaultFontSettings()
+                
                 // Ánh xạ các bản dịch vào các text blocks tương ứng
                 val blocks = mutableListOf<TextBlockInfo>()
                 mergedBlocks.forEachIndexed { index, block ->
@@ -1000,7 +1021,7 @@ class TranslationRepository(private val application: Application) {
                     //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
-                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize, applyMerge = true))
+                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize, fontFamily = defaultFontMistral, lineSpacing = defaultLineSpacingMistral, applyMerge = true))
                 }
                 
                 resultText = blocks.joinToString("\n") { it.text }
@@ -1047,6 +1068,9 @@ class TranslationRepository(private val application: Application) {
                 withContext(Dispatchers.Main) {
                     onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.DISTRIBUTING)
                 }
+                
+                // Lấy font mặc định từ cài đặt
+                val (defaultFontGemini, defaultLineSpacingGemini) = getDefaultFontSettings()
                 
                 // Ánh xạ các bản dịch vào các text blocks tương ứng
                 val blocks = mutableListOf<TextBlockInfo>()
@@ -1098,7 +1122,7 @@ class TranslationRepository(private val application: Application) {
                     //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
-                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize, applyMerge = true))
+                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize, fontFamily = defaultFontGemini, lineSpacing = defaultLineSpacingGemini, applyMerge = true))
                 }
                 
                 resultText = blocks.joinToString("\n") { it.text }
@@ -1111,6 +1135,9 @@ class TranslationRepository(private val application: Application) {
             }
 
             // --- LOGIC CŨ CHO CÁC CHẾ ĐỘ KHÁC (OFFLINE, ONLINE) ---
+            // Lấy font mặc định từ cài đặt cho các mode khác
+            val (defaultFontOther, defaultLineSpacingOther) = getDefaultFontSettings()
+            
             val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
             val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
             val blocks = mutableListOf<TextBlockInfo>()
@@ -1167,7 +1194,7 @@ class TranslationRepository(private val application: Application) {
                         }
                         //log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
                         val newBounds = adjustBoundsForTranslatedText(reformattedText.orEmpty(), block.bounds, block.fontSize, 1.0f)
-                        block.copy(text = reformattedText.orEmpty(), originalText = block.text, bounds = newBounds, applyMerge = true)
+                        block.copy(text = reformattedText.orEmpty(), originalText = block.text, bounds = newBounds, fontFamily = defaultFontOther, lineSpacing = defaultLineSpacingOther, applyMerge = true)
                     }
                 }
                 blocks.addAll(deferredBlocks.awaitAll())
@@ -1230,7 +1257,7 @@ class TranslationRepository(private val application: Application) {
                         naturalText
                     }
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
-                    blocks2.add(block.copy(text = reformattedText, originalText = block.text, bounds = newBounds, applyMerge = true))
+                    blocks2.add(block.copy(text = reformattedText, originalText = block.text, bounds = newBounds, fontFamily = defaultFontOther, lineSpacing = defaultLineSpacingOther, applyMerge = true))
                 }
                 val resultText2 = blocks2.joinToString("\n") { it.text }
                 val detectedFinal2 = detectLanguage(resultText2) ?: ""

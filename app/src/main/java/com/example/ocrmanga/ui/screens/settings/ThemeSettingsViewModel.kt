@@ -15,7 +15,8 @@ data class ThemeState(
     val isDarkMode: Boolean = false,
     val isDynamicColorEnabled: Boolean = true,
     val customPrimaryColor: String? = null,
-    val useCustomColor: Boolean = false
+    val useCustomColor: Boolean = false,
+    val defaultTranslationFont: String = "mto_comic_2"
 )
 
 class ThemeSettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -32,14 +33,16 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
                 themePreferences.isDarkMode,
                 themePreferences.isDynamicColorEnabled,
                 themePreferences.customPrimaryColor,
-                themePreferences.useCustomColor
-            ) { variant, darkMode, dynamicColor, customColor, useCustom ->
+                themePreferences.useCustomColor,
+                themePreferences.defaultTranslationFont
+            ) { values ->
                 ThemeState(
-                    themeVariant = variant,
-                    isDarkMode = darkMode,
-                    isDynamicColorEnabled = dynamicColor,
-                    customPrimaryColor = customColor,
-                    useCustomColor = useCustom
+                    themeVariant = values[0] as ThemeVariant,
+                    isDarkMode = values[1] as Boolean,
+                    isDynamicColorEnabled = values[2] as Boolean,
+                    customPrimaryColor = values[3] as String?,
+                    useCustomColor = values[4] as Boolean,
+                    defaultTranslationFont = values[5] as String
                 )
             }.collect { newState ->
                 _themeState.value = newState
@@ -65,5 +68,9 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
     
     suspend fun setUseCustomColor(enabled: Boolean) {
         themePreferences.setUseCustomColor(enabled)
+    }
+    
+    suspend fun setDefaultTranslationFont(fontFamily: String) {
+        themePreferences.setDefaultTranslationFont(fontFamily)
     }
 }

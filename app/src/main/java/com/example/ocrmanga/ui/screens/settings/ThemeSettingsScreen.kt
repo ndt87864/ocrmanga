@@ -194,6 +194,28 @@ fun ThemeSettingsScreen(
                 }
             }
             
+            // Default Translation Font Section
+            item {
+                ModernCard(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SectionHeader(
+                        title = "Font dịch mặc định",
+                        subtitle = "Font chữ sử dụng khi dịch ảnh"
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    DefaultFontSelector(
+                        selectedFont = themeState.defaultTranslationFont,
+                        onFontSelected = { fontFamily ->
+                            scope.launch {
+                                viewModel.setDefaultTranslationFont(fontFamily)
+                            }
+                        }
+                    )
+                }
+            }
+            
             // Preview Section
             item {
                 ModernCard(
@@ -374,6 +396,82 @@ private fun ThemePreviewCard() {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DefaultFontSelector(
+    selectedFont: String,
+    onFontSelected: (String) -> Unit
+) {
+    val fontOptions = listOf(
+        "mto_comic_1" to "Comic 1",
+        "mto_comic_2" to "Comic 2",
+        "mto_astro_city" to "Astro City",
+        "mto_augie" to "Augie",
+        "mighty_zero" to "Mighty Zero",
+        "mto_chancery" to "Chancery",
+        "mto_dom" to "Dom",
+        "mto_mikes" to "Mikes",
+        "mto_sans" to "Sans",
+        "mto_shadow" to "Shadow"
+    )
+    
+    var expanded by remember { mutableStateOf(false) }
+    val selectedFontName = fontOptions.find { it.first == selectedFont }?.second ?: "Comic 2"
+    
+    Column {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text("Font: $selectedFontName")
+        }
+        
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            fontOptions.forEach { (fontKey, fontName) ->
+                DropdownMenuItem(
+                    text = { 
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(fontName)
+                            if (fontKey == selectedFont) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        onFontSelected(fontKey)
+                        expanded = false
+                    }
+                )
+            }
+        }
+        
+        // Hiển thị mô tả lineSpacing mặc định cho từng font
+        val lineSpacingInfo = when (selectedFont) {
+            "mto_comic_1", "mto_comic_2" -> "Line spacing: 1.1"
+            "mto_augie" -> "Line spacing: 2.0"
+            "mighty_zero" -> "Line spacing: 0.92"
+            else -> "Line spacing: 1.0"
+        }
+        Text(
+            text = lineSpacingInfo,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
 
