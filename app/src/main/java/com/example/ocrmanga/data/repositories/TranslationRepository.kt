@@ -62,9 +62,10 @@ class TranslationRepository(private val application: Application) {
     suspend fun translateImage(
         imageUri: Uri, 
         mode: TranslationMode,
-        onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null
+        onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null,
+        previousTranslation: List<TextBlockInfo>? = null // Bản dịch của ảnh trước để tham khảo
     ): Pair<String, List<TextBlockInfo>> {
-        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode, null, onStatusUpdate)
+        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode, null, onStatusUpdate, previousTranslation)
         return Pair(translatedText, translatedBlocks)
     }
 
@@ -289,12 +290,64 @@ class TranslationRepository(private val application: Application) {
         ocrResults: List<Pair<Float, String>>,
         sourceLang: String,
         targetLang: String,
-        apiKey: String? = null
+        apiKey: String? = null,
+        previousTranslation: List<TextBlockInfo>? = null // Bản dịch của ảnh trước để tham khảo
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
         
         var lastError: Exception? = null
         val maxTries = mistralApiKeys.size.coerceAtLeast(1)
+        
+        // Tạo context từ bản dịch ảnh trước (nếu có)
+        val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
+            val prevBlocks = previousTranslation.mapIndexed { index, block ->
+                "${index + 1}. ${block.text}"
+            }.joinToString("\n")
+            
+            // Log để debug
+            Log.i("TranslationRepository", "[MISTRAL-PREV] Có bản dịch tham khảo với ${previousTranslation.size} blocks")
+            
+            // Phân tích NGÔI xưng hô từ ảnh trước (lịch sự vs suồng sã)
+            val allText = previousTranslation.joinToString(" ") { it.text.uppercase() }
+            val isPolite = allText.contains(" TÔI ") || allText.contains("TÔI ") || allText.contains(" TÔI") ||
+                          allText.contains(" MÌNH ") || allText.contains("MÌNH ") || allText.contains(" MÌNH")
+            val isCasual = allText.contains(" TAO ") || allText.contains("TAO ") || allText.contains(" TAO") ||
+                          allText.contains(" TA ") || allText.contains("TA ")
+            
+            val pronounGroup = when {
+                isPolite -> "LỊCH SỰ (tôi/mình)"
+                isCasual -> "SUỒNG SÃ (tao/ta)"
+                else -> null
+            }
+            
+            val pronounInstruction = if (pronounGroup != null) {
+                Log.i("TranslationRepository", "[MISTRAL-PREV] Phát hiện ngôi xưng hô: $pronounGroup")
+                """
+                
+                !!! CẢNH BÁO BẮT BUỘC VỀ NGÔI XƯNG HÔ !!!
+                Ảnh trước sử dụng ngôi $pronounGroup cho nhân vật chính.
+                => BẮT BUỘC: Ảnh này PHẢI sử dụng cùng NGÔI (có thể dùng "tôi" hoặc "mình" nếu ngôi lịch sự, "tao" hoặc "ta" nếu ngôi suồng sã).
+                => CẤM: KHÔNG ĐƯỢC đổi sang NGÔI KHÁC (VD: từ "tôi/mình" sang "tao/ta" hoặc ngược lại).
+                
+                """
+            } else ""
+            
+            """
+            
+            === BẢN DỊCH ẢNH TRƯỚC (BẮT BUỘC TUÂN THỦ) ===
+            Dưới đây là bản dịch của ảnh trước đó trong cùng bộ truyện. BẮT BUỘC phải:
+            - Giữ cùng NGÔI xưng hô như ảnh trước (nếu ảnh trước dùng "TÔI/MÌNH" thì ảnh này dùng "TÔI" hoặc "MÌNH", KHÔNG được đổi sang "TAO")
+            - Nắm bắt ngữ cảnh câu chuyện để dịch nối tiếp một cách mạch lạc
+            - Nhận biết các nhân vật và cách họ giao tiếp với nhau
+            $pronounInstruction
+            Bản dịch ảnh trước:
+            $prevBlocks
+            
+            """.trimIndent()
+        } else {
+            Log.i("TranslationRepository", "[MISTRAL-PREV] Không có bản dịch tham khảo")
+            ""
+        }
         
         // Tạo prompt với tất cả kết quả OCR từ các scale khác nhau
         val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
@@ -313,7 +366,7 @@ class TranslationRepository(private val application: Application) {
                 Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
                 
                 Nhiệm vụ: Dưới đây là các kết quả quét OCR từ cùng một ảnh truyện tranh/manga với các độ phóng đại (scale) khác nhau. Hãy phân tích, tổng hợp và chọn lọc thông tin chính xác nhất từ tất cả các kết quả này, sau đó trả về bản dịch tiếng Việt cho TỪNG BLOCK theo đúng thứ tự.
-                
+                $previousContextText
                 Các kết quả OCR từ các scale khác nhau:
                 $ocrResultsText
                 
@@ -350,15 +403,83 @@ class TranslationRepository(private val application: Application) {
                 8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.
                 9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.
                 10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép ("), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.
-                11. Các bản dịch trong cùng một ảnh phải có sự thống nhất, liên kết với nhau về xưng hô, ngữ cảnh, tránh trường hợp mỗi câu một kiểu dịch khác nhau. Ví dụ: 1. Mày đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> sai; 1. Cậu đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> đúng.
-                12. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
-                13. So sánh và phân tích sự khác biệt giữa các kết quả OCR để chọn ra văn bản gốc chính xác nhất trước khi dịch.
-                14. BẮT BUỘC: Trả về kết quả theo định dạng sau, mỗi block trên một dòng:
+                
+                === QUAN TRỌNG: PHÂN BIỆT ĐỘC THOẠI VÀ HỘI THOẠI ===
+                11. NHẬN BIẾT LOẠI VĂN BẢN (BẮT BUỘC PHÂN TÍCH TRƯỚC KHI DỊCH):
+                    a) ĐỘC THOẠI NỘI TÂM (suy nghĩ trong đầu):
+                       - Thường là văn bản trong khung suy nghĩ (bubble mây), không có đuôi nhọn
+                       - Nhân vật tự nói với bản thân, không có người nghe
+                       - Giọng điệu: Thắc mắc, ngạc nhiên, tự hỏi ("Sao lại thế nhỉ?", "Mình đang làm gì vậy?")
+                       - CÁCH DỊCH: Dùng "mình" hoặc lược bỏ chủ ngữ. TRÁNH dùng "tôi" trong độc thoại vì không tự nhiên.
+                       - VÍ DỤ: "¿QUÉ ESTÁ PASANDO?" -> "Chuyện gì đang xảy ra vậy?" (KHÔNG phải "Tôi không hiểu chuyện gì đang xảy ra")
+                    
+                    b) HỘI THOẠI (nói chuyện với người khác):
+                       - Văn bản trong khung thoại có đuôi nhọn chỉ về người nói
+                       - Có người nói và người nghe rõ ràng
+                       - Giọng điệu: Trực tiếp, có đại từ nhân xưng rõ ràng
+                       - CÁCH DỊCH: Dùng đại từ phù hợp quan hệ nhân vật (tôi-anh, tao-mày, mình-cậu, em-anh...)
+                    
+                    c) TRẦN THUẬT (narration):
+                       - Văn bản nền, không trong bubble
+                       - Mô tả sự kiện, bối cảnh, thời gian
+                       - CÁCH DỊCH: Giọng trung lập, không có đại từ ngôi thứ nhất
+                
+                12. ĐỒNG NHẤT XƯNG HÔ GIỮA CÁC NHÂN VẬT (BẮT BUỘC):
+                    - Mỗi CẶP nhân vật PHẢI có cách xưng hô NHẤT QUÁN trong toàn bộ truyện:
+                      + Nếu A gọi B là "cậu" thì LUÔN gọi "cậu", không đổi sang "anh/em/mày"
+                      + Nếu B tự xưng với A là "tôi" thì LUÔN xưng "tôi", không đổi sang "mình/tao/ta"
+                    - NẾU CÓ BẢN DỊCH ẢNH TRƯỚC: Phân tích cách xưng hô và BẮT BUỘC giữ nguyên
+                    - QUAN TRỌNG: Xưng hô phản ánh MỐI QUAN HỆ, không nên thay đổi trừ khi có lý do trong cốt truyện
+                    
+                    VÍ DỤ ĐÚNG:
+                    - Ảnh 1: "CẬU làm gì vậy?" / "TÔI đang tìm đồ"
+                    - Ảnh 2: "CẬU tìm thấy chưa?" / "TÔI chưa thấy" ✓ (nhất quán)
+                    
+                    VÍ DỤ SAI:
+                    - Ảnh 1: "CẬU làm gì vậy?" / "TÔI đang tìm đồ"
+                    - Ảnh 2: "MÀY tìm thấy chưa?" / "TAO chưa thấy" ✗ (đổi ngôi bất hợp lý)
+                
+                13. NGÔI XƯNG HÔ TRONG ĐỘC THOẠI VS HỘI THOẠI:
+                    - ĐỘC THOẠI: Ưu tiên "mình" hoặc lược bỏ chủ ngữ để tự nhiên
+                      + "Sao tóc mình dài thế nhỉ?" (tự hỏi)
+                      + "Chân cũng nhỏ đi rồi..." (lược bỏ chủ ngữ)
+                    - HỘI THOẠI: Dùng đại từ rõ ràng theo quan hệ
+                      + "TÔI không hiểu ý ANH" (lịch sự, xa cách)
+                      + "TAO không hiểu ý MÀY" (suồng sã, thân thiết/thô lỗ)
+                      + "MÌNH không hiểu ý CẬU" (thân mật, ngang hàng)
+                
+                14. SỬ DỤNG ĐẠI TỪ HỢP LÝ (BẮT BUỘC):
+                    - TRÁNH lặp đại từ xưng hô LIÊN TIẾP trong 3-4 block liền nhau. Có thể lược bỏ chủ ngữ ở một số câu khi ngữ cảnh đã rõ.
+                    - Ví dụ LẶP QUÁ NHIỀU (SAI): Block 1: "TÔI nghe nói...", Block 2: "TÔI đã quan sát...", Block 3: "TÔI đi loanh quanh...", Block 4: "TÔI không muốn..."
+                    - Ví dụ CÂN BẰNG (ĐÚNG): Block 1: "TÔI nghe nói...", Block 2: "Quan sát một lúc thì thấy...", Block 3: "Đi loanh quanh phát hiện ra...", Block 4: "TÔI không muốn làm..."
+                    - VẪN PHẢI GIỮ đại từ trong các trường hợp sau:
+                      + Câu đầu tiên của nhân vật (để xác định ai đang nói)
+                      + Khi có sự đối lập/so sánh ("TÔI thì...", "còn CẬU thì...")
+                      + Khi cần nhấn mạnh cảm xúc ("TÔI không thể chịu nổi!")
+                      + Khi chuyển đổi người nói trong hội thoại
+                      + Câu ngắn, đơn lẻ cần chủ ngữ để có nghĩa
+                
+                15. VĂN PHONG TỰ NHIÊN - MƯỢT MÀ (ƯU TIÊN CAO NHẤT):
+                    - KHÔNG dịch máy móc từng từ. Hãy dịch theo NGHĨA và CẢM XÚC của câu.
+                    - Dịch như cách người Việt THỰC SỰ nói chuyện hàng ngày, tự nhiên như đang đọc truyện tranh Việt Nam.
+                    - Sử dụng ngữ khí từ phù hợp: "à", "ơi", "nhỉ", "đấy", "thôi", "mà", "chứ", "sao", "vậy", "thế"...
+                    - Câu ngắn gọn, có nhịp điệu, tránh câu dài lê thê.
+                    - QUAN TRỌNG: Khi dịch cảm thán/than thở, hãy dùng cách nói tự nhiên:
+                      + "NO PUEDO GANAR" -> "Sao lại thua liên tục vậy!" (KHÔNG phải "Tôi không thể thắng")
+                      + "NO GANE NADA" -> "Chẳng thắng được gì cả!" (KHÔNG phải "Tôi không thắng được gì")
+                      + "MI CABELLO NO ERA TAN LARGO" -> "Tóc mình đâu có dài thế đâu nhỉ?" (KHÔNG phải "Tóc tôi trước đây không dài thế này")
+                      + "QUE PASA CON ESTAS MANOS" -> "Sao tay lại nhỏ vậy?" (KHÔNG phải "Sao bàn tay tôi gầy thế này")
+                    - Khi nhân vật tự nói với bản thân (độc thoại nội tâm), dùng giọng thắc mắc, ngạc nhiên tự nhiên.
+                    - Tránh lặp cấu trúc câu. Nếu block trước dùng "...thế này", block sau dùng "...vậy" hoặc "...nhỉ".
+                
+                16. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
+                17. So sánh và phân tích sự khác biệt giữa các kết quả OCR để chọn ra văn bản gốc chính xác nhất trước khi dịch.
+                18. BẮT BUỘC: Trả về kết quả theo định dạng sau, mỗi block trên một dòng:
                     Block #1: <bản dịch block 1>
                     Block #2: <bản dịch block 2>
                     Block #3: <bản dịch block 3>
                     ...
-                15. QUAN TRỌNG: Phải dịch đủ ${textBlocks.size} blocks theo đúng thứ tự từ Block #1 đến Block #${textBlocks.size}
+                19. QUAN TRỌNG: Phải dịch đủ ${textBlocks.size} blocks theo đúng thứ tự từ Block #1 đến Block #${textBlocks.size}
                 
                 Trả về bản dịch cho TỪNG BLOCK theo định dạng đã nêu.
             """.trimIndent()
@@ -417,17 +538,38 @@ class TranslationRepository(private val application: Application) {
                 val translatedBlocks = mutableListOf<String>()
                 val lines = content.trim().split("\n")
                 
-                //Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI:\n$content")
+                // Log nội dung trả về để debug khi có vấn đề
+                Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI (${lines.size} dòng):\n${content.take(500)}...")
+                
+                // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
+                val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.+)$""")
                 
                 for (line in lines) {
                     val trimmedLine = line.trim()
-                    if (trimmedLine.startsWith("Block #")) {
-                        // Extract translation after "Block #N: "
-                        val colonIndex = trimmedLine.indexOf(":")
-                        if (colonIndex != -1 && colonIndex < trimmedLine.length - 1) {
-                            val translation = trimmedLine.substring(colonIndex + 1).trim()
+                    val match = blockPattern.find(trimmedLine)
+                    if (match != null) {
+                        var translation = match.groupValues[2].trim()
+                        // Loại bỏ ** ở cuối nếu có
+                        translation = translation.trimEnd('*').trim()
+                        if (translation.isNotEmpty()) {
                             translatedBlocks.add(translation)
                             //Log.i("TranslationRepository", "[MISTRAL-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
+                        }
+                    }
+                }
+                
+                // Nếu không parse được theo format "Block #", thử parse theo số thứ tự đơn giản (1. 2. 3.)
+                if (translatedBlocks.isEmpty()) {
+                    Log.w("TranslationRepository", "[MISTRAL-PARSE] Không tìm thấy format 'Block #', thử parse theo số thứ tự...")
+                    val numberPattern = Regex("^\\d+[.):;]\\s*(.+)$")
+                    for (line in lines) {
+                        val trimmedLine = line.trim()
+                        val match = numberPattern.find(trimmedLine)
+                        if (match != null) {
+                            val translation = match.groupValues[1].trim()
+                            if (translation.isNotEmpty()) {
+                                translatedBlocks.add(translation)
+                            }
                         }
                     }
                 }
@@ -435,15 +577,31 @@ class TranslationRepository(private val application: Application) {
                 // Kiểm tra số lượng blocks dịch có khớp không
                 if (translatedBlocks.size != textBlocks.size) {
                     Log.w("TranslationRepository", "[MISTRAL-PARSE] Mistral trả về ${translatedBlocks.size} blocks nhưng cần ${textBlocks.size} blocks")
+                    
+                    // Nếu parse được 0 blocks, đây là lỗi nghiêm trọng - retry với key khác
+                    if (translatedBlocks.isEmpty()) {
+                        Log.e("TranslationRepository", "[MISTRAL-PARSE] Không parse được block nào! Retry với key khác...")
+                        continue // Thử key tiếp theo
+                    }
+                    
                     // Nếu thiếu, thêm text gốc vào
                     while (translatedBlocks.size < textBlocks.size) {
                         val missingIndex = translatedBlocks.size
                         translatedBlocks.add(textBlocks[missingIndex].text)
-                        //Log.w("TranslationRepository", "[MISTRAL-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
+                        Log.w("TranslationRepository", "[MISTRAL-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
                     }
                 }
                 
-               // Log.i("TranslationRepository", "[MISTRAL-PARSE] Tổng số blocks dịch được: ${translatedBlocks.size}")
+                // Log kết quả dịch của các block
+                Log.i("TranslationRepository", "[MISTRAL-RESULT] ===== KẾT QUẢ DỊCH MISTRAL =====")
+                Log.i("TranslationRepository", "[MISTRAL-RESULT] Tổng số blocks: ${translatedBlocks.size}")
+                translatedBlocks.forEachIndexed { index, translation ->
+                    val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
+                    Log.i("TranslationRepository", "[MISTRAL-RESULT] Block #${index + 1}:")
+                    Log.i("TranslationRepository", "[MISTRAL-RESULT]   Gốc: $originalText")
+                    Log.i("TranslationRepository", "[MISTRAL-RESULT]   Dịch: $translation")
+                }
+                Log.i("TranslationRepository", "[MISTRAL-RESULT] ==============================")
                 
                 return translatedBlocks
             } catch (e: Exception) {
@@ -852,7 +1010,8 @@ class TranslationRepository(private val application: Application) {
         imageUri: Uri, 
         mode: TranslationMode, 
         apiKey: String? = null,
-        onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null
+        onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null,
+        previousTranslation: List<TextBlockInfo>? = null // Bản dịch của ảnh trước để tham khảo
     ): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
         if (mode == TranslationMode.OFF) {
             //log.i("TranslationRepository", "Chế độ dịch đã tắt, bỏ qua việc dịch cho $imageUri")
@@ -981,8 +1140,8 @@ class TranslationRepository(private val application: Application) {
                     Log.i("TranslationRepository", "[MISTRAL] Block gốc #${index + 1}: ${block.text}")
                 }*/
                 
-                // Gửi tất cả kết quả cho Mistral AI để tổng hợp và dịch
-                val translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey)
+                // Gửi tất cả kết quả cho Mistral AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
+                val translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation)
                 
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Mistral không trả về kết quả dịch")
@@ -1079,8 +1238,8 @@ class TranslationRepository(private val application: Application) {
                     Log.i("TranslationRepository", "[GEMINI] Block gốc #${index + 1}: ${block.text}")
                 }
                 */
-                // Gửi tất cả kết quả cho Gemini AI để tổng hợp và dịch
-                val translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey)
+                // Gửi tất cả kết quả cho Gemini AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
+                val translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation)
                 
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Gemini không trả về kết quả dịch")
@@ -2323,13 +2482,65 @@ class TranslationRepository(private val application: Application) {
         ocrResults: List<Pair<Float, String>>,
         sourceLang: String,
         targetLang: String,
-        apiKey: String? = null
+        apiKey: String? = null,
+        previousTranslation: List<TextBlockInfo>? = null // Bản dịch của ảnh trước để tham khảo
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
         if (geminiApiKeys.isEmpty()) return null
         
         var lastError: Exception? = null
         val maxTries = geminiApiKeys.size * geminiModels.size
+        
+        // Tạo context từ bản dịch ảnh trước (nếu có)
+        val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
+            val prevBlocks = previousTranslation.mapIndexed { index, block ->
+                "${index + 1}. ${block.text}"
+            }.joinToString("\n")
+            
+            // Log để debug
+            Log.i("TranslationRepository", "[GEMINI-PREV] Có bản dịch tham khảo với ${previousTranslation.size} blocks")
+            
+            // Phân tích NGÔI xưng hô từ ảnh trước (lịch sự vs suồng sã)
+            val allText = previousTranslation.joinToString(" ") { it.text.uppercase() }
+            val isPolite = allText.contains(" TÔI ") || allText.contains("TÔI ") || allText.contains(" TÔI") ||
+                          allText.contains(" MÌNH ") || allText.contains("MÌNH ") || allText.contains(" MÌNH")
+            val isCasual = allText.contains(" TAO ") || allText.contains("TAO ") || allText.contains(" TAO") ||
+                          allText.contains(" TA ") || allText.contains("TA ")
+            
+            val pronounGroup = when {
+                isPolite -> "LỊCH SỰ (tôi/mình)"
+                isCasual -> "SUỒNG SÃ (tao/ta)"
+                else -> null
+            }
+            
+            val pronounInstruction = if (pronounGroup != null) {
+                Log.i("TranslationRepository", "[GEMINI-PREV] Phát hiện ngôi xưng hô: $pronounGroup")
+                """
+                
+                !!! CẢNH BÁO BẮT BUỘC VỀ NGÔI XƯNG HÔ !!!
+                Ảnh trước sử dụng ngôi $pronounGroup cho nhân vật chính.
+                => BẮT BUỘC: Ảnh này PHẢI sử dụng cùng NGÔI (có thể dùng "tôi" hoặc "mình" nếu ngôi lịch sự, "tao" hoặc "ta" nếu ngôi suồng sã).
+                => CẤM: KHÔNG ĐƯỢC đổi sang NGÔI KHÁC (VD: từ "tôi/mình" sang "tao/ta" hoặc ngược lại).
+                
+                """
+            } else ""
+            
+            """
+            
+            === BẢN DỊCH ẢNH TRƯỚC (BẮT BUỘC TUÂN THỦ) ===
+            Dưới đây là bản dịch của ảnh trước đó trong cùng bộ truyện. BẮT BUỘC phải:
+            - Giữ cùng NGÔI xưng hô như ảnh trước (nếu ảnh trước dùng "TÔI/MÌNH" thì ảnh này dùng "TÔI" hoặc "MÌNH", KHÔNG được đổi sang "TAO")
+            - Nắm bắt ngữ cảnh câu chuyện để dịch nối tiếp một cách mạch lạc
+            - Nhận biết các nhân vật và cách họ giao tiếp với nhau
+            $pronounInstruction
+            Bản dịch ảnh trước:
+            $prevBlocks
+            
+            """.trimIndent()
+        } else {
+            Log.i("TranslationRepository", "[GEMINI-PREV] Không có bản dịch tham khảo")
+            ""
+        }
         
         // Tạo prompt với tất cả kết quả OCR từ các scale khác nhau
         val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
@@ -2367,7 +2578,7 @@ class TranslationRepository(private val application: Application) {
                     Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
                     
                     Nhiệm vụ: Dưới đây là các kết quả quét OCR từ cùng một ảnh truyện tranh/manga với các độ phóng đại (scale) khác nhau. Hãy phân tích, tổng hợp và chọn lọc thông tin chính xác nhất từ tất cả các kết quả này, sau đó trả về bản dịch tiếng Việt cho TỪNG BLOCK theo đúng thứ tự.
-                    
+                    $previousContextText
                     Các kết quả OCR từ các scale khác nhau:
                     $ocrResultsText
                     
@@ -2404,15 +2615,83 @@ class TranslationRepository(private val application: Application) {
                     8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.
                     9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.
                     10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép ("), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.
-                    11. Các bản dịch trong cùng một ảnh phải có sự thống nhất, liên kết với nhau về xưng hô, ngữ cảnh, tránh trường hợp mỗi câu một kiểu dịch khác nhau. Ví dụ: 1. Mày đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> sai; 1. Cậu đi đâu đấy? 2. Tớ chuẩn bị đi làm thêm -> đúng.
-                    12. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
-                    13. So sánh và phân tích sự khác biệt giữa các kết quả OCR để chọn ra văn bản gốc chính xác nhất trước khi dịch.
-                    14. BẮT BUỘC: Trả về kết quả theo định dạng sau, mỗi block trên một dòng:
+                    
+                    === QUAN TRỌNG: PHÂN BIỆT ĐỘC THOẠI VÀ HỘI THOẠI ===
+                    11. NHẬN BIẾT LOẠI VĂN BẢN (BẮT BUỘC PHÂN TÍCH TRƯỚC KHI DỊCH):
+                        a) ĐỘC THOẠI NỘI TÂM (suy nghĩ trong đầu):
+                           - Thường là văn bản trong khung suy nghĩ (bubble mây), không có đuôi nhọn
+                           - Nhân vật tự nói với bản thân, không có người nghe
+                           - Giọng điệu: Thắc mắc, ngạc nhiên, tự hỏi ("Sao lại thế nhỉ?", "Mình đang làm gì vậy?")
+                           - CÁCH DỊCH: Dùng "mình" hoặc lược bỏ chủ ngữ. TRÁNH dùng "tôi" trong độc thoại vì không tự nhiên.
+                           - VÍ DỤ: "¿QUÉ ESTÁ PASANDO?" -> "Chuyện gì đang xảy ra vậy?" (KHÔNG phải "Tôi không hiểu chuyện gì đang xảy ra")
+                        
+                        b) HỘI THOẠI (nói chuyện với người khác):
+                           - Văn bản trong khung thoại có đuôi nhọn chỉ về người nói
+                           - Có người nói và người nghe rõ ràng
+                           - Giọng điệu: Trực tiếp, có đại từ nhân xưng rõ ràng
+                           - CÁCH DỊCH: Dùng đại từ phù hợp quan hệ nhân vật (tôi-anh, tao-mày, mình-cậu, em-anh...)
+                        
+                        c) TRẦN THUẬT (narration):
+                           - Văn bản nền, không trong bubble
+                           - Mô tả sự kiện, bối cảnh, thời gian
+                           - CÁCH DỊCH: Giọng trung lập, không có đại từ ngôi thứ nhất
+                    
+                    12. ĐỒNG NHẤT XƯNG HÔ GIỮA CÁC NHÂN VẬT (BẮT BUỘC):
+                        - Mỗi CẶP nhân vật PHẢI có cách xưng hô NHẤT QUÁN trong toàn bộ truyện:
+                          + Nếu A gọi B là "cậu" thì LUÔN gọi "cậu", không đổi sang "anh/em/mày"
+                          + Nếu B tự xưng với A là "tôi" thì LUÔN xưng "tôi", không đổi sang "mình/tao/ta"
+                        - NẾU CÓ BẢN DỊCH ẢNH TRƯỚC: Phân tích cách xưng hô và BẮT BUỘC giữ nguyên
+                        - QUAN TRỌNG: Xưng hô phản ánh MỐI QUAN HỆ, không nên thay đổi trừ khi có lý do trong cốt truyện
+                        
+                        VÍ DỤ ĐÚNG:
+                        - Ảnh 1: "CẬU làm gì vậy?" / "TÔI đang tìm đồ"
+                        - Ảnh 2: "CẬU tìm thấy chưa?" / "TÔI chưa thấy" ✓ (nhất quán)
+                        
+                        VÍ DỤ SAI:
+                        - Ảnh 1: "CẬU làm gì vậy?" / "TÔI đang tìm đồ"
+                        - Ảnh 2: "MÀY tìm thấy chưa?" / "TAO chưa thấy" ✗ (đổi ngôi bất hợp lý)
+                    
+                    13. NGÔI XƯNG HÔ TRONG ĐỘC THOẠI VS HỘI THOẠI:
+                        - ĐỘC THOẠI: Ưu tiên "mình" hoặc lược bỏ chủ ngữ để tự nhiên
+                          + "Sao tóc mình dài thế nhỉ?" (tự hỏi)
+                          + "Chân cũng nhỏ đi rồi..." (lược bỏ chủ ngữ)
+                        - HỘI THOẠI: Dùng đại từ rõ ràng theo quan hệ
+                          + "TÔI không hiểu ý ANH" (lịch sự, xa cách)
+                          + "TAO không hiểu ý MÀY" (suồng sã, thân thiết/thô lỗ)
+                          + "MÌNH không hiểu ý CẬU" (thân mật, ngang hàng)
+                    
+                    14. SỬ DỤNG ĐẠI TỪ HỢP LÝ (BẮT BUỘC):
+                        - TRÁNH lặp đại từ xưng hô LIÊN TIẾP trong 3-4 block liền nhau. Có thể lược bỏ chủ ngữ ở một số câu khi ngữ cảnh đã rõ.
+                        - Ví dụ LẶP QUÁ NHIỀU (SAI): Block 1: "TÔI nghe nói...", Block 2: "TÔI đã quan sát...", Block 3: "TÔI đi loanh quanh...", Block 4: "TÔI không muốn..."
+                        - Ví dụ CÂN BẰNG (ĐÚNG): Block 1: "TÔI nghe nói...", Block 2: "Quan sát một lúc thì thấy...", Block 3: "Đi loanh quanh phát hiện ra...", Block 4: "TÔI không muốn làm..."
+                        - VẪN PHẢI GIỮ đại từ trong các trường hợp sau:
+                          + Câu đầu tiên của nhân vật (để xác định ai đang nói)
+                          + Khi có sự đối lập/so sánh ("TÔI thì...", "còn CẬU thì...")
+                          + Khi cần nhấn mạnh cảm xúc ("TÔI không thể chịu nổi!")
+                          + Khi chuyển đổi người nói trong hội thoại
+                          + Câu ngắn, đơn lẻ cần chủ ngữ để có nghĩa
+                    
+                    15. VĂN PHONG TỰ NHIÊN - MƯỢT MÀ (ƯU TIÊN CAO NHẤT):
+                        - KHÔNG dịch máy móc từng từ. Hãy dịch theo NGHĨA và CẢM XÚC của câu.
+                        - Dịch như cách người Việt THỰC SỰ nói chuyện hàng ngày, tự nhiên như đang đọc truyện tranh Việt Nam.
+                        - Sử dụng ngữ khí từ phù hợp: "à", "ơi", "nhỉ", "đấy", "thôi", "mà", "chứ", "sao", "vậy", "thế"...
+                        - Câu ngắn gọn, có nhịp điệu, tránh câu dài lê thê.
+                        - QUAN TRỌNG: Khi dịch cảm thán/than thở, hãy dùng cách nói tự nhiên:
+                          + "NO PUEDO GANAR" -> "Sao lại thua liên tục vậy!" (KHÔNG phải "Tôi không thể thắng")
+                          + "NO GANE NADA" -> "Chẳng thắng được gì cả!" (KHÔNG phải "Tôi không thắng được gì")
+                          + "MI CABELLO NO ERA TAN LARGO" -> "Tóc mình đâu có dài thế đâu nhỉ?" (KHÔNG phải "Tóc tôi trước đây không dài thế này")
+                          + "QUE PASA CON ESTAS MANOS" -> "Sao tay lại nhỏ vậy?" (KHÔNG phải "Sao bàn tay tôi gầy thế này")
+                        - Khi nhân vật tự nói với bản thân (độc thoại nội tâm), dùng giọng thắc mắc, ngạc nhiên tự nhiên.
+                        - Tránh lặp cấu trúc câu. Nếu block trước dùng "...thế này", block sau dùng "...vậy" hoặc "...nhỉ".
+                    
+                    16. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
+                    17. So sánh và phân tích sự khác biệt giữa các kết quả OCR để chọn ra văn bản gốc chính xác nhất trước khi dịch.
+                    18. BẮT BUỘC: Trả về kết quả theo định dạng sau, mỗi block trên một dòng:
                         Block #1: <bản dịch block 1>
                         Block #2: <bản dịch block 2>
                         Block #3: <bản dịch block 3>
                         ...
-                    15. QUAN TRỌNG: Phải dịch đủ ${textBlocks.size} blocks theo đúng thứ tự từ Block #1 đến Block #${textBlocks.size}
+                    17. QUAN TRỌNG: Phải dịch đủ ${textBlocks.size} blocks theo đúng thứ tự từ Block #1 đến Block #${textBlocks.size}
                     
                     Trả về bản dịch cho TỪNG BLOCK theo định dạng đã nêu.
                 """.trimIndent()
@@ -2431,17 +2710,51 @@ class TranslationRepository(private val application: Application) {
                 
 //                Log.i("TranslationRepository", "[GEMINI-PARSE] Nội dung trả về từ AI:\n$content")
 
+                // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
+                val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.+)$""")
+                
                 for (line in lines) {
                     val trimmedLine = line.trim()
-                    if (trimmedLine.startsWith("Block #")) {
-                        // Extract translation after "Block #N: "
-                        val colonIndex = trimmedLine.indexOf(":")
-                        if (colonIndex != -1 && colonIndex < trimmedLine.length - 1) {
-                            val translation = trimmedLine.substring(colonIndex + 1).trim()
+                    val match = blockPattern.find(trimmedLine)
+                    if (match != null) {
+                        var translation = match.groupValues[2].trim()
+                        // Loại bỏ ** ở cuối nếu có
+                        translation = translation.trimEnd('*').trim()
+                        if (translation.isNotEmpty()) {
                             translatedBlocks.add(translation)
 //                            Log.i("TranslationRepository", "[GEMINI-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
                         }
                     }
+                }
+                
+                // Nếu không parse được gì hoặc quá ít, thử format khác
+                if (translatedBlocks.size == 0 || translatedBlocks.size < textBlocks.size / 2) {
+                    Log.w("TranslationRepository", "[GEMINI-PARSE] Parse được ${translatedBlocks.size}/${textBlocks.size} blocks, thử format khác...")
+                    Log.w("TranslationRepository", "[GEMINI-PARSE] Raw response:\n$content")
+                    
+                    // Thử format: "1. <bản dịch>" hoặc "1: <bản dịch>"
+                    translatedBlocks.clear()
+                    val numberPattern = Regex("""^(\d+)[.:\)]\s*(.+)$""")
+                    for (line in lines) {
+                        val trimmedLine = line.trim()
+                        val match = numberPattern.find(trimmedLine)
+                        if (match != null) {
+                            val translation = match.groupValues[2].trim()
+                            if (translation.isNotBlank()) {
+                                translatedBlocks.add(translation)
+                            }
+                        }
+                    }
+                    
+                    if (translatedBlocks.size > 0) {
+                        Log.i("TranslationRepository", "[GEMINI-PARSE] Parse được ${translatedBlocks.size} blocks với format số")
+                    }
+                }
+                
+                // Nếu vẫn không parse được gì, thử key khác thay vì dùng text gốc
+                if (translatedBlocks.size == 0) {
+                    Log.w("TranslationRepository", "[GEMINI-PARSE] Không parse được block nào, thử key/model khác...")
+                    continue // Thử key/model tiếp theo
                 }
                 
                 // Kiểm tra số lượng blocks dịch có khớp không
@@ -2455,8 +2768,17 @@ class TranslationRepository(private val application: Application) {
                     }
                 }
                 
-              /*  Log.i("TranslationRepository", "[GEMINI-PARSE] Tổng số blocks dịch được: ${translatedBlocks.size}")
-                */
+                // Log kết quả dịch của các block
+                Log.i("TranslationRepository", "[GEMINI-RESULT] ===== KẾT QUẢ DỊCH GEMINI =====")
+                Log.i("TranslationRepository", "[GEMINI-RESULT] Tổng số blocks: ${translatedBlocks.size}")
+                translatedBlocks.forEachIndexed { index, translation ->
+                    val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
+                    Log.i("TranslationRepository", "[GEMINI-RESULT] Block #${index + 1}:")
+                    Log.i("TranslationRepository", "[GEMINI-RESULT]   Gốc: $originalText")
+                    Log.i("TranslationRepository", "[GEMINI-RESULT]   Dịch: $translation")
+                }
+                Log.i("TranslationRepository", "[GEMINI-RESULT] ==============================")
+                
                 return translatedBlocks
             } catch (e: Exception) {
                 val msg = e.message?.lowercase() ?: ""

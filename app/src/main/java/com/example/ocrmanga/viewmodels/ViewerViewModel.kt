@@ -166,7 +166,27 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         updateTranslationStatus(uri, status)
                     }
                     
-                    val result = translationRepository.translateImage(uri, mode, statusCallback)
+                    // Lấy bản dịch của ảnh trước để tham khảo (nếu dịch bằng Gemini/Mistral)
+                    // Tìm ảnh GẦN NHẤT đã được dịch trước ảnh hiện tại (không chỉ ảnh liền kề)
+                    val previousTranslation: List<TextBlockInfo>? = if (mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL) {
+                        val imageUris = uiState.value.imageUris
+                        val currentIndex = imageUris.indexOf(uri)
+                        var foundTranslation: List<TextBlockInfo>? = null
+                        if (currentIndex > 0) {
+                            for (i in (currentIndex - 1) downTo 0) {
+                                val prevUri = imageUris[i]
+                                val translation = uiState.value.translatedTexts[prevUri]?.second
+                                if (translation != null && translation.isNotEmpty()) {
+                                    foundTranslation = translation
+                                    Log.i(TAG, "[RETRANSLATE-PREV] Tìm thấy bản dịch tham khảo từ ảnh index=$i")
+                                    break
+                                }
+                            }
+                        }
+                        foundTranslation
+                    } else null
+                    
+                    val result = translationRepository.translateImage(uri, mode, statusCallback, previousTranslation)
                     
                     // Ensure blocks have overlay/text colors set similarly to queued translations
                     val (originalText, blocks) = result
@@ -1416,6 +1436,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationProgress = 0
             )
         }
+        
+        // Biến lưu bản dịch của ảnh trước để truyền cho ảnh tiếp theo
+        var lastTranslatedBlocks: List<TextBlockInfo>? = null
+        
         while (translationQueue.isNotEmpty() && currentCoroutineContext().isActive) {
             val batch = mutableListOf<Uri>()
             repeat(maxBatchSize) {
@@ -1441,11 +1465,43 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             } else {
                 List(batch.size) { null }
             }
+            
+            // Lấy bản dịch ảnh trước cho tất cả ảnh trong batch
+            // Khi dịch 2 ảnh cùng lúc (parallel): cả 2 đều tham khảo từ ảnh đã dịch trước đó (ngoài batch)
+            // Để đảm bảo đồng nhất xưng hô giữa các ảnh trong cùng batch
+            val sharedPreviousTranslation: List<TextBlockInfo>? = run {
+                // Lấy bản dịch từ lastTranslatedBlocks (batch trước) hoặc từ ảnh GẦN NHẤT đã được dịch trước ảnh đầu tiên trong batch
+                lastTranslatedBlocks ?: run {
+                    val imageUris = uiState.value.imageUris
+                    val firstUriInBatch = batch.firstOrNull()
+                    val firstIndex = if (firstUriInBatch != null) imageUris.indexOf(firstUriInBatch) else -1
+                    
+                    // Tìm ảnh gần nhất đã được dịch (có trong translatedTexts) trước ảnh đầu tiên trong batch
+                    // Không chỉ tìm ảnh liền kề mà tìm ảnh gần nhất có bản dịch
+                    var foundTranslation: List<TextBlockInfo>? = null
+                    if (firstIndex > 0) {
+                        for (i in (firstIndex - 1) downTo 0) {
+                            val prevUri = imageUris[i]
+                            val translation = uiState.value.translatedTexts[prevUri]?.second
+                            if (translation != null && translation.isNotEmpty()) {
+                                foundTranslation = translation
+                                Log.i(TAG, "[PREV-TRANSLATION] Tìm thấy bản dịch tham khảo từ ảnh index=$i (uri=$prevUri)")
+                                break
+                            }
+                        }
+                    }
+                    foundTranslation
+                }
+            }
+            
+            // Tất cả ảnh trong batch dùng chung previousTranslation để đảm bảo đồng nhất xưng hô
+            val previousTranslationsForBatch: List<List<TextBlockInfo>?> = batch.map { sharedPreviousTranslation }
 
-            // Dịch song song, truyền key tương ứng cho từng ảnh
+            // Dịch song song, truyền key và bản dịch ảnh trước tương ứng cho từng ảnh
             val results = kotlinx.coroutines.coroutineScope {
                 batch.mapIndexed { idx, uri ->
                     val key = keysForBatch.getOrNull(idx)
+                    val prevTranslation = previousTranslationsForBatch.getOrNull(idx)
                     // Callback để cập nhật trạng thái từ repository
                     val statusCallback: (com.example.ocrmanga.data.models.TranslationStatus) -> Unit = { status ->
                         updateTranslationStatus(uri, status)
@@ -1456,7 +1512,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 uri,
                                 uiState.value.translationMode,
                                 key,
-                                statusCallback
+                                statusCallback,
+                                prevTranslation // Truyền bản dịch ảnh trước để tham khảo
                             )
                             Triple(uri, original, translatedBlocks to sourceLang)
                         } catch (e: Exception) {
@@ -1485,6 +1542,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                         )
                                 }
                                 
+                        // Lưu lại bản dịch mới nhất để truyền cho ảnh tiếp theo trong batch sau
+                        lastTranslatedBlocks = fixedBlocks
 
                         translatedTexts[uri] = original to fixedBlocks
 

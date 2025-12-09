@@ -277,9 +277,9 @@ fun ImageViewer(
             // Thêm translatedTexts[uri] và editTranslationMode vào key để rebuild khi save edit
             LaunchedEffect(uri, isInWindow, translationVersion, translatedTexts[uri], editTranslationMode) {
                 if (isInWindow && !editTranslationMode) {
-                    Log.d("ImageViewer", "[REBUILD dragBlocks] uri=$uri editTranslationMode=$editTranslationMode")
+                    //Log.d("ImageViewer", "[REBUILD dragBlocks] uri=$uri editTranslationMode=$editTranslationMode")
                     val rawNewBlocks = translatedTexts[uri]?.second?.mapIndexed { idx, it ->
-                        Log.d("ImageViewer", "[REBUILD] idx=$idx overlayRotation=${it.overlayRotation} inset=${it.overlayInset} insetH=${it.overlayInsetHorizontal} insetV=${it.overlayInsetVertical} from translatedTexts")
+                        //Log.d("ImageViewer", "[REBUILD] idx=$idx overlayRotation=${it.overlayRotation} inset=${it.overlayInset} insetH=${it.overlayInsetHorizontal} insetV=${it.overlayInsetVertical} from translatedTexts")
                         DragBlockState(
                             block = it,
                             fontSize = null,
@@ -305,9 +305,8 @@ fun ImageViewer(
                     } ?: emptyList()
 
                     // Merge user-edited visual properties (if any) from previously stored dragBlocksMap
-                    // ✅ Ưu tiên giá trị từ DB (nb) - chỉ preserve từ existing nếu DB chưa có giá trị
                     val existing = dragBlocksMap[uri]
-                    Log.d("ImageViewer", "[MERGE] uri=$uri existing=${existing?.size ?: 0} rawNewBlocks=${rawNewBlocks.size}")
+                    //Log.d("ImageViewer", "[MERGE] uri=$uri existing=${existing?.size ?: 0} rawNewBlocks=${rawNewBlocks.size}")
                     val merged = if (existing != null && existing.isNotEmpty()) {
                         rawNewBlocks.mapIndexed { idx, nb ->
                             // try to find a matching existing block by bounds + text
@@ -318,13 +317,13 @@ fun ImageViewer(
                                 // Preserve applyMerge from edited block
                                 val preserveApplyMerge = match.block.applyMerge
                                 
-                                // ✅ Ưu tiên giá trị từ DB nếu DB có giá trị khác default
+                                
                                 // Chỉ lấy từ match (old) nếu DB không có (= default) VÀ match có giá trị khác default
                                 val finalInset = if (nb.overlayInset != 0f) nb.overlayInset else match.overlayInset
                                 val finalInsetH = if (nb.overlayInsetHorizontal != 0f) nb.overlayInsetHorizontal else match.overlayInsetHorizontal
                                 val finalInsetV = if (nb.overlayInsetVertical != 0f) nb.overlayInsetVertical else match.overlayInsetVertical
                                 
-                                Log.d("ImageViewer", "[MERGE] idx=$idx nb.inset=${nb.overlayInset} match.inset=${match.overlayInset} final=$finalInset")
+                                //Log.d("ImageViewer", "[MERGE] idx=$idx nb.inset=${nb.overlayInset} match.inset=${match.overlayInset} final=$finalInset")
                                 
                                 val finalLineSpacing = if (nb.lineSpacing != 1.0f && nb.lineSpacing != 1.1f && nb.lineSpacing != 2f) nb.lineSpacing else match.lineSpacing
                                 val finalShadowColor = nb.textShadowColor ?: match.textShadowColor
