@@ -59,7 +59,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     0
                 }
             }
-        // Chuyển đổi trạng thái pendingDelete cho block của một ảnh
+    // Chuyển đổi trạng thái pendingDelete cho block của một ảnh
     fun togglePendingDelete(uri: Uri, blockId: Int, setPending: Boolean) {
         _uiState.update { state ->
             val oldPair = state.translatedTexts[uri] ?: ("" to emptyList<TextBlockInfo>())
@@ -76,6 +76,65 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         dirtyUris.add(uri)
         Log.i(TAG, "togglePendingDelete: Marked uri=$uri as dirty (pendingDelete=$setPending)")
     }
+    
+    // Xóa text gốc trên ảnh sử dụng Python inpainting
+    fun removeOriginalText(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                // Lấy danh sách blocks của ảnh này
+                val blocks = _uiState.value.translatedTexts[uri]?.second ?: emptyList()
+                
+                if (blocks.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            getApplication(),
+                            "Ảnh này chưa có vùng text được nhận dạng",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    return@launch
+                }
+                
+                // Gọi helper để xóa text
+                val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextFromImage(
+                    getApplication(),
+                    uri,
+                    blocks
+                )
+                
+                if (resultUri != null) {
+                    // Thay thế ảnh gốc bằng ảnh đã xóa text
+                    replaceImageUri(uri, resultUri)
+                    
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            getApplication(),
+                            "Đã xóa text gốc thành công!",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            getApplication(),
+                            "Lỗi khi xóa text gốc",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing original text", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        getApplication(),
+                        "Lỗi: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
+    
     // Dịch lại 1 ảnh (re-translate single image)
     // IMPORTANT: This will DELETE all existing translations for this image before creating new ones
     fun retranslateImage(uri: Uri, mode: TranslationMode) {
