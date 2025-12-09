@@ -11,7 +11,11 @@ data class TextBlockInfo(
     val originalText: String? = null, // Văn bản gốc từ OCR trước khi dịch
     val bounds: Rect,
     val fontSize: Float,
-        val lineSpacing: Float = if (fontFamily == "mto_comic_1" || fontFamily == "mto_comic_2") 1.1f else if (fontFamily == "mto_augie") 2f else 1.0f, // Khoảng cách dòng (multiplier), comic_1 = 1.09, mặc định = 1.0
+        val lineSpacing: Float = 
+        if (fontFamily == "mto_comic_1" || fontFamily == "mto_comic_2") 1.1f 
+        else if (fontFamily == "mto_augie") 2f 
+        else if (fontFamily == "mighty_zero") 0.92f
+        else 1.0f, // Khoảng cách dòng (multiplier), comic_1 = 1.09, mặc định = 1.0
     val isVertical: Boolean = false,
     val rotation: Float? = null,
     val polygon: Path? = null,

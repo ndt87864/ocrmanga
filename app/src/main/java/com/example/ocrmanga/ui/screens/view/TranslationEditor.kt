@@ -838,6 +838,7 @@ fun TranslationEditor(
                                             val defaultLineSpacing = when {
                                                 name.equals("mto_comic_1", ignoreCase = true) -> 1.1f
                                                 name.equals("mto_augie", ignoreCase = true) || name.contains("augie", ignoreCase = true) -> 2.0f
+                                                name.equals("mighty_zero", ignoreCase = true) || name.contains("mighty_zero", ignoreCase = true) -> 0.92f
                                                 else -> 1.0f
                                             }
                                             // Only update lineSpacing for the currently selected block
@@ -886,6 +887,7 @@ fun TranslationEditor(
                                     val defaultLineSpacing = when {
                                         selectedFontName.equals("mto_comic_1", ignoreCase = true) -> 1.1f
                                         selectedFontName.equals("mto_augie", ignoreCase = true) || selectedFontName.contains("augie", ignoreCase = true) -> 2.0f
+                                        selectedFontName.equals("mighty_zero", ignoreCase = true) || selectedFontName.contains("mighty_zero", ignoreCase = true) -> 0.92f
                                         else -> 1.0f
                                     }
                                     oldBlock.copy(
@@ -1068,8 +1070,8 @@ fun TranslationEditor(
                         Slider(
                             value = currentSpacing,
                             onValueChange = { currentSpacing = it },
-                            valueRange = 1f..2.3f,
-                            steps = 64, // step ≈ 0.02
+                            valueRange = 0.5f..2.5f,
+                            steps = 80, // step = 0.025
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(modifier = Modifier.height(8.dp))
