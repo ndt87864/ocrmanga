@@ -35,8 +35,8 @@ private fun resolveFontFile(fontFamilyName: String?): String {
         // MTO fonts used in drawText
         "mto_astro_city" -> "mto_astro_city.ttf"
         "mto_augie" -> "mto_augie.ttf"
+        "mighty_zero" -> "mighty_zero.ttf"
         "mto_chancery" -> "mto_chancery.ttf"
-        "mto_chranko" -> "mto_chranko.ttf"
         "mto_comic_1" -> "mto_comic_1.ttf"
         "mto_comic_2" -> "mto_comic_2.ttf"
         "mto_dom" -> "mto_dom.ttf"
@@ -1049,32 +1049,61 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
     if (bitmap == null) return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
     
     try {
-        // Lấy mẫu màu từ các điểm xung quanh text bounds
-        val samplePoints = mutableListOf<Int>()
-        val margin = 5 // pixel margin around text
+        val width = bounds.width()
+        val height = bounds.height()
         
-        // Lấy mẫu từ 4 góc mở rộng
-        val samples = listOf(
-            Pair(bounds.left - margin, bounds.top - margin),
-            Pair(bounds.right + margin, bounds.top - margin),
-            Pair(bounds.left - margin, bounds.bottom + margin),
-            Pair(bounds.right + margin, bounds.bottom + margin),
-            // Thêm mẫu từ các cạnh
-            Pair(bounds.centerX(), bounds.top - margin),
-            Pair(bounds.centerX(), bounds.bottom + margin),
-            Pair(bounds.left - margin, bounds.centerY()),
-            Pair(bounds.right + margin, bounds.centerY())
+        // Lấy mẫu từ nhiều điểm bên trong bounds
+        val allSamplePoints = mutableListOf<Int>()
+        val margin = 2
+        
+        // Lấy mẫu từ viền và trung tâm
+        val samplePositions = listOf(
+            // 4 góc bên trong
+            Pair(bounds.left + margin, bounds.top + margin),
+            Pair(bounds.right - margin, bounds.top + margin),
+            Pair(bounds.left + margin, bounds.bottom - margin),
+            Pair(bounds.right - margin, bounds.bottom - margin),
+            // 4 cạnh bên trong
+            Pair(bounds.centerX(), bounds.top + margin),
+            Pair(bounds.centerX(), bounds.bottom - margin),
+            Pair(bounds.left + margin, bounds.centerY()),
+            Pair(bounds.right - margin, bounds.centerY()),
+            // Điểm trung tâm
+            Pair(bounds.centerX(), bounds.centerY()),
+            // Thêm các điểm phụ để có nhiều mẫu hơn
+            Pair(bounds.left + width / 4, bounds.top + margin),
+            Pair(bounds.left + 3 * width / 4, bounds.top + margin),
+            Pair(bounds.left + width / 4, bounds.bottom - margin),
+            Pair(bounds.left + 3 * width / 4, bounds.bottom - margin)
         )
         
-        samples.forEach { (x, y) ->
+        samplePositions.forEach { (x, y) ->
             if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
-                samplePoints.add(bitmap.getPixel(x, y))
+                allSamplePoints.add(bitmap.getPixel(x, y))
             }
         }
         
-        if (samplePoints.isEmpty()) return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
+        if (allSamplePoints.isEmpty()) return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
         
-        // Tính màu trung bình
+        // QUAN TRỌNG: Lọc bỏ các pixel TỐI (có khả năng là text) khi tính background
+        // Chỉ giữ lại các pixel SÁNG (brightness > 150) để tính màu nền
+        val brightPixels = allSamplePoints.filter { color ->
+            val r = (color shr 16) and 0xFF
+            val g = (color shr 8) and 0xFF
+            val b = color and 0xFF
+            val pixelBrightness = (r + g + b) / 3
+            pixelBrightness > 150 // Chỉ giữ pixel sáng
+        }
+        
+        // Nếu có đủ pixel sáng (ít nhất 30%), dùng chúng để tính background
+        val samplePoints = if (brightPixels.size >= allSamplePoints.size * 0.3) {
+            brightPixels
+        } else {
+            // Nếu không đủ pixel sáng, có thể là nền tối thật -> dùng tất cả
+            allSamplePoints
+        }
+        
+        // Tính màu trung bình từ các pixel đã lọc
         var totalR = 0
         var totalG = 0
         var totalB = 0
@@ -1097,35 +1126,48 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
         // Xác định loại nền dựa trên brightness và color variance
         val brightness = (avgR + avgG + avgB) / 3
         
-        // Tính độ biến thiên màu sắc để phát hiện nền có màu
+        // Tính độ biến thiên màu sắc để phát hiện nền có màu (chỉ từ pixel sáng)
         var colorVariance = 0
+        var colorChannelVariance = 0
         samplePoints.forEach { color ->
             val r = (color shr 16) and 0xFF
             val g = (color shr 8) and 0xFF
             val b = color and 0xFF
             val pixelBrightness = (r + g + b) / 3
             colorVariance += kotlin.math.abs(pixelBrightness - brightness)
+            
+            val maxChannel = maxOf(r, g, b)
+            val minChannel = minOf(r, g, b)
+            colorChannelVariance += (maxChannel - minChannel)
         }
         colorVariance /= samplePoints.size
+        colorChannelVariance /= samplePoints.size
         
-        // Phân tích màu text từ vùng bên trong bounds
+        // Tính độ lệch chuẩn của RGB để phát hiện màu thật
+        val rVariance = kotlin.math.abs(avgR - avgG)
+        val gVariance = kotlin.math.abs(avgG - avgB)
+        val bVariance = kotlin.math.abs(avgB - avgR)
+        val rgbDeviation = (rVariance + gVariance + bVariance) / 3
+        
+        // Phân tích màu text từ vùng GẦN TRUNG TÂM của bounds
         val textSamples = mutableListOf<Int>()
-        val textMargin = 2 // margin nhỏ hơn để lấy mẫu text
+        val textInset = maxOf(3, minOf(width, height) / 6) // Lấy mẫu sâu vào trong hơn
         
-        // Lấy mẫu từ vùng bên trong text bounds
-        val innerSamples = listOf(
-            Pair(bounds.left + textMargin, bounds.top + textMargin),
-            Pair(bounds.right - textMargin, bounds.top + textMargin),
-            Pair(bounds.left + textMargin, bounds.bottom - textMargin),
-            Pair(bounds.right - textMargin, bounds.bottom - textMargin),
+        // Lấy mẫu từ vùng sâu bên trong text bounds (tránh viền)
+        val textInnerSamples = listOf(
+            Pair(bounds.left + textInset, bounds.top + textInset),
+            Pair(bounds.right - textInset, bounds.top + textInset),
+            Pair(bounds.left + textInset, bounds.bottom - textInset),
+            Pair(bounds.right - textInset, bounds.bottom - textInset),
             Pair(bounds.centerX(), bounds.centerY()),
-            Pair(bounds.centerX(), bounds.top + textMargin),
-            Pair(bounds.centerX(), bounds.bottom - textMargin),
-            Pair(bounds.left + textMargin, bounds.centerY()),
-            Pair(bounds.right - textMargin, bounds.centerY())
+            // Thêm các điểm gần trung tâm
+            Pair(bounds.centerX() - textInset/2, bounds.centerY()),
+            Pair(bounds.centerX() + textInset/2, bounds.centerY()),
+            Pair(bounds.centerX(), bounds.centerY() - textInset/2),
+            Pair(bounds.centerX(), bounds.centerY() + textInset/2)
         )
         
-        innerSamples.forEach { (x, y) ->
+        textInnerSamples.forEach { (x, y) ->
             if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
                 textSamples.add(bitmap.getPixel(x, y))
             }
@@ -1158,14 +1200,46 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
         }
 
         val backgroundType = when {
-            // Nền trắng: sáng và ít biến thiên
-            brightness >= 235 && colorVariance <= 15 -> com.example.ocrmanga.data.models.BackgroundType.WHITE
-            // Nền trong suốt: alpha thấp
+            // Nền trong suốt: alpha thấp (kiểm tra trước)
             avgA < 200 -> com.example.ocrmanga.data.models.BackgroundType.TRANSPARENT
-            // Nền có màu: có độ biến thiên hoặc không quá sáng
-            colorVariance > 15 || brightness < 235 -> com.example.ocrmanga.data.models.BackgroundType.COLORED
-            // Default
-            else -> com.example.ocrmanga.data.models.BackgroundType.WHITE
+            
+            // Nền trắng thuần: brightness rất cao + RGB đồng đều
+            brightness >= 245 && rgbDeviation <= 5 && colorVariance <= 15 -> {
+                com.example.ocrmanga.data.models.BackgroundType.WHITE
+            }
+            
+            // Nền trắng/xám nhạt: brightness cao + RGB gần nhau
+            brightness >= 230 && rgbDeviation <= 10 && colorChannelVariance <= 15 -> {
+                // Kiểm tra kỹ: nếu TẤT CẢ RGB đều >= 230 thì là trắng
+                if (avgR >= 230 && avgG >= 230 && avgB >= 230) {
+                    com.example.ocrmanga.data.models.BackgroundType.WHITE
+                } else {
+                    // Có ít nhất 1 kênh < 230 -> có màu
+                    com.example.ocrmanga.data.models.BackgroundType.COLORED
+                }
+            }
+            
+            // Nền gần trắng nhưng có chút sắc độ
+            brightness >= 210 && rgbDeviation <= 20 && colorChannelVariance <= 25 -> {
+                // Kiểm tra lại lần nữa với ngưỡng thấp hơn
+                if (avgR >= 210 && avgG >= 210 && avgB >= 210 && rgbDeviation <= 12) {
+                    com.example.ocrmanga.data.models.BackgroundType.WHITE
+                } else {
+                    com.example.ocrmanga.data.models.BackgroundType.COLORED
+                }
+            }
+            
+            // Nền có màu rõ ràng: có độ lệch lớn giữa các kênh hoặc brightness thấp
+            colorChannelVariance > 25 || rgbDeviation > 20 || brightness < 210 -> {
+                com.example.ocrmanga.data.models.BackgroundType.COLORED
+            }
+            
+            // Default: dựa vào brightness
+            else -> if (brightness >= 200) {
+                com.example.ocrmanga.data.models.BackgroundType.WHITE
+            } else {
+                com.example.ocrmanga.data.models.BackgroundType.COLORED
+            }
         }
         
         return Triple(backgroundType, if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor else null, textColor)
