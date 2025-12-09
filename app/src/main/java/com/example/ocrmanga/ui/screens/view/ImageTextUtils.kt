@@ -254,7 +254,8 @@ fun mergeOverlappingRegions(
                     height = mergedRect.height,
                     minFontSize = minFontSize,
                     shapeType = currentBlock.shapeType,
-                    extraSizeAllowance = 4f
+                    extraSizeAllowance = 4f,
+                    lineSpacing = primaryBlock.lineSpacing
                 )
 
 
@@ -379,7 +380,8 @@ fun calculateOptimalFontSize(
     // subtracted from the available width/height before sizing. Defaults keep
     // current behavior.
     horizontalPadding: Float = 0f,
-    verticalPadding: Float = 0f
+    verticalPadding: Float = 0f,
+    lineSpacing: Float = 1.0f // Khoảng cách dòng multiplier
 ): Float {
     if (text.isBlank() || width <= 0 || height <= 0) return minFontSize
     
@@ -414,7 +416,8 @@ fun calculateOptimalFontSize(
         paint.textSize = mid
             val wrappedLines = wrapText(text, safeWidth * widthScale, mid, context, fontFamilyName)
         val fontMetrics = paint.fontMetrics
-        val lineHeight = fontMetrics.descent - fontMetrics.ascent
+        // Áp dụng lineSpacing vào tính toán lineHeight
+        val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
         val textHeight = wrappedLines.size * lineHeight
         val maxLineWidth = wrappedLines.maxOfOrNull { line ->
             val bounds = android.graphics.Rect()
@@ -554,7 +557,8 @@ fun drawTextOnCanvas(drawScope: DrawScope,
         isVertical = isVertical,
         context = context,
         fontFamilyName = fontFamilyName,
-        shapeType = shapeType
+        shapeType = shapeType,
+        lineSpacing = lineSpacing
     )
     paint.textSize = optimalFontSize
     borderPaint?.textSize = optimalFontSize
@@ -593,7 +597,7 @@ fun drawTextOnCanvas(drawScope: DrawScope,
             val startY = y + verticalMargin - fontMetrics.ascent
 
             var currentY = startY
-            for (line in lines) {
+            for ((index, line) in lines.withIndex()) {
                 if (line.isNotBlank()) {
                     val centerX = x + width / 2
                     // Draw shadow behind text and border so it shows outside rounded corners
@@ -602,8 +606,6 @@ fun drawTextOnCanvas(drawScope: DrawScope,
                     canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
                 }
                 currentY += lineHeight
-                // Stop if we exceed available space
-                if (currentY + fontMetrics.descent > y + height - verticalMargin) break
             }
 
         }
@@ -618,7 +620,8 @@ fun adjustWhiteoutBounds(
     isVertical: Boolean,
     context: Context? = null,
     fontFamilyName: String? = null,
-    shapeType: Int = 0
+    shapeType: Int = 0,
+    lineSpacing: Float = 1.0f // Khoảng cách dòng multiplier
 ): Pair<String, Float> {
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
@@ -653,7 +656,8 @@ fun adjustWhiteoutBounds(
         fontFamilyName = fontFamilyName,
         extraSizeAllowance = 0f,
         horizontalPadding = safePadding,
-        verticalPadding = safePadding
+        verticalPadding = safePadding,
+        lineSpacing = lineSpacing
     )
 
     // Now wrap the text using the computed font size so measurements align with rendering.

@@ -257,7 +257,8 @@ fun TranslationEditor(
                                                         shapeType = newShapeType,
                                                         context = context,
                                                         fontFamilyName = currentBlock.block.fontFamily,
-                                                        extraSizeAllowance = 2f
+                                                        extraSizeAllowance = 2f,
+                                                        lineSpacing = currentBlock.lineSpacing
                                                     )
 
                                                 }
@@ -415,7 +416,8 @@ fun TranslationEditor(
                                 shapeType = b.shapeType,
                                 context = context,
                                 fontFamilyName = b.fontFamily,
-                                extraSizeAllowance = 2f
+                                extraSizeAllowance = 2f,
+                                lineSpacing = sel.lineSpacing
                             )
                             maxFontForSelected = rawMax
                             currentFontForSelected = sel.fontSize ?: b.fontSize
@@ -444,8 +446,9 @@ fun TranslationEditor(
                                     // Check displayed value so toast/tint match what user sees
                                     // Use raw stored font for toast triggers so it matches the actual value stored
                                     val currentRaw = dragBlocks.getOrNull(idx)?.let { it.fontSize ?: it.block.fontSize } ?: minFontGlobal
-                                    val curBlockForCheck = dragBlocks.getOrNull(idx)?.block
-                                    val rawMaxForThis = if (curBlockForCheck != null) {
+                                    val curDragBlockForCheck = dragBlocks.getOrNull(idx)
+                                    val curBlockForCheck = curDragBlockForCheck?.block
+                                    val rawMaxForThis = if (curBlockForCheck != null && curDragBlockForCheck != null) {
                                         val bb = curBlockForCheck
                                         val w = bb.bounds.width().toFloat()
                                         val h = bb.bounds.height().toFloat()
@@ -457,7 +460,8 @@ fun TranslationEditor(
                                             shapeType = bb.shapeType,
                                             context = context,
                                             fontFamilyName = bb.fontFamily,
-                                            extraSizeAllowance = 2f
+                                            extraSizeAllowance = 2f,
+                                            lineSpacing = curDragBlockForCheck.lineSpacing
                                         )
                                     } else {
                                         minFontGlobal
@@ -480,7 +484,8 @@ fun TranslationEditor(
                                             shapeType = b.shapeType,
                                             context = context,
                                             fontFamilyName = b.fontFamily,
-                                            extraSizeAllowance = 2f
+                                            extraSizeAllowance = 2f,
+                                            lineSpacing = old.lineSpacing
                                         )
                                         val newFontCandidate = (old.fontSize ?: b.fontSize) - 1f
                                         val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)
@@ -521,8 +526,9 @@ fun TranslationEditor(
                                     // Use displayed values for toast/tint so user sees consistent behavior
                                     // Use raw stored font for toast triggers so it matches the actual value stored
                                     val currentRawMaxCheck = dragBlocks.getOrNull(idx)?.let { it.fontSize ?: it.block.fontSize } ?: minFontGlobal
-                                    val curBlockForCheck2 = dragBlocks.getOrNull(idx)?.block
-                                    val rawMaxForThisCheck = if (curBlockForCheck2 != null) {
+                                    val curDragBlockForCheck2 = dragBlocks.getOrNull(idx)
+                                    val curBlockForCheck2 = curDragBlockForCheck2?.block
+                                    val rawMaxForThisCheck = if (curBlockForCheck2 != null && curDragBlockForCheck2 != null) {
                                         val bb = curBlockForCheck2
                                         val w = bb.bounds.width().toFloat()
                                         val h = bb.bounds.height().toFloat()
@@ -534,7 +540,8 @@ fun TranslationEditor(
                                             shapeType = bb.shapeType,
                                             context = context,
                                             fontFamilyName = bb.fontFamily,
-                                            extraSizeAllowance = 2f
+                                            extraSizeAllowance = 2f,
+                                            lineSpacing = curDragBlockForCheck2.lineSpacing
                                         )
                                     } else {
                                         minFontGlobal
@@ -557,7 +564,8 @@ fun TranslationEditor(
                                             shapeType = b.shapeType,
                                             context = context,
                                             fontFamilyName = b.fontFamily,
-                                            extraSizeAllowance = 2f
+                                            extraSizeAllowance = 2f,
+                                            lineSpacing = old.lineSpacing
                                         )
                                         val newFontCandidate = (old.fontSize ?: b.fontSize) + 1f
                                         val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)
