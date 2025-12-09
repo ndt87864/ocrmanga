@@ -617,12 +617,32 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // Vị trí scroll hiện tại, được set từ UI trước khi save/reload
+    private var currentScrollIndex: Int = 0
+    
+    /**
+     * Set vị trí scroll hiện tại từ UI. Gọi trước khi save để lưu lại vị trí.
+     */
+    fun setCurrentScrollIndex(index: Int) {
+        currentScrollIndex = index
+        Log.d(TAG, "setCurrentScrollIndex: $index")
+    }
+    
+    /**
+     * Clear scroll index sau khi UI đã scroll đến vị trí
+     */
+    fun clearScrollToIndex() {
+        _uiState.update { it.copy(scrollToIndexAfterReload = null) }
+    }
+    
     /**
      * Clear all in-memory caches and reload room from DB to ensure clean state.
      * Called after manual save or auto-save to free memory and sync with DB.
      */
     private suspend fun clearMemoryAndReloadRoom(roomId: Long) {
-        Log.i(TAG, "clearMemoryAndReloadRoom: Clearing memory and reloading room $roomId from DB")
+        // Lưu lại vị trí scroll để nhảy lại sau khi reload
+        val scrollIndexToRestore = currentScrollIndex
+        Log.i(TAG, "clearMemoryAndReloadRoom: Clearing memory and reloading room $roomId from DB, scrollIndex=$scrollIndexToRestore")
         
         // 1) Clear in-memory translation repository cache
         try {
@@ -669,7 +689,78 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         // 7) Reload room from DB with fresh state
         loadRoomInternal(roomId)
         
-        Log.i(TAG, "clearMemoryAndReloadRoom: Completed reload of room $roomId")
+        // 8) Nếu scroll index vượt quá số ảnh đã load (BATCH_SIZE), load thêm ảnh
+        val currentImageCount = _uiState.value.imageUris.size
+        if (scrollIndexToRestore >= currentImageCount && _uiState.value.remainingImages.isNotEmpty()) {
+            // Tính số ảnh cần load thêm
+            val additionalNeeded = scrollIndexToRestore - currentImageCount + 1
+            val batchesToLoad = (additionalNeeded + BATCH_SIZE - 1) / BATCH_SIZE // Ceiling division
+            Log.i(TAG, "clearMemoryAndReloadRoom: Need to load $batchesToLoad more batches to reach scroll index $scrollIndexToRestore")
+            
+            // Load các batch cần thiết
+            repeat(batchesToLoad) {
+                if (_uiState.value.remainingImages.isNotEmpty()) {
+                    loadMoreImagesSync()
+                }
+            }
+        }
+        
+        // 9) Set scroll index để UI nhảy đến vị trí trước khi reload
+        Log.i(TAG, "clearMemoryAndReloadRoom: Setting scrollToIndexAfterReload=$scrollIndexToRestore")
+        _uiState.update { 
+            val newState = it.copy(scrollToIndexAfterReload = scrollIndexToRestore)
+            Log.i(TAG, "clearMemoryAndReloadRoom: State updated, scrollToIndexAfterReload=${newState.scrollToIndexAfterReload}")
+            newState
+        }
+        
+        Log.i(TAG, "clearMemoryAndReloadRoom: Completed reload of room $roomId, will scroll to index $scrollIndexToRestore (total images: ${_uiState.value.imageUris.size})")
+    }
+    
+    /**
+     * Synchronous version of loadMoreImages for use in clearMemoryAndReloadRoom
+     */
+    private suspend fun loadMoreImagesSync() {
+        val remainingImages = _uiState.value.remainingImages
+        if (remainingImages.isEmpty()) return
+
+        val batch = remainingImages.take(BATCH_SIZE)
+        val newRemaining = remainingImages.drop(BATCH_SIZE)
+        val translatedStatus = mutableMapOf<Uri, Boolean>()
+
+        // Use DatabaseHelper.getTranslationsForImages
+        val translations = databaseHelper.getTranslationsForImages(batch)
+        
+        // Get translatedStatus and uriToImageId mapping
+        val db = databaseHelper.readableDatabase
+        batch.forEach { uri ->
+            val cursor = db.rawQuery(
+                """
+                SELECT ${DatabaseHelper.COLUMN_IS_TRANSLATED}, ${DatabaseHelper.COLUMN_IMAGE_ID}
+                FROM ${DatabaseHelper.TABLE_IMAGES} 
+                WHERE ${DatabaseHelper.COLUMN_IMAGE_URI} = ?
+                """, arrayOf(uri.toString())
+            )
+            if (cursor.moveToFirst()) {
+                translatedStatus[uri] = cursor.getInt(0) == 1
+                val imageId = cursor.getLong(1)
+                uriToImageId[uri] = imageId
+            }
+            cursor.close()
+        }
+
+        _uiState.update {
+            val existingUriStrings = it.imageUris.map { u -> u.toString() }.toSet()
+            val newBatch = batch.filter { uri -> !existingUriStrings.contains(uri.toString()) }
+            
+            it.copy(
+                imageUris = it.imageUris + newBatch,
+                translatedTexts = it.translatedTexts + translations,
+                translatedStatus = it.translatedStatus + translatedStatus,
+                remainingImages = newRemaining,
+                translationVersion = it.translationVersion + 1
+            )
+        }
+        Log.i(TAG, "loadMoreImagesSync completed: total imageUris=${_uiState.value.imageUris.size}")
     }
 
     /**
@@ -2143,5 +2234,7 @@ data class ViewerUiState(
     val isSavingRoom: Boolean = false, // Loading state for room saving
     val isExportingRoom: Boolean = false, // Loading state for room exporting
     // Map theo dõi trạng thái dịch của từng ảnh (Uri -> TranslationStatus)
-    val translatingImages: Map<Uri, com.example.ocrmanga.data.models.TranslationStatus> = emptyMap()
+    val translatingImages: Map<Uri, com.example.ocrmanga.data.models.TranslationStatus> = emptyMap(),
+    // Vị trí scroll cần nhảy đến sau khi reload (null = không nhảy)
+    val scrollToIndexAfterReload: Int? = null
 )

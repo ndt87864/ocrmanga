@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -194,6 +195,70 @@ fun ViewerScreen(
                 Toast.LENGTH_SHORT
             ).show()
         }
+    }
+
+    // Biến để tạm dừng việc update scroll index khi đang scroll programmatically
+    var isScrollingProgrammatically by remember { mutableStateOf(false) }
+
+    // Theo dõi vị trí scroll hiện tại và thông báo cho ViewModel
+    // Chỉ update khi không đang scroll programmatically để tránh xung đột
+    LaunchedEffect(lazyListState) {
+        snapshotFlow { lazyListState.firstVisibleItemIndex }
+            .collect { index ->
+                if (!isScrollingProgrammatically) {
+                    viewModel.setCurrentScrollIndex(index)
+                }
+            }
+    }
+
+    // Scroll đến vị trí sau khi reload từ DB
+    // Sử dụng key Unit để effect luôn chạy và tự theo dõi state thay đổi
+    LaunchedEffect(Unit) {
+        snapshotFlow { Pair(uiState.scrollToIndexAfterReload, uiState.imageUris.size) }
+            .collect { (targetIndex, imageCount) ->
+                Log.d("ViewerScreen", "scrollToIndexAfterReload changed: targetIndex=$targetIndex, imageCount=$imageCount")
+                if (targetIndex != null && targetIndex > 0) {
+                    Log.d("ViewerScreen", "Will scroll to index $targetIndex")
+                    
+                    // Đợi cho đến khi có đủ ảnh để scroll (check lại trong vòng lặp)
+                    var currentCount = imageCount
+                    var attempts = 0
+                    while (currentCount <= targetIndex && attempts < 50) {
+                        delay(100)
+                        currentCount = uiState.imageUris.size
+                        attempts++
+                    }
+                    
+                    val finalCount = uiState.imageUris.size
+                    if (finalCount > 0) {
+                        val safeIndex = targetIndex.coerceIn(0, finalCount - 1)
+                        Log.d("ViewerScreen", "Scrolling to index $safeIndex (requested: $targetIndex, total: $finalCount)")
+                        
+                        // Tạm dừng update scroll index
+                        isScrollingProgrammatically = true
+                        
+                        // Delay để LazyColumn render xong
+                        delay(300)
+                        
+                        try {
+                            lazyListState.scrollToItem(safeIndex)
+                            Log.d("ViewerScreen", "Scroll completed to index $safeIndex")
+                        } catch (e: Exception) {
+                            Log.e("ViewerScreen", "Failed to scroll to index $safeIndex", e)
+                        }
+                        
+                        // Delay thêm rồi mới cho phép update scroll index lại
+                        delay(500)
+                        isScrollingProgrammatically = false
+                        
+                        // Update scroll index về vị trí mới
+                        viewModel.setCurrentScrollIndex(safeIndex)
+                        
+                        // Clear scroll index sau khi đã scroll
+                        viewModel.clearScrollToIndex()
+                    }
+                }
+            }
     }
 
     val pickImagesAtStartLauncher = rememberLauncherForActivityResult(
