@@ -1841,11 +1841,40 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     color = overlayColor
                                                     alpha = (block.overlayAlpha * 255).toInt().coerceIn(0, 255)
                                                 }
-                                                val rectF = RectF(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat())
-                                                if (block.shapeType == 1) {
-                                                    canvas.drawOval(rectF, overlayPaint)
+                                                
+                                                // Apply overlay inset (inset values are stored in view coordinates, need to convert to bitmap coordinates)
+                                                val insetH = block.overlayInsetHorizontal
+                                                val insetV = block.overlayInsetVertical
+                                                val overlayRectF = if (insetH > 0f || insetV > 0f) {
+                                                    RectF(
+                                                        bounds.left.toFloat() + insetH,
+                                                        bounds.top.toFloat() + insetV,
+                                                        bounds.right.toFloat() - insetH,
+                                                        bounds.bottom.toFloat() - insetV
+                                                    ).takeIf { it.width() > 0 && it.height() > 0 } 
+                                                        ?: RectF(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat())
                                                 } else {
-                                                    canvas.drawRect(rectF, overlayPaint)
+                                                    RectF(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat())
+                                                }
+                                                
+                                                // Apply overlayRotation for overlay (different from text rotation)
+                                                val overlayRotationAngle = block.overlayRotation ?: 0f
+                                                val cx = bounds.left + boundsWidth / 2f
+                                                val cy = bounds.top + boundsHeight / 2f
+                                                
+                                                if (overlayRotationAngle != 0f) {
+                                                    canvas.save()
+                                                    canvas.rotate(overlayRotationAngle, cx, cy)
+                                                }
+                                                
+                                                if (block.shapeType == 1) {
+                                                    canvas.drawOval(overlayRectF, overlayPaint)
+                                                } else {
+                                                    canvas.drawRect(overlayRectF, overlayPaint)
+                                                }
+                                                
+                                                if (overlayRotationAngle != 0f) {
+                                                    canvas.restore()
                                                 }
                                                 val displayMetrics = app.resources.displayMetrics
                                                 val screenWidthPx = displayMetrics.widthPixels.toFloat()
@@ -1961,9 +1990,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 } else null
 
                                                 canvas.save()
-                                                // Rotate around center of the block if rotation specified
-                                                val cx = bounds.left + boundsWidth / 2f
-                                                val cy = bounds.top + boundsHeight / 2f
+                                                // Rotate around center of the block if rotation specified (text rotation, different from overlay rotation)
                                                 val rotation = block.rotation ?: 0f
                                                 if (rotation != 0f) canvas.rotate(rotation, cx, cy)
 
