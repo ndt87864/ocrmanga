@@ -16,6 +16,7 @@ import com.example.ocrmanga.data.database.DatabaseHelper
 import com.example.ocrmanga.data.models.RecognitionResult
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
+import com.example.ocrmanga.data.constant.TranslationPrompts
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
@@ -168,50 +169,12 @@ class TranslationRepository(private val application: Application) {
         }
         return mistralKeyUsageQueue.removeAt(0)
     }
-
-    /**
-     * Hàm dịch văn bản bằng Mistral API (phiên bản đơn giản cho từng đoạn văn)
-     * @param text Văn bản nguồn
-     * @param sourceLang Ngôn ngữ nguồn (ví dụ: "ja", "zh", "en")
-     * @param targetLang Ngôn ngữ đích (ví dụ: "vi")
-     * @return Văn bản đã dịch hoặc null nếu lỗi
-     */
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
         var lastError: Exception? = null
         val maxTries = mistralApiKeys.size.coerceAtLeast(1)
         for (i in 0 until maxTries) {
             val mistralKey = getNextMistralApiKey() ?: return null
-        val prompt = "\n" +
-            "                    Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.\n" +
-            "                    \n" +
-            "                    Nhiệm vụ: Phân tích, khôi phục và dịch văn bản sau sang tiếng Việt: $text\n" +
-            "                    \n" +
-            "                    === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH (BẮT BUỘC) ===\n" +
-            "                    \n" +
-            "                    BƯỚC 1 - KHÔI PHỤC TỪ VÔ NGHĨA:\n" +
-            "                    - Kiểm tra văn bản có từ/cụm từ vô nghĩa, bị nhận dạng sai không\n" +
-            "                    - Nếu phát hiện từ vô nghĩa, hãy suy luận từ ngữ cảnh câu để khôi phục nội dung đúng\n" +
-            "                    - Ưu tiên: Suy luận ngữ cảnh > Giữ nguyên nếu không thể khôi phục\n" +
-            "                    \n" +
-            "                    BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN:\n" +
-            "                    - Kiểm tra xem thứ tự các từ có hợp lý về mặt ngữ nghĩa và ngữ pháp không\n" +
-            "                    - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa\n" +
-            "                    \n" +
-            "                    === YÊU CẦU KHI DỊCH ===\n" +
-            "                    1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.\n" +
-            "                    2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh.\n" +
-            "                    3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.\n" +
-            "                    4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).\n" +
-            "                    5. Khi trả về văn bản gốc do không thể dịch, chỉ trả về văn bản (giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được.\n" +
-            "                    6. Không trả về nhiều bản dịch khác nhau cho cùng một văn bản. VD: Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả? -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh. VD: Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?\n" +
-            "                    7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác, hãy chỉ trả về văn bản gốc trong 2 trường hợp này.\n" +
-            "                    8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.\n" +
-            "                    9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.\n" +
-            "                    10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép (\"), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.\n" +
-            "                    11. Các bản dịch phải có sự thống nhất về xưng hô, ngữ cảnh.\n" +
-            "                    12. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.\n" +
-            "                    \n" +
-            "                    Chỉ trả về 1 bản dịch chính xác duy nhất."
+        val prompt = TranslationPrompts.getMistralBasicPrompt(text)
 
             // Build JSON body using Gson to avoid invalid JSON
             val gson = com.google.gson.Gson()
@@ -300,50 +263,44 @@ class TranslationRepository(private val application: Application) {
         
         // Tạo context từ bản dịch ảnh trước (nếu có)
         val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
-            val prevBlocks = previousTranslation.mapIndexed { index, block ->
-                "${index + 1}. ${block.text}"
-            }.joinToString("\n")
-            
-            // Log để debug
             Log.i("TranslationRepository", "[MISTRAL-PREV] Có bản dịch tham khảo với ${previousTranslation.size} blocks")
             
-            // Phân tích NGÔI xưng hô từ ảnh trước (lịch sự vs suồng sã)
+            // Phân tích và log ngôi xưng hô từ ảnh trước
             val allText = previousTranslation.joinToString(" ") { it.text.uppercase() }
-            val isPolite = allText.contains(" TÔI ") || allText.contains("TÔI ") || allText.contains(" TÔI") ||
-                          allText.contains(" MÌNH ") || allText.contains("MÌNH ") || allText.contains(" MÌNH")
-            val isCasual = allText.contains(" TAO ") || allText.contains("TAO ") || allText.contains(" TAO") ||
-                          allText.contains(" TA ") || allText.contains("TA ")
+            val pronouns = mutableListOf<String>()
+            val hasToi = allText.contains(" TÔI ") || allText.contains("TÔI ")
+            val hasMinh = allText.contains(" MÌNH ") || allText.contains("MÌNH ")
+            val hasTao = allText.contains(" TAO ") || allText.contains("TAO ")
+            val hasCau = allText.contains(" CẬU ") || allText.contains("CẬU ")
+            val hasMay = allText.contains(" MÀY ") || allText.contains("MÀY ")
+            val hasAnh = allText.contains(" ANH ") || allText.contains("ANH ")
+            val hasEm = allText.contains(" EM ")
             
-            val pronounGroup = when {
-                isPolite -> "LỊCH SỰ (tôi/mình)"
-                isCasual -> "SUỒNG SÃ (tao/ta)"
-                else -> null
+            if (hasToi) pronouns.add("TÔI")
+            if (hasMinh) pronouns.add("MÌNH")
+            if (hasTao) pronouns.add("TAO")
+            if (hasCau) pronouns.add("CẬU")
+            if (hasMay) pronouns.add("MÀY")
+            if (hasAnh) pronouns.add("ANH")
+            if (hasEm) pronouns.add("EM")
+            
+            // Xác định cặp ngôi chính
+            val mainPair = when {
+                hasToi && hasCau -> "TÔI-CẬU"
+                hasMinh && hasCau -> "MÌNH-CẬU"
+                hasTao && hasMay -> "TAO-MÀY"
+                hasToi && hasAnh -> "TÔI-ANH"
+                hasEm && hasAnh -> "EM-ANH"
+                hasToi -> "TÔI"
+                hasMinh -> "MÌNH"
+                hasTao -> "TAO"
+                else -> "không xác định"
             }
             
-            val pronounInstruction = if (pronounGroup != null) {
-                Log.i("TranslationRepository", "[MISTRAL-PREV] Phát hiện ngôi xưng hô: $pronounGroup")
-                """
-                
-                !!! CẢNH BÁO BẮT BUỘC VỀ NGÔI XƯNG HÔ !!!
-                Ảnh trước sử dụng ngôi $pronounGroup cho nhân vật chính.
-                => BẮT BUỘC: Ảnh này PHẢI sử dụng cùng NGÔI (có thể dùng "tôi" hoặc "mình" nếu ngôi lịch sự, "tao" hoặc "ta" nếu ngôi suồng sã).
-                => CẤM: KHÔNG ĐƯỢC đổi sang NGÔI KHÁC (VD: từ "tôi/mình" sang "tao/ta" hoặc ngược lại).
-                
-                """
-            } else ""
+            Log.i("TranslationRepository", "[MISTRAL-PREV] Đại từ phát hiện: ${pronouns.joinToString(", ")}")
+            Log.i("TranslationRepository", "[MISTRAL-PREV] Cặp ngôi xưng hô chính: $mainPair")
             
-            """
-            
-            === BẢN DỊCH ẢNH TRƯỚC (BẮT BUỘC TUÂN THỦ) ===
-            Dưới đây là bản dịch của ảnh trước đó trong cùng bộ truyện. BẮT BUỘC phải:
-            - Giữ cùng NGÔI xưng hô như ảnh trước (nếu ảnh trước dùng "TÔI/MÌNH" thì ảnh này dùng "TÔI" hoặc "MÌNH", KHÔNG được đổi sang "TAO")
-            - Nắm bắt ngữ cảnh câu chuyện để dịch nối tiếp một cách mạch lạc
-            - Nhận biết các nhân vật và cách họ giao tiếp với nhau
-            $pronounInstruction
-            Bản dịch ảnh trước:
-            $prevBlocks
-            
-            """.trimIndent()
+            TranslationPrompts.getPreviousContextText(previousTranslation)
         } else {
             Log.i("TranslationRepository", "[MISTRAL-PREV] Không có bản dịch tham khảo")
             ""
@@ -362,127 +319,12 @@ class TranslationRepository(private val application: Application) {
         for (i in 0 until maxTries) {
             val mistralKey = apiKey ?: getNextMistralApiKey() ?: return null
             
-            val prompt = """
-                Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
-                
-                Nhiệm vụ: Dưới đây là các kết quả quét OCR từ cùng một ảnh truyện tranh/manga với các độ phóng đại (scale) khác nhau. Hãy phân tích, tổng hợp và chọn lọc thông tin chính xác nhất từ tất cả các kết quả này, sau đó trả về bản dịch tiếng Việt cho TỪNG BLOCK theo đúng thứ tự.
-                $previousContextText
-                Các kết quả OCR từ các scale khác nhau:
-                $ocrResultsText
-                
-                Các text blocks gốc cần dịch (đã được đánh số):
-                $numberedBlocks
-                
-                === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH (BẮT BUỘC) ===
-                
-                BƯỚC 1 - KHÔI PHỤC TỪ VÔ NGHĨA:
-                - Kiểm tra từng block xem có từ/cụm từ vô nghĩa, bị nhận dạng sai không (ví dụ: ký tự lạ, từ không tồn tại trong ngôn ngữ gốc, từ bị đứt đoạn)
-                - Nếu phát hiện từ vô nghĩa, hãy so sánh với các kết quả OCR từ scale khác để tìm từ đúng
-                - Nếu không tìm được từ đúng từ các scale khác, hãy suy luận từ ngữ cảnh câu và các block xung quanh để khôi phục nội dung hợp lý
-                - Ưu tiên: OCR từ scale khác > Suy luận ngữ cảnh > Giữ nguyên nếu không thể khôi phục
-                
-                BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN OCR:
-                - Kiểm tra xem thứ tự các từ trong mỗi block có hợp lý về mặt ngữ nghĩa và ngữ pháp không
-                - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa
-                - Đảm bảo văn bản sau khi sắp xếp tuân theo cấu trúc ngữ pháp của ngôn ngữ gốc (Nhật/Trung/Hàn)
-                - Với văn bản dọc (vertical), chú ý đọc từ trên xuống dưới, từ phải sang trái
-                
-                BƯỚC 3 - KIỂM TRA NGỮ CẢNH LIÊN BLOCK:
-                - Xem xét mối quan hệ ngữ nghĩa giữa các block trong cùng một ảnh
-                - Đảm bảo các block có sự liên kết logic (đối thoại, hội thoại, sự kiện)
-                - Nếu một block đơn lẻ không có nghĩa nhưng kết hợp với block khác thì có nghĩa, hãy điều chỉnh cho phù hợp
-                
-                === YÊU CẦU KHI DỊCH ===
-                1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
-                2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác.
-                3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
-                4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).
-                5. Khi trả về văn bản gốc do không thể dịch, chỉ trả về văn bản (giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được.
-                6. Không trả về nhiều bản dịch khác nhau cho cùng một văn bản. VD: Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả? -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này. VD: Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
-                7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác, hãy chỉ trả về văn bản gốc trong 2 trường hợp này.
-                8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.
-                9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.
-                10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép ("), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.
-                
-                === QUAN TRỌNG: PHÂN BIỆT ĐỘC THOẠI VÀ HỘI THOẠI ===
-                11. NHẬN BIẾT LOẠI VĂN BẢN (BẮT BUỘC PHÂN TÍCH TRƯỚC KHI DỊCH):
-                    a) ĐỘC THOẠI NỘI TÂM (suy nghĩ trong đầu):
-                       - Thường là văn bản trong khung suy nghĩ (bubble mây), không có đuôi nhọn
-                       - Nhân vật tự nói với bản thân, không có người nghe
-                       - Giọng điệu: Thắc mắc, ngạc nhiên, tự hỏi ("Sao lại thế nhỉ?", "Mình đang làm gì vậy?")
-                       - CÁCH DỊCH: Dùng "mình" hoặc lược bỏ chủ ngữ. TRÁNH dùng "tôi" trong độc thoại vì không tự nhiên.
-                       - VÍ DỤ: "¿QUÉ ESTÁ PASANDO?" -> "Chuyện gì đang xảy ra vậy?" (KHÔNG phải "Tôi không hiểu chuyện gì đang xảy ra")
-                    
-                    b) HỘI THOẠI (nói chuyện với người khác):
-                       - Văn bản trong khung thoại có đuôi nhọn chỉ về người nói
-                       - Có người nói và người nghe rõ ràng
-                       - Giọng điệu: Trực tiếp, có đại từ nhân xưng rõ ràng
-                       - CÁCH DỊCH: Dùng đại từ phù hợp quan hệ nhân vật (tôi-anh, tao-mày, mình-cậu, em-anh...)
-                    
-                    c) TRẦN THUẬT (narration):
-                       - Văn bản nền, không trong bubble
-                       - Mô tả sự kiện, bối cảnh, thời gian
-                       - CÁCH DỊCH: Giọng trung lập, không có đại từ ngôi thứ nhất
-                
-                12. ĐỒNG NHẤT XƯNG HÔ GIỮA CÁC NHÂN VẬT (BẮT BUỘC):
-                    - Mỗi CẶP nhân vật PHẢI có cách xưng hô NHẤT QUÁN trong toàn bộ truyện:
-                      + Nếu A gọi B là "cậu" thì LUÔN gọi "cậu", không đổi sang "anh/em/mày"
-                      + Nếu B tự xưng với A là "tôi" thì LUÔN xưng "tôi", không đổi sang "mình/tao/ta"
-                    - NẾU CÓ BẢN DỊCH ẢNH TRƯỚC: Phân tích cách xưng hô và BẮT BUỘC giữ nguyên
-                    - QUAN TRỌNG: Xưng hô phản ánh MỐI QUAN HỆ, không nên thay đổi trừ khi có lý do trong cốt truyện
-                    
-                    VÍ DỤ ĐÚNG:
-                    - Ảnh 1: "CẬU làm gì vậy?" / "TÔI đang tìm đồ"
-                    - Ảnh 2: "CẬU tìm thấy chưa?" / "TÔI chưa thấy" ✓ (nhất quán)
-                    
-                    VÍ DỤ SAI:
-                    - Ảnh 1: "CẬU làm gì vậy?" / "TÔI đang tìm đồ"
-                    - Ảnh 2: "MÀY tìm thấy chưa?" / "TAO chưa thấy" ✗ (đổi ngôi bất hợp lý)
-                
-                13. NGÔI XƯNG HÔ TRONG ĐỘC THOẠI VS HỘI THOẠI:
-                    - ĐỘC THOẠI: Ưu tiên "mình" hoặc lược bỏ chủ ngữ để tự nhiên
-                      + "Sao tóc mình dài thế nhỉ?" (tự hỏi)
-                      + "Chân cũng nhỏ đi rồi..." (lược bỏ chủ ngữ)
-                    - HỘI THOẠI: Dùng đại từ rõ ràng theo quan hệ
-                      + "TÔI không hiểu ý ANH" (lịch sự, xa cách)
-                      + "TAO không hiểu ý MÀY" (suồng sã, thân thiết/thô lỗ)
-                      + "MÌNH không hiểu ý CẬU" (thân mật, ngang hàng)
-                
-                14. SỬ DỤNG ĐẠI TỪ HỢP LÝ (BẮT BUỘC):
-                    - TRÁNH lặp đại từ xưng hô LIÊN TIẾP trong 3-4 block liền nhau. Có thể lược bỏ chủ ngữ ở một số câu khi ngữ cảnh đã rõ.
-                    - Ví dụ LẶP QUÁ NHIỀU (SAI): Block 1: "TÔI nghe nói...", Block 2: "TÔI đã quan sát...", Block 3: "TÔI đi loanh quanh...", Block 4: "TÔI không muốn..."
-                    - Ví dụ CÂN BẰNG (ĐÚNG): Block 1: "TÔI nghe nói...", Block 2: "Quan sát một lúc thì thấy...", Block 3: "Đi loanh quanh phát hiện ra...", Block 4: "TÔI không muốn làm..."
-                    - VẪN PHẢI GIỮ đại từ trong các trường hợp sau:
-                      + Câu đầu tiên của nhân vật (để xác định ai đang nói)
-                      + Khi có sự đối lập/so sánh ("TÔI thì...", "còn CẬU thì...")
-                      + Khi cần nhấn mạnh cảm xúc ("TÔI không thể chịu nổi!")
-                      + Khi chuyển đổi người nói trong hội thoại
-                      + Câu ngắn, đơn lẻ cần chủ ngữ để có nghĩa
-                
-                15. VĂN PHONG TỰ NHIÊN - MƯỢT MÀ (ƯU TIÊN CAO NHẤT):
-                    - KHÔNG dịch máy móc từng từ. Hãy dịch theo NGHĨA và CẢM XÚC của câu.
-                    - Dịch như cách người Việt THỰC SỰ nói chuyện hàng ngày, tự nhiên như đang đọc truyện tranh Việt Nam.
-                    - Sử dụng ngữ khí từ phù hợp: "à", "ơi", "nhỉ", "đấy", "thôi", "mà", "chứ", "sao", "vậy", "thế"...
-                    - Câu ngắn gọn, có nhịp điệu, tránh câu dài lê thê.
-                    - QUAN TRỌNG: Khi dịch cảm thán/than thở, hãy dùng cách nói tự nhiên:
-                      + "NO PUEDO GANAR" -> "Sao lại thua liên tục vậy!" (KHÔNG phải "Tôi không thể thắng")
-                      + "NO GANE NADA" -> "Chẳng thắng được gì cả!" (KHÔNG phải "Tôi không thắng được gì")
-                      + "MI CABELLO NO ERA TAN LARGO" -> "Tóc mình đâu có dài thế đâu nhỉ?" (KHÔNG phải "Tóc tôi trước đây không dài thế này")
-                      + "QUE PASA CON ESTAS MANOS" -> "Sao tay lại nhỏ vậy?" (KHÔNG phải "Sao bàn tay tôi gầy thế này")
-                    - Khi nhân vật tự nói với bản thân (độc thoại nội tâm), dùng giọng thắc mắc, ngạc nhiên tự nhiên.
-                    - Tránh lặp cấu trúc câu. Nếu block trước dùng "...thế này", block sau dùng "...vậy" hoặc "...nhỉ".
-                
-                16. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
-                17. So sánh và phân tích sự khác biệt giữa các kết quả OCR để chọn ra văn bản gốc chính xác nhất trước khi dịch.
-                18. BẮT BUỘC: Trả về kết quả theo định dạng sau, mỗi block trên một dòng:
-                    Block #1: <bản dịch block 1>
-                    Block #2: <bản dịch block 2>
-                    Block #3: <bản dịch block 3>
-                    ...
-                19. QUAN TRỌNG: Phải dịch đủ ${textBlocks.size} blocks theo đúng thứ tự từ Block #1 đến Block #${textBlocks.size}
-                
-                Trả về bản dịch cho TỪNG BLOCK theo định dạng đã nêu.
-            """.trimIndent()
+            val prompt = TranslationPrompts.getMistralMultiScalePrompt(
+                ocrResultsText = ocrResultsText,
+                numberedBlocks = numberedBlocks,
+                blockCount = textBlocks.size,
+                previousContextText = previousContextText
+            )
 
             // Build JSON body using Gson to avoid invalid JSON
             val gson = com.google.gson.Gson()
@@ -544,18 +386,32 @@ class TranslationRepository(private val application: Application) {
                 // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
                 val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.+)$""")
                 
-                for (line in lines) {
-                    val trimmedLine = line.trim()
+                var i = 0
+                while (i < lines.size) {
+                    val trimmedLine = lines[i].trim()
                     val match = blockPattern.find(trimmedLine)
                     if (match != null) {
                         var translation = match.groupValues[2].trim()
                         // Loại bỏ ** ở cuối nếu có
                         translation = translation.trimEnd('*').trim()
+                        
+                        // Loại bỏ các nhãn phân loại nếu AI không tuân thủ: "*Độc thoại*", "*Hội thoại*", etc.
+                        translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                        
+                        // Nếu translation rỗng (chỉ có nhãn), lấy dòng tiếp theo làm bản dịch
+                        if (translation.isEmpty() && i + 1 < lines.size) {
+                            i++
+                            translation = lines[i].trim()
+                            // Loại bỏ nhãn nếu dòng tiếp theo vẫn có nhãn
+                            translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                        }
+                        
                         if (translation.isNotEmpty()) {
                             translatedBlocks.add(translation)
                             //Log.i("TranslationRepository", "[MISTRAL-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
                         }
                     }
+                    i++
                 }
                 
                 // Nếu không parse được theo format "Block #", thử parse theo số thứ tự đơn giản (1. 2. 3.)
@@ -720,36 +576,7 @@ class TranslationRepository(private val application: Application) {
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
 
-    /**
-     * Chuyển đổi tọa độ bounds sau khi xoay ảnh
-     * @param bounds Tọa độ trên ảnh đã xoay (từ OCR)
-     * @param originalWidth Chiều rộng ảnh gốc (trước khi xoay) = W
-     * @param originalHeight Chiều cao ảnh gốc (trước khi xoay) = H
-     * @param rotationApplied Góc đã xoay ảnh (90 = xoay CW, -90 = xoay CCW)
-     * @return Tọa độ trên ảnh gốc
-     * 
-     * Giải thích chi tiết:
-     * 
-     * ẢNH GỐC (W x H):           SAU XOAY 90° CW (H x W):
-     * ┌─────────────┐            ┌───────────┐
-     * │ A ───────► B│            │ C       A │
-     * │ │           │    →       │ │       │ │
-     * │ ▼           │            │ ▼       ▼ │
-     * │ C ───────► D│            │ D ────► B │
-     * └─────────────┘            └───────────┘
-     *   
-     * Xoay 90° CW:
-     * - Ảnh gốc W x H → Ảnh xoay H x W
-     * - Điểm (x, y) trên ảnh GỐC → (H - 1 - y, x) trên ảnh XOAY
-     * - Điểm (x', y') trên ảnh XOAY → (y', H - 1 - x') trên ảnh GỐC
-     *   Với H = originalHeight
-     *   
-     * Xoay 90° CCW (-90°):
-     * - Ảnh gốc W x H → Ảnh xoay H x W  
-     * - Điểm (x, y) trên ảnh GỐC → (y, W - 1 - x) trên ảnh XOAY
-     * - Điểm (x', y') trên ảnh XOAY → (W - 1 - y', x') trên ảnh GỐC
-     *   Với W = originalWidth
-     */
+
     private fun transformBoundsAfterRotation(
         bounds: Rect,
         originalWidth: Int,
@@ -758,16 +585,6 @@ class TranslationRepository(private val application: Application) {
     ): Rect {
         return when (rotationApplied) {
             90 -> {
-                // Đã xoay 90° CW: ảnh xoay có kích thước (H x W)
-                // Điểm (x', y') trên ảnh xoay → (y', H - x') trên ảnh gốc
-                // Với H = originalHeight
-                // 
-                // Rect trên ảnh xoay: (left', top', right', bottom')
-                // → Rect trên ảnh gốc:
-                //   newLeft   = top'
-                //   newTop    = H - right'
-                //   newRight  = bottom'
-                //   newBottom = H - left'
                 Rect(
                     bounds.top,                          // newLeft = top' 
                     originalHeight - bounds.right,       // newTop = H - right'
@@ -776,16 +593,6 @@ class TranslationRepository(private val application: Application) {
                 )
             }
             -90 -> {
-                // Đã xoay 90° CCW: ảnh xoay có kích thước (H x W)
-                // Điểm (x', y') trên ảnh xoay → (W - y', x') trên ảnh gốc
-                // Với W = originalWidth
-                //
-                // Rect trên ảnh xoay: (left', top', right', bottom')
-                // → Rect trên ảnh gốc:
-                //   newLeft   = W - bottom'
-                //   newTop    = left'
-                //   newRight  = W - top'
-                //   newBottom = right'
                 Rect(
                     originalWidth - bounds.bottom,       // newLeft = W - bottom'
                     bounds.left,                         // newTop = left'
@@ -796,14 +603,6 @@ class TranslationRepository(private val application: Application) {
             else -> bounds
         }
     }
-
-    /**
-     * Chuyển đổi danh sách TextBlockInfo sau khi xoay ảnh
-     * @param blocks Danh sách blocks từ ảnh đã xoay
-     * @param originalWidth Chiều rộng ảnh gốc (trước khi xoay)
-     * @param originalHeight Chiều cao ảnh gốc (trước khi xoay)
-     * @param rotationApplied Góc đã xoay (90 = CW, -90 = CCW)
-     */
     private fun transformBlocksAfterRotation(
         blocks: List<TextBlockInfo>,
         originalWidth: Int,
@@ -825,11 +624,6 @@ class TranslationRepository(private val application: Application) {
         }
     }
 
-    /**
-     * Phát hiện hướng văn bản nâng cao dựa trên aspect ratio và layout
-     * @param bitmap Ảnh cần phân tích
-     * @return TextOrientation
-     */
     private fun detectTextOrientationAdvanced(bitmap: Bitmap): TextOrientation {
         // Thử quét nhanh với Japanese recognizer để detect orientation
         try {
@@ -2413,37 +2207,7 @@ class TranslationRepository(private val application: Application) {
                     safetySettings = safetySettings
                 )
 
-                val prompt = """
-                    Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
-                    
-                    Nhiệm vụ: Phân tích, khôi phục và dịch văn bản sau sang tiếng Việt: $originalText
-                    
-                    === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH (BẮT BUỘC) ===
-                    
-                    BƯỚC 1 - KHÔI PHỤC TỪ VÔ NGHĨA:
-                    - Kiểm tra văn bản có từ/cụm từ vô nghĩa, bị nhận dạng sai không (ký tự lạ, từ không tồn tại, từ bị đứt đoạn)
-                    - Nếu phát hiện từ vô nghĩa, hãy suy luận từ ngữ cảnh câu để khôi phục nội dung đúng
-                    - Ưu tiên: Suy luận ngữ cảnh > Giữ nguyên nếu không thể khôi phục
-                    
-                    BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN:
-                    - Kiểm tra xem thứ tự các từ có hợp lý về mặt ngữ nghĩa và ngữ pháp không
-                    - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa
-                    - Đảm bảo văn bản sau khi sắp xếp tuân theo cấu trúc ngữ pháp của ngôn ngữ gốc
-                    
-                    === YÊU CẦU KHI DỊCH ===
-                    1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
-                    2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh.
-                    3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
-                    4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).
-                    5. Không trả về nhiều bản dịch khác nhau cho cùng một văn bản. VD: Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả? -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh. VD: Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
-                    6. Không trả về lí do không dịch được hoặc lí do dịch không chính xác, hãy chỉ trả về văn bản gốc trong 2 trường hợp này.
-                    7. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
-                    8. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.
-                    9. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép ("), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.
-                    10. Các bản dịch phải có sự thống nhất về xưng hô, ngữ cảnh.
-                    
-                    Chỉ trả về 1 bản dịch chính xác duy nhất.
-                """.trimIndent()
+                val prompt = TranslationPrompts.getMistralBasicPrompt(originalText)
 
                 val response = generativeModel.generateContent(prompt)
                 val translatedText = response.text?.trim()
@@ -2493,50 +2257,44 @@ class TranslationRepository(private val application: Application) {
         
         // Tạo context từ bản dịch ảnh trước (nếu có)
         val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
-            val prevBlocks = previousTranslation.mapIndexed { index, block ->
-                "${index + 1}. ${block.text}"
-            }.joinToString("\n")
-            
-            // Log để debug
             Log.i("TranslationRepository", "[GEMINI-PREV] Có bản dịch tham khảo với ${previousTranslation.size} blocks")
             
-            // Phân tích NGÔI xưng hô từ ảnh trước (lịch sự vs suồng sã)
+            // Phân tích và log ngôi xưng hô từ ảnh trước
             val allText = previousTranslation.joinToString(" ") { it.text.uppercase() }
-            val isPolite = allText.contains(" TÔI ") || allText.contains("TÔI ") || allText.contains(" TÔI") ||
-                          allText.contains(" MÌNH ") || allText.contains("MÌNH ") || allText.contains(" MÌNH")
-            val isCasual = allText.contains(" TAO ") || allText.contains("TAO ") || allText.contains(" TAO") ||
-                          allText.contains(" TA ") || allText.contains("TA ")
+            val pronouns = mutableListOf<String>()
+            val hasToi = allText.contains(" TÔI ") || allText.contains("TÔI ")
+            val hasMinh = allText.contains(" MÌNH ") || allText.contains("MÌNH ")
+            val hasTao = allText.contains(" TAO ") || allText.contains("TAO ")
+            val hasCau = allText.contains(" CẬU ") || allText.contains("CẬU ")
+            val hasMay = allText.contains(" MÀY ") || allText.contains("MÀY ")
+            val hasAnh = allText.contains(" ANH ") || allText.contains("ANH ")
+            val hasEm = allText.contains(" EM ")
             
-            val pronounGroup = when {
-                isPolite -> "LỊCH SỰ (tôi/mình)"
-                isCasual -> "SUỒNG SÃ (tao/ta)"
-                else -> null
+            if (hasToi) pronouns.add("TÔI")
+            if (hasMinh) pronouns.add("MÌNH")
+            if (hasTao) pronouns.add("TAO")
+            if (hasCau) pronouns.add("CẬU")
+            if (hasMay) pronouns.add("MÀY")
+            if (hasAnh) pronouns.add("ANH")
+            if (hasEm) pronouns.add("EM")
+            
+            // Xác định cặp ngôi chính
+            val mainPair = when {
+                hasToi && hasCau -> "TÔI-CẬU"
+                hasMinh && hasCau -> "MÌNH-CẬU"
+                hasTao && hasMay -> "TAO-MÀY"
+                hasToi && hasAnh -> "TÔI-ANH"
+                hasEm && hasAnh -> "EM-ANH"
+                hasToi -> "TÔI"
+                hasMinh -> "MÌNH"
+                hasTao -> "TAO"
+                else -> "không xác định"
             }
             
-            val pronounInstruction = if (pronounGroup != null) {
-                Log.i("TranslationRepository", "[GEMINI-PREV] Phát hiện ngôi xưng hô: $pronounGroup")
-                """
-                
-                !!! CẢNH BÁO BẮT BUỘC VỀ NGÔI XƯNG HÔ !!!
-                Ảnh trước sử dụng ngôi $pronounGroup cho nhân vật chính.
-                => BẮT BUỘC: Ảnh này PHẢI sử dụng cùng NGÔI (có thể dùng "tôi" hoặc "mình" nếu ngôi lịch sự, "tao" hoặc "ta" nếu ngôi suồng sã).
-                => CẤM: KHÔNG ĐƯỢC đổi sang NGÔI KHÁC (VD: từ "tôi/mình" sang "tao/ta" hoặc ngược lại).
-                
-                """
-            } else ""
+            Log.i("TranslationRepository", "[GEMINI-PREV] Đại từ phát hiện: ${pronouns.joinToString(", ")}")
+            Log.i("TranslationRepository", "[GEMINI-PREV] Cặp ngôi xưng hô chính: $mainPair")
             
-            """
-            
-            === BẢN DỊCH ẢNH TRƯỚC (BẮT BUỘC TUÂN THỦ) ===
-            Dưới đây là bản dịch của ảnh trước đó trong cùng bộ truyện. BẮT BUỘC phải:
-            - Giữ cùng NGÔI xưng hô như ảnh trước (nếu ảnh trước dùng "TÔI/MÌNH" thì ảnh này dùng "TÔI" hoặc "MÌNH", KHÔNG được đổi sang "TAO")
-            - Nắm bắt ngữ cảnh câu chuyện để dịch nối tiếp một cách mạch lạc
-            - Nhận biết các nhân vật và cách họ giao tiếp với nhau
-            $pronounInstruction
-            Bản dịch ảnh trước:
-            $prevBlocks
-            
-            """.trimIndent()
+            TranslationPrompts.getPreviousContextText(previousTranslation)
         } else {
             Log.i("TranslationRepository", "[GEMINI-PREV] Không có bản dịch tham khảo")
             ""
@@ -2574,127 +2332,12 @@ class TranslationRepository(private val application: Application) {
                     safetySettings = safetySettings
                 )
                 
-                val prompt = """
-                    Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
-                    
-                    Nhiệm vụ: Dưới đây là các kết quả quét OCR từ cùng một ảnh truyện tranh/manga với các độ phóng đại (scale) khác nhau. Hãy phân tích, tổng hợp và chọn lọc thông tin chính xác nhất từ tất cả các kết quả này, sau đó trả về bản dịch tiếng Việt cho TỪNG BLOCK theo đúng thứ tự.
-                    $previousContextText
-                    Các kết quả OCR từ các scale khác nhau:
-                    $ocrResultsText
-                    
-                    Các text blocks gốc cần dịch (đã được đánh số):
-                    $numberedBlocks
-                    
-                    === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH (BẮT BUỘC) ===
-                    
-                    BƯỚC 1 - KHÔI PHỤC TỪ VÔ NGHĨA:
-                    - Kiểm tra từng block xem có từ/cụm từ vô nghĩa, bị nhận dạng sai không (ví dụ: ký tự lạ, từ không tồn tại trong ngôn ngữ gốc, từ bị đứt đoạn)
-                    - Nếu phát hiện từ vô nghĩa, hãy so sánh với các kết quả OCR từ scale khác để tìm từ đúng
-                    - Nếu không tìm được từ đúng từ các scale khác, hãy suy luận từ ngữ cảnh câu và các block xung quanh để khôi phục nội dung hợp lý
-                    - Ưu tiên: OCR từ scale khác > Suy luận ngữ cảnh > Giữ nguyên nếu không thể khôi phục
-                    
-                    BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN OCR:
-                    - Kiểm tra xem thứ tự các từ trong mỗi block có hợp lý về mặt ngữ nghĩa và ngữ pháp không
-                    - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa
-                    - Đảm bảo văn bản sau khi sắp xếp tuân theo cấu trúc ngữ pháp của ngôn ngữ gốc (Nhật/Trung/Hàn)
-                    - Với văn bản dọc (vertical), chú ý đọc từ trên xuống dưới, từ phải sang trái
-                    
-                    BƯỚC 3 - KIỂM TRA NGỮ CẢNH LIÊN BLOCK:
-                    - Xem xét mối quan hệ ngữ nghĩa giữa các block trong cùng một ảnh
-                    - Đảm bảo các block có sự liên kết logic (đối thoại, hội thoại, sự kiện)
-                    - Nếu một block đơn lẻ không có nghĩa nhưng kết hợp với block khác thì có nghĩa, hãy điều chỉnh cho phù hợp
-                    
-                    === YÊU CẦU KHI DỊCH ===
-                    1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
-                    2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác.
-                    3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
-                    4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).
-                    5. Khi trả về văn bản gốc do không thể dịch, chỉ trả về văn bản (giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được.
-                    6. Không trả về nhiều bản dịch khác nhau cho cùng một văn bản. VD: Senpai, anh/chị/bạn hưng phấn khi thấy em/tôi/mình mặc đồ con gái hả? -> hãy chỉ dùng 1 bản chính xác nhất với ngữ cảnh trong trường hợp này. VD: Senpai, anh hưng phấn khi thấy mình mặc đồ con gái hả?
-                    7. Không trả về lí do không dịch được hoặc lí do dịch không chính xác, hãy chỉ trả về văn bản gốc trong 2 trường hợp này.
-                    8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.
-                    9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.
-                    10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép ("), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.
-                    
-                    === QUAN TRỌNG: PHÂN BIỆT ĐỘC THOẠI VÀ HỘI THOẠI ===
-                    11. NHẬN BIẾT LOẠI VĂN BẢN (BẮT BUỘC PHÂN TÍCH TRƯỚC KHI DỊCH):
-                        a) ĐỘC THOẠI NỘI TÂM (suy nghĩ trong đầu):
-                           - Thường là văn bản trong khung suy nghĩ (bubble mây), không có đuôi nhọn
-                           - Nhân vật tự nói với bản thân, không có người nghe
-                           - Giọng điệu: Thắc mắc, ngạc nhiên, tự hỏi ("Sao lại thế nhỉ?", "Mình đang làm gì vậy?")
-                           - CÁCH DỊCH: Dùng "mình" hoặc lược bỏ chủ ngữ. TRÁNH dùng "tôi" trong độc thoại vì không tự nhiên.
-                           - VÍ DỤ: "¿QUÉ ESTÁ PASANDO?" -> "Chuyện gì đang xảy ra vậy?" (KHÔNG phải "Tôi không hiểu chuyện gì đang xảy ra")
-                        
-                        b) HỘI THOẠI (nói chuyện với người khác):
-                           - Văn bản trong khung thoại có đuôi nhọn chỉ về người nói
-                           - Có người nói và người nghe rõ ràng
-                           - Giọng điệu: Trực tiếp, có đại từ nhân xưng rõ ràng
-                           - CÁCH DỊCH: Dùng đại từ phù hợp quan hệ nhân vật (tôi-anh, tao-mày, mình-cậu, em-anh...)
-                        
-                        c) TRẦN THUẬT (narration):
-                           - Văn bản nền, không trong bubble
-                           - Mô tả sự kiện, bối cảnh, thời gian
-                           - CÁCH DỊCH: Giọng trung lập, không có đại từ ngôi thứ nhất
-                    
-                    12. ĐỒNG NHẤT XƯNG HÔ GIỮA CÁC NHÂN VẬT (BẮT BUỘC):
-                        - Mỗi CẶP nhân vật PHẢI có cách xưng hô NHẤT QUÁN trong toàn bộ truyện:
-                          + Nếu A gọi B là "cậu" thì LUÔN gọi "cậu", không đổi sang "anh/em/mày"
-                          + Nếu B tự xưng với A là "tôi" thì LUÔN xưng "tôi", không đổi sang "mình/tao/ta"
-                        - NẾU CÓ BẢN DỊCH ẢNH TRƯỚC: Phân tích cách xưng hô và BẮT BUỘC giữ nguyên
-                        - QUAN TRỌNG: Xưng hô phản ánh MỐI QUAN HỆ, không nên thay đổi trừ khi có lý do trong cốt truyện
-                        
-                        VÍ DỤ ĐÚNG:
-                        - Ảnh 1: "CẬU làm gì vậy?" / "TÔI đang tìm đồ"
-                        - Ảnh 2: "CẬU tìm thấy chưa?" / "TÔI chưa thấy" ✓ (nhất quán)
-                        
-                        VÍ DỤ SAI:
-                        - Ảnh 1: "CẬU làm gì vậy?" / "TÔI đang tìm đồ"
-                        - Ảnh 2: "MÀY tìm thấy chưa?" / "TAO chưa thấy" ✗ (đổi ngôi bất hợp lý)
-                    
-                    13. NGÔI XƯNG HÔ TRONG ĐỘC THOẠI VS HỘI THOẠI:
-                        - ĐỘC THOẠI: Ưu tiên "mình" hoặc lược bỏ chủ ngữ để tự nhiên
-                          + "Sao tóc mình dài thế nhỉ?" (tự hỏi)
-                          + "Chân cũng nhỏ đi rồi..." (lược bỏ chủ ngữ)
-                        - HỘI THOẠI: Dùng đại từ rõ ràng theo quan hệ
-                          + "TÔI không hiểu ý ANH" (lịch sự, xa cách)
-                          + "TAO không hiểu ý MÀY" (suồng sã, thân thiết/thô lỗ)
-                          + "MÌNH không hiểu ý CẬU" (thân mật, ngang hàng)
-                    
-                    14. SỬ DỤNG ĐẠI TỪ HỢP LÝ (BẮT BUỘC):
-                        - TRÁNH lặp đại từ xưng hô LIÊN TIẾP trong 3-4 block liền nhau. Có thể lược bỏ chủ ngữ ở một số câu khi ngữ cảnh đã rõ.
-                        - Ví dụ LẶP QUÁ NHIỀU (SAI): Block 1: "TÔI nghe nói...", Block 2: "TÔI đã quan sát...", Block 3: "TÔI đi loanh quanh...", Block 4: "TÔI không muốn..."
-                        - Ví dụ CÂN BẰNG (ĐÚNG): Block 1: "TÔI nghe nói...", Block 2: "Quan sát một lúc thì thấy...", Block 3: "Đi loanh quanh phát hiện ra...", Block 4: "TÔI không muốn làm..."
-                        - VẪN PHẢI GIỮ đại từ trong các trường hợp sau:
-                          + Câu đầu tiên của nhân vật (để xác định ai đang nói)
-                          + Khi có sự đối lập/so sánh ("TÔI thì...", "còn CẬU thì...")
-                          + Khi cần nhấn mạnh cảm xúc ("TÔI không thể chịu nổi!")
-                          + Khi chuyển đổi người nói trong hội thoại
-                          + Câu ngắn, đơn lẻ cần chủ ngữ để có nghĩa
-                    
-                    15. VĂN PHONG TỰ NHIÊN - MƯỢT MÀ (ƯU TIÊN CAO NHẤT):
-                        - KHÔNG dịch máy móc từng từ. Hãy dịch theo NGHĨA và CẢM XÚC của câu.
-                        - Dịch như cách người Việt THỰC SỰ nói chuyện hàng ngày, tự nhiên như đang đọc truyện tranh Việt Nam.
-                        - Sử dụng ngữ khí từ phù hợp: "à", "ơi", "nhỉ", "đấy", "thôi", "mà", "chứ", "sao", "vậy", "thế"...
-                        - Câu ngắn gọn, có nhịp điệu, tránh câu dài lê thê.
-                        - QUAN TRỌNG: Khi dịch cảm thán/than thở, hãy dùng cách nói tự nhiên:
-                          + "NO PUEDO GANAR" -> "Sao lại thua liên tục vậy!" (KHÔNG phải "Tôi không thể thắng")
-                          + "NO GANE NADA" -> "Chẳng thắng được gì cả!" (KHÔNG phải "Tôi không thắng được gì")
-                          + "MI CABELLO NO ERA TAN LARGO" -> "Tóc mình đâu có dài thế đâu nhỉ?" (KHÔNG phải "Tóc tôi trước đây không dài thế này")
-                          + "QUE PASA CON ESTAS MANOS" -> "Sao tay lại nhỏ vậy?" (KHÔNG phải "Sao bàn tay tôi gầy thế này")
-                        - Khi nhân vật tự nói với bản thân (độc thoại nội tâm), dùng giọng thắc mắc, ngạc nhiên tự nhiên.
-                        - Tránh lặp cấu trúc câu. Nếu block trước dùng "...thế này", block sau dùng "...vậy" hoặc "...nhỉ".
-                    
-                    16. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
-                    17. So sánh và phân tích sự khác biệt giữa các kết quả OCR để chọn ra văn bản gốc chính xác nhất trước khi dịch.
-                    18. BẮT BUỘC: Trả về kết quả theo định dạng sau, mỗi block trên một dòng:
-                        Block #1: <bản dịch block 1>
-                        Block #2: <bản dịch block 2>
-                        Block #3: <bản dịch block 3>
-                        ...
-                    17. QUAN TRỌNG: Phải dịch đủ ${textBlocks.size} blocks theo đúng thứ tự từ Block #1 đến Block #${textBlocks.size}
-                    
-                    Trả về bản dịch cho TỪNG BLOCK theo định dạng đã nêu.
-                """.trimIndent()
+                val prompt = TranslationPrompts.getGeminiMultiScalePrompt(
+                    ocrResultsText = ocrResultsText,
+                    numberedBlocks = numberedBlocks,
+                    blockCount = textBlocks.size,
+                    previousContextText = previousContextText
+                )
                 
                 val response = generativeModel.generateContent(prompt)
                 val content = response.text?.trim()
@@ -2713,18 +2356,32 @@ class TranslationRepository(private val application: Application) {
                 // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
                 val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.+)$""")
                 
-                for (line in lines) {
-                    val trimmedLine = line.trim()
+                var i = 0
+                while (i < lines.size) {
+                    val trimmedLine = lines[i].trim()
                     val match = blockPattern.find(trimmedLine)
                     if (match != null) {
                         var translation = match.groupValues[2].trim()
                         // Loại bỏ ** ở cuối nếu có
                         translation = translation.trimEnd('*').trim()
+                        
+                        // Loại bỏ các nhãn phân loại nếu AI không tuân thủ: "*Độc thoại*", "*Hội thoại*", etc.
+                        translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                        
+                        // Nếu translation rỗng (chỉ có nhãn), lấy dòng tiếp theo làm bản dịch
+                        if (translation.isEmpty() && i + 1 < lines.size) {
+                            i++
+                            translation = lines[i].trim()
+                            // Loại bỏ nhãn nếu dòng tiếp theo vẫn có nhãn
+                            translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                        }
+                        
                         if (translation.isNotEmpty()) {
                             translatedBlocks.add(translation)
 //                            Log.i("TranslationRepository", "[GEMINI-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
                         }
                     }
+                    i++
                 }
                 
                 // Nếu không parse được gì hoặc quá ít, thử format khác
