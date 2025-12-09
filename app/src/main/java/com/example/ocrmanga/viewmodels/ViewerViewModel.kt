@@ -103,13 +103,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 
                 if (resultUri != null) {
-                    // Thay thế ảnh gốc bằng ảnh đã xóa text
-                    replaceImageUri(uri, resultUri)
+                    // Thay thế ảnh gốc bằng ảnh đã xóa text (tạm thời, không lưu vào DB ngay)
+                    replaceImageUri(uri, resultUri, persist = false)
                     
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             getApplication(),
-                            "Đã xóa text gốc thành công!",
+                            "Đã tạm xóa text gốc (chưa lưu). Lưu phòng hoặc chờ autosave để ghi vào DB.",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -1387,14 +1387,26 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      * in translation blocks to match the new image dimensions so that coordinates
      * remain consistent after saving and reloading from DB.
      */
-    fun replaceImageUri(oldUri: Uri, newUri: Uri) {
+    /**
+     * Replace an existing image URI in the current room/session with a new URI.
+     *
+     * If persist == true and the image has an imageId associated with a stored room,
+     * the function will write the new file content into DB (replaceImageFileOnly) so the
+     * change is persisted immediately.
+     *
+     * If persist == false, the function performs a UI-only swap: it replaces the URI
+     * in memory and mapping (uriToImageId), marks the URI as dirty so a later call to
+     * saveRoom or an autosave will persist the change, and marks the DB row as changed
+     * (markImageChanged) so autosave threshold detection works.
+     */
+    fun replaceImageUri(oldUri: Uri, newUri: Uri, persist: Boolean = true) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // SIMPLE LOGIC: Just swap the file content, keep the same URL in DB
                 // This preserves ALL translations, insets, bounds, etc. automatically
                 val imageId = uriToImageId.entries.find { it.key.toString() == oldUri.toString() }?.value
                 
-                if (imageId != null && _uiState.value.roomId != null) {
+                if (imageId != null && _uiState.value.roomId != null && persist) {
                     // Call DB helper to overwrite the old file with new content
                     // The stored URI remains the same, so all translations/blocks are preserved
                     val stored = databaseHelper.replaceImageFileOnly(imageId, newUri)
@@ -1410,6 +1422,63 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         }
                         return@launch
                     }
+                } else if (imageId != null && _uiState.value.roomId != null && !persist) {
+                    // Temporary replacement for a stored image: do not write to DB. This
+                    // mirrors the behavior of replacing a non-stored image in UI only.
+                    Log.i(TAG, "replaceImageUri: temporary swap for stored image imageId=$imageId")
+                    // Swap URI trong imageUris list
+                    val oldIndex = _uiState.value.imageUris.indexOfFirst { it.toString() == oldUri.toString() }
+                    if (oldIndex == -1) {
+                        Log.e(TAG, "replaceImageUri: oldUri not found in imageUris list (temp)")
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(getApplication(), "Không tìm thấy ảnh", Toast.LENGTH_SHORT).show()
+                        }
+                        return@launch
+                    }
+                    // Swap translations từ oldUri sang newUri
+                    val oldTranslation = _uiState.value.translatedTexts[oldUri]
+                    // Update UI state: swap URIs and translation data and bump version
+                    _uiState.update { state ->
+                        val newImageUris = state.imageUris.toMutableList()
+                        newImageUris[oldIndex] = newUri
+
+                        val newTranslatedTexts = state.translatedTexts.toMutableMap()
+                        newTranslatedTexts.remove(oldUri)
+                        if (oldTranslation != null) {
+                            newTranslatedTexts[newUri] = oldTranslation
+                        }
+
+                        // Maintain URI->imageId mapping for use on save: map newUri to the same
+                        // imageId so updateMangaRoomSelective knows which DB row to update later.
+                        uriToImageId.remove(oldUri)
+                        uriToImageId[newUri] = imageId
+
+                        state.copy(
+                            imageUris = newImageUris,
+                            translatedTexts = newTranslatedTexts,
+                            translationVersion = state.translationVersion + 1
+                        )
+                    }
+
+                    // Mark this uri as dirty so saveRoom will persist the file later
+                    dirtyUris.add(newUri)
+                    // Also notify DB to mark image changed for autosave threshold if needed
+                    val rid = _uiState.value.roomId
+                    try {
+                        val numChanged = databaseHelper.markImageChanged(imageId, rid!!)
+                        Log.i(TAG, "replaceImageUri temp: marked image changed imageId=$imageId, numChanged=$numChanged")
+                        if (numChanged >= 5) {
+                            maybeAutoSaveChangedImages(rid)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "replaceImageUri temp: failed to markImageChanged for imageId=$imageId", e)
+                    }
+                    // Bump reload token for UI refresh (use newUri)
+                    bumpReloadTokenForUri(newUri)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(getApplication(), "Đã tạm thay ảnh (chưa lưu)", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
                 } else {
                     // Not a stored image - swap URI directly in UI state
                     Log.i(TAG, "replaceImageUri: imageId not found for $oldUri, swapping URI in UI state")
@@ -1444,6 +1513,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     }
                     
+                    // If this replacement was requested as temporary (persist=false), mark dirtyUris
+                    // so the new image will be saved during saveRoom/auto-save.
+                    if (!persist) {
+                        dirtyUris.add(newUri)
+                    }
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Đã thay thế ảnh", Toast.LENGTH_SHORT).show()
                     }

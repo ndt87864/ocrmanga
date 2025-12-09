@@ -80,6 +80,8 @@ chaquopy {
         pip {
             install("Pillow")
             install("numpy")
+            // OpenCV for advanced inpainting (text removal)
+            install("opencv-python")
         }
     }
     productFlavors {
