@@ -2189,6 +2189,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 // Draw text line by line with proper positioning
                                                 val lines = wrappedText.split("\n")
                                                 val fontMetrics = tp.fontMetrics
+                                                // Use actual lineSpacing value (may be < 1f) to match what adjustWhiteoutBounds calculated
                                                 val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * block.lineSpacing
 
                                                 // Calculate text drawing area with padding (exactly like view mode)
@@ -2235,8 +2236,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                             canvas.drawText(line, centerX, currentY, tp)
                                                         }
                                                         currentY += lineHeight
-                                                        // Stop if we exceed available space
-                                                        if (currentY + fontMetrics.descent > textTop + textDrawHeight - verticalMargin) break
                                                     }
                                                 }
 
