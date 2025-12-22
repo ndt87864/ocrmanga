@@ -2776,34 +2776,38 @@ class TranslationRepository(private val application: Application) {
     /**
      * Kiểm tra xem một text block có phải là nhiễu (false positive) hay không
      * Dựa trên nhiều tiêu chí: kích thước, tỷ lệ khung hình, nội dung
+     * Điều chỉnh để ít loại bỏ text CJK hợp lệ trong manga
      */
     private fun isNoiseBlock(text: String, bounds: Rect, confidence: Float): Boolean {
         val cleanText = text.trim()
         val area = bounds.width() * bounds.height()
         val aspectRatio = bounds.height().toFloat() / bounds.width().coerceAtLeast(1)
         
+        // Kiểm tra có chứa ký tự CJK không (bonus cho manga text)
+        val hasCJK = Regex("[\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]").containsMatchIn(cleanText)
+        
         // Count noise indicators (cần nhiều dấu hiệu cùng lúc mới reject)
         var noiseScore = 0
         
-        // 1. Block quá nhỏ về diện tích (chỉ nếu CỰC kỳ nhỏ)
+        // 1. Block quá nhỏ về diện tích (ít nghiêm ngặt hơn cho CJK)
         if (area < MIN_BLOCK_AREA / 2) {
-            noiseScore += 2
+            noiseScore += if (hasCJK) 1 else 2  // Giảm penalty cho CJK
         } else if (area < MIN_BLOCK_AREA) {
-            noiseScore += 1
+            noiseScore += if (hasCJK) 0 else 1  // Không penalty cho CJK nhỏ
         }
         
         // 2. Block ngắn với aspect ratio kỳ lạ (nét vẽ mồ hôi, viền)
         if (cleanText.length <= 2) {
             if (aspectRatio > MAX_SINGLE_CHAR_ASPECT_RATIO || aspectRatio < 1.0f / MAX_SINGLE_CHAR_ASPECT_RATIO) {
-                noiseScore += 2
+                noiseScore += if (hasCJK) 1 else 2  // Giảm penalty cho CJK
             }
         }
         
-        // 3. Confidence rất thấp (< 0.3 = chắc chắn nhiễu)
-        if (confidence < 0.3f) {
-            noiseScore += 3
+        // 3. Confidence thấp (ít nghiêm ngặt hơn cho CJK)
+        if (confidence < 0.25f) {  // Tăng ngưỡng từ 0.3 lên 0.25
+            noiseScore += if (hasCJK) 2 else 3  // Giảm penalty cho CJK
         } else if (confidence < MIN_OCR_CONFIDENCE) {
-            noiseScore += 1
+            noiseScore += if (hasCJK) 0 else 1  // Không penalty cho CJK low confidence
         }
         
         // 4. Text chỉ chứa các ký tự nhiễu
@@ -2822,11 +2826,16 @@ class TranslationRepository(private val application: Application) {
             noiseScore += 2
         }
         
-        // Chỉ reject khi có từ 3 điểm noise trở lên (chắc chắn là nhiễu)
-        val isNoise = noiseScore >= 3
+        // Bonus cho CJK: giảm noiseScore nếu có CJK
+        if (hasCJK && noiseScore > 0) {
+            noiseScore -= 1
+        }
+        
+        // Tăng ngưỡng reject từ 3 lên 4 để ít loại bỏ hơn
+        val isNoise = noiseScore >= 4
         
         if (isNoise) {
-            Log.d("TranslationRepository", "[NOISE-FILTER] Block '$text' rejected: noiseScore=$noiseScore (area=$area, confidence=$confidence, aspectRatio=$aspectRatio)")
+            Log.d("TranslationRepository", "[NOISE-FILTER] Block '$text' rejected: noiseScore=$noiseScore (area=$area, confidence=$confidence, aspectRatio=$aspectRatio, hasCJK=$hasCJK)")
         }
         
         return isNoise
