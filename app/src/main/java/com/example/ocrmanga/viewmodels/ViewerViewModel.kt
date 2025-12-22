@@ -247,8 +247,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     
                     val result = translationRepository.translateImage(uri, mode, statusCallback, previousTranslation)
                     
+                    Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
+                    
                     // Ensure blocks have overlay/text colors set similarly to queued translations
                     val (originalText, blocks) = result
+                    
+                    if (blocks.isEmpty()) {
+                        Log.w(TAG, "[RETRANSLATE] WARNING: No blocks returned from translation!")
+                    }
+                    
                     val fixedBlocks = blocks.map { block ->
                         val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
                         val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
@@ -260,6 +267,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     }
                     
+                    Log.i(TAG, "[RETRANSLATE] About to update UI state with ${fixedBlocks.size} blocks")
+                    
                     _uiState.update {
                         it.copy(
                             translatedTexts = it.translatedTexts + (uri to (originalText to fixedBlocks)),
@@ -269,6 +278,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             translationVersion = it.translationVersion + 1
                         )
                     }
+                    
+                    Log.i(TAG, "[RETRANSLATE] UI state updated successfully. translationVersion=${_uiState.value.translationVersion}")
                     
                     // Cập nhật trạng thái: hoàn tất
                     updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)

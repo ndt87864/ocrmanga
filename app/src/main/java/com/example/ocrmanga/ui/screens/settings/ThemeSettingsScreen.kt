@@ -236,6 +236,11 @@ fun ThemeSettingsScreen(
                             scope.launch {
                                 viewModel.setDefaultTextColor(color)
                             }
+                        },
+                        onOverlayBrightnessChanged = { brightness ->
+                            scope.launch {
+                                viewModel.setDefaultOverlayBrightness(brightness)
+                            }
                         }
                     )
                 }
@@ -263,6 +268,11 @@ fun ThemeSettingsScreen(
                         onOverlayBrightnessChanged = { brightness ->
                             scope.launch {
                                 viewModel.setDefaultOverlayBrightness(brightness)
+                            }
+                        },
+                        onTextColorChanged = { color ->
+                            scope.launch {
+                                viewModel.setDefaultTextColor(color)
                             }
                         }
                     )
@@ -490,7 +500,8 @@ private fun DefaultFontSelector(
     onFontSelected: (String) -> Unit,
     onLineSpacingChanged: (Float) -> Unit,
     onTextBoldnessChanged: (Float) -> Unit,
-    onTextColorChanged: (String?) -> Unit
+    onTextColorChanged: (String?) -> Unit,
+    onOverlayBrightnessChanged: (Float) -> Unit
 ) {
     val context = LocalContext.current
     
@@ -646,10 +657,29 @@ private fun DefaultFontSelector(
                 
                 Spacer(modifier = Modifier.weight(1f))
                 
+                OutlinedButton(
+                    onClick = {
+                        tempTextColor = null
+                        onTextColorChanged(null)
+                        onOverlayBrightnessChanged(1.0f) // Reset overlay to default bright
+                    }
+                ) {
+                    Text("Reset")
+                }
+                
                 Button(
                     onClick = {
                         val hex = tempTextColor?.let { "#${String.format("%08X", it.toArgb())}" }
                         onTextColorChanged(hex)
+                        if (tempTextColor != null) {
+                            val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(
+                                tempTextColor!!.toArgb())
+                            if (luminance > 0.5f) {
+                                onOverlayBrightnessChanged(0.0f) // Dark overlay for light text
+                            } else {
+                                onOverlayBrightnessChanged(1.0f) // Bright overlay for dark text
+                            }
+                        }
                     },
                     enabled = tempTextColor?.let { "#${String.format("%08X", it.toArgb())}" } != textColor
                 ) {
@@ -705,7 +735,8 @@ private fun DefaultOverlaySelector(
     overlayAlpha: Float,
     overlayBrightness: Float,
     onOverlayAlphaChanged: (Float) -> Unit,
-    onOverlayBrightnessChanged: (Float) -> Unit
+    onOverlayBrightnessChanged: (Float) -> Unit,
+    onTextColorChanged: (String?) -> Unit
 ) {
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -732,7 +763,14 @@ private fun DefaultOverlaySelector(
             )
             Slider(
                 value = overlayBrightness,
-                onValueChange = onOverlayBrightnessChanged,
+                onValueChange = { newValue ->
+                    onOverlayBrightnessChanged(newValue)
+                    if (newValue > 1.0f) {
+                        onTextColorChanged("#FF000000") // Dark text for bright overlay
+                    } else {
+                        onTextColorChanged("#FFFFFFFF") // Light text for dark overlay
+                    }
+                },
                 valueRange = 0.0f..2.0f,
                 steps = 20
             )

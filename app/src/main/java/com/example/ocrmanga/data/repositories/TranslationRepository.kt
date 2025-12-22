@@ -73,6 +73,7 @@ class TranslationRepository(private val application: Application) {
             "textBoldness" to textBoldness,
             "overlayAlpha" to overlayAlpha,
             "overlayBrightness" to overlayBrightness,
+            "overlayColor" to "#FFFFFF", // Default white overlay
             "borderColor" to borderColor,
             "borderThickness" to borderThickness,
             "textColor" to textColor
@@ -547,38 +548,91 @@ class TranslationRepository(private val application: Application) {
         }
     }
 
-    private fun preprocessImage(bitmap: Bitmap, scaleFactor: Float): Pair<Bitmap, Float> {
-        val newWidth = (bitmap.width * scaleFactor).toInt()
-        val newHeight = (bitmap.height * scaleFactor).toInt()
-        val upscaledBitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    /**
+     * Enhanced preprocessing with multiple strategies for better OCR accuracy
+     * @param bitmap Original bitmap (NOT recycled by this function)
+     * @param scaleFactor Scale factor for resizing
+     * @param enhanceMode Enhancement mode: 0=standard, 1=high contrast, 2=soft contrast
+     * @return Pair of processed bitmap and scale factor
+     */
+    @Synchronized
+    private fun preprocessImage(bitmap: Bitmap, scaleFactor: Float, enhanceMode: Int = 0): Pair<Bitmap, Float> {
+        // Check if source bitmap is valid
+        if (bitmap.isRecycled) {
+            throw IllegalArgumentException("Source bitmap is already recycled")
+        }
+        
+        val newWidth = (bitmap.width * scaleFactor).toInt().coerceAtLeast(32)
+        val newHeight = (bitmap.height * scaleFactor).toInt().coerceAtLeast(32)
+        
+        // IMPORTANT: createScaledBitmap may return the SAME bitmap if dimensions match
+        // We need to always create a copy to avoid recycling the source
+        val upscaledBitmap: Bitmap = if (newWidth == bitmap.width && newHeight == bitmap.height) {
+            // Create an explicit copy when dimensions are the same
+            bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, true)
+                ?: throw IllegalArgumentException("Failed to copy bitmap - source may be recycled")
+        } else {
+            Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+        }
 
+        // Step 1: Convert to grayscale with optimized settings
         val grayscaleBitmap = Bitmap.createBitmap(newWidth, newHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(grayscaleBitmap)
-        val paint = Paint()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         val colorMatrix = ColorMatrix().apply { setSaturation(0f) }
         val colorFilter = ColorMatrixColorFilter(colorMatrix)
         paint.colorFilter = colorFilter
         canvas.drawBitmap(upscaledBitmap, 0f, 0f, paint)
+        
+        // Safe to recycle upscaled bitmap now since it's always a copy
+        if (upscaledBitmap !== bitmap) {
+            upscaledBitmap.recycle()
+        }
 
-        // Recycle intermediate upscaled bitmap immediately
-        upscaledBitmap.recycle()
-
+        // Step 2: Apply contrast enhancement based on mode
         val contrastBitmap = Bitmap.createBitmap(newWidth, newHeight, Bitmap.Config.ARGB_8888)
         val contrastCanvas = Canvas(contrastBitmap)
-        val contrastPaint = Paint()
-        val contrastMatrix = ColorMatrix().apply {
-            set(floatArrayOf(
-                1.5f, 0f, 0f, 0f, -50f,
-                0f, 1.5f, 0f, 0f, -50f,
-                0f, 0f, 1.5f, 0f, -50f,
-                0f, 0f, 0f, 1f, 0f
-            ))
+        val contrastPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        
+        val contrastMatrix = when (enhanceMode) {
+            1 -> {
+                // High contrast mode - better for dark text on light background
+                ColorMatrix().apply {
+                    set(floatArrayOf(
+                        1.8f, 0f, 0f, 0f, -60f,
+                        0f, 1.8f, 0f, 0f, -60f,
+                        0f, 0f, 1.8f, 0f, -60f,
+                        0f, 0f, 0f, 1f, 0f
+                    ))
+                }
+            }
+            2 -> {
+                // Soft contrast mode - better for preserving details
+                ColorMatrix().apply {
+                    set(floatArrayOf(
+                        1.3f, 0f, 0f, 0f, -30f,
+                        0f, 1.3f, 0f, 0f, -30f,
+                        0f, 0f, 1.3f, 0f, -30f,
+                        0f, 0f, 0f, 1f, 0f
+                    ))
+                }
+            }
+            else -> {
+                // Standard mode - balanced contrast
+                ColorMatrix().apply {
+                    set(floatArrayOf(
+                        1.5f, 0f, 0f, 0f, -50f,
+                        0f, 1.5f, 0f, 0f, -50f,
+                        0f, 0f, 1.5f, 0f, -50f,
+                        0f, 0f, 0f, 1f, 0f
+                    ))
+                }
+            }
         }
+        
         val contrastFilter = ColorMatrixColorFilter(contrastMatrix)
         contrastPaint.colorFilter = contrastFilter
         contrastCanvas.drawBitmap(grayscaleBitmap, 0f, 0f, contrastPaint)
-
-        // Recycle intermediate grayscale bitmap immediately
         grayscaleBitmap.recycle()
 
         return Pair(contrastBitmap, scaleFactor)
@@ -799,7 +853,7 @@ class TranslationRepository(private val application: Application) {
 
     /**
      * Tính điểm đánh giá chất lượng kết quả OCR
-     * Dựa trên: số ký tự Asian, số blocks, độ dài text
+     * Dựa trên: số ký tự Asian, số blocks, độ dài text, và lọc nhiễu
      */
     private fun calculateOcrScore(text: String, blocks: List<TextBlockInfo>): Double {
         if (text.isEmpty()) return 0.0
@@ -812,10 +866,25 @@ class TranslationRepository(private val application: Application) {
         val alphaNumPattern = Regex("[a-zA-Z0-9]")
         val alphaNumCount = alphaNumPattern.findAll(text).count()
         
-        // Score = ưu tiên ký tự Asian + độ dài text + số blocks
-        val asianScore = asianCharCount * 2.0
+        // Đếm số ký tự là nhiễu
+        val noiseChars = text.count { c ->
+            c in setOf('|', '/', '\\', '-', '_', '.', ',', '\'', '`', '"', '○', '◯', '・')
+        }
+        
+        // Score = ưu tiên ký tự Asian + độ dài text + số blocks hợp lệ
+        val asianScore = asianCharCount * 2.5
+        val alphaScore = alphaNumCount * 1.5
         val textLengthScore = text.length / 10.0
-        val blockScore = blocks.size * 5.0
+        
+        // Chỉ tính blocks có nội dung có nghĩa
+        val validBlocks = blocks.filter { block ->
+            block.text.trim().length >= MIN_TEXT_LENGTH &&
+            block.bounds.width() * block.bounds.height() >= MIN_BLOCK_AREA
+        }
+        val blockScore = validBlocks.size * 5.0
+        
+        // Penalty nặng cho noise characters
+        val noisePenalty = noiseChars * 1.5
         
         // Penalty cho quá nhiều ký tự không hợp lệ
         val invalidChars = text.count { c ->
@@ -824,9 +893,13 @@ class TranslationRepository(private val application: Application) {
             !c.isWhitespace() && 
             c !in ".,!?、。！？「」『』（）()\"'"
         }
-        val invalidPenalty = invalidChars * 0.5
+        val invalidPenalty = invalidChars * 0.3
         
-        return asianScore + textLengthScore + blockScore - invalidPenalty
+        // Bonus for text with good CJK density (typical for manga)
+        val cjkDensity = if (text.isNotEmpty()) asianCharCount.toDouble() / text.length else 0.0
+        val densityBonus = if (cjkDensity > 0.3) 10.0 else 0.0
+        
+        return asianScore + alphaScore + textLengthScore + blockScore + densityBonus - noisePenalty - invalidPenalty
     }
 
     suspend fun recognizeAndTranslateText(
@@ -1043,7 +1116,7 @@ class TranslationRepository(private val application: Application) {
                         overlaySaturation = defaultSettingsMistral["overlayBrightness"] as? Float ?: 1.0f,
                         customBorderColor = (defaultSettingsMistral["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
                         borderThickness = defaultSettingsMistral["borderThickness"] as? Float ?: 2.0f,
-                        customTextColor = (defaultSettingsMistral["textColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        customTextColor = null, // Always compute for contrast
                         applyMerge = true
                     ))
                 }
@@ -1157,7 +1230,7 @@ class TranslationRepository(private val application: Application) {
                         overlaySaturation = defaultSettingsGemini["overlayBrightness"] as? Float ?: 1.0f,
                         customBorderColor = (defaultSettingsGemini["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
                         borderThickness = defaultSettingsGemini["borderThickness"] as? Float ?: 2.0f,
-                        customTextColor = (defaultSettingsGemini["textColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        customTextColor = null, // Always compute for contrast
                         applyMerge = true
                     ))
                 }
@@ -1241,7 +1314,7 @@ class TranslationRepository(private val application: Application) {
                             overlaySaturation = defaultSettingsOther["overlayBrightness"] as? Float ?: 1.0f,
                             customBorderColor = (defaultSettingsOther["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
                             borderThickness = defaultSettingsOther["borderThickness"] as? Float ?: 2.0f,
-                            customTextColor = (defaultSettingsOther["textColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                            customTextColor = null, // Always compute for contrast
                             applyMerge = true
                         )
                     }
@@ -1317,7 +1390,7 @@ class TranslationRepository(private val application: Application) {
                         overlaySaturation = defaultSettingsOther["overlayBrightness"] as? Float ?: 1.0f,
                         customBorderColor = (defaultSettingsOther["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
                         borderThickness = defaultSettingsOther["borderThickness"] as? Float ?: 2.0f,
-                        customTextColor = (defaultSettingsOther["textColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        customTextColor = null, // Always compute for contrast
                         applyMerge = true
                     ))
                 }
@@ -1376,7 +1449,7 @@ class TranslationRepository(private val application: Application) {
     }
 
     /**
-     * Thu thập tất cả kết quả OCR từ các scale khác nhau
+     * Thu thập tất cả kết quả OCR từ các scale khác nhau với nhiều chiến lược tiền xử lý
      * @return List<Pair<Float, String>> - danh sách các cặp (scaleFactor, ocrText)
      */
     private suspend fun recognizeTextAllScales(
@@ -1384,7 +1457,11 @@ class TranslationRepository(private val application: Application) {
         rotationDegrees: Int,
         forceScript: String? = null
     ): List<Pair<Float, String>> = withContext(Dispatchers.IO) {
-        val scaleFactors = listOf(0.95f, 1.003f, 1.12f)
+        // Optimized scale factors for manga/comic text - more diverse range
+        val scaleFactors = listOf(0.85f, 1.0f, 1.15f, 1.35f)
+        // Different enhancement modes for better coverage
+        val enhanceModes = listOf(0, 1, 2) // standard, high contrast, soft contrast
+        
         val recognizers = when (forceScript) {
             "zh" -> listOf(chineseRecognizer)
             "ja" -> listOf(japaneseRecognizer)
@@ -1394,13 +1471,21 @@ class TranslationRepository(private val application: Application) {
         }
         
         val allResults = mutableListOf<Pair<Float, String>>()
+        val seenTexts = mutableSetOf<String>() // Để tránh trùng lặp
         
-        // Thu thập kết quả từ tất cả các scale
+        // Thu thập kết quả từ tất cả các scale và enhancement modes
         scaleFactors.forEach { scale ->
+            // Chỉ dùng 1 enhance mode cho mỗi scale để tăng tốc
+            val enhanceMode = when {
+                scale < 1.0f -> 2 // Soft contrast cho scale nhỏ
+                scale > 1.2f -> 1 // High contrast cho scale lớn
+                else -> 0 // Standard cho scale trung bình
+            }
+            
             recognizers.forEach { recognizer ->
                 var preprocessedBitmap: Bitmap? = null
                 try {
-                    val (preBitmap, _) = preprocessImage(bitmap, scale)
+                    val (preBitmap, _) = preprocessImage(bitmap, scale, enhanceMode)
                     preprocessedBitmap = preBitmap
                     val scaledInputImage = InputImage.fromBitmap(preprocessedBitmap, rotationDegrees)
                     val result = recognizer.process(scaledInputImage).await()
@@ -1408,10 +1493,16 @@ class TranslationRepository(private val application: Application) {
                     if (result.text.isNotEmpty()) {
                         // Áp dụng post-processing để sửa lỗi OCR
                         val processedText = postProcessOCRText(result.text, forceScript)
-                        allResults.add(Pair(scale, processedText))
+                        
+                        // Chỉ thêm nếu text có ý nghĩa và chưa có
+                        val normalizedText = processedText.trim().lowercase()
+                        if (processedText.isNotBlank() && !seenTexts.contains(normalizedText)) {
+                            allResults.add(Pair(scale, processedText))
+                            seenTexts.add(normalizedText)
+                        }
                     }
                 } catch (e: Exception) {
-                    Log.e("TranslationRepository", "OCR failed for scale $scale and recognizer ${recognizer.javaClass.simpleName}", e)
+                    Log.e("TranslationRepository", "OCR failed for scale $scale, enhance=$enhanceMode, recognizer ${recognizer.javaClass.simpleName}", e)
                 } finally {
                     preprocessedBitmap?.recycle()
                 }
@@ -1421,6 +1512,30 @@ class TranslationRepository(private val application: Application) {
         return@withContext allResults
     }
 
+    /**
+     * Minimum confidence threshold for accepting OCR results
+     * Elements with confidence below this will be filtered out
+     * Lowered to 0.45 to keep more valid text while still filtering obvious noise
+     */
+    private val MIN_OCR_CONFIDENCE = 0.45f
+    
+    /**
+     * Minimum character count for a text block to be considered valid
+     */
+    private val MIN_TEXT_LENGTH = 1
+    
+    /**
+     * Maximum aspect ratio (height/width) for a single character block
+     * Helps filter out noise like sweat drops, etc.
+     */
+    private val MAX_SINGLE_CHAR_ASPECT_RATIO = 3.5f
+    
+    /**
+     * Minimum area in pixels for a text block to be considered valid
+     * Lowered to 64 to allow smaller text blocks
+     */
+    private val MIN_BLOCK_AREA = 64
+
     // recognizeText mới: cho phép chỉ quét preview hoặc ép loại recognizer
     private suspend fun recognizeText(
         bitmap: Bitmap,
@@ -1428,8 +1543,9 @@ class TranslationRepository(private val application: Application) {
         onlyPreview: Boolean = false,
         forceScript: String? = null
     ): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
-        // Giảm số scale factors để tránh OOM (từ 5 xuống 3)
-        val scaleFactors = if (onlyPreview) listOf(0.95f, 1.08f) else listOf(0.95f, 1.003f, 1.12f)
+        // Optimized scale factors for manga/comic text recognition
+        // Using more diverse scales to catch text at different sizes
+        val scaleFactors = if (onlyPreview) listOf(0.9f, 1.1f) else listOf(0.85f, 1.0f, 1.15f, 1.3f)
         val recognizers = when (forceScript) {
             "zh" -> listOf(chineseRecognizer)
             "ja" -> listOf(japaneseRecognizer)
@@ -1526,7 +1642,7 @@ class TranslationRepository(private val application: Application) {
                 //log.i("TranslationRepository", "Kết quả thay thế: scaleFactor=$alternativeScaleFactor, avgFontSize=$alternativeAvgFontSize")
 
                 val textBlocks = alternativeTextResult.textBlocks.flatMap { block ->
-                    block.lines.map { line ->
+                    block.lines.mapNotNull { line ->
                         val bounds = line.boundingBox ?: Rect()
                         val scaledBounds = Rect(
                             (bounds.left / alternativeScaleFactor).toInt(),
@@ -1534,7 +1650,16 @@ class TranslationRepository(private val application: Application) {
                             (bounds.right / alternativeScaleFactor).toInt(),
                             (bounds.bottom / alternativeScaleFactor).toInt()
                         )
-                        val fontSizes = line.elements.mapNotNull { element ->
+                        
+                        // Calculate average confidence for this line
+                        val elements = line.elements
+                        val lineConfidence = if (elements.isNotEmpty()) {
+                            elements.sumOf { it.confidence.toDouble() }.toFloat() / elements.size
+                        } else {
+                            0f
+                        }
+                        
+                        val fontSizes = elements.mapNotNull { element ->
                             element.boundingBox?.height()?.toFloat()?.div(alternativeScaleFactor)
                         }
                         val fontSize = if (fontSizes.isNotEmpty()) {
@@ -1542,22 +1667,28 @@ class TranslationRepository(private val application: Application) {
                         } else {
                             alternativeAvgFontSize
                         }
-                        val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                        // Phân tích màu nền và màu text
-                        val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
                         // Áp dụng post-processing để sửa lỗi OCR (ví dụ: し -> L cho Latin script)
                         val processedText = postProcessOCRText(line.text, forceScript)
-                        TextBlockInfo(
-                            text = processedText,
-                            bounds = scaledBounds,
-                            fontSize = fontSize,
-                            wordCountsPerLine = listOf(wordCount),
-                            originalImageWidth = bitmap.width,
-                            originalImageHeight = bitmap.height,
-                            backgroundType = backgroundType,
-                            averageBackgroundColor = avgColor,
-                            originalTextColor = textColor
-                        )
+                        
+                        // Filter out noise blocks
+                        if (processedText.isBlank() || isNoiseBlock(processedText, scaledBounds, lineConfidence)) {
+                            null
+                        } else {
+                            val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
+                            // Phân tích màu nền và màu text
+                            val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
+                            TextBlockInfo(
+                                text = processedText,
+                                bounds = scaledBounds,
+                                fontSize = fontSize,
+                                wordCountsPerLine = listOf(wordCount),
+                                originalImageWidth = bitmap.width,
+                                originalImageHeight = bitmap.height,
+                                backgroundType = backgroundType,
+                                averageBackgroundColor = avgColor,
+                                originalTextColor = textColor
+                            )
+                        }
                     }
                 }
 
@@ -1595,9 +1726,9 @@ class TranslationRepository(private val application: Application) {
             }
         }
 
-        // Process text blocks with font size normalization
+        // Process text blocks with font size normalization and noise filtering
         val textBlocks = bestTextResult.textBlocks.flatMap { block ->
-            block.lines.map { line ->
+            block.lines.mapNotNull { line ->
                 val bounds = line.boundingBox ?: Rect()
                 val scaledBounds = Rect(
                     (bounds.left / bestScaleFactor).toInt(),
@@ -1605,28 +1736,44 @@ class TranslationRepository(private val application: Application) {
                     (bounds.right / bestScaleFactor).toInt(),
                     (bounds.bottom / bestScaleFactor).toInt()
                 )
-                val fontSizes = line.elements.mapNotNull { it.boundingBox?.height()?.toFloat()?.div(bestScaleFactor) }
+                
+                // Calculate average confidence for this line
+                val elements = line.elements
+                val lineConfidence = if (elements.isNotEmpty()) {
+                    elements.sumOf { it.confidence.toDouble() }.toFloat() / elements.size
+                } else {
+                    0f
+                }
+                
+                val fontSizes = elements.mapNotNull { it.boundingBox?.height()?.toFloat()?.div(bestScaleFactor) }
                 val fontSize = if (fontSizes.isNotEmpty()) {
                     fontSizes.sorted()[fontSizes.size / 2].coerceAtMost(bestAvgFontSize * 1.2f)
                 } else {
                     bestAvgFontSize
                 }
-                val wordCount = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                // Phân tích màu nền và màu text
-                val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
+                
                 // Áp dụng post-processing để sửa lỗi OCR (ví dụ: し -> L cho Latin script)
                 val processedText = postProcessOCRText(line.text, forceScript)
-                TextBlockInfo(
-                    text = processedText,
-                    bounds = scaledBounds,
-                    fontSize = fontSize,
-                    wordCountsPerLine = listOf(wordCount),
-                    originalImageWidth = bitmap.width,
-                    originalImageHeight = bitmap.height,
-                    backgroundType = backgroundType,
-                    averageBackgroundColor = avgColor,
-                    originalTextColor = textColor
-                )
+                
+                // Filter out noise blocks (sweat drops, body lines, etc.)
+                if (processedText.isBlank() || isNoiseBlock(processedText, scaledBounds, lineConfidence)) {
+                    null // Skip this block
+                } else {
+                    val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
+                    // Phân tích màu nền và màu text
+                    val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
+                    TextBlockInfo(
+                        text = processedText,
+                        bounds = scaledBounds,
+                        fontSize = fontSize,
+                        wordCountsPerLine = listOf(wordCount),
+                        originalImageWidth = bitmap.width,
+                        originalImageHeight = bitmap.height,
+                        backgroundType = backgroundType,
+                        averageBackgroundColor = avgColor,
+                        originalTextColor = textColor
+                    )
+                }
             }
         }
 
@@ -2583,16 +2730,106 @@ class TranslationRepository(private val application: Application) {
     /**
      * Xử lý hậu kỳ cho kết quả OCR: chuyển đổi ký tự し (katakana shi) thành L
      * khi phát hiện văn bản là Latin script. Đây là lỗi OCR phổ biến.
+     * Cũng loại bỏ các ký tự nhiễu phổ biến.
      */
     private fun postProcessOCRText(text: String, detectedScript: String?): String {
+        if (text.isBlank()) return text
+        
+        var result = text
+        
+        // Loại bỏ các ký tự nhiễu phổ biến trong OCR manga
+        // Các ký tự này thường bị nhận nhầm từ nét vẽ, mồ hôi, nếp gấp
+        val noisePatterns = listOf(
+            Regex("^[\\s\\-_\\.\\,\\:\\;\\!\\?]+$"),  // Chỉ chứa dấu câu
+            Regex("^[\\d]+$"),  // Chỉ chứa số đơn lẻ
+            Regex("^[|lIi1]+$"),  // Chỉ chứa các ký tự giống đường thẳng
+            Regex("^[\\-]+$"),  // Chỉ chứa gạch ngang
+            Regex("^[\\'\\.\\`]+$"),  // Chỉ chứa dấu chấm/nháy
+            Regex("^[oO0○◯]+$"),  // Chỉ chứa hình tròn (thường là mồ hôi)
+        )
+        
+        if (noisePatterns.any { it.matches(result.trim()) }) {
+            return ""
+        }
+        
+        // Loại bỏ các ký tự lẻ thường là nhiễu
+        val singleNoiseChars = setOf('|', '/', '\\', '-', '_', '.', ',', '\'', '`', '"', '○', '◯', '・')
+        if (result.length == 1 && result[0] in singleNoiseChars) {
+            return ""
+        }
+        
         // Nếu script được phát hiện là Latin (en, es) hoặc chứa nhiều chữ Latin
         val isLatinScript = detectedScript == "en" || detectedScript == "es" || 
-            (text.count { it in 'A'..'z' || it in 'A'..'Z' } > text.length * 0.5)
+            (result.count { it in 'A'..'z' || it in 'A'..'Z' } > result.length * 0.5)
         
-        if (!isLatinScript) return text
+        if (isLatinScript) {
+            // Chuyển し (U+3057 - Hiragana Shi) và シ (U+30B7 - Katakana Shi) thành L
+            result = result.replace('し', 'L').replace('シ', 'L')
+        }
         
-        // Chuyển し (U+3057 - Hiragana Shi) và シ (U+30B7 - Katakana Shi) thành L
-        return text.replace('し', 'L').replace('シ', 'L')
+        // Loại bỏ khoảng trắng thừa
+        result = result.trim().replace(Regex("\\s+"), " ")
+        
+        return result
+    }
+    
+    /**
+     * Kiểm tra xem một text block có phải là nhiễu (false positive) hay không
+     * Dựa trên nhiều tiêu chí: kích thước, tỷ lệ khung hình, nội dung
+     */
+    private fun isNoiseBlock(text: String, bounds: Rect, confidence: Float): Boolean {
+        val cleanText = text.trim()
+        val area = bounds.width() * bounds.height()
+        val aspectRatio = bounds.height().toFloat() / bounds.width().coerceAtLeast(1)
+        
+        // Count noise indicators (cần nhiều dấu hiệu cùng lúc mới reject)
+        var noiseScore = 0
+        
+        // 1. Block quá nhỏ về diện tích (chỉ nếu CỰC kỳ nhỏ)
+        if (area < MIN_BLOCK_AREA / 2) {
+            noiseScore += 2
+        } else if (area < MIN_BLOCK_AREA) {
+            noiseScore += 1
+        }
+        
+        // 2. Block ngắn với aspect ratio kỳ lạ (nét vẽ mồ hôi, viền)
+        if (cleanText.length <= 2) {
+            if (aspectRatio > MAX_SINGLE_CHAR_ASPECT_RATIO || aspectRatio < 1.0f / MAX_SINGLE_CHAR_ASPECT_RATIO) {
+                noiseScore += 2
+            }
+        }
+        
+        // 3. Confidence rất thấp (< 0.3 = chắc chắn nhiễu)
+        if (confidence < 0.3f) {
+            noiseScore += 3
+        } else if (confidence < MIN_OCR_CONFIDENCE) {
+            noiseScore += 1
+        }
+        
+        // 4. Text chỉ chứa các ký tự nhiễu
+        val noiseOnlyPattern = Regex("^[\\s\\-_\\.\\,\\|/\\\\\\'\"`○◯・]+$")
+        if (noiseOnlyPattern.matches(cleanText)) {
+            noiseScore += 2
+        }
+        
+        // 5. Block chỉ có 1 ký tự phổ biến bị nhận nhầm + size nhỏ
+        val commonFalsePositives = setOf(
+            "I", "l", "|", "1", "-", "_", ".", ",", "'", "`",
+            "○", "◯", "O", "o", "0",
+            "ー", "一", "丨", "丶"
+        )
+        if (cleanText in commonFalsePositives && (bounds.width() < 20 || bounds.height() < 20)) {
+            noiseScore += 2
+        }
+        
+        // Chỉ reject khi có từ 3 điểm noise trở lên (chắc chắn là nhiễu)
+        val isNoise = noiseScore >= 3
+        
+        if (isNoise) {
+            Log.d("TranslationRepository", "[NOISE-FILTER] Block '$text' rejected: noiseScore=$noiseScore (area=$area, confidence=$confidence, aspectRatio=$aspectRatio)")
+        }
+        
+        return isNoise
     }
 
     private fun postProcessTranslation(translatedText: String): String {
