@@ -464,13 +464,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     // If a room accumulates >=5 changed images, automatically persist their pending edits.
     private fun maybeAutoSaveChangedImages(roomId: Long) {
-        autoSaveJob?.cancel() // Cancel any existing auto-save
+        // Skip new triggers while an auto-save is running to avoid cancelling mid-reload
+        if (!autoSaveInProgress.compareAndSet(false, true)) {
+            Log.i(TAG, "Auto-save already in progress, skipping")
+            return
+        }
         autoSaveJob = viewModelScope.launch(Dispatchers.IO) {
-            // prevent concurrent auto-save runs
-            if (!autoSaveInProgress.compareAndSet(false, true)) {
-                Log.i(TAG, "Auto-save already in progress, skipping")
-                return@launch
-            }
             try {
                 val changedIds = databaseHelper.getChangedImageIdsForRoom(roomId)
                 Log.i(TAG, "Auto-save check: ${changedIds.size} images marked as changed for room $roomId")
@@ -502,11 +501,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                     dirtyUris.remove(uri)
                                 }
                             }
-                            Log.i(TAG, "Auto-saved ${mapping.size} changed images for room $roomId (threshold reached), cleared from dirtyUris")
-                            
-                            // Clear memory and reload from DB after auto-save to free memory and sync with DB
-                            Log.i(TAG, "Auto-save: Clearing memory and reloading room $roomId from DB")
-                            clearMemoryAndReloadRoom(roomId)
+                            Log.i(TAG, "Auto-saved ${mapping.size} changed images for room $roomId (threshold reached), cleared from dirtyUris; skip reload to keep UI stable")
                         } else {
                             Log.w(TAG, "Auto-save failed for room $roomId mappingSize=${mapping.size}")
                         }
@@ -1080,16 +1075,30 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
             if (shouldRetranslate) {
                 // Clear existing translations and retranslate all images
-                val imagesToRetranslate = uiState.value.imageUris
+                // Bỏ qua các ảnh đã được dịch qua menu tùy chọn ảnh (có trong dirtyUris)
+                val alreadyTranslatedByMenu = dirtyUris.filter { uri ->
+                    uiState.value.translatedTexts[uri]?.second?.isNotEmpty() == true
+                }.toSet()
+                val imagesToRetranslate = uiState.value.imageUris.filter { it !in alreadyTranslatedByMenu }
+                
+                if (alreadyTranslatedByMenu.isNotEmpty()) {
+                    Log.i(TAG, "Skipping ${alreadyTranslatedByMenu.size} images already translated via menu")
+                }
+                
+                // Giữ lại các bản dịch đã có từ menu tùy chọn ảnh
+                val existingTranslations = uiState.value.translatedTexts.filterKeys { it in alreadyTranslatedByMenu }
+                val existingLanguages = uiState.value.sourceLanguages.filterKeys { it in alreadyTranslatedByMenu }
+                val existingStatus = uiState.value.translatedStatus.filterKeys { it in alreadyTranslatedByMenu }
 
                 _uiState.update {
                     it.copy(
                         isTranslating = true,
                         totalImagesToTranslate = imagesToRetranslate.size,
                         translationProgress = 0,
-                        translatedTexts = emptyMap(),
-                        sourceLanguages = emptyMap(),
-                        translatedStatus = imagesToRetranslate.associateWith { false }.toMutableMap(),
+                        // Giữ lại các bản dịch đã có từ menu tùy chọn ảnh
+                        translatedTexts = existingTranslations,
+                        sourceLanguages = existingLanguages,
+                        translatedStatus = (imagesToRetranslate.associateWith { false } + existingStatus).toMutableMap(),
                         // Tăng translationVersion để force UI update dragBlocksMap
                         translationVersion = it.translationVersion + 1
                     )
@@ -1692,6 +1701,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 translationVersion = it.translationVersion + 1
                             )
                         }
+                        
+                        // Mark as dirty để hệ thống nhận ra có thay đổi khi lưu
+                        dirtyUris.add(uri)
+                        Log.i(TAG, "[QUEUE] Added uri=$uri to dirtyUris after translation")
                         
                         // Cập nhật trạng thái COMPLETED
                         updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
