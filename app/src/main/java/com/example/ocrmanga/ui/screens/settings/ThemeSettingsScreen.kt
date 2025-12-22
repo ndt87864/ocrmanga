@@ -32,6 +32,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.graphics.ColorUtils
 import com.example.ocrmanga.ui.theme.*
 import com.example.ocrmanga.R
 import com.example.ocrmanga.ui.components.*
@@ -282,6 +283,7 @@ fun ThemeSettingsScreen(
                     DefaultBorderSelector(
                         borderColor = themeState.defaultBorderColor,
                         borderThickness = themeState.defaultBorderThickness,
+                        textColor = themeState.defaultTextColor,
                         onBorderColorChanged = { color ->
                             scope.launch {
                                 viewModel.setDefaultBorderColor(color)
@@ -759,18 +761,21 @@ private fun DefaultOverlaySelector(
                         .fillMaxWidth()
                         .height(40.dp)
                         .background(
-                            Color.Black.copy(
-                                alpha = overlayAlpha,
-                                red = (Color.Black.red * overlayBrightness).coerceIn(0f, 1f),
-                                green = (Color.Black.green * overlayBrightness).coerceIn(0f, 1f),
-                                blue = (Color.Black.blue * overlayBrightness).coerceIn(0f, 1f)
-                            )
+                            // Apply overlay saturation to a default white overlay color
+                            if (overlayBrightness != 1.0f) {
+                                val hsv = FloatArray(3)
+                                androidx.core.graphics.ColorUtils.colorToHSL(0xFFFFFFFF.toInt(), hsv) // White color
+                                hsv[1] = (hsv[1] * overlayBrightness).coerceIn(0f, 1f) // Modify saturation
+                                Color(androidx.core.graphics.ColorUtils.HSLToColor(hsv)).copy(alpha = overlayAlpha)
+                            } else {
+                                Color.White.copy(alpha = overlayAlpha)
+                            }
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "Overlay mẫu",
-                        color = Color.White,
+                        color = Color.Black,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -783,6 +788,7 @@ private fun DefaultOverlaySelector(
 private fun DefaultBorderSelector(
     borderColor: String?,
     borderThickness: Float,
+    textColor: String?,
     onBorderColorChanged: (String?) -> Unit,
     onBorderThicknessChanged: (Float) -> Unit
 ) {
@@ -911,9 +917,10 @@ private fun DefaultBorderSelector(
                     val cy = size.height / 2f
                     
                     // Android Paints
+                    val textColorInt = textColor?.let { android.graphics.Color.parseColor(it) } ?: android.graphics.Color.WHITE
                     val fillPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
                         textSize = textSizePx
-                        color = android.graphics.Color.WHITE
+                        color = textColorInt
                         style = android.graphics.Paint.Style.FILL
                         textAlign = android.graphics.Paint.Align.CENTER
                     }
