@@ -23,11 +23,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ocrmanga.ui.theme.*
+import com.example.ocrmanga.R
 import com.example.ocrmanga.ui.components.*
 import com.example.ocrmanga.ui.components.AdvancedColorPicker
 import kotlinx.coroutines.launch
@@ -207,9 +210,21 @@ fun ThemeSettingsScreen(
                     
                     DefaultFontSelector(
                         selectedFont = themeState.defaultTranslationFont,
+                        lineSpacing = themeState.defaultLineSpacing,
+                        textBoldness = themeState.defaultTextBoldness,
                         onFontSelected = { fontFamily ->
                             scope.launch {
                                 viewModel.setDefaultTranslationFont(fontFamily)
+                            }
+                        },
+                        onLineSpacingChanged = { spacing ->
+                            scope.launch {
+                                viewModel.setDefaultLineSpacing(spacing)
+                            }
+                        },
+                        onTextBoldnessChanged = { boldness ->
+                            scope.launch {
+                                viewModel.setDefaultTextBoldness(boldness)
                             }
                         }
                     )
@@ -402,9 +417,36 @@ private fun ThemePreviewCard() {
 @Composable
 private fun DefaultFontSelector(
     selectedFont: String,
-    onFontSelected: (String) -> Unit
+    lineSpacing: Float,
+    textBoldness: Float,
+    onFontSelected: (String) -> Unit,
+    onLineSpacingChanged: (Float) -> Unit,
+    onTextBoldnessChanged: (Float) -> Unit
 ) {
-    val fontOptions = listOf(
+    val context = LocalContext.current
+    
+    // Load fonts safely
+    val fontOptions = remember {
+        try {
+            listOf(
+                "mto_comic_1" to FontFamily(Font(R.font.mto_comic_1)),
+                "mto_comic_2" to FontFamily(Font(R.font.mto_comic_2)),
+                "mto_astro_city" to FontFamily(Font(R.font.mto_astro_city)),
+                "mto_augie" to FontFamily(Font(R.font.mto_augie)),
+                "mighty_zero" to FontFamily(Font(R.font.mighty_zero)),
+                "mto_chancery" to FontFamily(Font(R.font.mto_chancery)),
+                "mto_dom" to FontFamily(Font(R.font.mto_dom)),
+                "mto_mikes" to FontFamily(Font(R.font.mto_mikes)),
+                "mto_sans" to FontFamily(Font(R.font.mto_sans)),
+                "mto_shadow" to FontFamily(Font(R.font.mto_shadow))
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("DefaultFontSelector", "Failed to load fonts", e)
+            listOf("Default" to FontFamily.Default)
+        }
+    }
+    
+    val fontNames = listOf(
         "mto_comic_1" to "Comic 1",
         "mto_comic_2" to "Comic 2",
         "mto_astro_city" to "Astro City",
@@ -418,9 +460,13 @@ private fun DefaultFontSelector(
     )
     
     var expanded by remember { mutableStateOf(false) }
-    val selectedFontName = fontOptions.find { it.first == selectedFont }?.second ?: "Comic 2"
+    val selectedFontName = fontNames.find { it.first == selectedFont }?.second ?: "Comic 2"
+    val selectedFontFamily = fontOptions.find { it.first == selectedFont }?.second ?: FontFamily.Default
     
-    Column {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Font selector
         OutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
@@ -433,7 +479,7 @@ private fun DefaultFontSelector(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            fontOptions.forEach { (fontKey, fontName) ->
+            fontNames.forEach { (fontKey, fontName) ->
                 DropdownMenuItem(
                     text = { 
                         Row(
@@ -459,19 +505,64 @@ private fun DefaultFontSelector(
             }
         }
         
-        // Hiển thị mô tả lineSpacing mặc định cho từng font
-        val lineSpacingInfo = when (selectedFont) {
-            "mto_comic_1", "mto_comic_2" -> "Line spacing: 1.1"
-            "mto_augie" -> "Line spacing: 2.0"
-            "mighty_zero" -> "Line spacing: 0.92"
-            else -> "Line spacing: 1.0"
+        // Line spacing slider
+        Column {
+            Text(
+                text = "Khoảng cách dòng: ${String.format("%.1f", lineSpacing)}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Slider(
+                value = lineSpacing,
+                onValueChange = onLineSpacingChanged,
+                valueRange = 0.5f..2.0f,
+                steps = 15
+            )
         }
-        Text(
-            text = lineSpacingInfo,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp)
-        )
+        
+        // Text boldness slider
+        Column {
+            Text(
+                text = "Độ đậm chữ: ${String.format("%.1f", textBoldness)}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Slider(
+                value = textBoldness,
+                onValueChange = onTextBoldnessChanged,
+                valueRange = 0.5f..2.0f,
+                steps = 15
+            )
+        }
+        
+        // Font preview
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Xem trước font:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Text(
+                    text = "Đây là văn bản mẫu\nđể xem trước font\nvà các thiết lập.",
+                    fontFamily = selectedFontFamily,
+                    fontWeight = FontWeight((textBoldness * 400).toInt().coerceIn(100, 900)),
+                    lineHeight = (16.sp.value * lineSpacing).sp,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        lineHeight = (16.sp.value * lineSpacing).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 

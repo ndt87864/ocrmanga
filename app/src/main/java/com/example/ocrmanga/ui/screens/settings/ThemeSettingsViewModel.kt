@@ -16,7 +16,9 @@ data class ThemeState(
     val isDynamicColorEnabled: Boolean = true,
     val customPrimaryColor: String? = null,
     val useCustomColor: Boolean = false,
-    val defaultTranslationFont: String = "mto_comic_2"
+    val defaultTranslationFont: String = "mto_comic_2",
+    val defaultLineSpacing: Float = 1.0f,
+    val defaultTextBoldness: Float = 1.0f
 )
 
 class ThemeSettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,7 +36,9 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
                 themePreferences.isDynamicColorEnabled,
                 themePreferences.customPrimaryColor,
                 themePreferences.useCustomColor,
-                themePreferences.defaultTranslationFont
+                themePreferences.defaultTranslationFont,
+                themePreferences.defaultLineSpacing,
+                themePreferences.defaultTextBoldness
             ) { values ->
                 ThemeState(
                     themeVariant = values[0] as ThemeVariant,
@@ -42,7 +46,9 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
                     isDynamicColorEnabled = values[2] as Boolean,
                     customPrimaryColor = values[3] as String?,
                     useCustomColor = values[4] as Boolean,
-                    defaultTranslationFont = values[5] as String
+                    defaultTranslationFont = values[5] as String,
+                    defaultLineSpacing = values[6] as Float,
+                    defaultTextBoldness = values[7] as Float
                 )
             }.collect { newState ->
                 _themeState.value = newState
@@ -72,5 +78,13 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
     
     suspend fun setDefaultTranslationFont(fontFamily: String) {
         themePreferences.setDefaultTranslationFont(fontFamily)
+    }
+    
+    suspend fun setDefaultLineSpacing(lineSpacing: Float) {
+        themePreferences.setDefaultLineSpacing(lineSpacing)
+    }
+    
+    suspend fun setDefaultTextBoldness(textBoldness: Float) {
+        themePreferences.setDefaultTextBoldness(textBoldness)
     }
 }

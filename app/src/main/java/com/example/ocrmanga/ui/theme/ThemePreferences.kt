@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -21,6 +22,8 @@ class ThemePreferences(private val context: Context) {
         private val CUSTOM_PRIMARY_COLOR_KEY = stringPreferencesKey("custom_primary_color")
         private val USE_CUSTOM_COLOR_KEY = booleanPreferencesKey("use_custom_color")
         private val DEFAULT_TRANSLATION_FONT_KEY = stringPreferencesKey("default_translation_font")
+        private val DEFAULT_LINE_SPACING_KEY = floatPreferencesKey("default_line_spacing")
+        private val DEFAULT_TEXT_BOLDNESS_KEY = floatPreferencesKey("default_text_boldness")
     }
     
     val themeVariant: Flow<ThemeVariant> = context.dataStore.data.map { preferences ->
@@ -50,6 +53,14 @@ class ThemePreferences(private val context: Context) {
     
     val defaultTranslationFont: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[DEFAULT_TRANSLATION_FONT_KEY] ?: "mto_comic_2"
+    }
+    
+    val defaultLineSpacing: Flow<Float> = context.dataStore.data.map { preferences ->
+        preferences[DEFAULT_LINE_SPACING_KEY] ?: 1.0f
+    }
+    
+    val defaultTextBoldness: Flow<Float> = context.dataStore.data.map { preferences ->
+        preferences[DEFAULT_TEXT_BOLDNESS_KEY] ?: 1.0f
     }
     
     suspend fun setThemeVariant(variant: ThemeVariant) {
@@ -89,6 +100,18 @@ class ThemePreferences(private val context: Context) {
     suspend fun setDefaultTranslationFont(fontFamily: String) {
         context.dataStore.edit { preferences ->
             preferences[DEFAULT_TRANSLATION_FONT_KEY] = fontFamily
+        }
+    }
+    
+    suspend fun setDefaultLineSpacing(lineSpacing: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[DEFAULT_LINE_SPACING_KEY] = lineSpacing
+        }
+    }
+    
+    suspend fun setDefaultTextBoldness(textBoldness: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[DEFAULT_TEXT_BOLDNESS_KEY] = textBoldness
         }
     }
 }
