@@ -1,6 +1,7 @@
 package com.example.ocrmanga.ui.screens.settings
 
 import android.os.Build
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -212,6 +215,7 @@ fun ThemeSettingsScreen(
                         selectedFont = themeState.defaultTranslationFont,
                         lineSpacing = themeState.defaultLineSpacing,
                         textBoldness = themeState.defaultTextBoldness,
+                        textColor = themeState.defaultTextColor,
                         onFontSelected = { fontFamily ->
                             scope.launch {
                                 viewModel.setDefaultTranslationFont(fontFamily)
@@ -225,6 +229,67 @@ fun ThemeSettingsScreen(
                         onTextBoldnessChanged = { boldness ->
                             scope.launch {
                                 viewModel.setDefaultTextBoldness(boldness)
+                            }
+                        },
+                        onTextColorChanged = { color ->
+                            scope.launch {
+                                viewModel.setDefaultTextColor(color)
+                            }
+                        }
+                    )
+                }
+            }
+            
+            // Default Overlay Settings Section
+            item {
+                ModernCard(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SectionHeader(
+                        title = "Overlay mặc định",
+                        subtitle = "Thiết lập overlay cho bản dịch"
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    DefaultOverlaySelector(
+                        overlayAlpha = themeState.defaultOverlayAlpha,
+                        overlayBrightness = themeState.defaultOverlayBrightness,
+                        onOverlayAlphaChanged = { alpha ->
+                            scope.launch {
+                                viewModel.setDefaultOverlayAlpha(alpha)
+                            }
+                        },
+                        onOverlayBrightnessChanged = { brightness ->
+                            scope.launch {
+                                viewModel.setDefaultOverlayBrightness(brightness)
+                            }
+                        }
+                    )
+                }
+            }
+            
+            // Default Border Settings Section
+            item {
+                ModernCard(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SectionHeader(
+                        title = "Viền chữ mặc định",
+                        subtitle = "Thiết lập viền cho chữ dịch"
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    DefaultBorderSelector(
+                        borderColor = themeState.defaultBorderColor,
+                        borderThickness = themeState.defaultBorderThickness,
+                        onBorderColorChanged = { color ->
+                            scope.launch {
+                                viewModel.setDefaultBorderColor(color)
+                            }
+                        },
+                        onBorderThicknessChanged = { thickness ->
+                            scope.launch {
+                                viewModel.setDefaultBorderThickness(thickness)
                             }
                         }
                     )
@@ -419,9 +484,11 @@ private fun DefaultFontSelector(
     selectedFont: String,
     lineSpacing: Float,
     textBoldness: Float,
+    textColor: String?,
     onFontSelected: (String) -> Unit,
     onLineSpacingChanged: (Float) -> Unit,
-    onTextBoldnessChanged: (Float) -> Unit
+    onTextBoldnessChanged: (Float) -> Unit,
+    onTextColorChanged: (String?) -> Unit
 ) {
     val context = LocalContext.current
     
@@ -458,6 +525,11 @@ private fun DefaultFontSelector(
         "mto_sans" to "Sans",
         "mto_shadow" to "Shadow"
     )
+    
+    var showTextColorPicker by remember { mutableStateOf(false) }
+    var tempTextColor by remember(textColor) {
+        mutableStateOf(textColor?.let { Color(android.graphics.Color.parseColor(it)) })
+    }
     
     var expanded by remember { mutableStateOf(false) }
     val selectedFontName = fontNames.find { it.first == selectedFont }?.second ?: "Comic 2"
@@ -533,6 +605,66 @@ private fun DefaultFontSelector(
             )
         }
         
+        // Text color picker
+        Column {
+            Text(
+                text = "Màu chữ:",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            tempTextColor ?: Color.White,
+                            shape = CircleShape
+                        )
+                        .border(
+                            2.dp,
+                            MaterialTheme.colorScheme.outline,
+                            CircleShape
+                        )
+                        .clickable { showTextColorPicker = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (tempTextColor == null) {
+                        Text("?", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                
+                Text(
+                    text = if (tempTextColor != null) "Màu tùy chỉnh" else "Mặc định",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                
+                Spacer(modifier = Modifier.weight(1f))
+                
+                Button(
+                    onClick = {
+                        val hex = tempTextColor?.let { "#${String.format("%08X", it.toArgb())}" }
+                        onTextColorChanged(hex)
+                    },
+                    enabled = tempTextColor?.let { "#${String.format("%08X", it.toArgb())}" } != textColor
+                ) {
+                    Text("Xác nhận")
+                }
+            }
+            
+            if (showTextColorPicker) {
+                AdvancedColorPicker(
+                    selectedColor = tempTextColor,
+                    onColorSelected = { color ->
+                        tempTextColor = color
+                    }
+                )
+            }
+        }
+        
         // Font preview
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -559,8 +691,256 @@ private fun DefaultFontSelector(
                     style = MaterialTheme.typography.bodyLarge.copy(
                         lineHeight = (16.sp.value * lineSpacing).sp
                     ),
+                    color = tempTextColor ?: MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultOverlaySelector(
+    overlayAlpha: Float,
+    overlayBrightness: Float,
+    onOverlayAlphaChanged: (Float) -> Unit,
+    onOverlayBrightnessChanged: (Float) -> Unit
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Overlay Alpha slider
+        Column {
+            Text(
+                text = "Độ trong suốt overlay: ${String.format("%.0f", overlayAlpha * 100)}%",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Slider(
+                value = overlayAlpha,
+                onValueChange = onOverlayAlphaChanged,
+                valueRange = 0.0f..1.0f,
+                steps = 10
+            )
+        }
+        
+        // Overlay Brightness slider
+        Column {
+            Text(
+                text = "Độ sáng overlay: ${String.format("%.1f", overlayBrightness)}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Slider(
+                value = overlayBrightness,
+                onValueChange = onOverlayBrightnessChanged,
+                valueRange = 0.0f..2.0f,
+                steps = 20
+            )
+        }
+        
+        // Preview
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Xem trước overlay:",
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .background(
+                            Color.Black.copy(
+                                alpha = overlayAlpha,
+                                red = (Color.Black.red * overlayBrightness).coerceIn(0f, 1f),
+                                green = (Color.Black.green * overlayBrightness).coerceIn(0f, 1f),
+                                blue = (Color.Black.blue * overlayBrightness).coerceIn(0f, 1f)
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Overlay mẫu",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultBorderSelector(
+    borderColor: String?,
+    borderThickness: Float,
+    onBorderColorChanged: (String?) -> Unit,
+    onBorderThicknessChanged: (Float) -> Unit
+) {
+    val context = LocalContext.current
+    
+    var showColorPicker by remember { mutableStateOf(false) }
+    var tempColor by remember(borderColor) {
+        mutableStateOf(borderColor?.let { Color(android.graphics.Color.parseColor(it)) })
+    }
+    
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Border Color picker
+        Column {
+            Text(
+                text = "Màu viền chữ:",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            tempColor ?: Color.Transparent,
+                            shape = CircleShape
+                        )
+                        .border(
+                            2.dp,
+                            MaterialTheme.colorScheme.outline,
+                            CircleShape
+                        )
+                        .clickable { showColorPicker = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (tempColor == null) {
+                        Text("?", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                
+                Text(
+                    text = if (tempColor != null) "Màu tùy chỉnh" else "Không có viền",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                
+                Spacer(modifier = Modifier.weight(1f))
+                
+                Button(
+                    onClick = {
+                        val hex = tempColor?.let { "#${String.format("%08X", it.toArgb())}" }
+                        onBorderColorChanged(hex)
+                    },
+                    enabled = tempColor?.let { "#${String.format("%08X", it.toArgb())}" } != borderColor
+                ) {
+                    Text("Xác nhận")
+                }
+            }
+            
+            if (showColorPicker) {
+                AdvancedColorPicker(
+                    selectedColor = tempColor,
+                    onColorSelected = { color ->
+                        tempColor = color
+                    },
+                    showPredefinedColors = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    TextButton(onClick = { showColorPicker = false }) {
+                        Text("Đóng")
+                    }
+                }
+            }
+        }
+        
+        // Border Thickness slider
+        Column {
+            Text(
+                text = "Độ dày viền: ${String.format("%.1f", borderThickness)}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Slider(
+                value = borderThickness,
+                onValueChange = onBorderThicknessChanged,
+                valueRange = 0.0f..20.0f,
+                steps = 40
+            )
+        }
+        
+        // Preview
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Xem trước viền chữ:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val textStyle = MaterialTheme.typography.bodyLarge
+                val textSizePx = with(density) { textStyle.fontSize.toPx() }
+                
+                Canvas(modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)) {
+                    val native = drawContext.canvas.nativeCanvas
+                    // center coordinates
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
+                    
+                    // Android Paints
+                    val fillPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                        textSize = textSizePx
+                        color = android.graphics.Color.WHITE
+                        style = android.graphics.Paint.Style.FILL
+                        textAlign = android.graphics.Paint.Align.CENTER
+                    }
+                    
+                    val strokePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                        textSize = textSizePx
+                        color = tempColor?.toArgb() ?: android.graphics.Color.TRANSPARENT
+                        style = android.graphics.Paint.Style.STROKE
+                        strokeWidth = borderThickness
+                        strokeJoin = android.graphics.Paint.Join.ROUND
+                        strokeCap = android.graphics.Paint.Cap.ROUND
+                        textAlign = android.graphics.Paint.Align.CENTER
+                    }
+                    
+                    // Compute baseline so text is vertically centered
+                    val fm = fillPaint.fontMetrics
+                    val textHeight = fm.descent - fm.ascent
+                    val baseline = cy + textHeight / 2f - fm.descent
+                    
+                    // Draw stroke / outline
+                    if (tempColor != null && borderThickness > 0f) {
+                        native.drawText("Văn bản mẫu", cx, baseline, strokePaint)
+                    }
+                    
+                    // Draw fill text on top
+                    native.drawText("Văn bản mẫu", cx, baseline, fillPaint)
+                }
             }
         }
     }

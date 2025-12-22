@@ -55,17 +55,28 @@ class TranslationRepository(private val application: Application) {
     private val themePreferences = ThemePreferences(application)
     
     /**
-     * Lấy font mặc định và lineSpacing tương ứng từ cài đặt người dùng
+     * Lấy tất cả cài đặt font và style mặc định từ cài đặt người dùng
      */
-    private suspend fun getDefaultFontSettings(): Pair<String, Float> {
-        val fontFamily = themePreferences.defaultTranslationFont.first()
-        val lineSpacing = when (fontFamily) {
-            "mto_comic_1", "mto_comic_2" -> 1.1f
-            "mto_augie" -> 2.0f
-            "mighty_zero" -> 0.92f
-            else -> 1.0f
-        }
-        return fontFamily to lineSpacing
+    private suspend fun getDefaultFontSettings(): Map<String, Any> {
+        val fontFamily = themePreferences.defaultTranslationFont.first() ?: "Default"
+        val lineSpacing = themePreferences.defaultLineSpacing.first() ?: 1.0f
+        val textBoldness = themePreferences.defaultTextBoldness.first() ?: 1.0f
+        val overlayAlpha = themePreferences.defaultOverlayAlpha.first() ?: 0.8f
+        val overlayBrightness = themePreferences.defaultOverlayBrightness.first() ?: 1.0f
+        val borderColor = themePreferences.defaultBorderColor.first() ?: "#000000"
+        val borderThickness = themePreferences.defaultBorderThickness.first() ?: 2.0f
+        val textColor = themePreferences.defaultTextColor.first() ?: "#FFFFFF"
+        
+        return mapOf(
+            "fontFamily" to fontFamily,
+            "lineSpacing" to lineSpacing,
+            "textBoldness" to textBoldness,
+            "overlayAlpha" to overlayAlpha,
+            "overlayBrightness" to overlayBrightness,
+            "borderColor" to borderColor,
+            "borderThickness" to borderThickness,
+            "textColor" to textColor
+        )
     }
 
     // Public helpers so UI/ViewModel can check availability of API keys
@@ -969,7 +980,7 @@ class TranslationRepository(private val application: Application) {
                 }
                 
                 // Lấy font mặc định từ cài đặt
-                val (defaultFontMistral, defaultLineSpacingMistral) = getDefaultFontSettings()
+                val defaultSettingsMistral = getDefaultFontSettings()
                 
                 // Ánh xạ các bản dịch vào các text blocks tương ứng
                 val blocks = mutableListOf<TextBlockInfo>()
@@ -1021,7 +1032,20 @@ class TranslationRepository(private val application: Application) {
                     //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
-                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize, fontFamily = defaultFontMistral, lineSpacing = defaultLineSpacingMistral, applyMerge = true))
+                    blocks.add(block.copy(
+                        text = reformattedText,
+                        bounds = newBounds,
+                        fontSize = adjustedFontSize,
+                        fontFamily = defaultSettingsMistral["fontFamily"] as? String ?: "Default",
+                        lineSpacing = defaultSettingsMistral["lineSpacing"] as? Float ?: 1.0f,
+                        textBoldness = defaultSettingsMistral["textBoldness"] as? Float ?: 1.0f,
+                        overlayAlpha = defaultSettingsMistral["overlayAlpha"] as? Float ?: 0.8f,
+                        overlaySaturation = defaultSettingsMistral["overlayBrightness"] as? Float ?: 1.0f,
+                        customBorderColor = (defaultSettingsMistral["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        borderThickness = defaultSettingsMistral["borderThickness"] as? Float ?: 2.0f,
+                        customTextColor = (defaultSettingsMistral["textColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        applyMerge = true
+                    ))
                 }
                 
                 resultText = blocks.joinToString("\n") { it.text }
@@ -1070,7 +1094,7 @@ class TranslationRepository(private val application: Application) {
                 }
                 
                 // Lấy font mặc định từ cài đặt
-                val (defaultFontGemini, defaultLineSpacingGemini) = getDefaultFontSettings()
+                val defaultSettingsGemini = getDefaultFontSettings()
                 
                 // Ánh xạ các bản dịch vào các text blocks tương ứng
                 val blocks = mutableListOf<TextBlockInfo>()
@@ -1122,7 +1146,20 @@ class TranslationRepository(private val application: Application) {
                     //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
-                    blocks.add(block.copy(text = reformattedText, bounds = newBounds, fontSize = adjustedFontSize, fontFamily = defaultFontGemini, lineSpacing = defaultLineSpacingGemini, applyMerge = true))
+                    blocks.add(block.copy(
+                        text = reformattedText,
+                        bounds = newBounds,
+                        fontSize = adjustedFontSize,
+                        fontFamily = defaultSettingsGemini["fontFamily"] as? String ?: "Default",
+                        lineSpacing = defaultSettingsGemini["lineSpacing"] as? Float ?: 1.0f,
+                        textBoldness = defaultSettingsGemini["textBoldness"] as? Float ?: 1.0f,
+                        overlayAlpha = defaultSettingsGemini["overlayAlpha"] as? Float ?: 0.8f,
+                        overlaySaturation = defaultSettingsGemini["overlayBrightness"] as? Float ?: 1.0f,
+                        customBorderColor = (defaultSettingsGemini["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        borderThickness = defaultSettingsGemini["borderThickness"] as? Float ?: 2.0f,
+                        customTextColor = (defaultSettingsGemini["textColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        applyMerge = true
+                    ))
                 }
                 
                 resultText = blocks.joinToString("\n") { it.text }
@@ -1134,9 +1171,8 @@ class TranslationRepository(private val application: Application) {
                 return@withContext result
             }
 
-            // --- LOGIC CŨ CHO CÁC CHẾ ĐỘ KHÁC (OFFLINE, ONLINE) ---
-            // Lấy font mặc định từ cài đặt cho các mode khác
-            val (defaultFontOther, defaultLineSpacingOther) = getDefaultFontSettings()
+            // Lấy tất cả cài đặt mặc định từ cài đặt cho các mode khác
+            val defaultSettingsOther = getDefaultFontSettings()
             
             val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
             val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
@@ -1194,7 +1230,20 @@ class TranslationRepository(private val application: Application) {
                         }
                         //log.i("TranslationRepository", "Văn bản sau định dạng lại: $reformattedText")
                         val newBounds = adjustBoundsForTranslatedText(reformattedText.orEmpty(), block.bounds, block.fontSize, 1.0f)
-                        block.copy(text = reformattedText.orEmpty(), originalText = block.text, bounds = newBounds, fontFamily = defaultFontOther, lineSpacing = defaultLineSpacingOther, applyMerge = true)
+                        block.copy(
+                            text = reformattedText.orEmpty(),
+                            originalText = block.text,
+                            bounds = newBounds,
+                            fontFamily = defaultSettingsOther["fontFamily"] as? String ?: "Default",
+                            lineSpacing = defaultSettingsOther["lineSpacing"] as? Float ?: 1.0f,
+                            textBoldness = defaultSettingsOther["textBoldness"] as? Float ?: 1.0f,
+                            overlayAlpha = defaultSettingsOther["overlayAlpha"] as? Float ?: 0.8f,
+                            overlaySaturation = defaultSettingsOther["overlayBrightness"] as? Float ?: 1.0f,
+                            customBorderColor = (defaultSettingsOther["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                            borderThickness = defaultSettingsOther["borderThickness"] as? Float ?: 2.0f,
+                            customTextColor = (defaultSettingsOther["textColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                            applyMerge = true
+                        )
                     }
                 }
                 blocks.addAll(deferredBlocks.awaitAll())
@@ -1257,7 +1306,20 @@ class TranslationRepository(private val application: Application) {
                         naturalText
                     }
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, block.fontSize, 1.0f)
-                    blocks2.add(block.copy(text = reformattedText, originalText = block.text, bounds = newBounds, fontFamily = defaultFontOther, lineSpacing = defaultLineSpacingOther, applyMerge = true))
+                    blocks2.add(block.copy(
+                        text = reformattedText,
+                        originalText = block.text,
+                        bounds = newBounds,
+                        fontFamily = defaultSettingsOther["fontFamily"] as? String ?: "Default",
+                        lineSpacing = defaultSettingsOther["lineSpacing"] as? Float ?: 1.0f,
+                        textBoldness = defaultSettingsOther["textBoldness"] as? Float ?: 1.0f,
+                        overlayAlpha = defaultSettingsOther["overlayAlpha"] as? Float ?: 0.8f,
+                        overlaySaturation = defaultSettingsOther["overlayBrightness"] as? Float ?: 1.0f,
+                        customBorderColor = (defaultSettingsOther["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        borderThickness = defaultSettingsOther["borderThickness"] as? Float ?: 2.0f,
+                        customTextColor = (defaultSettingsOther["textColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        applyMerge = true
+                    ))
                 }
                 val resultText2 = blocks2.joinToString("\n") { it.text }
                 val detectedFinal2 = detectLanguage(resultText2) ?: ""

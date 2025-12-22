@@ -24,6 +24,11 @@ class ThemePreferences(private val context: Context) {
         private val DEFAULT_TRANSLATION_FONT_KEY = stringPreferencesKey("default_translation_font")
         private val DEFAULT_LINE_SPACING_KEY = floatPreferencesKey("default_line_spacing")
         private val DEFAULT_TEXT_BOLDNESS_KEY = floatPreferencesKey("default_text_boldness")
+        private val DEFAULT_OVERLAY_ALPHA_KEY = floatPreferencesKey("default_overlay_alpha")
+        private val DEFAULT_OVERLAY_BRIGHTNESS_KEY = floatPreferencesKey("default_overlay_brightness")
+        private val DEFAULT_BORDER_COLOR_KEY = stringPreferencesKey("default_border_color")
+        private val DEFAULT_BORDER_THICKNESS_KEY = floatPreferencesKey("default_border_thickness")
+        private val DEFAULT_TEXT_COLOR_KEY = stringPreferencesKey("default_text_color")
     }
     
     val themeVariant: Flow<ThemeVariant> = context.dataStore.data.map { preferences ->
@@ -61,6 +66,26 @@ class ThemePreferences(private val context: Context) {
     
     val defaultTextBoldness: Flow<Float> = context.dataStore.data.map { preferences ->
         preferences[DEFAULT_TEXT_BOLDNESS_KEY] ?: 1.0f
+    }
+    
+    val defaultOverlayAlpha: Flow<Float> = context.dataStore.data.map { preferences ->
+        preferences[DEFAULT_OVERLAY_ALPHA_KEY] ?: 1.0f
+    }
+    
+    val defaultOverlayBrightness: Flow<Float> = context.dataStore.data.map { preferences ->
+        preferences[DEFAULT_OVERLAY_BRIGHTNESS_KEY] ?: 1.0f
+    }
+    
+    val defaultBorderColor: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[DEFAULT_BORDER_COLOR_KEY]
+    }
+    
+    val defaultBorderThickness: Flow<Float> = context.dataStore.data.map { preferences ->
+        preferences[DEFAULT_BORDER_THICKNESS_KEY] ?: 0.0f
+    }
+    
+    val defaultTextColor: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[DEFAULT_TEXT_COLOR_KEY]
     }
     
     suspend fun setThemeVariant(variant: ThemeVariant) {
@@ -112,6 +137,44 @@ class ThemePreferences(private val context: Context) {
     suspend fun setDefaultTextBoldness(textBoldness: Float) {
         context.dataStore.edit { preferences ->
             preferences[DEFAULT_TEXT_BOLDNESS_KEY] = textBoldness
+        }
+    }
+    
+    suspend fun setDefaultOverlayAlpha(overlayAlpha: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[DEFAULT_OVERLAY_ALPHA_KEY] = overlayAlpha
+        }
+    }
+    
+    suspend fun setDefaultOverlayBrightness(overlayBrightness: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[DEFAULT_OVERLAY_BRIGHTNESS_KEY] = overlayBrightness
+        }
+    }
+    
+    suspend fun setDefaultBorderColor(borderColor: String?) {
+        context.dataStore.edit { preferences ->
+            if (borderColor != null) {
+                preferences[DEFAULT_BORDER_COLOR_KEY] = borderColor
+            } else {
+                preferences.remove(DEFAULT_BORDER_COLOR_KEY)
+            }
+        }
+    }
+    
+    suspend fun setDefaultBorderThickness(borderThickness: Float) {
+        context.dataStore.edit { preferences ->
+            preferences[DEFAULT_BORDER_THICKNESS_KEY] = borderThickness
+        }
+    }
+    
+    suspend fun setDefaultTextColor(textColor: String?) {
+        context.dataStore.edit { preferences ->
+            if (textColor != null) {
+                preferences[DEFAULT_TEXT_COLOR_KEY] = textColor
+            } else {
+                preferences.remove(DEFAULT_TEXT_COLOR_KEY)
+            }
         }
     }
 }

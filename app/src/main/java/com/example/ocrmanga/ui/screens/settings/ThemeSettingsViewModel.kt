@@ -18,7 +18,12 @@ data class ThemeState(
     val useCustomColor: Boolean = false,
     val defaultTranslationFont: String = "mto_comic_2",
     val defaultLineSpacing: Float = 1.0f,
-    val defaultTextBoldness: Float = 1.0f
+    val defaultTextBoldness: Float = 1.0f,
+    val defaultOverlayAlpha: Float = 1.0f,
+    val defaultOverlayBrightness: Float = 1.0f,
+    val defaultBorderColor: String? = null,
+    val defaultBorderThickness: Float = 0.0f,
+    val defaultTextColor: String? = null
 )
 
 class ThemeSettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -38,7 +43,12 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
                 themePreferences.useCustomColor,
                 themePreferences.defaultTranslationFont,
                 themePreferences.defaultLineSpacing,
-                themePreferences.defaultTextBoldness
+                themePreferences.defaultTextBoldness,
+                themePreferences.defaultOverlayAlpha,
+                themePreferences.defaultOverlayBrightness,
+                themePreferences.defaultBorderColor,
+                themePreferences.defaultBorderThickness,
+                themePreferences.defaultTextColor
             ) { values ->
                 ThemeState(
                     themeVariant = values[0] as ThemeVariant,
@@ -48,7 +58,12 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
                     useCustomColor = values[4] as Boolean,
                     defaultTranslationFont = values[5] as String,
                     defaultLineSpacing = values[6] as Float,
-                    defaultTextBoldness = values[7] as Float
+                    defaultTextBoldness = values[7] as Float,
+                    defaultOverlayAlpha = values[8] as Float,
+                    defaultOverlayBrightness = values[9] as Float,
+                    defaultBorderColor = values[10] as String?,
+                    defaultBorderThickness = values[11] as Float,
+                    defaultTextColor = values[12] as String?
                 )
             }.collect { newState ->
                 _themeState.value = newState
@@ -86,5 +101,25 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
     
     suspend fun setDefaultTextBoldness(textBoldness: Float) {
         themePreferences.setDefaultTextBoldness(textBoldness)
+    }
+    
+    suspend fun setDefaultOverlayAlpha(overlayAlpha: Float) {
+        themePreferences.setDefaultOverlayAlpha(overlayAlpha)
+    }
+    
+    suspend fun setDefaultOverlayBrightness(overlayBrightness: Float) {
+        themePreferences.setDefaultOverlayBrightness(overlayBrightness)
+    }
+    
+    suspend fun setDefaultBorderColor(borderColor: String?) {
+        themePreferences.setDefaultBorderColor(borderColor)
+    }
+    
+    suspend fun setDefaultBorderThickness(borderThickness: Float) {
+        themePreferences.setDefaultBorderThickness(borderThickness)
+    }
+    
+    suspend fun setDefaultTextColor(textColor: String?) {
+        themePreferences.setDefaultTextColor(textColor)
     }
 }
