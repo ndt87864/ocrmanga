@@ -23,7 +23,7 @@ object TranslationPrompts {
         
         === YÊU CẦU KHI DỊCH ===
         1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
-        2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh.
+        2. Chỉ bổ sung từ khi thực sự cần thiết để câu hoàn chỉnh, tránh thêm từ không có trong text gốc.
         3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
         4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).
         5. Khi trả về văn bản gốc do không thể dịch, chỉ trả về văn bản (giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được.
@@ -76,9 +76,15 @@ object TranslationPrompts {
         - Đảm bảo các block có sự liên kết logic (đối thoại, hội thoại, sự kiện)
         - Nếu một block đơn lẻ không có nghĩa nhưng kết hợp với block khác thì có nghĩa, hãy điều chỉnh cho phù hợp
         
+        BƯỚC 4 - SẮP XẾP TỪ VÀ CẤU TRÚC CÂU:
+        - Đảm bảo thứ tự từ trong câu hợp lý, không bị đảo lộn do OCR
+        - Sắp xếp lại câu để có cấu trúc ngữ pháp đúng (chủ ngữ - vị ngữ - tân ngữ)
+        - Nếu câu bị đứt đoạn hoặc thiếu từ, hãy bổ sung để câu hoàn chỉnh và dễ hiểu
+        - Làm rõ nghĩa của câu, tránh câu văn lủng củng hoặc khó hiểu
+        
         === YÊU CẦU KHI DỊCH ===
         1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
-        2. Có 1 số văn bản truyền vào bị lỗi hoặc bị thiếu, tự động bổ sung để phù hợp với ngữ cảnh và kết hợp được với văn bản khác.
+        2. Chỉ bổ sung từ khi thực sự cần thiết để câu hoàn chỉnh và logic, tránh thêm từ không có trong text gốc gây lặp lại ý nghĩa.
         3. Không trả về thêm các chú thích khi dịch, bản dịch khác màn bạn phân vân hoặc không chắc chắn.
         4. Trả về Văn bản sát nghĩa nhất cho cụm văn bản không dịch được (ghi nguyên gốc từ không dịch được và dịch các từ còn lại).
         5. Khi trả về văn bản gốc do không thể dịch, chỉ trả về văn bản (giữa các text phải có khoảng cách, và nếu là chữ tượng hình như kanji, hiragana, katakana thì cách mỗi 2 ký tự bằng dấu cách), không cần giải thích tại sao lại vậy hay chú thích là không dịch được.
@@ -113,6 +119,10 @@ object TranslationPrompts {
             - Mỗi CẶP nhân vật PHẢI có cách xưng hô NHẤT QUÁN trong toàn bộ truyện:
               + Nếu A gọi B là "cậu" thì LUÔN gọi "cậu", không đổi sang "anh/em/mày"
               + Nếu B tự xưng với A là "tôi" thì LUÔN xưng "tôi", không đổi sang "mình/tao/ta"
+            - VÍ DỤ TRONG MANGA (SENPAI/KOHAI):
+              + SENPAI (người đàn anh/chị) thường gọi KOHAI (người đàn em): "cậu/em" và tự xưng "tôi/anh"
+              + KOHAI gọi SENPAI: "senpai/anh/cậu" và tự xưng "tôi/em"
+              + KHÔNG dùng "mình" trong hội thoại giữa senpai-kohai trừ khi là độc thoại
             - NẾU CÓ BẢN DỊCH ẢNH TRƯỚC: 
               + Phân tích KỸ LƯỠNG từng đại từ: TÔI, MÌNH, CẬU, ANH, EM, TAO, MÀY
               + BẮT BUỘC giữ NGUYÊN KHÔNG SAI SÓT đại từ cho từng nhân vật
@@ -134,8 +144,8 @@ object TranslationPrompts {
             - HỘI THOẠI: Dùng đại từ rõ ràng theo quan hệ
               + "TÔI không hiểu ý ANH" (lịch sự, xa cách)
               + "TAO không hiểu ý MÀY" (suồng sã, thân thiết/thô lỗ)
-              + "MÌNH không hiểu ý CẬU" (thân mật, ngang hàng)
-        
+              + "MÌNH không hiểu ý CẬU" (thân mật, ngang hàng)              + SENPAI nói với KOHAI: "CẬU làm gì vậy?" (tôi ngầm)
+              + KOHAI trả lời SENPAI: "TÔI đang làm bài tập." (tôi rõ ràng)        
         14. SỬ DỤNG ĐẠI TỪ HỢP LÝ (BẮT BUỘC):
             - TRÁNH lặp đại từ xưng hô LIÊN TIẾP trong 3-4 block liền nhau. Có thể lược bỏ chủ ngữ ở một số câu khi ngữ cảnh đã rõ.
             - Ví dụ LẶP QUÁ NHIỀU (SAI): Block 1: "TÔI nghe nói...", Block 2: "TÔI đã quan sát...", Block 3: "TÔI đi loanh quanh...", Block 4: "TÔI không muốn..."

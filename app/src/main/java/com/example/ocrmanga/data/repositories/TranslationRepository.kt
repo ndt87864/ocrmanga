@@ -49,6 +49,7 @@ import java.io.StringReader
 import com.example.ocrmanga.ui.screens.view.analyzeBackgroundAndTextColor
 import com.example.ocrmanga.ui.theme.ThemePreferences
 import kotlinx.coroutines.flow.first
+import kotlin.math.max
 
 class TranslationRepository(private val application: Application) {
     
@@ -1996,18 +1997,29 @@ class TranslationRepository(private val application: Application) {
                 val otherTop = otherCluster.minOf { it.bounds.top }
                 val otherBottom = otherCluster.maxOf { it.bounds.bottom }
 
-                val topDifference = abs(clusterTop - otherTop)
-                val isTopSimilar = topDifference <= verticalThreshold
-
-                val isVerticallyOverlapping = clusterTop <= otherBottom && otherTop <= clusterBottom
-                val yDistance = if (otherTop > clusterBottom) {
+                // Tính khoảng cách dọc giữa hai cluster
+                val verticalGap = if (otherTop > clusterBottom) {
                     otherTop - clusterBottom
                 } else {
                     clusterTop - otherBottom
                 }
-                val isVerticallyClose = yDistance <= verticalProximityThreshold
 
-                if (isTopSimilar && (isVerticallyOverlapping || isVerticallyClose)) {
+                // Tính overlap ngang
+                val clusterLeft = cluster.minOf { it.bounds.left }
+                val clusterRight = cluster.maxOf { it.bounds.right }
+                val otherLeft = otherCluster.minOf { it.bounds.left }
+                val otherRight = otherCluster.maxOf { it.bounds.right }
+                val horizontalOverlap = maxOf(0, min(clusterRight, otherRight) - max(clusterLeft, otherLeft))
+                val clusterWidth = clusterRight - clusterLeft
+                val otherWidth = otherRight - otherLeft
+                val overlapRatio = if (clusterWidth > 0 && otherWidth > 0) {
+                    horizontalOverlap.toFloat() / min(clusterWidth, otherWidth)
+                } else 0f
+
+                // Merge nếu khoảng cách dọc nhỏ (dựa trên font size hoặc ngưỡng cố định)
+                val avgFontSize = cluster.map { it.fontSize }.average().toFloat()
+                val maxVerticalGap = (avgFontSize * 5).coerceAtLeast(300f) // Tăng ngưỡng để merge nhiều blocks hơn
+                if (verticalGap <= maxVerticalGap) { // Bỏ điều kiện overlap để merge dễ hơn
                     val clusterText = cluster.joinToString(" ") { it.text }
                     val otherText = otherCluster.joinToString(" ") { it.text }
                     val combinedText = "$clusterText $otherText"
