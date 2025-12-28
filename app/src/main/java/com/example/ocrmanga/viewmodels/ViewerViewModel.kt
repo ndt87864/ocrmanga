@@ -2022,7 +2022,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     // iterate all images to preserve order; if translation exists for a uri, bake it into the image
                     for (uri in allImages) {
                         try {
-                            val entryName = try { File(uri.path ?: "image_${idx}.jpg").name } catch (e: Exception) { "image_${idx}.jpg" }
+                            val entryName = try { File(uri.path ?: "image_${idx}.webp").name } catch (e: Exception) { "image_${idx}.webp" }
 
                             val pair = translations[uri]
                             if (pair != null) {

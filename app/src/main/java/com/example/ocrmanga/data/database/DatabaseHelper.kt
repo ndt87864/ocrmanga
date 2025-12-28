@@ -1339,7 +1339,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val imagesDir = File(appContext.getExternalFilesDir(null), "images/$roomId")
             imagesDir.mkdirs()
 
-            val coverFile = copyImageToInternalStorage(imageUris.first(), imagesDir, "cover.jpg")
+            val coverFile = copyImageToInternalStorage(imageUris.first(), imagesDir, "cover.webp")
             if (coverFile != null) {
                 val coverUri = Uri.fromFile(coverFile)
                 val roomValues = ContentValues().apply {
@@ -1352,7 +1352,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
 
             imageUris.forEachIndexed { index, originalUri ->
-                val fileName = "image_$index.jpg"
+                val fileName = "imagie_$index.webp"
                 val newFile = copyImageToInternalStorage(originalUri, imagesDir, fileName)
                 if (newFile != null) {
                     val newUri = Uri.fromFile(newFile)
@@ -1607,7 +1607,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             
             // Step 2: Rename temp files and new files to final names based on new index
             imageInfos.forEach { info ->
-                val targetFilename = "image_${info.index}.jpg"
+                val targetFilename = "image_${info.index}.webp"
                 val targetFile = File(imagesDir, targetFilename)
                 
                 if (info.isNew) {
@@ -1639,7 +1639,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val index = info.index
                 val uri = info.uri
                 val isTranslated = if (translatedTexts.containsKey(uri)) 1 else 0
-                val targetFilename = "image_${index}.jpg"
+                val targetFilename = "image_${index}.webp"
                 val targetFile = File(imagesDir, targetFilename)
                 val newUri = if (targetFile.exists()) Uri.fromFile(targetFile) else uri
                 
@@ -2170,7 +2170,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         
                         // No existing image at this index - create new one
                         try {
-                            val fileName = "image_${index}.jpg"
+                            val fileName = "image_${index}.webp"
                             val newFile = copyImageToInternalStorage(dirtyUri, imagesDir, fileName)
                             val newUri = if (newFile != null && newFile.exists()) Uri.fromFile(newFile) else dirtyUri
                             // Get original OCR text for this image
@@ -2311,18 +2311,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             if (originalUri.scheme == "content" && authority.contains("downloads")) {
                 // Attempt to open, but be prepared to fail with SecurityException
                 try {
-                    val newFile = File(directory, fileName)
+                    val normalizedFileName = if (fileName.endsWith(".webp", true)) fileName else {
+                        val base = if (fileName.contains('.')) fileName.substringBeforeLast('.') else fileName
+                        "${base}.webp"
+                    }
+                    val newFile = File(directory, normalizedFileName)
                     val inputStream = appContext.contentResolver.openInputStream(originalUri)
                         ?: return null
                     val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
                     inputStream.close()
-                    val format = when {
-                        fileName.endsWith(".webp", true) -> Bitmap.CompressFormat.WEBP
-                        fileName.endsWith(".png", true) -> Bitmap.CompressFormat.PNG
-                        else -> Bitmap.CompressFormat.JPEG
-                    }
                     val outStream = FileOutputStream(newFile)
-                    bitmap.compress(format, 100, outStream)
+                    bitmap.compress(Bitmap.CompressFormat.WEBP, 90, outStream)
                     outStream.close()
                     return newFile
                 } catch (se: SecurityException) {
@@ -2332,19 +2331,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
 
             // Default path for other URIs
-            val newFile = File(directory, fileName)
+            val normalizedFileName = if (fileName.endsWith(".webp", true)) fileName else {
+                val base = if (fileName.contains('.')) fileName.substringBeforeLast('.') else fileName
+                "${base}.webp"
+            }
+            val newFile = File(directory, normalizedFileName)
             val inputStream = appContext.contentResolver.openInputStream(originalUri)
             if (inputStream != null) {
                 val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
                 inputStream.close()
-                // Determine format from file extension
-                val format = when {
-                    fileName.endsWith(".webp", true) -> Bitmap.CompressFormat.WEBP
-                    fileName.endsWith(".png", true) -> Bitmap.CompressFormat.PNG
-                    else -> Bitmap.CompressFormat.JPEG
-                }
                 val outStream = FileOutputStream(newFile)
-                bitmap.compress(format, 100, outStream)
+                bitmap.compress(Bitmap.CompressFormat.WEBP, 90, outStream)
                 outStream.close()
                 return newFile
             }
@@ -2828,8 +2825,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
             // If overwrite wasn't possible, create a stable filename based on imageId
             if (storedFile == null) {
-                val ext = try { java.io.File(newUri.path ?: "").extension } catch (e: Exception) { "jpg" }
-                val safeExt = if (ext.isNullOrBlank()) "jpg" else ext
+                // Always store images in rooms as WebP
+                val safeExt = "webp"
                 val fileName = "image_${imageId}.$safeExt"
                 val copied = copyImageToInternalStorage(newUri, imagesDir, fileName)
                 if (copied == null) {

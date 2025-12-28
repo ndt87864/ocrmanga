@@ -332,7 +332,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                     dir.listFiles()?.forEach { file ->
                         if (file.isDirectory) {
                             scanImageFiles(file, "$prefix${file.name}/")
-                        } else if (file.name.endsWith(".jpg") || file.name.endsWith(".png")) {
+                        } else if (file.name.endsWith(".jpg") || file.name.endsWith(".png") || file.name.endsWith(".webp")) {
                             imageFiles.add("$prefix${file.name}")
                         }
                     }
@@ -353,7 +353,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                         dir.listFiles()?.forEach { file ->
                             if (file.isDirectory) {
                                 scanExternalImageFiles(file, "$prefix${file.name}/")
-                            } else if (file.name.endsWith(".jpg") || file.name.endsWith(".png")) {
+                            } else if (file.name.endsWith(".jpg") || file.name.endsWith(".png") || file.name.endsWith(".webp")) {
                                 externalImageFiles.add("$prefix${file.name}")
                             }
                         }

@@ -35,7 +35,7 @@ object EncryptionUtils {
     }
 
     // Chuyển Bitmap thành chuỗi nén mã hóa (Base64)
-    fun bitmapToCompressedBase64(bitmap: Bitmap, format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG, quality: Int = 100): String {
+    fun bitmapToCompressedBase64(bitmap: Bitmap, format: Bitmap.CompressFormat = Bitmap.CompressFormat.WEBP, quality: Int = 100): String {
         val baos = ByteArrayOutputStream()
         bitmap.compress(format, quality, baos)
         val compressed = compressBytes(baos.toByteArray())

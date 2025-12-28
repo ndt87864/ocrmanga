@@ -147,13 +147,14 @@ fun GalleryScreen(
                     ).setApplicationName("OCR Manga").build()
 
                     // Lấy tên file
-                    val fileName = getFileNameFromUri(context, uri) ?: "uploaded_file.jpg"
+                    val fileName = getFileNameFromUri(context, uri) ?: "uploaded_file.webp"
                     val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
                     if (inputStream != null) {
                         val fileMetadata = GDriveFile()
                         fileMetadata.name = fileName
+                        val mediaType = if (fileName.endsWith(".webp", true)) "image/webp" else "image/jpeg"
                         val mediaContent = com.google.api.client.http.InputStreamContent(
-                            "image/jpeg", inputStream
+                            mediaType, inputStream
                         )
                         val file = driveService.files().create(fileMetadata, mediaContent)
                             .setFields("id, name")
