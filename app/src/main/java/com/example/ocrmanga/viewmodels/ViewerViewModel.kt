@@ -2035,6 +2035,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                         val canvas = Canvas(bmp)
 
                                         for (block in pair.second) {
+                                            // Skip exporting overlays that have no text
+                                            if (block.text.isBlank()) continue
                                             try {
                                                 val bounds = block.bounds
                                                 val boundsWidth = (bounds.right - bounds.left).toFloat()
