@@ -2434,6 +2434,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val seenUris = mutableSetOf<String>() // Track URIs đã thấy
         val seenImageIds = mutableSetOf<Long>() // Track image_id đã thấy
         val seenFilenames = mutableSetOf<String>() // Track filename đã thấy
+        val missingImageIds = mutableListOf<Long>() // Track images with missing files
         
         // 1. Lấy thông tin từ bảng images
         val imageCursor = db.rawQuery("""
@@ -2464,11 +2465,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 continue
             }
             
+            // Check if the file actually exists on disk
+            val uri = Uri.parse(uriStr)
+            val filePath = uri.path
+            if (filePath != null) {
+                val file = File(filePath)
+                if (!file.exists()) {
+                    Log.w(TAG, "getMangaRoom: File missing for imageId=$imageId, uri=$uriStr - will be removed from DB")
+                    missingImageIds.add(imageId)
+                    continue // Skip this image
+                }
+            }
+            
             seenImageIds.add(imageId)
             seenUris.add(uriStr)
             seenFilenames.add(filename)
             
-            val uri = Uri.parse(uriStr)
             val order = imageCursor.getInt(1)
             val originalTextForImage = imageCursor.getString(3) ?: ""
 
@@ -2601,6 +2613,34 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
         }
         imageCursor.close()
+        
+        // Clean up images with missing files from DB
+        if (missingImageIds.isNotEmpty()) {
+            Log.w(TAG, "getMangaRoom: Removing ${missingImageIds.size} images with missing files from DB")
+            for (imageId in missingImageIds) {
+                try {
+                    db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    Log.i(TAG, "getMangaRoom: Removed missing image from DB: imageId=$imageId")
+                } catch (e: Exception) {
+                    Log.e(TAG, "getMangaRoom: Failed to remove missing image imageId=$imageId", e)
+                }
+            }
+            // Re-index display_order after removing missing images
+            val reorderCursor = db.rawQuery(
+                "SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ? ORDER BY $COLUMN_DISPLAY_ORDER ASC",
+                arrayOf(roomId.toString())
+            )
+            var newOrder = 0
+            while (reorderCursor.moveToNext()) {
+                val imgId = reorderCursor.getLong(0)
+                val values = ContentValues().apply { put(COLUMN_DISPLAY_ORDER, newOrder) }
+                db.update(TABLE_IMAGES, values, "$COLUMN_IMAGE_ID = ?", arrayOf(imgId.toString()))
+                newOrder++
+            }
+            reorderCursor.close()
+        }
 
         return Triple(images, orders, translations)
     }
@@ -2914,15 +2954,31 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 return null
             }
 
-            // Delete the old file first
-            oldFile.delete()
-
-            // Copy new content with same filename
-            val copiedFile = copyImageToInternalStorage(newUri, parentDir, fileName)
-            if (copiedFile == null || !copiedFile.exists()) {
-                Log.e(TAG, "replaceImageFileOnly: Failed to copy new image to $parentDir/$fileName")
+            // SAFETY: Copy new file to a temporary name FIRST, then delete old and rename
+            // This prevents data loss if the copy fails
+            val tempFileName = "temp_replace_${System.currentTimeMillis()}_$fileName"
+            val tempCopiedFile = copyImageToInternalStorage(newUri, parentDir, tempFileName)
+            if (tempCopiedFile == null || !tempCopiedFile.exists()) {
+                Log.e(TAG, "replaceImageFileOnly: Failed to copy new image to temp file $parentDir/$tempFileName")
                 return null
             }
+
+            // Now that we have the new file successfully copied, delete the old file
+            oldFile.delete()
+
+            // Rename temp file to original filename
+            val finalFile = File(parentDir, fileName)
+            if (!tempCopiedFile.renameTo(finalFile)) {
+                // If rename fails, try copy and delete
+                tempCopiedFile.copyTo(finalFile, overwrite = true)
+                tempCopiedFile.delete()
+            }
+            
+            if (!finalFile.exists()) {
+                Log.e(TAG, "replaceImageFileOnly: Failed to rename/move temp file to $parentDir/$fileName")
+                return null
+            }
+            val copiedFile = finalFile
 
             // Try to delete the source file if it's a temporary file
             try { deleteOriginalImage(newUri) } catch (e: Exception) { /* ignore */ }

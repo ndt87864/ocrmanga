@@ -77,6 +77,12 @@ fun Dialogs(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri: Uri? ->
             if (uri != null && imageMenuUri != null) {
+                try {
+                    // Persist read permission so we can access this URI later
+                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (e: Exception) {
+                    Log.w("Dialogs", "Could not persist permission for gallery URI $uri", e)
+                }
                 // Call ViewModel to replace uri
                 viewModel.replaceImageUri(imageMenuUri, uri)
                 Toast.makeText(context, "Đã chọn ảnh thay thế từ thư viện", Toast.LENGTH_SHORT).show()
