@@ -1352,7 +1352,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
 
             imageUris.forEachIndexed { index, originalUri ->
-                val fileName = "imagie_$index.webp"
+                val fileName = "image_$index.webp"
                 val newFile = copyImageToInternalStorage(originalUri, imagesDir, fileName)
                 if (newFile != null) {
                     val newUri = Uri.fromFile(newFile)
@@ -1740,44 +1740,53 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     db.update(TABLE_IMAGES, imageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                     
                     // Nếu có bản dịch mới, xóa bản dịch cũ và thêm lại
-                    if (translatedTexts.containsKey(uri)) {
+                    // IMPORTANT: Only update translations if this URI has translations in the input map
+                    // Try to find translations by exact URI match first, then by filename match
+                    val uriFilename = lastNameOf(uri)
+                    val translationEntry = translatedTexts[uri] ?: translatedTexts.entries.find { (k, _) ->
+                        val kFilename = lastNameOf(k)
+                        kFilename != null && uriFilename != null && kFilename == uriFilename
+                    }?.value
+                    
+                    if (translationEntry != null) {
+                        val (originalText, textBlocks) = translationEntry
                         val resolvedId = imageId
                         val deletedCount = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(resolvedId.toString()))
-                        translatedTexts[uri]?.let { (originalText, textBlocks) ->
-                            // Update original_text at image level
-                            val imageUpdateValues = ContentValues().apply {
-                                put(COLUMN_ORIGINAL_TEXT, originalText)
+                        
+                        // Update original_text at image level
+                        val imageUpdateValues = ContentValues().apply {
+                            put(COLUMN_ORIGINAL_TEXT, originalText)
+                        }
+                        db.update(TABLE_IMAGES, imageUpdateValues, "$COLUMN_IMAGE_ID = ?", arrayOf(resolvedId.toString()))
+                        
+                        try { deleteBlocksForImage(resolvedId) } catch (e: Exception) { /* ignore */ }
+                        // DO NOT scale blocks - keep original coordinates relative to originalImageWidth/Height
+                        // ImageViewer handles scaling at display time
+                        
+                        // Filter out blocks marked for deletion (pendingDelete = true)
+                        val blocksToSave = textBlocks.filter { !it.pendingDelete }
+                        Log.i(TAG, "updateMangaRoom (existing image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
+                        
+                        var insertedCount = 0
+                        blocksToSave.forEach { textBlock ->
+                            val origRect = textBlock.bounds
+                            // Use original bounds without scaling
+                            val finalRect = origRect
+                            // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
+                            val textValues = ContentValues().apply {
+                                put(COLUMN_IMAGE_ID, resolvedId)
+                                put("translated_text", textBlock.text)
                             }
-                            db.update(TABLE_IMAGES, imageUpdateValues, "$COLUMN_IMAGE_ID = ?", arrayOf(resolvedId.toString()))
-                            
-                            try { deleteBlocksForImage(resolvedId) } catch (e: Exception) { /* ignore */ }
-                            // DO NOT scale blocks - keep original coordinates relative to originalImageWidth/Height
-                            // ImageViewer handles scaling at display time
-                            
-                            // Filter out blocks marked for deletion (pendingDelete = true)
-                            val blocksToSave = textBlocks.filter { !it.pendingDelete }
-                            Log.i(TAG, "updateMangaRoom (existing image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
-                            
-                            var insertedCount = 0
-                            blocksToSave.forEach { textBlock ->
-                                val origRect = textBlock.bounds
-                                // Use original bounds without scaling
-                                val finalRect = origRect
-                                // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
-                                val textValues = ContentValues().apply {
-                                    put(COLUMN_IMAGE_ID, resolvedId)
-                                    put("translated_text", textBlock.text)
-                                }
-                                val inserted = db.insert("translations", null, textValues)
-                                if (inserted != -1L) {
-                                    insertedCount++
-                                    try {
-                                        val blockWidth = finalRect.right - finalRect.left
-                                        val blockHeight = finalRect.bottom - finalRect.top
-                                        val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
-                                        val textColor = textBlock.customTextColor ?: (textBlock.originalTextColor ?: 0xFF000000.toInt())
-                                        insertImageBlock(
-                                            imageId = resolvedId,
+                            val inserted = db.insert("translations", null, textValues)
+                            if (inserted != -1L) {
+                                insertedCount++
+                                try {
+                                    val blockWidth = finalRect.right - finalRect.left
+                                    val blockHeight = finalRect.bottom - finalRect.top
+                                    val overlayColor = textBlock.customOverlayColor ?: textBlock.averageBackgroundColor
+                                    val textColor = textBlock.customTextColor ?: (textBlock.originalTextColor ?: 0xFF000000.toInt())
+                                    insertImageBlock(
+                                        imageId = resolvedId,
                                             x = finalRect.left,
                                             y = finalRect.top,
                                             width = blockWidth,
@@ -1815,7 +1824,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             // Clear change flag after saving
                             try { clearImageChange(resolvedId) } catch (e: Exception) { /* ignore */ }
                             try { deletePendingTranslations(resolvedId) } catch (e: Exception) { /* ignore */ }
-                        }
                     }
                 }
             }
@@ -2208,7 +2216,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 }
 
                 // insert new translations if present
-                translatedTexts[dirtyUri]?.let { (originalText, textBlocks) ->
+                // Try to find by exact URI first, then by filename match
+                val dirtyFilename = try { Uri.parse(uriStr).lastPathSegment ?: java.io.File(uriStr).name } catch (e: Exception) { null }
+                val translationEntry = translatedTexts[dirtyUri] ?: translatedTexts.entries.find { (k, _) ->
+                    val kFilename = try { k.lastPathSegment ?: java.io.File(k.toString()).name } catch (e: Exception) { null }
+                    kFilename != null && dirtyFilename != null && kFilename == dirtyFilename
+                }?.value
+                
+                translationEntry?.let { (originalText, textBlocks) ->
                     // DO NOT scale blocks based on saved file size anymore.
                     // Blocks retain their original coordinates relative to originalImageWidth/Height.
                     // ImageViewer handles scaling at display time.
@@ -2991,6 +3006,20 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             Log.e(TAG, "replaceImageFileOnly failed for imageId=$imageId", e)
             return null
         }
+    }
+
+    /**
+     * Get the count of images in a room
+     */
+    fun getImageCountForRoom(roomId: Long): Int {
+        val db = readableDatabase
+        val cursor = db.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ?",
+            arrayOf(roomId.toString())
+        )
+        val count = if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        cursor.close()
+        return count
     }
 
     fun getAllRooms(): List<Triple<Long, String, Uri>> {

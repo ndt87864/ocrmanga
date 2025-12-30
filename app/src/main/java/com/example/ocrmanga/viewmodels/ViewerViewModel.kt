@@ -2396,9 +2396,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             databaseHelper.updateMangaRoomSelective(roomId, currentState.imageUris, updatedTranslatedTexts, dirtyUris.toList(), uriToImageId)
             // clear dirty set after saving
             dirtyUris.clear()
-        } else {
+        } else if (uiState.value.roomId == null || currentState.imageUris.size != databaseHelper.getImageCountForRoom(roomId)) {
+            // Only call updateMangaRoom when creating new room or when image count changed
+            // This prevents unnecessary deletion and re-insertion of translations
             databaseHelper.updateMangaRoom(roomId, currentState.imageUris, updatedTranslatedTexts)
         }
+        // If dirtyUris is empty and image count hasn't changed, no update needed
     }
 
     // Expose API key availability checks for UI
