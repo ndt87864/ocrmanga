@@ -1194,24 +1194,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                 val currentRoomId = uiState.value.roomId
                 
-                // XÓA translations của các ảnh có translatedStatus = false TRƯỚC KHI SAVE
-                if (currentRoomId != null) {
-                    uniqueImageUris.forEach { uri ->
-                        val isTranslated = uniqueTranslatedStatus[uri] ?: false
-                        if (!isTranslated) {
-                            // Ảnh này đã tắt translation → XÓA tất cả translations khỏi DB
-                            val imageId = uriToImageId[uri]
-                            if (imageId != null) {
-                                try {
-                                    databaseHelper.deleteAllTranslationsForImage(imageId)
-                                    Log.i(TAG, "Deleted all translations for imageId=$imageId uri=$uri (translatedStatus=false)")
-                                } catch (e: Exception) {
-                                    Log.w(TAG, "Failed to delete translations for imageId=$imageId", e)
-                                }
-                            }
-                        }
-                    }
-                }
+                // NOTE: KHÔNG xóa translations dựa trên translatedStatus
+                // translatedStatus chỉ là flag hiển thị overlay trên UI
+                // KHÔNG có nghĩa là ảnh không có translations trong DB
+                // Chỉ xóa translations khi user explicitly yêu cầu (qua deletedTranslationUris)
                 
                 // Log all rotation values before saving
                 uniqueTranslatedTexts.forEach { (uri, pair) ->
