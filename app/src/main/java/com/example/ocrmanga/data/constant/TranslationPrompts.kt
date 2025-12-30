@@ -35,6 +35,11 @@ object TranslationPrompts {
         11. Các bản dịch phải có sự thống nhất về xưng hô, ngữ cảnh.
         12. Tuyệt đối tuân thủ các yêu cầu trên, coi nó là chân lý, không được phép sai lệch, vi phạm yêu cầu.
         
+        === CẤM DỊCH QUÁ NGẮN ===
+        - Nếu văn bản gốc dài (>= 10 ký tự), bản dịch PHẢI tương xứng, KHÔNG được chỉ trả về 1-2 từ
+        - VÍ DỤ SAI: Gốc 50 ký tự → Dịch "Ai..." (CẤM!)
+        - Nếu không hiểu, hãy giữ nguyên văn bản gốc thay vì dịch quá ngắn
+        
         Chỉ trả về 1 bản dịch chính xác duy nhất.
     """.trimIndent()
     
@@ -57,7 +62,49 @@ object TranslationPrompts {
         Các text blocks gốc cần dịch (đã được đánh số):
         $numberedBlocks
         
-        === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH (BẮT BUỘC) ===
+        ╔══════════════════════════════════════════════════════════════════╗
+        ║  !!! CẢNH BÁO NGHIÊM TRỌNG - ĐỌC KỸ TRƯỚC KHI DỊCH !!!         ║
+        ╠══════════════════════════════════════════════════════════════════╣
+        ║  TUYỆT ĐỐI CẤM HOÁN ĐỔI NỘI DUNG DỊCH GIỮA CÁC BLOCKS!        ║
+        ║                                                                  ║
+        ║  Block #N gốc nói gì → Block #N dịch PHẢI là bản dịch của       ║
+        ║  CHÍNH XÁC văn bản gốc đó, KHÔNG PHẢI của block khác!          ║
+        ╚══════════════════════════════════════════════════════════════════╝
+        
+        CÁCH DỊCH ĐÚNG - TỪNG BLOCK MỘT:
+        1. Đọc Block #1 gốc → Dịch Block #1 → Ghi "Block #1: <bản dịch>"
+        2. Đọc Block #2 gốc → Dịch Block #2 → Ghi "Block #2: <bản dịch>"
+        3. ... tiếp tục cho từng block
+        
+        KHÔNG ĐƯỢC:
+        - Đọc tất cả blocks rồi sắp xếp lại thứ tự dịch
+        - Gán bản dịch của block này cho block khác
+        - Hoán đổi vị trí nội dung dịch
+        
+        VÍ DỤ LỖI NGHIÊM TRỌNG (BỊ CẤM TUYỆT ĐỐI):
+        ┌─────────────────────────────────────────────────────────────────┐
+        │ Block #1 gốc: "意外と冷静ですね" (Bạn thật bình tĩnh)           │
+        │ Block #1 dịch: "Tức là không thể trở về?" ← SAI! HOÁN ĐỔI!     │
+        │                                                                 │
+        │ Block #14 gốc: "つまり、元の身体には戻れない" (Không thể trở về)│
+        │ Block #14 dịch: "Bạn thật bình tĩnh" ← SAI! HOÁN ĐỔI!          │
+        └─────────────────────────────────────────────────────────────────┘
+        
+        VÍ DỤ ĐÚNG:
+        ┌─────────────────────────────────────────────────────────────────┐
+        │ Block #1 gốc: "意外と冷静ですね"                                │
+        │ Block #1 dịch: "Bạn thật bình tĩnh nhỉ." ← ĐÚNG!               │
+        │                                                                 │
+        │ Block #14 gốc: "つまり、元の身体には戻れない"                   │
+        │ Block #14 dịch: "Tức là không thể trở về cơ thể cũ sao?" ← ĐÚNG!│
+        └─────────────────────────────────────────────────────────────────┘
+        
+        KIỂM TRA TRƯỚC KHI TRẢ VỀ:
+        - Block #1 dịch có KHỚP NGHĨA với Block #1 gốc không?
+        - Block #2 dịch có KHỚP NGHĨA với Block #2 gốc không?
+        - ... kiểm tra từng block
+        
+        === BƯỚC XỬ LÝ TRƯỚC KHI DỊCH ===
         
         BƯỚC 1 - KHÔI PHỤC TỪ VÔ NGHĨA:
         - Kiểm tra từng block xem có từ/cụm từ vô nghĩa, bị nhận dạng sai không (ví dụ: ký tự lạ, từ không tồn tại trong ngôn ngữ gốc, từ bị đứt đoạn)
@@ -65,22 +112,42 @@ object TranslationPrompts {
         - Nếu không tìm được từ đúng từ các scale khác, hãy suy luận từ ngữ cảnh câu và các block xung quanh để khôi phục nội dung hợp lý
         - Ưu tiên: OCR từ scale khác > Suy luận ngữ cảnh > Giữ nguyên nếu không thể khôi phục
         
-        BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN OCR:
-        - Kiểm tra xem thứ tự các từ trong mỗi block có hợp lý về mặt ngữ nghĩa và ngữ pháp không
-        - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa
-        - Đảm bảo văn bản sau khi sắp xếp tuân theo cấu trúc ngữ pháp của ngôn ngữ gốc (Nhật/Trung/Hàn)
-        - Với văn bản dọc (vertical), chú ý đọc từ trên xuống dưới, từ phải sang trái
+        BƯỚC 2 - SẮP XẾP LẠI THỨ TỰ TỪ/CỤM TỪ BÊN TRONG MỖI BLOCK (QUAN TRỌNG!):
+        !!! VĂN BẢN DỌC TIẾNG NHẬT/TRUNG ĐƯỢC OCR QUÉT THEO CỘT (PHẢI→TRÁI), NHƯNG CÂU CẦN ĐƯỢC DỊCH THEO NGỮ PHÁP !!!
+        
+        CÁCH XỬ LÝ:
+        - OCR quét văn bản dọc theo thứ tự: cột phải → cột trái
+        - Nhưng khi DỊCH, phải sắp xếp lại theo CẤU TRÚC NGỮ PHÁP để có nghĩa
+        - KHÔNG dịch máy móc theo thứ tự OCR quét
+        
+        VÍ DỤ MINH HỌA:
+        - OCR quét được (theo cột phải→trái): "つまり、有佐羽きんに起こった この現象は人という種に 於いて進化に匹敵する 経験であり"
+        - Nếu dịch theo thứ tự OCR (SAI): "Hiện tượng này... tiến hóa... xảy ra với Ari... Tức là..."
+        - Phải hiểu CÂU HOÀN CHỈNH rồi dịch (ĐÚNG): "Nói cách khác, những gì xảy ra với ông Arisawa là trải nghiệm tương đương với quá trình tiến hóa của loài người."
+        
+        QUY TẮC:
+        1. ĐỌC TOÀN BỘ văn bản trong block TRƯỚC
+        2. HIỂU NGỮ PHÁP tiếng Nhật/Trung để xác định cấu trúc câu đúng
+        3. DỊCH theo nghĩa của CÂU HOÀN CHỈNH, không phải theo thứ tự OCR
+        4. Tiếng Nhật: Chủ ngữ + は/が + ... + Động từ/Tính từ (ở cuối)
+        5. "つまり" (tức là/nói cách khác) thường đứng ĐẦU CÂU khi dịch sang tiếng Việt
         
         BƯỚC 3 - KIỂM TRA NGỮ CẢNH LIÊN BLOCK:
         - Xem xét mối quan hệ ngữ nghĩa giữa các block trong cùng một ảnh
         - Đảm bảo các block có sự liên kết logic (đối thoại, hội thoại, sự kiện)
         - Nếu một block đơn lẻ không có nghĩa nhưng kết hợp với block khác thì có nghĩa, hãy điều chỉnh cho phù hợp
         
-        BƯỚC 4 - SẮP XẾP TỪ VÀ CẤU TRÚC CÂU:
-        - Đảm bảo thứ tự từ trong câu hợp lý, không bị đảo lộn do OCR
-        - Sắp xếp lại câu để có cấu trúc ngữ pháp đúng (chủ ngữ - vị ngữ - tân ngữ)
-        - Nếu câu bị đứt đoạn hoặc thiếu từ, hãy bổ sung để câu hoàn chỉnh và dễ hiểu
-        - Làm rõ nghĩa của câu, tránh câu văn lủng củng hoặc khó hiểu
+        BƯỚC 4 - DỊCH THEO NGỮ PHÁP, KHÔNG THEO THỨ TỰ OCR:
+        - QUAN TRỌNG: Tiếng Nhật có cấu trúc SOV (Chủ ngữ - Tân ngữ - Động từ)
+        - Động từ/Tính từ thường ở CUỐI CÂU tiếng Nhật, nhưng khi dịch sang tiếng Việt phải đặt SAU chủ ngữ
+        - Các từ nối như "つまり" (tức là), "しかし" (nhưng), "だから" (vì vậy) phải đặt ở ĐẦU câu tiếng Việt
+        - KHÔNG dịch từng cụm theo thứ tự OCR quét, phải HIỂU CẢ CÂU rồi mới dịch
+        
+        VÍ DỤ CÁCH DỊCH ĐÚNG:
+        - Gốc: "つまり、有佐羽きんに起こったこの現象は人という種に於いて進化に匹敵する経験であり"
+        - Phân tích: つまり(tức là) + 有佐羽きんに起こった(xảy ra với Arisawa) + この現象は(hiện tượng này) + 人という種に於いて(đối với loài người) + 進化に匹敵する(tương đương tiến hóa) + 経験であり(là trải nghiệm)
+        - Dịch ĐÚNG: "Nói cách khác, những gì xảy ra với ông Arisawa là trải nghiệm tương đương với quá trình tiến hóa của loài người."
+        - Dịch SAI: "Hiện tượng này... tiến hóa... xảy ra với Ari... Tức là..." (dịch theo thứ tự OCR)
         
         === YÊU CẦU KHI DỊCH ===
         1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
@@ -93,6 +160,46 @@ object TranslationPrompts {
         8. Không cần chú thích đây là bản dịch hay chú thích tương tự khi trả về bản dịch.
         9. Trả về bản dịch là chữ hoa nếu bản gốc là chữ in hoa.
         10. Không được trả về bất kỳ ký tự đặc biệt nào như dấu nháy kép ("), dấu sao (*), hoặc các ký tự đặc biệt không cần thiết khác trong bản dịch.
+        
+        === CẤM DỊCH QUÁ NGẮN - BẮT BUỘC DỊCH ĐẦY ĐỦ NỘI DUNG ===
+        !!! NGHIÊM CẤM: Dịch văn bản dài thành câu rất ngắn hoặc 1-2 từ !!!
+        
+        QUY TẮC ĐỘ DÀI BẢN DỊCH:
+        - Nếu văn bản gốc có >= 10 ký tự → bản dịch PHẢI có ít nhất 5 ký tự
+        - Nếu văn bản gốc có >= 20 ký tự → bản dịch PHẢI có ít nhất 10 ký tự  
+        - Nếu văn bản gốc có >= 50 ký tự → bản dịch PHẢI có ít nhất 20 ký tự
+        - Nếu văn bản gốc là câu hoàn chỉnh → bản dịch PHẢI là câu hoàn chỉnh
+        
+        VÍ DỤ SAI (BỊ CẤM):
+        - Gốc: "四半世紀ほど前から症例が報告されていますが非常に稀なため" (50+ ký tự)
+        - Dịch: "Ai..." ← SAI! Quá ngắn, không dịch đủ nội dung
+        
+        VÍ DỤ ĐÚNG:
+        - Gốc: "四半世紀ほど前から症例が報告されていますが非常に稀なため、一般ではあまり知られていません"
+        - Dịch: "Các ca bệnh đã được báo cáo từ khoảng một phần tư thế kỷ trước, nhưng vì rất hiếm gặp nên không được biết đến rộng rãi."
+        
+        NẾU KHÔNG HIỂU VĂN BẢN:
+        - KHÔNG được trả về "Ai...", "À...", "Ừ..." cho văn bản dài
+        - Hãy dịch từng phần có thể hiểu được
+        - Phần không hiểu thì giữ nguyên văn bản gốc (có khoảng cách giữa các ký tự)
+        
+        === CẤM DỊCH NGƯỢC THỨ TỰ NGỮ NGHĨA ===
+        !!! BẢN DỊCH PHẢI THEO THỨ TỰ NGỮ NGHĨA TỰ NHIÊN TIẾNG VIỆT !!!
+        
+        VÍ DỤ DỊCH NGƯỢC (SAI):
+        - Gốc: "あいつ… 未来の僕" (Đứa đó... là mình trong tương lai)
+        - Dịch SAI: "Tương lai của mình... Đứa đó..." ← NGƯỢC! Không tự nhiên
+        - Dịch ĐÚNG: "Đứa đó... là mình trong tương lai"
+        
+        - Gốc: "思われます。分泌が続くと 女性ホルモンの これから更に"
+        - Dịch SAI: "...dường như sẽ tiếp tục tiết ra hormone nữ. Từ giờ trở đi..." ← CẮT GIỮA CHỪNG
+        - Dịch ĐÚNG: "Có vẻ hormone nữ sẽ tiếp tục được tiết ra. Từ giờ trở đi sẽ còn thay đổi nhiều hơn nữa."
+        
+        QUY TẮC:
+        1. Câu dịch phải HOÀN CHỈNH, không cắt giữa chừng với "..."
+        2. Thứ tự từ trong câu phải TỰ NHIÊN theo tiếng Việt
+        3. Nếu OCR bị lộn xộn, hãy SUY LUẬN nghĩa đúng từ ngữ cảnh
+        4. Chủ ngữ đi TRƯỚC, vị ngữ đi SAU trong tiếng Việt
         
         === QUAN TRỌNG: PHÂN BIỆT ĐỘC THOẠI VÀ HỘI THOẠI ===
         11. NHẬN BIẾT LOẠI VĂN BẢN (BẮT BUỘC PHÂN TÍCH TRƯỚC KHI DỊCH):
@@ -179,12 +286,25 @@ object TranslationPrompts {
             ...
         19. QUAN TRỌNG: Phải dịch đủ $blockCount blocks theo đúng thứ tự từ Block #1 đến Block #$blockCount
         
-        === LƯU Ý CUỐI CÙNG - QUAN TRỌNG NHẤT ===
-        - TRƯỚC KHI DỊCH: Tự phân tích trong đầu từng block là ĐỘC THOẠI hay HỘI THOẠI (KHÔNG GHI RA)
-        - ĐỘC THOẠI: Dùng "mình" hoặc lược bỏ chủ ngữ, giọng tự hỏi, ngạc nhiên
-        - HỘI THOẠI: Dùng đại từ rõ ràng (tôi/cậu, tao/mày...) và GIỮ NGUYÊN như ảnh trước
-        - KHÔNG BAO GIỜ đổi đại từ giữa các ảnh khi cùng nhân vật!
-        - CẤM TUYỆT ĐỐI: Thêm nhãn "*Độc thoại*" hay "*Hội thoại*" vào kết quả. CHỈ TRẢ VỀ BẢN DỊCH THUẦN TÚY.
+        ╔══════════════════════════════════════════════════════════════════╗
+        ║ 20. QUY TẮC VÀNG - TUYỆT ĐỐI KHÔNG VI PHẠM:                     ║
+        ╠══════════════════════════════════════════════════════════════════╣
+        ║ DỊCH TỪNG BLOCK MỘT, THEO ĐÚNG THỨ TỰ:                          ║
+        ║                                                                  ║
+        ║ ① Đọc Block #1 gốc → Dịch ĐÚNG NỘI DUNG Block #1 → Ghi ra      ║
+        ║ ② Đọc Block #2 gốc → Dịch ĐÚNG NỘI DUNG Block #2 → Ghi ra      ║
+        ║ ③ ... tiếp tục cho tất cả blocks                                ║
+        ║                                                                  ║
+        ║ !!! CẤM HOÁN ĐỔI NỘI DUNG DỊCH GIỮA CÁC BLOCKS !!!             ║
+        ║                                                                  ║
+        ║ Block #N gốc nói gì → Block #N dịch PHẢI là nghĩa của chính nó  ║
+        ║ KHÔNG lấy nghĩa của block khác gán cho block này!               ║
+        ╚══════════════════════════════════════════════════════════════════╝
+        
+        === LƯU Ý CUỐI CÙNG ===
+        - ĐỘC THOẠI: Dùng "mình" hoặc lược bỏ chủ ngữ, giọng tự hỏi
+        - HỘI THOẠI: Dùng đại từ rõ ràng (tôi/cậu, tao/mày...)
+        - CẤM thêm nhãn "*Độc thoại*" hay "*Hội thoại*" vào kết quả
         
         CHỈ TRẢ VỀ:
         Block #1: <bản dịch>
