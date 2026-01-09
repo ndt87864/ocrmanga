@@ -644,7 +644,7 @@ private fun DefaultFontSelector(
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(fontName, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(fontName, fontFamily = fontOptions.find { it.first == fontKey }?.second, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     if (fontKey == selectedFont) {
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Icon(

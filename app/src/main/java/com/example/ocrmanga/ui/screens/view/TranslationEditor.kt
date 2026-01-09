@@ -882,7 +882,7 @@ fun TranslationEditor(
                                     Row(modifier = Modifier.fillMaxWidth()) {
                                         rowItems.forEach { (name, family) ->
                                             DropdownMenuItem(
-                                                text = { Text(name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                                text = { Text(name, fontFamily = family, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                                 onClick = {
                                                     selectedFontName = name
                                                     fontDropdownExpanded = false
