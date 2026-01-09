@@ -586,6 +586,23 @@ fun ViewerScreen(
                                     showMainMenu = false
                                 }
                             )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (uiState.isAncientTranslationMode) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                                            contentDescription = null,
+                                            modifier = Modifier.padding(end = 8.dp),
+                                            tint = if (uiState.isAncientTranslationMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text("Chế độ Cổ trang")
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.toggleAncientTranslationMode()
+                                    showMainMenu = false
+                                }
+                            )
                         }
                     }
                     DropdownMenu(
@@ -625,6 +642,23 @@ fun ViewerScreen(
                             onClick = {
                                 viewModel.setTranslationMode(TranslationMode.OFF)
                                 showTranslationMenu = false
+                            }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (uiState.isAncientTranslationMode) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 8.dp),
+                                        tint = if (uiState.isAncientTranslationMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text("Chế độ Cổ trang")
+                                }
+                            },
+                            onClick = {
+                                viewModel.toggleAncientTranslationMode()
                             }
                         )
                     }

@@ -245,7 +245,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         foundTranslation
                     } else null
                     
-                    val result = translationRepository.translateImage(uri, mode, statusCallback, previousTranslation)
+                    val result = translationRepository.translateImage(uri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode)
                     
                     Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
                     
@@ -1708,7 +1708,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 uiState.value.translationMode,
                                 key,
                                 statusCallback,
-                                prevTranslation // Truyền bản dịch ảnh trước để tham khảo
+                                prevTranslation, // Truyền bản dịch ảnh trước để tham khảo
+                                isAncientMode = uiState.value.isAncientTranslationMode
                             )
                             Triple(uri, original, translatedBlocks to sourceLang)
                         } catch (e: Exception) {
@@ -1827,6 +1828,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 Log.e(TAG, "Error toggling auto-translate", e)
             }
         }
+    }
+
+    /**
+     * Bật/tắt chế độ dịch cổ trang
+     */
+    fun toggleAncientTranslationMode() {
+        _uiState.update { it.copy(isAncientTranslationMode = !it.isAncientTranslationMode) }
+        val message = if (_uiState.value.isAncientTranslationMode) "Đã BẬT chế độ dịch cổ trang" else "Đã TẮT chế độ dịch cổ trang"
+        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
     }
 
     /**
@@ -2520,6 +2530,7 @@ data class ViewerUiState(
     val remainingImages: List<Uri> = emptyList(),
     val roomId: Long? = null,
     val autoTranslateEnabled: Boolean = true, // Auto-translate new images when adding to room
+    val isAncientTranslationMode: Boolean = false, // Chế độ dịch cổ trang
     val isSavingRoom: Boolean = false, // Loading state for room saving
     val isExportingRoom: Boolean = false, // Loading state for room exporting
     // Map theo dõi trạng thái dịch của từng ảnh (Uri -> TranslationStatus)

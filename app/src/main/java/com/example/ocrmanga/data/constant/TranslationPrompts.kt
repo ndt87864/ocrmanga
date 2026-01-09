@@ -5,7 +5,23 @@ object TranslationPrompts {
     /**
      * Prompt cơ bản cho Mistral - dịch đơn giản một đoạn văn bản
      */
-    fun getMistralBasicPrompt(text: String): String = """
+    fun getMistralBasicPrompt(text: String, isAncientMode: Boolean = false): String {
+        val ancientInstruction = if (isAncientMode) {
+            """
+            === CHẾ ĐỘ DỊCH CỔ TRANG/KIẾM HIỆP (BẮT BUỘC) ===
+            1. PHONG CÁCH NGÔN NGỮ:
+               - Sử dụng từ ngữ Hán Việt, văn phong cổ trang, kiếm hiệp.
+               - Dùng các từ như: "tại hạ", "các hạ", "tiểu tử", "lão phu", "huynh đài", "cô nương", "bổn toạ", "vi sư", "đồ nhi"...
+               - Câu văn cần trang trọng, uy nghiêm hoặc mang đậm sắc thái cổ xưa.
+            2. XƯNG HÔ:
+               - TÔI -> Ta, Tại hạ, Bổn toạ, Lão phu, Bần đạo... (tuỳ vai vế)
+               - BẠN/CẬU -> Ngươi, Các hạ, Huynh đài, Cô nương, Tiểu tử...
+               - ANH/EM -> Huynh/Đệ, Muội, Tỷ...
+            3. LƯU Ý: Tuyệt đối không dùng từ ngữ hiện đại (anh, em, cậu, tới, mình, hớ...) trừ khi ngữ cảnh đặc biệt yêu cầu.
+            """
+        } else ""
+
+        return """
         Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
         
         Nhiệm vụ: Phân tích, khôi phục và dịch văn bản sau sang tiếng Việt: $text
@@ -20,6 +36,8 @@ object TranslationPrompts {
         BƯỚC 2 - SẮP XẾP LẠI VĂN BẢN:
         - Kiểm tra xem thứ tự các từ có hợp lý về mặt ngữ nghĩa và ngữ pháp không
         - Nếu các từ bị đảo lộn hoặc sắp xếp không đúng, hãy sắp xếp lại để tạo thành câu có nghĩa
+        
+        $ancientInstruction
         
         === YÊU CẦU KHI DỊCH ===
         1. Văn bản này là từ truyện tranh/manga, hãy dịch tự nhiên và phù hợp ngữ cảnh.
@@ -42,7 +60,11 @@ object TranslationPrompts {
         
         Chỉ trả về 1 bản dịch chính xác duy nhất.
     """.trimIndent()
+    }
     
+    /**
+     * Prompt cho Mistral Multi-Scale - dịch nhiều blocks với ngữ cảnh ảnh trước
+     */
     /**
      * Prompt cho Mistral Multi-Scale - dịch nhiều blocks với ngữ cảnh ảnh trước
      */
@@ -50,8 +72,25 @@ object TranslationPrompts {
         ocrResultsText: String,
         numberedBlocks: String,
         blockCount: Int,
-        previousContextText: String = ""
-    ): String = """
+        previousContextText: String = "",
+        isAncientMode: Boolean = false
+    ): String {
+        val ancientInstruction = if (isAncientMode) {
+            """
+            === CHẾ ĐỘ DỊCH CỔ TRANG/KIẾM HIỆP (BẮT BUỘC) ===
+            1. PHONG CÁCH NGÔN NGỮ:
+               - Sử dụng từ ngữ Hán Việt, văn phong cổ trang, kiếm hiệp.
+               - Dùng các từ như: "tại hạ", "các hạ", "tiểu tử", "lão phu", "huynh đài", "cô nương", "bổn toạ", "vi sư", "đồ nhi", "phu quân", "nương tử", "chủ nhân", "nô tỳ"...
+               - Câu văn cần trang trọng, uy nghiêm hoặc mang đậm sắc thái cổ xưa.
+            2. XƯNG HÔ:
+               - TÔI -> Ta, Tại hạ, Bổn toạ, Lão phu, Bần đạo... (tuỳ vai vế)
+               - BẠN/CẬU -> Ngươi, Các hạ, Huynh đài, Cô nương, Tiểu tử...
+               - ANH/EM -> Huynh/Đệ, Muội, Tỷ...
+            3. LƯU Ý: Tuyệt đối không dùng từ ngữ hiện đại (anh, em, cậu, tớ, mình, bạn...) trừ khi ngữ cảnh đặc biệt yêu cầu.
+            """
+        } else ""
+
+        return """
         Vai trò: Bạn là chuyên gia tổ hợp văn bản và chuyển ngữ, đặc biệt giỏi trong việc phân tích và khôi phục văn bản OCR bị lỗi.
         
         Nhiệm vụ: Dưới đây là các kết quả quét OCR từ cùng một ảnh truyện tranh/manga với các độ phóng đại (scale) khác nhau. Hãy phân tích, tổng hợp và chọn lọc thông tin chính xác nhất từ tất cả các kết quả này, sau đó trả về bản dịch tiếng Việt cho TỪNG BLOCK theo đúng thứ tự.
@@ -61,6 +100,8 @@ object TranslationPrompts {
         
         Các text blocks gốc cần dịch (đã được đánh số):
         $numberedBlocks
+        
+        $ancientInstruction
         
         ╔══════════════════════════════════════════════════════════════════╗
         ║  !!! CẢNH BÁO NGHIÊM TRỌNG - ĐỌC KỸ TRƯỚC KHI DỊCH !!!         ║
@@ -319,6 +360,7 @@ object TranslationPrompts {
         
         Trả về bản dịch cho TỪNG BLOCK theo định dạng đã nêu.
     """.trimIndent()
+    }
     
     /**
      * Tạo phần context từ bản dịch ảnh trước
@@ -427,10 +469,14 @@ object TranslationPrompts {
     /**
      * Prompt cho Gemini Multi-Scale - tương tự Mistral nhưng cho Gemini
      */
+    /**
+     * Prompt cho Gemini Multi-Scale - tương tự Mistral nhưng cho Gemini
+     */
     fun getGeminiMultiScalePrompt(
         ocrResultsText: String,
         numberedBlocks: String,
         blockCount: Int,
-        previousContextText: String = ""
-    ): String = getMistralMultiScalePrompt(ocrResultsText, numberedBlocks, blockCount, previousContextText)
+        previousContextText: String = "",
+        isAncientMode: Boolean = false
+    ): String = getMistralMultiScalePrompt(ocrResultsText, numberedBlocks, blockCount, previousContextText, isAncientMode)
 }

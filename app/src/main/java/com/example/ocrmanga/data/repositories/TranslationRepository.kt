@@ -95,9 +95,10 @@ class TranslationRepository(private val application: Application) {
         imageUri: Uri, 
         mode: TranslationMode,
         onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null,
-        previousTranslation: List<TextBlockInfo>? = null // Bản dịch của ảnh trước để tham khảo
+        previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
+        isAncientMode: Boolean = false
     ): Pair<String, List<TextBlockInfo>> {
-        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode, null, onStatusUpdate, previousTranslation)
+        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode, null, onStatusUpdate, previousTranslation, isAncientMode)
         return Pair(translatedText, translatedBlocks)
     }
 
@@ -285,7 +286,8 @@ class TranslationRepository(private val application: Application) {
         sourceLang: String,
         targetLang: String,
         apiKey: String? = null,
-        previousTranslation: List<TextBlockInfo>? = null // Bản dịch của ảnh trước để tham khảo
+        previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
+        isAncientMode: Boolean = false
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
         
@@ -354,7 +356,8 @@ class TranslationRepository(private val application: Application) {
                 ocrResultsText = ocrResultsText,
                 numberedBlocks = numberedBlocks,
                 blockCount = textBlocks.size,
-                previousContextText = previousContextText
+                previousContextText = previousContextText,
+                isAncientMode = isAncientMode
             )
 
             // Build JSON body using Gson to avoid invalid JSON
@@ -908,7 +911,8 @@ class TranslationRepository(private val application: Application) {
         mode: TranslationMode, 
         apiKey: String? = null,
         onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null,
-        previousTranslation: List<TextBlockInfo>? = null // Bản dịch của ảnh trước để tham khảo
+        previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
+        isAncientMode: Boolean = false
     ): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
         if (mode == TranslationMode.OFF) {
             //log.i("TranslationRepository", "Chế độ dịch đã tắt, bỏ qua việc dịch cho $imageUri")
@@ -1038,7 +1042,7 @@ class TranslationRepository(private val application: Application) {
                 }*/
                 
                 // Gửi tất cả kết quả cho Mistral AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
-                val translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation)
+                val translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation, isAncientMode)
                 
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Mistral không trả về kết quả dịch")
@@ -1152,7 +1156,7 @@ class TranslationRepository(private val application: Application) {
                 }
                 */
                 // Gửi tất cả kết quả cho Gemini AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
-                val translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation)
+                val translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation, isAncientMode)
                 
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Gemini không trả về kết quả dịch")
@@ -2495,7 +2499,8 @@ class TranslationRepository(private val application: Application) {
         sourceLang: String,
         targetLang: String,
         apiKey: String? = null,
-        previousTranslation: List<TextBlockInfo>? = null // Bản dịch của ảnh trước để tham khảo
+        previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
+        isAncientMode: Boolean = false
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
         if (geminiApiKeys.isEmpty()) return null
@@ -2584,7 +2589,8 @@ class TranslationRepository(private val application: Application) {
                     ocrResultsText = ocrResultsText,
                     numberedBlocks = numberedBlocks,
                     blockCount = textBlocks.size,
-                    previousContextText = previousContextText
+                    previousContextText = previousContextText,
+                    isAncientMode = isAncientMode
                 )
                 
                 val response = generativeModel.generateContent(prompt)
