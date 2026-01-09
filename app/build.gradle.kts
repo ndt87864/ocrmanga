@@ -8,12 +8,12 @@ plugins {
 
 android {
     namespace = "com.example.ocrmanga"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.ocrmanga"
         minSdk = 28
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 3
         versionName = "1.2"
 

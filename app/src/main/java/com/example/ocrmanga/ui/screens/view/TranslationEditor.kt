@@ -63,7 +63,16 @@ fun TranslationEditor(
                 "mto_dom" to FontFamily(Font(R.font.mto_dom)),
                 "mto_mikes" to FontFamily(Font(R.font.mto_mikes)),
                 "mto_sans" to FontFamily(Font(R.font.mto_sans)),
-                "mto_shadow" to FontFamily(Font(R.font.mto_shadow))
+                "mto_shadow" to FontFamily(Font(R.font.mto_shadow)),
+                "semhesta" to FontFamily(Font(R.font.semhesta)),
+                "brush_king" to FontFamily(Font(R.font.brush_king)),
+                "downward_fall" to FontFamily(Font(R.font.downward_fall)),
+                "dry_brush" to FontFamily(Font(R.font.dry_brush)),
+                "edosz" to FontFamily(Font(R.font.edosz)),
+                "kirens_demo" to FontFamily(Font(R.font.kirens_demo)),
+                "kingston" to FontFamily(Font(R.font.kingston)),
+                "novitha_script" to FontFamily(Font(R.font.novitha_script)),
+                "bougher" to FontFamily(Font(R.font.bougher))
             )
         } catch (e: Exception) {
             android.util.Log.e("TranslationEditor", "Failed to load fonts", e)
@@ -836,26 +845,38 @@ fun TranslationEditor(
                                 Text("Font: $selectedFontName")
                             }
                             DropdownMenu(expanded = fontDropdownExpanded, onDismissRequest = { fontDropdownExpanded = false }) {
-                                fontOptions.forEach { (name, family) ->
-                                    DropdownMenuItem(
-                                        text = { Text(name) },
-                                        onClick = {
-                                            selectedFontName = name
-                                            fontDropdownExpanded = false
-                                            // Update lineSpacing to default for selected font
-                                            val defaultLineSpacing = when {
-                                                name.equals("mto_comic_1", ignoreCase = true) -> 1.1f
-                                                name.equals("mto_augie", ignoreCase = true) || name.contains("augie", ignoreCase = true) -> 2.0f
-                                                name.equals("mighty_zero", ignoreCase = true) || name.contains("mighty_zero", ignoreCase = true) -> 0.92f
-                                                else -> 1.0f
-                                            }
-                                            // Only update lineSpacing for the currently selected block
-                                            onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                                val oldBlock = list[idx]
-                                                list[idx] = oldBlock.copy(lineSpacing = defaultLineSpacing)
-                                            })
+                                val fontChunks = fontOptions.chunked(3)
+                                fontChunks.forEach { rowItems ->
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        rowItems.forEach { (name, family) ->
+                                            DropdownMenuItem(
+                                                text = { Text(name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                                onClick = {
+                                                    selectedFontName = name
+                                                    fontDropdownExpanded = false
+                                                    // Update lineSpacing to default for selected font
+                                                    val defaultLineSpacing = when {
+                                                        name.equals("mto_comic_1", ignoreCase = true) -> 1.1f
+                                                        name.equals("mto_augie", ignoreCase = true) || name.contains("augie", ignoreCase = true) -> 2.0f
+                                                        name.equals("mighty_zero", ignoreCase = true) || name.contains("mighty_zero", ignoreCase = true) -> 0.92f
+                                                        else -> 1.0f
+                                                    }
+                                                    // Only update lineSpacing for the currently selected block
+                                                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                                        val oldBlock = list[idx]
+                                                        list[idx] = oldBlock.copy(lineSpacing = defaultLineSpacing)
+                                                    })
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                            )
                                         }
-                                    )
+                                        if (rowItems.size < 3) {
+                                            repeat(3 - rowItems.size) {
+                                                Spacer(modifier = Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

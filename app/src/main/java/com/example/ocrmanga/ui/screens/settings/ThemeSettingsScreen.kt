@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -518,7 +519,16 @@ private fun DefaultFontSelector(
                 "mto_dom" to FontFamily(Font(R.font.mto_dom)),
                 "mto_mikes" to FontFamily(Font(R.font.mto_mikes)),
                 "mto_sans" to FontFamily(Font(R.font.mto_sans)),
-                "mto_shadow" to FontFamily(Font(R.font.mto_shadow))
+                "mto_shadow" to FontFamily(Font(R.font.mto_shadow)),
+                "semhesta" to FontFamily(Font(R.font.semhesta)),
+                "brush_king" to FontFamily(Font(R.font.brush_king)),
+                "downward_fall" to FontFamily(Font(R.font.downward_fall)),
+                "dry_brush" to FontFamily(Font(R.font.dry_brush)),
+                "edosz" to FontFamily(Font(R.font.edosz)),
+                "kirens_demo" to FontFamily(Font(R.font.kirens_demo)),
+                "kingston" to FontFamily(Font(R.font.kingston)),
+                "novitha_script" to FontFamily(Font(R.font.novitha_script)),
+                "bougher" to FontFamily(Font(R.font.bougher))
             )
         } catch (e: Exception) {
             android.util.Log.e("DefaultFontSelector", "Failed to load fonts", e)
@@ -536,7 +546,16 @@ private fun DefaultFontSelector(
         "mto_dom" to "Dom",
         "mto_mikes" to "Mikes",
         "mto_sans" to "Sans",
-        "mto_shadow" to "Shadow"
+        "mto_shadow" to "Shadow",
+        "semhesta" to "Semhesta",
+        "brush_king" to "Brush King",
+        "downward_fall" to "Downward Fall",
+        "dry_brush" to "Dry Brush",
+        "edosz" to "Edosz",
+        "kirens_demo" to "Kirens Demo",
+        "kingston" to "Kingston",
+        "novitha_script" to "Novitha Script",
+        "bougher" to "Bougher"
     )
     
     var showTextColorPicker by remember { mutableStateOf(false) }
@@ -564,29 +583,41 @@ private fun DefaultFontSelector(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            fontNames.forEach { (fontKey, fontName) ->
-                DropdownMenuItem(
-                    text = { 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(fontName)
-                            if (fontKey == selectedFont) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Icon(
-                                    Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    },
-                    onClick = {
-                        onFontSelected(fontKey)
-                        expanded = false
+            val fontChunks = fontNames.chunked(3)
+            fontChunks.forEach { rowItems ->
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    rowItems.forEach { (fontKey, fontName) ->
+                        DropdownMenuItem(
+                            text = { 
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(fontName, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    if (fontKey == selectedFont) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                onFontSelected(fontKey)
+                                expanded = false
+                            },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        )
                     }
-                )
+                    if (rowItems.size < 3) {
+                        repeat(3 - rowItems.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
             }
         }
         
