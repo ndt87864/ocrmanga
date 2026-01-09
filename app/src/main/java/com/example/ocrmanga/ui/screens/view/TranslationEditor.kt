@@ -267,7 +267,8 @@ fun TranslationEditor(
                                                         context = context,
                                                         fontFamilyName = currentBlock.block.fontFamily,
                                                         extraSizeAllowance = 2f,
-                                                        lineSpacing = currentBlock.lineSpacing
+                                                        lineSpacing = currentBlock.lineSpacing,
+                                                        maxFontSize = 1000f
                                                     )
 
                                                 }
@@ -426,7 +427,8 @@ fun TranslationEditor(
                                 context = context,
                                 fontFamilyName = b.fontFamily,
                                 extraSizeAllowance = 2f,
-                                lineSpacing = sel.lineSpacing
+                                lineSpacing = sel.lineSpacing,
+                                maxFontSize = 1000f
                             )
                             maxFontForSelected = rawMax
                             currentFontForSelected = sel.fontSize ?: b.fontSize
@@ -470,7 +472,8 @@ fun TranslationEditor(
                                             context = context,
                                             fontFamilyName = bb.fontFamily,
                                             extraSizeAllowance = 2f,
-                                            lineSpacing = curDragBlockForCheck.lineSpacing
+                                            lineSpacing = curDragBlockForCheck.lineSpacing,
+                                            maxFontSize = 1000f
                                         )
                                     } else {
                                         minFontGlobal
@@ -494,7 +497,8 @@ fun TranslationEditor(
                                             context = context,
                                             fontFamilyName = b.fontFamily,
                                             extraSizeAllowance = 2f,
-                                            lineSpacing = old.lineSpacing
+                                            lineSpacing = old.lineSpacing,
+                                            maxFontSize = 1000f
                                         )
                                         val newFontCandidate = (old.fontSize ?: b.fontSize) - 1f
                                         val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)
@@ -550,7 +554,8 @@ fun TranslationEditor(
                                             context = context,
                                             fontFamilyName = bb.fontFamily,
                                             extraSizeAllowance = 2f,
-                                            lineSpacing = curDragBlockForCheck2.lineSpacing
+                                            lineSpacing = curDragBlockForCheck2.lineSpacing,
+                                            maxFontSize = 1000f
                                         )
                                     } else {
                                         minFontGlobal
@@ -574,7 +579,8 @@ fun TranslationEditor(
                                             context = context,
                                             fontFamilyName = b.fontFamily,
                                             extraSizeAllowance = 2f,
-                                            lineSpacing = old.lineSpacing
+                                            lineSpacing = old.lineSpacing,
+                                            maxFontSize = 1000f
                                         )
                                         val newFontCandidate = (old.fontSize ?: b.fontSize) + 1f
                                         val clamped = newFontCandidate.coerceIn(minFontGlobal, maxFont)

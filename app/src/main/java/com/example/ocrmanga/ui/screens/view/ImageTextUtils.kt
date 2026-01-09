@@ -378,7 +378,7 @@ fun calculateOptimalFontSize(
     width: Float,
     height: Float,
     minFontSize: Float = 12f,
-    maxFontSize: Float = 100f,
+    maxFontSize: Float = 1000f,
     shapeType: Int = 0, // 0 = rectangle, 1 = oval
     context: Context? = null,
     fontFamilyName: String? = null,
