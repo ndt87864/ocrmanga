@@ -209,6 +209,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             var hasFontFamily = false
             var hasFontSize = false
             var hasOverlayInset = false
+            var hasOverlayInsetHorizontal = false
+            var hasOverlayInsetVertical = false
+            var hasOverlayRotation = false
             while (c.moveToNext()) {
                 val columnName = c.getString(c.getColumnIndexOrThrow("name"))
                 when (columnName) {
@@ -218,6 +221,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     COLUMN_BLOCK_FONT_FAMILY -> hasFontFamily = true
                     COLUMN_BLOCK_FONT_SIZE -> hasFontSize = true
                     COLUMN_BLOCK_OVERLAY_INSET -> hasOverlayInset = true
+                    COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL -> hasOverlayInsetHorizontal = true
+                    COLUMN_BLOCK_OVERLAY_INSET_VERTICAL -> hasOverlayInsetVertical = true
+                    COLUMN_BLOCK_OVERLAY_ROTATION -> hasOverlayRotation = true
                 }
             }
             c.close()
@@ -241,10 +247,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
             }
             // Thêm cột overlay_inset_horizontal và overlay_inset_vertical
-            try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
-            try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_VERTICAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
+            if (!hasOverlayInsetHorizontal) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
+            }
+            if (!hasOverlayInsetVertical) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_VERTICAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
+            }
             // Thêm cột overlay_rotation cho xoay overlay riêng biệt
-            try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_ROTATION REAL") } catch (e: Exception) { /* ignore */ }
+            if (!hasOverlayRotation) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_ROTATION REAL") } catch (e: Exception) { /* ignore */ }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Không thể tự động thêm cột vào bảng image_blocks", e)
         }
