@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.res.fontResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.ocrmanga.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -912,10 +913,10 @@ fun TranslationEditor(
                                                             color = if (name == selectedFontName) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
                                                         ) {
                                                             Box(modifier = Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
-                                                                Text(
+                                                                    Text(
                                                                     text = name,
                                                                     fontFamily = family,
-                                                                    style = MaterialTheme.typography.bodySmall,
+                                                                    fontSize = 14.sp, // Set fixed size for consistency
                                                                     maxLines = 1,
                                                                     overflow = TextOverflow.Ellipsis,
                                                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center

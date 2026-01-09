@@ -1,6 +1,7 @@
 package com.example.ocrmanga.ui.screens.settings
 
 import android.os.Build
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,8 +10,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -31,6 +34,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.graphics.ColorUtils
@@ -621,46 +625,61 @@ private fun DefaultFontSelector(
             Text("Font: $selectedFontName")
         }
         
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            val fontChunks = fontNames.chunked(3)
-            fontChunks.forEach { rowItems ->
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    rowItems.forEach { (fontKey, fontName) ->
-                        DropdownMenuItem(
-                            text = { 
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(fontName, fontFamily = fontOptions.find { it.first == fontKey }?.second, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    if (fontKey == selectedFont) {
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(
-                                            Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(14.dp)
-                                        )
+        if (expanded) {
+            AlertDialog(
+                onDismissRequest = { expanded = false },
+                title = { Text("Chọn Font Mặc Định") },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 400.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        val fontChunks = fontNames.chunked(3)
+                        fontChunks.forEach { rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rowItems.forEach { (fontKey, fontName) ->
+                                    val fontFamily = fontOptions.find { it.first == fontKey }?.second
+                                    Surface(
+                                        onClick = {
+                                            onFontSelected(fontKey)
+                                            expanded = false
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = MaterialTheme.shapes.small,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                        color = if (fontKey == selectedFont) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                    ) {
+                                        Box(modifier = Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = fontName,
+                                                fontFamily = fontFamily,
+                                                fontSize = 14.sp, // Set fixed size for consistency
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                            )
+                                        }
                                     }
                                 }
-                            },
-                            onClick = {
-                                onFontSelected(fontKey)
-                                expanded = false
-                            },
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                        )
-                    }
-                    if (rowItems.size < 3) {
-                        repeat(3 - rowItems.size) {
-                            Spacer(modifier = Modifier.weight(1f))
+                                if (rowItems.size < 3) {
+                                    repeat(3 - rowItems.size) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
+                },
+                confirmButton = {
+                    TextButton(onClick = { expanded = false }) { Text("Đóng") }
                 }
-            }
+            )
         }
         
         // Line spacing slider
