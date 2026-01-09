@@ -883,54 +883,90 @@ fun TranslationEditor(
                                                 .heightIn(max = 400.dp)
                                                 .verticalScroll(rememberScrollState())
                                         ) {
-                                            val fontChunks = fontOptions.chunked(3)
-                                            fontChunks.forEach { rowItems ->
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                    rowItems.forEach { (name, family) ->
-                                                        Surface(
-                                                            onClick = {
-                                                                selectedFontName = name
-                                                                fontDropdownExpanded = false
-                                                                // Update lineSpacing to default for selected font
-                                                                val defaultLineSpacing = when {
-                                                                    name.equals("mto_comic_1", ignoreCase = true) -> 1.1f
-                                                                    name.equals("mto_augie", ignoreCase = true) || name.contains("augie", ignoreCase = true) -> 2.0f
-                                                                    name.equals("mighty_zero", ignoreCase = true) || name.contains("mighty_zero", ignoreCase = true) -> 0.92f
-                                                                    else -> 1.0f
-                                                                }
-                                                                // Only update lineSpacing for the currently selected block
-                                                                onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                                                    val oldBlock = list[idx]
-                                                                    list[idx] = oldBlock.copy(lineSpacing = defaultLineSpacing)
-                                                                })
-                                                            },
-                                                            modifier = Modifier.weight(1f),
-                                                            shape = MaterialTheme.shapes.small,
-                                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                                            color = if (name == selectedFontName) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                                                        ) {
-                                                            Box(modifier = Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
+                                            val fontCategories = listOf(
+                                                "Truyện Tranh (Comic/Manga)" to listOf(
+                                                    "mto_comic_1", "mto_comic_2", "cent_comics", "comic_sans", 
+                                                    "mto_sans", "mto_astro_city", "chinacat", "chit_chat", 
+                                                    "mto_dom", "mto_mikes", "lnth", "iciel_pony"
+                                                ),
+                                                "Viết Tay (Handwritten)" to listOf(
+                                                    "mto_augie", "novitha_script", "boutique_script", "fresh_script", 
+                                                    "adeline", "calligraphy", "handelson_two", "mto_chancery", 
+                                                    "imaginary_friend"
+                                                ),
+                                                "Bút Lông (Brush)" to listOf(
+                                                    "dexsar_brush", "blow_brush", "break_brush", "harry_brush", 
+                                                    "kashima_brush", "story_brush", "okami", "semhesta"
+                                                ),
+                                                " SFX (Display)" to listOf(
+                                                    "mighty_zero", "mto_shadow", "kingston", "bougher", "entrails", 
+                                                    "felt", "hiro_misake", "mto_chranko", "redtowns", "wrong_hunt", 
+                                                    "you_murdere"
+                                                )
+                                            )
+
+                                            fontCategories.forEach { (category, fonts) ->
+                                                Text(
+                                                    text = category,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(vertical = 8.dp)
+                                                )
+                                                
+                                                val categoryFonts = fonts.mapNotNull { name -> 
+                                                    fontOptions.find { it.first == name }
+                                                }
+                                                val fontChunks = categoryFonts.chunked(3)
+                                                
+                                                fontChunks.forEach { rowItems ->
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        rowItems.forEach { (name, family) ->
+                                                            Surface(
+                                                                onClick = {
+                                                                    selectedFontName = name
+                                                                    fontDropdownExpanded = false
+                                                                    // Update lineSpacing to default for selected font
+                                                                    val defaultLineSpacing = when {
+                                                                        name.equals("mto_comic_1", ignoreCase = true) -> 1.1f
+                                                                        name.equals("mto_augie", ignoreCase = true) || name.contains("augie", ignoreCase = true) -> 2.0f
+                                                                        name.equals("mighty_zero", ignoreCase = true) || name.contains("mighty_zero", ignoreCase = true) -> 0.92f
+                                                                        else -> 1.0f
+                                                                    }
+                                                                    // Only update lineSpacing for the currently selected block
+                                                                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                                                        val oldBlock = list[idx]
+                                                                        list[idx] = oldBlock.copy(lineSpacing = defaultLineSpacing)
+                                                                    })
+                                                                },
+                                                                modifier = Modifier.weight(1f),
+                                                                shape = MaterialTheme.shapes.small,
+                                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                                                color = if (name == selectedFontName) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                                            ) {
+                                                                Box(modifier = Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
                                                                     Text(
-                                                                    text = name,
-                                                                    fontFamily = family,
-                                                                    fontSize = 14.sp, // Set fixed size for consistency
-                                                                    maxLines = 1,
-                                                                    overflow = TextOverflow.Ellipsis,
-                                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                                                )
+                                                                        text = name,
+                                                                        fontFamily = family,
+                                                                        fontSize = 14.sp,
+                                                                        maxLines = 1,
+                                                                        overflow = TextOverflow.Ellipsis,
+                                                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                        if (rowItems.size < 3) {
+                                                            repeat(3 - rowItems.size) {
+                                                                Spacer(modifier = Modifier.weight(1f))
                                                             }
                                                         }
                                                     }
-                                                    if (rowItems.size < 3) {
-                                                        repeat(3 - rowItems.size) {
-                                                            Spacer(modifier = Modifier.weight(1f))
-                                                        }
-                                                    }
+                                                    Spacer(modifier = Modifier.height(8.dp))
                                                 }
-                                                Spacer(modifier = Modifier.height(8.dp))
+                                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                                             }
                                         }
                                     },

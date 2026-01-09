@@ -406,6 +406,62 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun updateGlobalFont(fontName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentTranslated = _uiState.value.translatedTexts
+            val newTranslated = currentTranslated.toMutableMap()
+            val urisToUpdate = mutableListOf<Uri>()
+
+            currentTranslated.forEach { (uri, pair) ->
+                val (originalText, blocks) = pair
+                if (blocks.isNotEmpty()) {
+                    val newBlocks = blocks.map { block ->
+                        block.copy(fontFamily = fontName)
+                    }
+                    
+                    // Check if actually changed (simple check)
+                    val hasChange = blocks.any { it.fontFamily != fontName }
+
+                    if (hasChange) {
+                        newTranslated[uri] = originalText to newBlocks
+                        urisToUpdate.add(uri)
+                    }
+                }
+            }
+            
+            if (urisToUpdate.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Không có bản dịch nào cần cập nhật font.", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
+            withContext(Dispatchers.Main) {
+                _uiState.update { 
+                     it.copy(translatedTexts = newTranslated, translationVersion = it.translationVersion + 1)
+                }
+                
+                // Mark dirty and DB changes
+                val rid = _uiState.value.roomId
+                urisToUpdate.forEach { uri ->
+                    dirtyUris.add(uri)
+                    val imageId = uriToImageId[uri]
+                    if (rid != null && imageId != null) {
+                         try {
+                            databaseHelper.markImageChanged(imageId, rid)
+                         } catch(e: Exception) { Log.e(TAG, "Failed to mark changed", e) }
+                    }
+                }
+                
+                Toast.makeText(getApplication(), "Đã cập nhật font cho ${urisToUpdate.size} trang!", Toast.LENGTH_SHORT).show()
+                
+                 if (rid != null && urisToUpdate.size >= 5) {
+                      maybeAutoSaveChangedImages(rid)
+                 }
+            }
+        }
+    }
+
     private val translationRepository = TranslationRepository(application)
     // prevent parallel auto-save runs
     private val autoSaveInProgress = AtomicBoolean(false)

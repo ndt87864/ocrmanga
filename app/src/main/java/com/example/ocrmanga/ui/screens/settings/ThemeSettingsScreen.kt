@@ -636,43 +636,79 @@ private fun DefaultFontSelector(
                             .heightIn(max = 400.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        val fontChunks = fontNames.chunked(3)
-                        fontChunks.forEach { rowItems ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                rowItems.forEach { (fontKey, fontName) ->
-                                    val fontFamily = fontOptions.find { it.first == fontKey }?.second
-                                    Surface(
-                                        onClick = {
-                                            onFontSelected(fontKey)
-                                            expanded = false
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = MaterialTheme.shapes.small,
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                                        color = if (fontKey == selectedFont) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                                    ) {
-                                        Box(modifier = Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = fontName,
-                                                fontFamily = fontFamily,
-                                                fontSize = 14.sp, // Set fixed size for consistency
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                            )
+                        val fontCategories = listOf(
+                            "Truyện Tranh (Comic/Manga)" to listOf(
+                                "mto_comic_1", "mto_comic_2", "cent_comics", "comic_sans", 
+                                "mto_sans", "mto_astro_city", "chinacat", "chit_chat", 
+                                "mto_dom", "mto_mikes", "lnth", "iciel_pony"
+                            ),
+                            "Viết Tay (Handwritten)" to listOf(
+                                "mto_augie", "novitha_script", "boutique_script", "fresh_script", 
+                                "adeline", "calligraphy", "handelson_two", "mto_chancery", 
+                                "imaginary_friend"
+                            ),
+                            "Bút Lông (Brush)" to listOf(
+                                "dexsar_brush", "blow_brush", "break_brush", "harry_brush", 
+                                "kashima_brush", "story_brush", "okami", "semhesta"
+                            ),
+                            " SFX (Display)" to listOf(
+                                "mighty_zero", "mto_shadow", "kingston", "bougher", "entrails", 
+                                "felt", "hiro_misake", "mto_chranko", "redtowns", "wrong_hunt", 
+                                "you_murdere"
+                            )
+                        )
+
+                        fontCategories.forEach { (category, fonts) ->
+                            Text(
+                                text = category,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                            
+                            val categoryFonts = fonts.mapNotNull { key ->
+                                fontNames.find { it.first == key }
+                            }
+                            val fontChunks = categoryFonts.chunked(3)
+                            
+                            fontChunks.forEach { rowItems ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    rowItems.forEach { (fontKey, fontName) ->
+                                        val fontFamily = fontOptions.find { it.first == fontKey }?.second
+                                        Surface(
+                                            onClick = {
+                                                onFontSelected(fontKey)
+                                                expanded = false
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            shape = MaterialTheme.shapes.small,
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                            color = if (fontKey == selectedFont) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                                        ) {
+                                            Box(modifier = Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = fontName,
+                                                    fontFamily = fontFamily,
+                                                    fontSize = 14.sp, // Set fixed size for consistency
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (rowItems.size < 3) {
+                                        repeat(3 - rowItems.size) {
+                                            Spacer(modifier = Modifier.weight(1f))
                                         }
                                     }
                                 }
-                                if (rowItems.size < 3) {
-                                    repeat(3 - rowItems.size) {
-                                        Spacer(modifier = Modifier.weight(1f))
-                                    }
-                                }
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                         }
                     }
                 },
