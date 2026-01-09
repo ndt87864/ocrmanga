@@ -135,7 +135,7 @@ class TranslationRepository(private val application: Application) {
     private var geminiApiKeys: List<String> = emptyList()
     private var currentGeminiKeyIndex = 0
     private var currentGeminiModelIndex = 0
-    private val geminiModels = listOf("gemini-2.0-flash", "gemini-2.5-flash") // Add more models if needed
+    private val geminiModels = listOf("gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash", "gemini-3-flash-preview") // Add more models if needed
 
     // Mistral API keys
     private var mistralApiKeys: List<String> = emptyList()
@@ -425,24 +425,64 @@ class TranslationRepository(private val application: Application) {
                     val trimmedLine = lines[i].trim()
                     val match = blockPattern.find(trimmedLine)
                     if (match != null) {
+                        // Found a block header
                         var translation = match.groupValues[2].trim()
-                        // Loại bỏ ** ở cuối nếu có
-                        translation = translation.trimEnd('*').trim()
                         
-                        // Loại bỏ các nhãn phân loại nếu AI không tuân thủ: "*Độc thoại*", "*Hội thoại*", etc.
-                        translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                        // If the line ends with the block header (empty capture group 2), 
+                        // or if the capture group seems to just be the source text (e.g. wrapped in *),
+                        // we need to look ahead at subsequent lines.
                         
-                        // Nếu translation rỗng (chỉ có nhãn), lấy dòng tiếp theo làm bản dịch
-                        if (translation.isEmpty() && i + 1 < lines.size) {
-                            i++
-                            translation = lines[i].trim()
-                            // Loại bỏ nhãn nếu dòng tiếp theo vẫn có nhãn
-                            translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                        // Collect all lines belonging to this block (until next Block header or end)
+                        val blockLines = mutableListOf<String>()
+                        if (translation.isNotEmpty()) blockLines.add(translation)
+                        
+                        var j = i + 1
+                        while (j < lines.size) {
+                            val nextLine = lines[j].trim()
+                            if (blockPattern.matches(nextLine)) break // Next block started
+                            if (nextLine.isNotEmpty()) {
+                                blockLines.add(nextLine)
+                            }
+                            j++
                         }
+                        
+                        // Advance main loop index
+                        i = j - 1 
+                        
+                        // Process the collected lines to find the BEST translation
+                        // Priority 1: Check for arrow "->" or "→"
+                        val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
+                        if (arrowLine != null) {
+                            translation = if (arrowLine.contains("→")) {
+                                arrowLine.substringAfter("→").trim()
+                            } else {
+                                arrowLine.substringAfter("->").trim()
+                            }
+                        } else {
+                            // Priority 2: If no arrow, try to find a line that is NOT the source text.
+                            // Mistral often puts source text in italics *like this*.
+                            // We prefer lines that are NOT completely wrapped in *.
+                            val candidateLines = blockLines.map { it.trim() }
+                                .filter { it.isNotBlank() }
+                                
+                            // If we have multiple lines, filter out those that look like source (wrapped in *)
+                            // unless that's all we have.
+                            val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
+                            
+                            translation = if (cleanLines.isNotEmpty()) {
+                                cleanLines.last() // Take the last clean line (often source first, translation last)
+                            } else {
+                                candidateLines.lastOrNull() ?: ""
+                            }
+                        }
+
+                        // Cleanup formatting (**bold**, *italics*, quotes)
+                        translation = translation.replace("**", "").replace("*", "").trim()
+                        translation = translation.trimEnd('*').trim()
+                        translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
                         
                         if (translation.isNotEmpty()) {
                             translatedBlocks.add(translation)
-                            //Log.i("TranslationRepository", "[MISTRAL-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
                         }
                     }
                     i++
@@ -2615,24 +2655,64 @@ class TranslationRepository(private val application: Application) {
                     val trimmedLine = lines[i].trim()
                     val match = blockPattern.find(trimmedLine)
                     if (match != null) {
+                        // Found a block header
                         var translation = match.groupValues[2].trim()
-                        // Loại bỏ ** ở cuối nếu có
-                        translation = translation.trimEnd('*').trim()
                         
-                        // Loại bỏ các nhãn phân loại nếu AI không tuân thủ: "*Độc thoại*", "*Hội thoại*", etc.
-                        translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                        // If the line ends with the block header (empty capture group 2), 
+                        // or if the capture group seems to just be the source text (e.g. wrapped in *),
+                        // we need to look ahead at subsequent lines.
                         
-                        // Nếu translation rỗng (chỉ có nhãn), lấy dòng tiếp theo làm bản dịch
-                        if (translation.isEmpty() && i + 1 < lines.size) {
-                            i++
-                            translation = lines[i].trim()
-                            // Loại bỏ nhãn nếu dòng tiếp theo vẫn có nhãn
-                            translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                        // Collect all lines belonging to this block (until next Block header or end)
+                        val blockLines = mutableListOf<String>()
+                        if (translation.isNotEmpty()) blockLines.add(translation)
+                        
+                        var j = i + 1
+                        while (j < lines.size) {
+                            val nextLine = lines[j].trim()
+                            if (blockPattern.matches(nextLine)) break // Next block started
+                            if (nextLine.isNotEmpty()) {
+                                blockLines.add(nextLine)
+                            }
+                            j++
                         }
+                        
+                        // Advance main loop index
+                        i = j - 1 
+                        
+                        // Process the collected lines to find the BEST translation
+                        // Priority 1: Check for arrow "->" or "→"
+                        val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
+                        if (arrowLine != null) {
+                            translation = if (arrowLine.contains("→")) {
+                                arrowLine.substringAfter("→").trim()
+                            } else {
+                                arrowLine.substringAfter("->").trim()
+                            }
+                        } else {
+                            // Priority 2: If no arrow, try to find a line that is NOT the source text.
+                            // Mistral often puts source text in italics *like this*.
+                            // We prefer lines that are NOT completely wrapped in *.
+                            val candidateLines = blockLines.map { it.trim() }
+                                .filter { it.isNotBlank() }
+                                
+                            // If we have multiple lines, filter out those that look like source (wrapped in *)
+                            // unless that's all we have.
+                            val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
+                            
+                            translation = if (cleanLines.isNotEmpty()) {
+                                cleanLines.last() // Take the last clean line (often source first, translation last)
+                            } else {
+                                candidateLines.lastOrNull() ?: ""
+                            }
+                        }
+
+                        // Cleanup formatting (**bold**, *italics*, quotes)
+                        translation = translation.replace("**", "").replace("*", "").trim()
+                        translation = translation.trimEnd('*').trim()
+                        translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
                         
                         if (translation.isNotEmpty()) {
                             translatedBlocks.add(translation)
-//                            Log.i("TranslationRepository", "[GEMINI-PARSE] Phân tích được: Block #${translatedBlocks.size} = $translation")
                         }
                     }
                     i++
