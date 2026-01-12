@@ -798,6 +798,7 @@ def remove_text(image_path, blocks_json, output_path):
                 # Final verify
                 if proc is None:
                     return None
+
                 if proc.shape[:2] != (y2 - y1, x2 - x1):
                     proc = _extract_or_resize_to_roi(proc, x1, y1, x2, y2)
 
@@ -853,7 +854,8 @@ def remove_text(image_path, blocks_json, output_path):
                     pass
 
                 return (x1, y1, x2, y2, proc, block_idx)
-            except Exception:
+            except Exception as e:
+                logging.error(f"Error processing block {block_idx}: {e}")
                 return None
 
         # Run blocks in parallel (threaded) and then apply results sequentially
@@ -900,47 +902,50 @@ def remove_text(image_path, blocks_json, output_path):
 
 def remove_text_with_mask(image_path, mask_path, output_path):
     """
-    Xóa text từ ảnh sử dụng mask ảnh riêng (alternative method)
+    Xóa text từ ảnh sử dụng mask bitmap (đen trắng).
     
     Args:
-        image_path: Đường dẫn đến ảnh gốc
-        mask_path: Đường dẫn đến ảnh mask (trắng = xóa, đen = giữ nguyên)
-        output_path: Đường dẫn lưu ảnh đã xóa text
-    
-    Returns:
-        str: Đường dẫn đến ảnh đã xóa text hoặc error message
+        image_path: Đường dẫn ảnh gốc
+        mask_path: Đường dẫn ảnh mask (trắng = vùng cần xóa, đen = giữ nguyên)
+        output_path: Đường dẫn lưu kết quả
     """
     try:
-        img = Image.open(image_path).convert('RGB')
-        mask = Image.open(mask_path).convert('L')
-        
-        if img is None:
-            return f"Error: Cannot read image from {image_path}"
-        if mask is None:
-            return f"Error: Cannot read mask from {mask_path}"
-        
-        # Convert to numpy arrays
+        # Load images
+        img = Image.open(image_path)
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
         img_array = np.array(img)
-        mask_array = np.array(mask)
         
-        # Find regions to inpaint (where mask is white/high value)
-        inpaint_regions = mask_array > 128
+        mask_img = Image.open(mask_path).convert('L')
+        # Ensure mask matches image size
+        if mask_img.size != img.size:
+             mask_img = mask_img.resize(img.size, Image.NEAREST)
+             
+        mask_array = np.array(mask_img)
         
-        # Simple inpainting using surrounding pixels
-        result_array = img_array.copy()
+        # Binary mask: > 128 is "remove"
+        mask_binary = (mask_array > 128).astype(np.uint8) * 255
         
-        # For each channel
-        for c in range(3):
-            channel = img_array[:, :, c]
-            # Use blur to fill masked regions
-            blurred = Image.fromarray(channel).filter(ImageFilter.GaussianBlur(radius=3))
-            blurred_array = np.array(blurred)
-            result_array[:, :, c] = np.where(inpaint_regions, blurred_array, channel)
-        
-        result_img = Image.fromarray(result_array.astype('uint8'))
-        result_img.save(output_path, quality=95)
-        
-        return output_path
+        # If OpenCV available, use Telea or NS
+        if HAS_CV2:
+             # Convert to BGR for OpenCV
+            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            # Dilate mask slightly to cover edges
+            kernel = np.ones((5,5), np.uint8)
+            dilated_mask = cv2.dilate(mask_binary, kernel, iterations=1)
             
+            # Inpaint
+            res_bgr = cv2.inpaint(img_bgr, dilated_mask, 3, cv2.INPAINT_TELEA)
+            res_rgb = cv2.cvtColor(res_bgr, cv2.COLOR_BGR2RGB)
+            final_img = Image.fromarray(res_rgb)
+        else:
+            # Fallback to PIL inpainting
+            # Note: This PIL fallback is slow and basic
+            res_array = pil_inpaint_fallback(img_array, mask_binary, iterations=5)
+            final_img = Image.fromarray(res_array)
+            
+        final_img.save(output_path, quality=95)
+        return output_path
+        
     except Exception as e:
         return f"Error: {str(e)}"

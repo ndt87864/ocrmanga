@@ -768,7 +768,10 @@ fun ViewerScreen(
             getImageVersionForUri = viewModel::getImageVersionForUri,
             getReloadTokenForUri = viewModel::getReloadTokenForUri,
             isLoadingMoreImages = uiState.isLoadingMoreImages,
-            remainingImagesCount = uiState.remainingImages.size
+            remainingImagesCount = uiState.remainingImages.size,
+            isTextRemovalMode = uiState.isTextRemovalMode,
+            onToggleTextRemovalMode = { viewModel.setTextRemovalMode(!uiState.isTextRemovalMode) },
+            onRemoveTextWithMask = viewModel::removeTextWithMask
         )
         Dialogs(
             showInsertAtIndexDialog = showInsertAtIndexDialog,

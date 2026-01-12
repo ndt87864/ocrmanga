@@ -47,7 +47,9 @@ fun TranslationEditor(
     selectedIndex: Int?,
     onDragBlocksChange: (List<DragBlockState>) -> Unit,
     onSelectedIndexChange: (Int?) -> Unit,
-    onSave: () -> Unit
+    onSave: () -> Unit,
+    isTextRemovalMode: Boolean = false,
+    onToggleTextRemovalMode: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     
@@ -397,6 +399,17 @@ fun TranslationEditor(
                             enabled = isBlockSelected
                         ) {
                             Icon(Icons.Default.Delete, "Xóa vùng đã chọn", tint = if (isBlockSelected) Color.Red else Color.Gray)
+                        }
+
+                        // Nút bật/tắt chế độ xóa text thủ công (cục tẩy)
+                        IconButton(
+                            onClick = onToggleTextRemovalMode
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CleaningServices, // Hoặc AutoFixNormal
+                                contentDescription = "Chế độ xóa text (Tô đỏ vùng cần xóa)",
+                                tint = if (isTextRemovalMode) Color.Red else MaterialTheme.colorScheme.onBackground
+                            )
                         }
 
                         IconButton(

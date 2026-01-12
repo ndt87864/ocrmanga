@@ -342,6 +342,12 @@ object TranslationPrompts {
         ║ KHÔNG lấy nghĩa của block khác gán cho block này!               ║
         ╚══════════════════════════════════════════════════════════════════╝
         
+        21. CẤM TUYỆT ĐỐI CÁC TIỀN TỐ "Dịch:", "Dịch (Cổ trang):"
+            - Chỉ trả về nội dung của bản dịch.
+            - KHÔNG BAO GIỜ viết: "Dịch: Xin chào" hay "Dịch (Cổ trang): Tại hạ xin chào"
+            - HÃY VIẾT: "Xin chào" hoặc "Tại hạ xin chào"
+            - KHÔNG trả về các dòng phân tích kiểu "Block #1 -> Block #5"
+            
         === LƯU Ý CUỐI CÙNG ===
         - ĐỘC THOẠI: Dùng "mình" hoặc lược bỏ chủ ngữ, giọng tự hỏi
         - HỘI THOẠI: Dùng đại từ rõ ràng (tôi/cậu, tao/mày...)

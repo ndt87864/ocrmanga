@@ -134,6 +134,39 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
+
+    fun setTextRemovalMode(enabled: Boolean) {
+        _uiState.update { it.copy(isTextRemovalMode = enabled) }
+    }
+
+    fun removeTextWithMask(uri: Uri, maskBitmap: Bitmap) {
+        viewModelScope.launch {
+            try {
+                // Call helper
+                val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextWithMask(
+                    getApplication(),
+                    uri,
+                    maskBitmap
+                )
+
+                if (resultUri != null) {
+                    replaceImageUri(uri, resultUri, persist = false)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(getApplication(), "Đã xóa vùng chọn.", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(getApplication(), "Lỗi khi xóa vùng chọn.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing text with mask", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
     
     // Dịch lại 1 ảnh (re-translate single image)
     // IMPORTANT: This will DELETE all existing translations for this image before creating new ones
@@ -2536,5 +2569,6 @@ data class ViewerUiState(
     // Map theo dõi trạng thái dịch của từng ảnh (Uri -> TranslationStatus)
     val translatingImages: Map<Uri, com.example.ocrmanga.data.models.TranslationStatus> = emptyMap(),
     // Vị trí scroll cần nhảy đến sau khi reload (null = không nhảy)
-    val scrollToIndexAfterReload: Int? = null
+    val scrollToIndexAfterReload: Int? = null,
+    val isTextRemovalMode: Boolean = false // Chế độ xóa text thủ công (vẽ mask)
 )

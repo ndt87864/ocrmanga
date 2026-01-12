@@ -6,6 +6,7 @@ import android.util.Log
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import android.graphics.Bitmap
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
@@ -123,6 +124,64 @@ object TextRemovalHelper {
         } catch (e: Exception) {
             Log.e(TAG, "Error getting real path from Uri", e)
             null
+        }
+    }
+
+    /**
+     * Xóa text từ ảnh sử dụng mask bitmap (vùng brusing)
+     *
+     * @param context Context
+     * @param imageUri Uri ảnh gốc
+     * @param maskBitmap Bitmap chứa mask (vùng cần xóa vẽ màu trắng/đỏ trên nền trong suốt hoặc đen)
+     * @return Uri của ảnh kết quả
+     */
+    suspend fun removeTextWithMask(
+        context: Context,
+        imageUri: Uri,
+        maskBitmap: Bitmap
+    ): Uri? = withContext(Dispatchers.IO) {
+        try {
+            initializePython(context)
+
+            // Lấy path ảnh gốc
+            val imagePath = getRealPathFromUri(context, imageUri) ?: return@withContext null
+
+            // Lưu mask bitmap ra file
+            val maskFile = File(context.cacheDir, "mask_${System.currentTimeMillis()}.png")
+            java.io.FileOutputStream(maskFile).use { out ->
+                maskBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            val maskPath = maskFile.absolutePath
+
+            // Tạo file output
+            val outputFile = File(context.cacheDir, "inpainted_mask_${System.currentTimeMillis()}.jpg")
+            val outputPath = outputFile.absolutePath
+
+            Log.d(TAG, "Starting mask removal: image=$imagePath, mask=$maskPath")
+
+            val python = Python.getInstance()
+            val module = python.getModule("text_remover")
+            
+            // Gọi hàm Python
+            val result = module.callAttr("remove_text_with_mask", imagePath, maskPath, outputPath)
+            val resultString = result.toString()
+
+            Log.d(TAG, "Python result: $resultString")
+
+            if (resultString.startsWith("Error:")) {
+                Log.e(TAG, "Python error: $resultString")
+                return@withContext null
+            }
+
+            if (!outputFile.exists()) {
+                return@withContext null
+            }
+
+            return@withContext Uri.fromFile(outputFile)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error removing text with mask", e)
+            return@withContext null
         }
     }
 }

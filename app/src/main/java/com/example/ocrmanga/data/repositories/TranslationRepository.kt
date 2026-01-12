@@ -411,114 +411,127 @@ class TranslationRepository(private val application: Application) {
                 if (content.isNullOrBlank()) return null
                 
                 // Parse kết quả theo định dạng "Block #N: <bản dịch>"
-                val translatedBlocks = mutableListOf<String>()
+                // Sử dụng Map để lưu trữ bản dịch theo index để tránh sai lệch thứ tự nếu AI trả về không tuần tự hoặc thiếu
+                val translatedBlocksMap = mutableMapOf<Int, String>()
                 val lines = content.trim().split("\n")
                 
                 // Log nội dung trả về để debug khi có vấn đề
                 Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI (${lines.size} dòng):\n${content.take(500)}...")
                 
                 // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
-                val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.+)$""")
+                val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
                 
                 var i = 0
                 while (i < lines.size) {
                     val trimmedLine = lines[i].trim()
                     val match = blockPattern.find(trimmedLine)
                     if (match != null) {
-                        // Found a block header
-                        var translation = match.groupValues[2].trim()
-                        
-                        // If the line ends with the block header (empty capture group 2), 
-                        // or if the capture group seems to just be the source text (e.g. wrapped in *),
-                        // we need to look ahead at subsequent lines.
-                        
-                        // Collect all lines belonging to this block (until next Block header or end)
-                        val blockLines = mutableListOf<String>()
-                        if (translation.isNotEmpty()) blockLines.add(translation)
-                        
-                        var j = i + 1
-                        while (j < lines.size) {
-                            val nextLine = lines[j].trim()
-                            if (blockPattern.matches(nextLine)) break // Next block started
-                            if (nextLine.isNotEmpty()) {
-                                blockLines.add(nextLine)
-                            }
-                            j++
-                        }
-                        
-                        // Advance main loop index
-                        i = j - 1 
-                        
-                        // Process the collected lines to find the BEST translation
-                        // Priority 1: Check for arrow "->" or "→"
-                        val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
-                        if (arrowLine != null) {
-                            translation = if (arrowLine.contains("→")) {
-                                arrowLine.substringAfter("→").trim()
-                            } else {
-                                arrowLine.substringAfter("->").trim()
-                            }
-                        } else {
-                            // Priority 2: If no arrow, try to find a line that is NOT the source text.
-                            // Mistral often puts source text in italics *like this*.
-                            // We prefer lines that are NOT completely wrapped in *.
-                            val candidateLines = blockLines.map { it.trim() }
-                                .filter { it.isNotBlank() }
-                                
-                            // If we have multiple lines, filter out those that look like source (wrapped in *)
-                            // unless that's all we have.
-                            val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
+                        try {
+                            val blockNumber = match.groupValues[1].toInt()
+                            val blockIndex = blockNumber - 1
                             
-                            translation = if (cleanLines.isNotEmpty()) {
-                                cleanLines.last() // Take the last clean line (often source first, translation last)
-                            } else {
-                                candidateLines.lastOrNull() ?: ""
+                            // Found a block header
+                            var translation = match.groupValues[2].trim()
+                            
+                            // Collect all lines belonging to this block (until next Block header or end)
+                            val blockLines = mutableListOf<String>()
+                            if (translation.isNotEmpty()) blockLines.add(translation)
+                            
+                            var j = i + 1
+                            while (j < lines.size) {
+                                val nextLine = lines[j].trim()
+                                if (blockPattern.matches(nextLine)) break // Next block started
+                                if (nextLine.isNotEmpty()) {
+                                    blockLines.add(nextLine)
+                                }
+                                j++
                             }
-                        }
+                            
+                            // Advance main loop index
+                            i = j - 1 
+                            
+                            // Process the collected lines to find the BEST translation
+                            // Priority 1: Check for arrow "->" or "→"
+                            val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
+                            if (arrowLine != null) {
+                                translation = if (arrowLine.contains("→")) {
+                                    arrowLine.substringAfter("→").trim()
+                                } else {
+                                    arrowLine.substringAfter("->").trim()
+                                }
+                            } else {
+                                // Priority 2: If no arrow, try to find a line that is NOT the source text.
+                                // Mistral often puts source text in italics *like this*.
+                                // We prefer lines that are NOT completely wrapped in *.
+                                val candidateLines = blockLines.map { it.trim() }
+                                    .filter { it.isNotBlank() }
+                                    
+                                // If we have multiple lines, filter out those that look like source (wrapped in *)
+                                // unless that's all we have.
+                                val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
+                                
+                                translation = if (cleanLines.isNotEmpty()) {
+                                    cleanLines.last() // Take the last clean line (often source first, translation last)
+                                } else {
+                                    candidateLines.lastOrNull() ?: ""
+                                }
+                            }
 
-                        // Cleanup formatting (**bold**, *italics*, quotes)
-                        translation = translation.replace("**", "").replace("*", "").trim()
-                        translation = translation.trimEnd('*').trim()
-                        translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
-                        
-                        if (translation.isNotEmpty()) {
-                            translatedBlocks.add(translation)
+                            // Cleanup formatting (**bold**, *italics*, quotes)
+                            translation = translation.replace("**", "").replace("*", "").trim()
+                            translation = translation.trimEnd('*').trim()
+                            translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                            // Clean up "Dịch:", "Gốc:", "Dịch (Cổ trang):" prefixes
+                            translation = translation.replace(Regex("""^(Dịch|Translation|Gốc|Original)(\s*\(.*?\))?\s*:\s*""", RegexOption.IGNORE_CASE), "")
+                            
+                            // Reject analysis/notes -> use empty string which will fallback later
+                            if (translation.contains("-> Block #") || translation.startsWith("(Lưu ý:") || translation.contains("Lưu ý: Tôi buộc phải")) {
+                                 translation = ""
+                            }
+                            
+                            if (blockIndex >= 0) {
+                                translatedBlocksMap[blockIndex] = translation
+                            }
+                        } catch (e: NumberFormatException) {
+                             Log.w("TranslationRepository", "[MISTRAL-PARSE] Lỗi parse số block: ${match.groupValues[1]}")
                         }
                     }
                     i++
                 }
                 
                 // Nếu không parse được theo format "Block #", thử parse theo số thứ tự đơn giản (1. 2. 3.)
-                if (translatedBlocks.isEmpty()) {
+                if (translatedBlocksMap.isEmpty()) {
                     Log.w("TranslationRepository", "[MISTRAL-PARSE] Không tìm thấy format 'Block #', thử parse theo số thứ tự...")
-                    val numberPattern = Regex("^\\d+[.):;]\\s*(.+)$")
+                    val numberPattern = Regex("^(\\d+)[.):;]\\s*(.+)$")
                     for (line in lines) {
                         val trimmedLine = line.trim()
                         val match = numberPattern.find(trimmedLine)
                         if (match != null) {
-                            val translation = match.groupValues[1].trim()
-                            if (translation.isNotEmpty()) {
-                                translatedBlocks.add(translation)
+                            try {
+                                val blockNumber = match.groupValues[1].toInt()
+                                val translation = match.groupValues[2].trim()
+                                if (blockNumber > 0) {
+                                    translatedBlocksMap[blockNumber - 1] = translation
+                                }
+                            } catch (e: Exception) {
+                                // Ignore
                             }
                         }
                     }
                 }
-                
-                // Kiểm tra số lượng blocks dịch có khớp không
-                if (translatedBlocks.size != textBlocks.size) {
-                    Log.w("TranslationRepository", "[MISTRAL-PARSE] Mistral trả về ${translatedBlocks.size} blocks nhưng cần ${textBlocks.size} blocks")
-                    
-                    // Nếu parse được 0 blocks, đây là lỗi nghiêm trọng - retry với key khác
-                    if (translatedBlocks.isEmpty()) {
-                        Log.e("TranslationRepository", "[MISTRAL-PARSE] Không parse được block nào! Retry với key khác...")
-                        continue // Thử key tiếp theo
-                    }
-                    
-                    // Nếu thiếu, thêm text gốc vào
-                    while (translatedBlocks.size < textBlocks.size) {
-                        val missingIndex = translatedBlocks.size
-                        translatedBlocks.add(textBlocks[missingIndex].text)
-                        Log.w("TranslationRepository", "[MISTRAL-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
+
+                // Construct final list ensuring size matches textBlocks
+                val translatedBlocks = mutableListOf<String>()
+                for (index in 0 until textBlocks.size) {
+                    val trans = translatedBlocksMap[index]
+                    if (!trans.isNullOrBlank()) {
+                         translatedBlocks.add(trans)
+                    } else {
+                         // Nếu thiếu hoặc bị filter (blank), fallback về text gốc hoặc empty để xử lý sau
+                         // Tuy nhiên, logic hiện tại fill bằng text gốc nếu size < expected.
+                         // Tốt nhất là add text gốc luôn vào đây nếu thiếu bản dịch.
+                         translatedBlocks.add(textBlocks[index].text)
+                         Log.w("TranslationRepository", "[MISTRAL-PARSE] Thiếu bản dịch cho Block #${index + 1}, dùng text gốc.")
                     }
                 }
                 
@@ -2641,121 +2654,132 @@ class TranslationRepository(private val application: Application) {
                     continue
                 }
                 
-                // Parse kết quả theo định dạng "Block #N: <bản dịch>"
-                val translatedBlocks = mutableListOf<String>()
+                // Sử dụng Map để lưu trữ bản dịch theo index
+                val translatedBlocksMap = mutableMapOf<Int, String>()
                 val lines = content.split("\n")
                 
 //                Log.i("TranslationRepository", "[GEMINI-PARSE] Nội dung trả về từ AI:\n$content")
 
                 // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
-                val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.+)$""")
+                val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
                 
                 var i = 0
                 while (i < lines.size) {
                     val trimmedLine = lines[i].trim()
                     val match = blockPattern.find(trimmedLine)
                     if (match != null) {
-                        // Found a block header
-                        var translation = match.groupValues[2].trim()
-                        
-                        // If the line ends with the block header (empty capture group 2), 
-                        // or if the capture group seems to just be the source text (e.g. wrapped in *),
-                        // we need to look ahead at subsequent lines.
-                        
-                        // Collect all lines belonging to this block (until next Block header or end)
-                        val blockLines = mutableListOf<String>()
-                        if (translation.isNotEmpty()) blockLines.add(translation)
-                        
-                        var j = i + 1
-                        while (j < lines.size) {
-                            val nextLine = lines[j].trim()
-                            if (blockPattern.matches(nextLine)) break // Next block started
-                            if (nextLine.isNotEmpty()) {
-                                blockLines.add(nextLine)
-                            }
-                            j++
-                        }
-                        
-                        // Advance main loop index
-                        i = j - 1 
-                        
-                        // Process the collected lines to find the BEST translation
-                        // Priority 1: Check for arrow "->" or "→"
-                        val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
-                        if (arrowLine != null) {
-                            translation = if (arrowLine.contains("→")) {
-                                arrowLine.substringAfter("→").trim()
-                            } else {
-                                arrowLine.substringAfter("->").trim()
-                            }
-                        } else {
-                            // Priority 2: If no arrow, try to find a line that is NOT the source text.
-                            // Mistral often puts source text in italics *like this*.
-                            // We prefer lines that are NOT completely wrapped in *.
-                            val candidateLines = blockLines.map { it.trim() }
-                                .filter { it.isNotBlank() }
-                                
-                            // If we have multiple lines, filter out those that look like source (wrapped in *)
-                            // unless that's all we have.
-                            val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
+                        try {
+                            val blockNumber = match.groupValues[1].toInt()
+                            val blockIndex = blockNumber - 1
                             
-                            translation = if (cleanLines.isNotEmpty()) {
-                                cleanLines.last() // Take the last clean line (often source first, translation last)
-                            } else {
-                                candidateLines.lastOrNull() ?: ""
+                            // Found a block header
+                            var translation = match.groupValues[2].trim()
+                            
+                            // Collect all lines belonging to this block (until next Block header or end)
+                            val blockLines = mutableListOf<String>()
+                            if (translation.isNotEmpty()) blockLines.add(translation)
+                            
+                            var j = i + 1
+                            while (j < lines.size) {
+                                val nextLine = lines[j].trim()
+                                if (blockPattern.matches(nextLine)) break // Next block started
+                                if (nextLine.isNotEmpty()) {
+                                    blockLines.add(nextLine)
+                                }
+                                j++
                             }
-                        }
+                            
+                            // Advance main loop index
+                            i = j - 1 
+                            
+                            // Process the collected lines to find the BEST translation
+                            // Priority 1: Check for arrow "->" or "→"
+                            val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
+                            if (arrowLine != null) {
+                                translation = if (arrowLine.contains("→")) {
+                                    arrowLine.substringAfter("→").trim()
+                                } else {
+                                    arrowLine.substringAfter("->").trim()
+                                }
+                            } else {
+                                // Priority 2: If no arrow, try to find a line that is NOT the source text.
+                                // Mistral often puts source text in italics *like this*.
+                                // We prefer lines that are NOT completely wrapped in *.
+                                val candidateLines = blockLines.map { it.trim() }
+                                    .filter { it.isNotBlank() }
+                                    
+                                // If we have multiple lines, filter out those that look like source (wrapped in *)
+                                // unless that's all we have.
+                                val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
+                                
+                                translation = if (cleanLines.isNotEmpty()) {
+                                    cleanLines.last() // Take the last clean line (often source first, translation last)
+                                } else {
+                                    candidateLines.lastOrNull() ?: ""
+                                }
+                            }
 
-                        // Cleanup formatting (**bold**, *italics*, quotes)
-                        translation = translation.replace("**", "").replace("*", "").trim()
-                        translation = translation.trimEnd('*').trim()
-                        translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
-                        
-                        if (translation.isNotEmpty()) {
-                            translatedBlocks.add(translation)
+                            // Cleanup formatting (**bold**, *italics*, quotes)
+                            translation = translation.replace("**", "").replace("*", "").trim()
+                            translation = translation.trimEnd('*').trim()
+                            translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                            // Clean up "Dịch:", "Gốc:", "Dịch (Cổ trang):" prefixes
+                            translation = translation.replace(Regex("""^(Dịch|Translation|Gốc|Original)(\s*\(.*?\))?\s*:\s*""", RegexOption.IGNORE_CASE), "")
+                            
+                            // Reject analysis/notes -> use empty string
+                            if (translation.contains("-> Block #") || translation.startsWith("(Lưu ý:") || translation.contains("Lưu ý: Tôi buộc phải")) {
+                                 translation = ""
+                            }
+                            
+                            if (blockIndex >= 0) {
+                                translatedBlocksMap[blockIndex] = translation
+                            }
+                        } catch (e: NumberFormatException) {
+                             Log.w("TranslationRepository", "[GEMINI-PARSE] Lỗi parse số block: ${match.groupValues[1]}")
                         }
                     }
                     i++
                 }
                 
                 // Nếu không parse được gì hoặc quá ít, thử format khác
-                if (translatedBlocks.size == 0 || translatedBlocks.size < textBlocks.size / 2) {
-                    Log.w("TranslationRepository", "[GEMINI-PARSE] Parse được ${translatedBlocks.size}/${textBlocks.size} blocks, thử format khác...")
-                    Log.w("TranslationRepository", "[GEMINI-PARSE] Raw response:\n$content")
-                    
-                    // Thử format: "1. <bản dịch>" hoặc "1: <bản dịch>"
-                    translatedBlocks.clear()
+                if (translatedBlocksMap.isEmpty()) {
+                    Log.w("TranslationRepository", "[GEMINI-PARSE] Không tìm thấy format 'Block #', thử parse theo số thứ tự...")
                     val numberPattern = Regex("""^(\d+)[.:\)]\s*(.+)$""")
                     for (line in lines) {
                         val trimmedLine = line.trim()
                         val match = numberPattern.find(trimmedLine)
                         if (match != null) {
-                            val translation = match.groupValues[2].trim()
-                            if (translation.isNotBlank()) {
-                                translatedBlocks.add(translation)
+                            try {
+                                val blockNumber = match.groupValues[1].toInt()
+                                val translation = match.groupValues[2].trim()
+                                if (blockNumber > 0 && translation.isNotBlank()) {
+                                    translatedBlocksMap[blockNumber - 1] = translation
+                                }
+                            } catch (e: Exception) {
+                                // Ignore
                             }
                         }
                     }
-                    
-                    if (translatedBlocks.size > 0) {
-                        Log.i("TranslationRepository", "[GEMINI-PARSE] Parse được ${translatedBlocks.size} blocks với format số")
-                    }
                 }
                 
-                // Nếu vẫn không parse được gì, thử key khác thay vì dùng text gốc
-                if (translatedBlocks.size == 0) {
+                // Construct final list
+                val translatedBlocks = mutableListOf<String>()
+                val parsedCount = translatedBlocksMap.size
+                
+                // Nếu vẫn không parse được gì (parsedCount == 0), thử key khác
+                if (parsedCount == 0) {
                     Log.w("TranslationRepository", "[GEMINI-PARSE] Không parse được block nào, thử key/model khác...")
                     continue // Thử key/model tiếp theo
                 }
-                
-                // Kiểm tra số lượng blocks dịch có khớp không
-                if (translatedBlocks.size != textBlocks.size) {
-                    Log.w("TranslationRepository", "[GEMINI-PARSE] Gemini trả về ${translatedBlocks.size} blocks nhưng cần ${textBlocks.size} blocks")
-                    // Nếu thiếu, thêm text gốc vào
-                    while (translatedBlocks.size < textBlocks.size) {
-                        val missingIndex = translatedBlocks.size
-                        translatedBlocks.add(textBlocks[missingIndex].text)
-//                        Log.w("TranslationRepository", "[GEMINI-PARSE] Bổ sung block #${missingIndex + 1} bằng text gốc: ${textBlocks[missingIndex].text}")
+
+                for (index in 0 until textBlocks.size) {
+                    val trans = translatedBlocksMap[index]
+                    if (!trans.isNullOrBlank()) {
+                         translatedBlocks.add(trans)
+                    } else {
+                         // Fallback to original text if missing
+                         translatedBlocks.add(textBlocks[index].text)
+                         Log.w("TranslationRepository", "[GEMINI-PARSE] Thiếu bản dịch cho Block #${index + 1}, dùng text gốc.")
                     }
                 }
                 
@@ -3042,7 +3066,8 @@ class TranslationRepository(private val application: Application) {
             }
             val isVertical = bubbleBlocks.first().isVertical
             val sorted = if (isVertical) {
-                bubbleBlocks.sortedWith(compareBy({ it.bounds.left }, { it.bounds.top }))
+                // Sửa logic sort: Vertical text (Chinese/Japanese) đọc từ Phải sang Trái -> Sort descending by Left
+                bubbleBlocks.sortedWith(compareByDescending<TextBlockInfo> { it.bounds.left }.thenBy { it.bounds.top })
             } else {
                 bubbleBlocks.sortedWith(compareBy({ it.bounds.top }, { it.bounds.left }))
             }
