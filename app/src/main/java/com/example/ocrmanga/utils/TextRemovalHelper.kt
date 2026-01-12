@@ -105,21 +105,26 @@ object TextRemovalHelper {
      */
     private fun getRealPathFromUri(context: Context, uri: Uri): String? {
         return try {
-            // Nếu là file:// uri, lấy path trực tiếp
-            if (uri.scheme == "file") {
-                return uri.path
-            }
-            
-            // Nếu là content:// uri, copy sang cache rồi lấy path
+            // Decode bitmap từ Uri để đảm bảo tương thích với mọi định dạng (bao gồm WebP)
             val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-            val tempFile = File(context.cacheDir, "temp_input_${System.currentTimeMillis()}.jpg")
+            val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+            inputStream.close()
             
-            inputStream.use { input ->
-                tempFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
+            if (bitmap == null) {
+                Log.e(TAG, "Cannot decode bitmap from Uri: $uri")
+                return null
             }
             
+            // Lưu bitmap dưới dạng JPEG (format mà PIL luôn hỗ trợ)
+            val tempFile = File(context.cacheDir, "temp_input_${System.currentTimeMillis()}.jpg")
+            java.io.FileOutputStream(tempFile).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            }
+            
+            // Recycle bitmap để giải phóng bộ nhớ
+            bitmap.recycle()
+            
+            Log.d(TAG, "Converted image to JPEG: ${tempFile.absolutePath}")
             tempFile.absolutePath
         } catch (e: Exception) {
             Log.e(TAG, "Error getting real path from Uri", e)

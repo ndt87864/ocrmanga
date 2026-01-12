@@ -406,7 +406,7 @@ fun TranslationEditor(
                             onClick = onToggleTextRemovalMode
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CleaningServices, // Hoặc AutoFixNormal
+                                imageVector = Icons.Default.AutoFixHigh,
                                 contentDescription = "Chế độ xóa text (Tô đỏ vùng cần xóa)",
                                 tint = if (isTextRemovalMode) Color.Red else MaterialTheme.colorScheme.onBackground
                             )

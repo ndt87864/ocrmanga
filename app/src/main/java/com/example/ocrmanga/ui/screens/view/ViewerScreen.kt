@@ -399,6 +399,13 @@ fun ViewerScreen(
                     onShowSpeedSliderChange = { showSpeedSlider = !showSpeedSlider },
                     isLoadingMoreImages = uiState.isLoadingMoreImages
                 )
+                IconButton(onClick = { viewModel.setTextRemovalMode(!uiState.isTextRemovalMode) }) {
+                    Icon(
+                        imageVector = Icons.Default.AutoFixHigh,
+                        contentDescription = "Xóa text thủ công",
+                        tint = if (uiState.isTextRemovalMode) Color.Red else MaterialTheme.colorScheme.primary
+                    )
+                }
                 IconButton(onClick = { showRoomNav = !showRoomNav }) {
                     Icon(
                         imageVector = if (showRoomNav) Icons.Default.VisibilityOff else Icons.Default.Visibility,
@@ -435,6 +442,23 @@ fun ViewerScreen(
                             },
                             onClick = {
                                 editTranslationMode = !editTranslationMode
+                                showMainMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoFixHigh, 
+                                        null, 
+                                        modifier = Modifier.padding(end = 8.dp),
+                                        tint = if (uiState.isTextRemovalMode) Color.Red else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text("Xóa text (Tô màu)")
+                                }
+                            },
+                            onClick = {
+                                viewModel.setTextRemovalMode(!uiState.isTextRemovalMode)
                                 showMainMenu = false
                             }
                         )
