@@ -31,7 +31,8 @@ fun MagnifierPopup(
     imageWidth: Float,
     imageHeight: Float,
     imageUri: android.net.Uri? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sourcePosition: Offset = magnifierPosition // Tọa độ thực tế trên ảnh cần zoom
 ) {
     if (imageWidth <= 0f || imageHeight <= 0f) return
 
@@ -78,7 +79,7 @@ fun MagnifierPopup(
                 .background(Color.White)
                 .border(2.dp, Color.Red, RoundedCornerShape(8.dp))
                 .clip(RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.TopStart // ✅ Cố định gốc tọa độ
+            contentAlignment = Alignment.TopStart // Cố định gốc tọa độ
         ) {
             if (imageUri != null) {
                 val zoomFactor = 2.5f
@@ -100,9 +101,9 @@ fun MagnifierPopup(
                             scaleY = zoomFactor
                             transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
                             
-                            // ✅ Dịch chuyển chính xác: Đưa điểm chạm về tâm kính lúp
-                            translationX = magnifierHalfPx - (magnifierPosition.x * baseScale * zoomFactor)
-                            translationY = magnifierHalfPx - (magnifierPosition.y * baseScale * zoomFactor)
+                            // Dịch chuyển chính xác: Đưa sourcePosition về tâm kính lúp
+                            translationX = magnifierHalfPx - (sourcePosition.x * baseScale * zoomFactor)
+                            translationY = magnifierHalfPx - (sourcePosition.y * baseScale * zoomFactor)
                         },
                     contentScale = androidx.compose.ui.layout.ContentScale.FillWidth
                 )
