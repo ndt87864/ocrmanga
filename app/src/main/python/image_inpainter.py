@@ -24,6 +24,13 @@ except Exception:
 # Note: LaMa requires PyTorch which is not compatible with Chaquopy Android
 # Using enhanced OpenCV inpainting with LaMa-inspired techniques
 
+# Import internal post-processor
+try:
+    import image_postprocessor
+    HAS_POSTPROCESSOR = True
+except Exception:
+    HAS_POSTPROCESSOR = False
+
 
 def denoise_before_inpainting(img_array, strength='medium'):
     """
@@ -72,10 +79,11 @@ def denoise_before_inpainting(img_array, strength='medium'):
 
 def roi_only_inpaint_dual(region_rgb, roi_mask, radius_telea=10, radius_ns=5):
     """
-    Inpainting kết hợp TELEA và ADAPTIVE GRAIN SYNTHESIS.
+    Inpainting kết hợp TELEA/NS và POST-PROCESSING SEAMLESS.
     Tự động thích nghi:
     - Nền mịn (Gradient/Màu bệt): Giữ nguyên độ mịn, KHÔNG thêm hạt.
     - Nền nhám (Giấy/Chi tiết): Tái tạo hạt (grain) để tệp với nền.
+    - Luôn áp dụng seamless blending để hòa nhập với background.
     """
     if roi_mask.sum() == 0:
         return region_rgb
@@ -91,25 +99,46 @@ def roi_only_inpaint_dual(region_rgb, roi_mask, radius_telea=10, radius_ns=5):
     # Convert sang BGR cho OpenCV
     region_bgr = cv2.cvtColor(region_rgb, cv2.COLOR_RGB2BGR)
     original_bgr = region_bgr.copy()
+    original_rgb_copy = region_rgb.copy()
 
     # === BƯỚC 1: Inpaint nền (Background) ===
-    # Telea inpainting để tạo nền mượt
-    inpainted = cv2.inpaint(region_bgr, roi_mask, 3, cv2.INPAINT_TELEA)
+    # Kết hợp TELEA + NS để có chất lượng tốt nhất:
+    # - TELEA: Fast Marching Method - propagate texture/color từ biên vào tốt
+    # - NS: Navier-Stokes - làm mượt gradient, giữ structure đường thẳng
+    
+    # Bước 1a: TELEA trước - fill cấu trúc cơ bản và texture
+    inpainted_telea = cv2.inpaint(region_bgr, roi_mask, 7, cv2.INPAINT_TELEA)
+    
+    # Bước 1b: NS sau - làm mượt và refine gradient
+    # Dùng eroded mask để chỉ smooth phần giữa, giữ nguyên biên đã blend tốt
+    eroded_mask = cv2.erode(roi_mask, np.ones((3, 3), np.uint8), iterations=1)
+    inpainted = cv2.inpaint(inpainted_telea, eroded_mask, 5, cv2.INPAINT_NS)
+    
+    # Bước 1c: Kiểm tra mask dài/hẹp - cần xử lý thêm để tránh seam
+    contours, _ = cv2.findContours(roi_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        x, y, cw, ch = cv2.boundingRect(contours[0])
+        aspect_ratio = max(cw, ch) / (min(cw, ch) + 1e-6)
+        if aspect_ratio > 3.0:  # Mask dài gấp 3 lần rộng
+            # Pass thêm với TELEA radius lớn để xóa seam ở giữa
+            center_mask = cv2.erode(roi_mask, np.ones((5, 5), np.uint8), iterations=2)
+            if cv2.countNonZero(center_mask) > 0:
+                inpainted = cv2.inpaint(inpainted, center_mask, 10, cv2.INPAINT_TELEA)
 
     # === BƯỚC 2: Phân tích độ nhám của nền (Texture Analysis) ===
 
     # Xác định vùng mẫu sạch (ngoài mask và các vùng an toàn)
-    kernel_dilate = np.ones((5, 5), np.uint8)
+    kernel_dilate = np.ones((7, 7), np.uint8)
     expanded_mask = cv2.dilate(roi_mask, kernel_dilate, iterations=1)
 
     # Lọc bỏ mực đen để chỉ lấy mẫu trên GIẤY/NỀN
     gray = cv2.cvtColor(original_bgr, cv2.COLOR_BGR2GRAY)
-    _, dark_pixels_mask = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
+    _, dark_pixels_mask = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY_INV)
 
     exclusion_mask = cv2.bitwise_or(expanded_mask, dark_pixels_mask)
 
     sample_mask = (exclusion_mask == 0)
-    if np.sum(sample_mask) < 50:
+    if np.sum(sample_mask) < 30:
          sample_mask = (expanded_mask == 0)
 
     # Tính sigma (độ lệch chuẩn) của nhiễu trên nền
@@ -117,43 +146,52 @@ def roi_only_inpaint_dual(region_rgb, roi_mask, radius_telea=10, radius_ns=5):
     texture_diff = original_bgr.astype(np.float32) - blur_original.astype(np.float32)
 
     sigma = 0 
-    if np.sum(sample_mask) > 50:
+    if np.sum(sample_mask) > 30:
         samples = texture_diff[sample_mask]
         sigma = np.mean(np.std(samples, axis=0))
 
     # === BƯỚC 3: Quyết định chiến lược (Adaptive Strategy) ===
-
-    # Ngưỡng phân loại nền MỊN vs nền NHÁM
-    # Gradient kỹ thuật số thường có sigma < 2.0
-    # Giấy truyện tranh scan thường có sigma > 3.0 - 5.0
-    SMOOTH_THRESHOLD = 3.0
+    # TĂNG ngưỡng để phân biệt rõ hơn giữa mịn và sạn
+    # Nền gradient/digital art thường có sigma < 4.0
+    # Giấy scan/truyện tranh thường có sigma > 5.0
+    SMOOTH_THRESHOLD = 5.0
 
     if sigma < SMOOTH_THRESHOLD:
         # --- CHIẾN LƯỢC CHO NỀN MỊN ---
-        # Không thêm noise để tránh rỗ pixel/kính mờ
-        # Chỉ trả về kết quả Telea (vốn dĩ đã mịn)
-        return cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB)
-
+        # KHÔNG thêm grain - giữ nguyên kết quả inpaint mượt
+        inpainted_rgb = cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB)
     else:
-        # --- CHIẾN LƯỢC CHO NỀN NHÁM ---
-        # Sinh noise giả lập để tệp với độ nhám của giấy
+        # --- CHIẾN LƯỢC CHO NỀN NHÁM (SẠN) ---
+        # Chỉ thêm grain khi vùng xung quanh thực sự có texture sạn
+        # Scale sigma theo tỷ lệ phù hợp
+        grain_sigma = np.clip(sigma * 0.8, 3.0, 10.0)
 
-        # Giới hạn sigma hợp lý
-        sigma = np.clip(sigma, SMOOTH_THRESHOLD, 15.0)
-
-        # Sinh hạt (Grain Synthesis)
-        noise = np.random.randn(rh, rw, 3).astype(np.float32) * sigma
-
-        # Làm mềm hạt để giống giấy tự nhiên
-        noise = cv2.GaussianBlur(noise, (3, 3), 0.5)
+        # Sinh hạt (Grain Synthesis) - nhẹ hơn để không quá sạn
+        noise = np.random.randn(rh, rw, 3).astype(np.float32) * grain_sigma
+        noise = cv2.GaussianBlur(noise, (5, 5), 0.8)  # Blur mạnh hơn để grain mềm
 
         # Blend hạt vào nền inpaint
         mask_3ch = (roi_mask > 0).astype(np.float32)[:, :, np.newaxis]
         final_float = inpainted.astype(np.float32) + noise * mask_3ch
-
         result_bgr = np.clip(final_float, 0, 255).astype(np.uint8)
+        inpainted_rgb = cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
 
-        return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+    # === BƯỚC 4: POST-PROCESSING (Chỉ feather viền, KHÔNG blend với ảnh gốc) ===
+    # Chỉ làm mềm viền và match color/texture, KHÔNG blend với ảnh gốc
+    if HAS_POSTPROCESSOR:
+        try:
+            # Chỉ feather viền để tránh hard edge
+            inpainted_rgb = image_postprocessor.feather_edge_only(
+                original_rgb_copy, 
+                inpainted_rgb, 
+                roi_mask,
+                feather_width=5
+            )
+        except Exception as e:
+            # Nếu lỗi, giữ nguyên kết quả inpaint
+            pass
+    
+    return inpainted_rgb
 
 
 def roi_only_inpaint(region_rgb, roi_mask, radius=5):

@@ -16,6 +16,13 @@ try:
 except Exception:
     HAS_CV2 = False
 
+# Import internal post-processor
+try:
+    import image_postprocessor
+    HAS_POSTPROCESSOR = True
+except Exception:
+    HAS_POSTPROCESSOR = False
+
 # Check for xphoto module (advanced inpainting)
 HAS_XPHOTO = False
 try:
@@ -86,13 +93,15 @@ def create_text_stroke_mask(img_array, x1, y1, x2, y2):
     kernel_open = np.ones((2, 2), np.uint8)
     text_mask = cv2.morphologyEx(text_mask, cv2.MORPH_OPEN, kernel_open)
     
-    # Dilate nhẹ để bắt viền chữ
-    kernel_dilate = np.ones((3, 3), np.uint8)
+    # Dilate nhẹ để bắt toàn bộ viền chữ (bao gồm cả stroke trắng rộng)
+    # Tăng cường dilation để đảm bảo xóa sạch bóng chữ
+    kernel_dilate = np.ones((5, 5), np.uint8)
     text_mask = cv2.dilate(text_mask, kernel_dilate, iterations=1)
-    # Expand mask to include anti-aliased (white/soft) borders around text
+    
+    # Expand mask to include halo/stroke - stroke trắng trong manga thường khá rộng
     try:
-        # Scale expansion by small fraction of region size to capture halo without overfilling
-        expand_px = max(1, min(12, int(min(rh, rw) / 40)))
+        # Tăng cường expansion để bao phủ vùng viền trắng của chữ
+        expand_px = max(2, min(15, int(min(rh, rw) / 30)))
         if expand_px > 1:
             kernel_expand = np.ones((expand_px, expand_px), np.uint8)
             text_mask = cv2.dilate(text_mask, kernel_expand, iterations=1)
@@ -758,10 +767,11 @@ def roi_only_inpaint(region_rgb, roi_mask, radius=5):
 
 def roi_only_inpaint_dual(region_rgb, roi_mask, radius_telea=10, radius_ns=5):
     """
-    Inpainting kết hợp TELEA và ADAPTIVE GRAIN SYNTHESIS.
+    Inpainting kết hợp NS và SEAMLESS BLENDING.
     Tự động thích nghi:
     - Nền mịn (Gradient/Màu bệt): Giữ nguyên độ mịn, KHÔNG thêm hạt.
     - Nền nhám (Giấy/Chi tiết): Tái tạo hạt (grain) để tệp với nền.
+    - Luôn áp dụng Poisson seamless blend để hòa nhập với background.
     """
     if not HAS_CV2:
         return region_rgb
@@ -776,25 +786,46 @@ def roi_only_inpaint_dual(region_rgb, roi_mask, radius_telea=10, radius_ns=5):
     # Convert sang BGR cho OpenCV
     region_bgr = cv2.cvtColor(region_rgb, cv2.COLOR_RGB2BGR)
     original_bgr = region_bgr.copy()
+    original_rgb_copy = region_rgb.copy()
     
     # === BƯỚC 1: Inpaint nền (Background) ===
-    # Telea inpainting để tạo nền mượt
-    inpainted = cv2.inpaint(region_bgr, roi_mask, 3, cv2.INPAINT_TELEA)
+    # Kết hợp TELEA + NS để có chất lượng tốt nhất:
+    # - TELEA: Fast Marching Method - propagate texture/color từ biên vào tốt
+    # - NS: Navier-Stokes - làm mượt gradient, giữ structure đường thẳng
+    
+    # Bước 1a: TELEA trước - fill cấu trúc cơ bản và texture
+    inpainted_telea = cv2.inpaint(region_bgr, roi_mask, 7, cv2.INPAINT_TELEA)
+    
+    # Bước 1b: NS sau - làm mượt và refine gradient
+    # Dùng eroded mask để chỉ smooth phần giữa, giữ nguyên biên đã blend tốt
+    eroded_mask = cv2.erode(roi_mask, np.ones((3, 3), np.uint8), iterations=1)
+    inpainted = cv2.inpaint(inpainted_telea, eroded_mask, 5, cv2.INPAINT_NS)
+    
+    # Bước 1c: Kiểm tra mask dài/hẹp - cần xử lý thêm để tránh seam
+    contours, _ = cv2.findContours(roi_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours:
+        x, y, cw, ch = cv2.boundingRect(contours[0])
+        aspect_ratio = max(cw, ch) / (min(cw, ch) + 1e-6)
+        if aspect_ratio > 3.0:  # Mask dài gấp 3 lần rộng
+            # Pass thêm với TELEA radius lớn để xóa seam ở giữa
+            center_mask = cv2.erode(roi_mask, np.ones((5, 5), np.uint8), iterations=2)
+            if cv2.countNonZero(center_mask) > 0:
+                inpainted = cv2.inpaint(inpainted, center_mask, 10, cv2.INPAINT_TELEA)
     
     # === BƯỚC 2: Phân tích độ nhám của nền (Texture Analysis) ===
     
     # Xác định vùng mẫu sạch (ngoài mask và các vùng an toàn)
-    kernel_dilate = np.ones((5, 5), np.uint8)
+    kernel_dilate = np.ones((7, 7), np.uint8)
     expanded_mask = cv2.dilate(roi_mask, kernel_dilate, iterations=1)
     
     # Lọc bỏ mực đen để chỉ lấy mẫu trên GIẤY/NỀN
     gray = cv2.cvtColor(original_bgr, cv2.COLOR_BGR2GRAY)
-    _, dark_pixels_mask = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
+    _, dark_pixels_mask = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY_INV)
     
     exclusion_mask = cv2.bitwise_or(expanded_mask, dark_pixels_mask)
     
     sample_mask = (exclusion_mask == 0)
-    if np.sum(sample_mask) < 50:
+    if np.sum(sample_mask) < 30:
          sample_mask = (expanded_mask == 0)
     
     # Tính sigma (độ lệch chuẩn) của nhiễu trên nền
@@ -802,43 +833,47 @@ def roi_only_inpaint_dual(region_rgb, roi_mask, radius_telea=10, radius_ns=5):
     texture_diff = original_bgr.astype(np.float32) - blur_original.astype(np.float32)
     
     sigma = 0 
-    if np.sum(sample_mask) > 50:
+    if np.sum(sample_mask) > 30:
         samples = texture_diff[sample_mask]
         sigma = np.mean(np.std(samples, axis=0))
     
     # === BƯỚC 3: Quyết định chiến lược (Adaptive Strategy) ===
-    
-    # Ngưỡng phân loại nền MỊN vs nền NHÁM
-    # Gradient kỹ thuật số thường có sigma < 2.0
-    # Giấy truyện tranh scan thường có sigma > 3.0 - 5.0
-    SMOOTH_THRESHOLD = 3.0
+    # TĂNG ngưỡng để phân biệt rõ hơn giữa mịn và sạn
+    SMOOTH_THRESHOLD = 5.0
     
     if sigma < SMOOTH_THRESHOLD:
         # --- CHIẾN LƯỢC CHO NỀN MỊN ---
-        # Không thêm noise để tránh rỗ pixel/kính mờ
-        # Chỉ trả về kết quả Telea (vốn dĩ đã mịn)
-        return cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB)
-        
+        # KHÔNG thêm grain - giữ nguyên kết quả inpaint mượt
+        inpainted_rgb = cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB)
     else:
-        # --- CHIẾN LƯỢC CHO NỀN NHÁM ---
-        # Sinh noise giả lập để tệp với độ nhám của giấy
+        # --- CHIẾN LƯỢC CHO NỀN NHÁM (SẠN) ---
+        # Chỉ thêm grain khi vùng xung quanh thực sự có texture sạn
+        grain_sigma = np.clip(sigma * 0.8, 3.0, 10.0)
         
-        # Giới hạn sigma hợp lý
-        sigma = np.clip(sigma, SMOOTH_THRESHOLD, 15.0)
-        
-        # Sinh hạt (Grain Synthesis)
-        noise = np.random.randn(h, w, 3).astype(np.float32) * sigma
-        
-        # Làm mềm hạt để giống giấy tự nhiên
-        noise = cv2.GaussianBlur(noise, (3, 3), 0.5)
+        # Sinh hạt nhẹ hơn
+        noise = np.random.randn(h, w, 3).astype(np.float32) * grain_sigma
+        noise = cv2.GaussianBlur(noise, (5, 5), 0.8)
         
         # Blend hạt vào nền inpaint
         mask_3ch = (roi_mask > 0).astype(np.float32)[:, :, np.newaxis]
         final_float = inpainted.astype(np.float32) + noise * mask_3ch
-        
         result_bgr = np.clip(final_float, 0, 255).astype(np.uint8)
-        
-        return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+        inpainted_rgb = cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+    
+    # === BƯỚC 4: POST-PROCESSING (Chỉ feather viền) ===
+    # Chỉ làm mềm viền, KHÔNG blend với ảnh gốc để tránh giữ lại text
+    if HAS_POSTPROCESSOR:
+        try:
+            inpainted_rgb = image_postprocessor.feather_edge_only(
+                original_rgb_copy, 
+                inpainted_rgb, 
+                roi_mask,
+                feather_width=5
+            )
+        except Exception:
+            pass
+    
+    return inpainted_rgb
 
 
 def _copy_nearest_texture_fast(texture_source, mask):
@@ -1162,19 +1197,20 @@ def remove_text(image_path, blocks_json, output_path):
                     # Sử dụng ROI-only inpainting (nhanh và hiệu quả)
                     roi_inpainted = roi_only_inpaint_dual(roi_original, local_text_mask)
                     
-                    # Edge smoothing CHỈ trên ROI
-                    try:
-                        kernel_small = np.ones((3, 3), np.uint8)
-                        edge_mask = cv2.dilate(local_text_mask, kernel_small, iterations=1) - \
-                                   cv2.erode(local_text_mask, kernel_small, iterations=1)
-                        
-                        if np.sum(edge_mask) > 0:
-                            # Inpaint nhẹ ở biên để làm mượt
-                            roi_bgr = cv2.cvtColor(roi_inpainted, cv2.COLOR_RGB2BGR)
-                            edge_smoothed = cv2.inpaint(roi_bgr, edge_mask, 2, cv2.INPAINT_TELEA)
-                            roi_inpainted = cv2.cvtColor(edge_smoothed, cv2.COLOR_BGR2RGB)
-                    except Exception:
-                        pass
+                    # === POST-PROCESSING CAO CẤP ===
+                    if HAS_POSTPROCESSOR:
+                        try:
+                            # Áp dụng bộ lọc hậu kỳ từ module image_postprocessor
+                            # Sử dụng level 'strong' để tối ưu độ nét và bám sát texture gốc
+                            # Tăng cường lọc chi tiết để ảnh sắc nét hơn (giống AI Upscaling)
+                            roi_inpainted = image_postprocessor.post_process_inpainted_region(
+                                roi_original, 
+                                roi_inpainted, 
+                                local_text_mask, 
+                                level='strong' 
+                            )
+                        except Exception as e:
+                            logging.error(f"Post-processing failed for block: {e}")
                 else:
                     # Fallback: sử dụng PIL inpainting trên ROI
                     roi_inpainted = _pil_inpaint_roi(roi_original, local_text_mask)
@@ -1361,8 +1397,17 @@ def remove_text_with_mask(image_path, mask_path, output_path):
                     roi_inpainted = roi_only_inpaint_dual(roi_img, roi_mask_dilated, 
                                                           radius_telea=10, radius_ns=5)
                     
-                    # NOTE: Không gọi _texture_transfer_roi lần nữa vì roi_only_inpaint_dual đã làm rồi
-                    # Việc gọi 2 lần sẽ gây ra noise hạt đen.
+                    # === POST-PROCESSING CAO CẤP ===
+                    if HAS_POSTPROCESSOR:
+                        try:
+                            roi_inpainted = image_postprocessor.post_process_inpainted_region(
+                                roi_img,
+                                roi_inpainted,
+                                roi_mask_dilated,
+                                level='medium'
+                            )
+                        except Exception as e:
+                            logging.error(f"Post-processing failed for region: {e}")
                     
                     return (x1, y1, x2, y2, roi_inpainted, i)
                     
