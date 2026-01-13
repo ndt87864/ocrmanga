@@ -41,12 +41,16 @@ fun MagnifierPopup(
     val magnifierSizePx = with(density) { magnifierSizeDp.toPx() }
     val magnifierHalfPx = magnifierSizePx / 2
     
-    // Khoảng cách popup so với ngón tay (Đẩy cao hơn để tránh bị che)
-    val offsetY = with(density) { -160.dp.toPx() } 
+    // Tự động điều chỉnh vị trí popup: nếu chạm ở nửa phía trên (top) thì hiện ở dưới để không bị che
+    // Tăng threshold lên 400dp để đảm bảo bao phủ vùng đủ rộng ở phía trên màn hình
+    val thresholdTop = with(density) { 400.dp.toPx() }
+    val currentOffsetY = with(density) { 
+        if (magnifierPosition.y < thresholdTop) 180.dp.toPx() else -180.dp.toPx() 
+    }
     
     // Tính toán vị trí hiển thị popup (Pixels)
     val displayX = magnifierPosition.x.coerceIn(magnifierHalfPx, imageWidth - magnifierHalfPx)
-    val displayY = (magnifierPosition.y + offsetY).coerceIn(magnifierHalfPx, imageHeight - magnifierHalfPx)
+    val displayY = (magnifierPosition.y + currentOffsetY).coerceIn(magnifierHalfPx, imageHeight - magnifierHalfPx)
     
     // Chuyển đổi sang DP để dùng offset
     val displayX_dp = with(density) { (displayX - magnifierHalfPx).toDp() }
