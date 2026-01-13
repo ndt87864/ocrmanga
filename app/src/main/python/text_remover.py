@@ -758,17 +758,10 @@ def roi_only_inpaint(region_rgb, roi_mask, radius=5):
 
 def roi_only_inpaint_dual(region_rgb, roi_mask, radius_telea=10, radius_ns=5):
     """
-    Inpainting kết hợp TELEA + NS + TEXTURE TRANSFER CHỈ trên vùng ROI.
-    Tái tạo chi tiết ảnh thay vì chỉ bôi mờ.
-    
-    Args:
-        region_rgb: numpy array RGB của vùng ROI
-        roi_mask: mask uint8 của vùng ROI (255 = cần inpaint)
-        radius_telea: bán kính cho TELEA
-        radius_ns: bán kính cho Navier-Stokes
-    
-    Returns:
-        numpy array RGB của vùng ROI đã inpaint với chi tiết được tái tạo
+    Inpainting kết hợp TELEA và ADAPTIVE GRAIN SYNTHESIS.
+    Tự động thích nghi:
+    - Nền mịn (Gradient/Màu bệt): Giữ nguyên độ mịn, KHÔNG thêm hạt.
+    - Nền nhám (Giấy/Chi tiết): Tái tạo hạt (grain) để tệp với nền.
     """
     if not HAS_CV2:
         return region_rgb
@@ -778,63 +771,74 @@ def roi_only_inpaint_dual(region_rgb, roi_mask, radius_telea=10, radius_ns=5):
     
     # Đảm bảo mask là uint8
     roi_mask = roi_mask.astype(np.uint8)
-    rh, rw = roi_mask.shape
+    h, w = roi_mask.shape
     
     # Convert sang BGR cho OpenCV
     region_bgr = cv2.cvtColor(region_rgb, cv2.COLOR_RGB2BGR)
     original_bgr = region_bgr.copy()
     
-    # Bước 1: TELEA với radius lớn để propagate structure
-    inpainted = cv2.inpaint(region_bgr, roi_mask, radius_telea, cv2.INPAINT_TELEA)
+    # === BƯỚC 1: Inpaint nền (Background) ===
+    # Telea inpainting để tạo nền mượt
+    inpainted = cv2.inpaint(region_bgr, roi_mask, 3, cv2.INPAINT_TELEA)
     
-    # Bước 2: NS để làm mượt edges
-    inpainted = cv2.inpaint(inpainted, roi_mask, radius_ns, cv2.INPAINT_NS)
+    # === BƯỚC 2: Phân tích độ nhám của nền (Texture Analysis) ===
     
-    # === Bước 3: TEXTURE TRANSFER để tái tạo chi tiết ===
-    # Lấy texture từ vùng xung quanh (không bị mask)
-    non_mask = (roi_mask == 0)
-    mask_area = (roi_mask > 0)
+    # Xác định vùng mẫu sạch (ngoài mask và các vùng an toàn)
+    kernel_dilate = np.ones((5, 5), np.uint8)
+    expanded_mask = cv2.dilate(roi_mask, kernel_dilate, iterations=1)
     
-    if np.sum(non_mask) > 50 and np.sum(mask_area) > 0:
-        # Extract high-frequency texture từ vùng gốc
-        blur_original = cv2.GaussianBlur(original_bgr, (5, 5), 0)
-        texture_high_freq = original_bgr.astype(np.float32) - blur_original.astype(np.float32)
-        
-        # Copy texture từ vùng source gần nhất vào vùng mask
-        texture_map = _copy_nearest_texture_fast(texture_high_freq, roi_mask)
-        
-        # Tính texture statistics từ vùng source
-        texture_std = np.std(texture_high_freq[non_mask], axis=0) + 1e-6
-        texture_strength = np.clip(texture_std * 1.2, 3, 25)
-        
-        # Tạo random texture variation để thêm chi tiết
-        np.random.seed(42)
-        random_texture = np.random.randn(rh, rw, 3).astype(np.float32) * texture_strength * 0.2
-        
-        # Kết hợp texture map và random variation
-        combined_texture = texture_map * 0.8 + random_texture * 0.2
-        
-        # Áp dụng texture vào vùng mask
-        mask_3ch = np.stack([mask_area] * 3, axis=-1).astype(np.float32)
-        textured = inpainted.astype(np.float32) + combined_texture * mask_3ch
-        textured = np.clip(textured, 0, 255).astype(np.uint8)
-        
-        # Soft blend ở biên để transition mượt
-        soft_mask = cv2.GaussianBlur(roi_mask.astype(np.float32), (5, 5), 0) / 255.0
-        soft_mask = soft_mask[:, :, np.newaxis]
-        inpainted = (textured * soft_mask + inpainted * (1 - soft_mask)).astype(np.uint8)
+    # Lọc bỏ mực đen để chỉ lấy mẫu trên GIẤY/NỀN
+    gray = cv2.cvtColor(original_bgr, cv2.COLOR_BGR2GRAY)
+    _, dark_pixels_mask = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
     
-    # === Bước 4: Sharpen để tăng độ nét ===
-    # Unsharp mask
-    blurred = cv2.GaussianBlur(inpainted, (0, 0), 2)
-    sharpened = cv2.addWeighted(inpainted, 1.3, blurred, -0.3, 0)
+    exclusion_mask = cv2.bitwise_or(expanded_mask, dark_pixels_mask)
     
-    # Chỉ sharpen vùng mask
-    mask_3ch = np.stack([mask_area] * 3, axis=-1)
-    inpainted = np.where(mask_3ch, sharpened, inpainted)
+    sample_mask = (exclusion_mask == 0)
+    if np.sum(sample_mask) < 50:
+         sample_mask = (expanded_mask == 0)
     
-    # Convert lại RGB
-    return cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB)
+    # Tính sigma (độ lệch chuẩn) của nhiễu trên nền
+    blur_original = cv2.GaussianBlur(original_bgr, (5, 5), 0)
+    texture_diff = original_bgr.astype(np.float32) - blur_original.astype(np.float32)
+    
+    sigma = 0 
+    if np.sum(sample_mask) > 50:
+        samples = texture_diff[sample_mask]
+        sigma = np.mean(np.std(samples, axis=0))
+    
+    # === BƯỚC 3: Quyết định chiến lược (Adaptive Strategy) ===
+    
+    # Ngưỡng phân loại nền MỊN vs nền NHÁM
+    # Gradient kỹ thuật số thường có sigma < 2.0
+    # Giấy truyện tranh scan thường có sigma > 3.0 - 5.0
+    SMOOTH_THRESHOLD = 3.0
+    
+    if sigma < SMOOTH_THRESHOLD:
+        # --- CHIẾN LƯỢC CHO NỀN MỊN ---
+        # Không thêm noise để tránh rỗ pixel/kính mờ
+        # Chỉ trả về kết quả Telea (vốn dĩ đã mịn)
+        return cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB)
+        
+    else:
+        # --- CHIẾN LƯỢC CHO NỀN NHÁM ---
+        # Sinh noise giả lập để tệp với độ nhám của giấy
+        
+        # Giới hạn sigma hợp lý
+        sigma = np.clip(sigma, SMOOTH_THRESHOLD, 15.0)
+        
+        # Sinh hạt (Grain Synthesis)
+        noise = np.random.randn(h, w, 3).astype(np.float32) * sigma
+        
+        # Làm mềm hạt để giống giấy tự nhiên
+        noise = cv2.GaussianBlur(noise, (3, 3), 0.5)
+        
+        # Blend hạt vào nền inpaint
+        mask_3ch = (roi_mask > 0).astype(np.float32)[:, :, np.newaxis]
+        final_float = inpainted.astype(np.float32) + noise * mask_3ch
+        
+        result_bgr = np.clip(final_float, 0, 255).astype(np.uint8)
+        
+        return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
 
 
 def _copy_nearest_texture_fast(texture_source, mask):
@@ -845,37 +849,60 @@ def _copy_nearest_texture_fast(texture_source, mask):
     if not HAS_CV2:
         return texture_source
     
+def _copy_nearest_texture_fast(texture_source, mask):
+    """
+    Copy texture từ vùng source gần nhất vào vùng mask.
+    Sử dụng distance transform để tìm pixel source gần nhất - nhanh hơn.
+    
+    Args:
+        texture_source: Ảnh source chứa texture (float32 hoặc uint8)
+        mask: Mask quy định vùng cần fill (255) và vùng source (0)
+               Vùng 255 (non-zero) là vùng đích. Vùng 0 là vùng nguồn.
+    """
+    if not HAS_CV2:
+        return texture_source
+    
+    # Đảm bảo mask là uint8
+    mask = mask.astype(np.uint8)
     h, w = mask.shape
     result = texture_source.copy()
     
-    # Distance transform để tìm pixel nguồn gần nhất
+    # Distance transform 
+    # Tính khoảng cách tới pixel 0 gần nhất.
+    # Input phải là: 0 = Source, Non-zero = Target.
+    # Mask hiện tại: 0 = Source, 255 = Target. Đúng chuẩn.
     dist, labels = cv2.distanceTransformWithLabels(
-        (mask == 0).astype(np.uint8), 
-        cv2.DIST_L2, 
+        mask,
+        cv2.DIST_L2,
         5,
         labelType=cv2.DIST_LABEL_PIXEL
     )
     
     # Tạo lookup table từ labels đến coordinates
-    # labels chứa index của pixel nguồn gần nhất
     indices = np.arange(h * w).reshape(h, w)
     source_indices = indices[mask == 0]
     
-    # Với mỗi pixel trong mask, copy texture từ nguồn gần nhất
-    mask_indices = np.where(mask > 0)
-    for i in range(len(mask_indices[0])):
-        py, px = mask_indices[0][i], mask_indices[1][i]
-        label = labels[py, px]
+    # Vectorized implementation thay vì loop chậm
+    mask_bool = mask > 0
+    if not np.any(mask_bool):
+        return result
         
-        # Tìm coordinate của pixel nguồn
-        if label > 0 and label <= len(source_indices):
-            src_idx = source_indices[label - 1] if label <= len(source_indices) else 0
-            sy, sx = src_idx // w, src_idx % w
-            
-            if 0 <= sy < h and 0 <= sx < w and mask[sy, sx] == 0:
-                # Copy với một chút variation
-                variation = 0.9 + 0.2 * np.random.random()
-                result[py, px] = texture_source[sy, sx] * variation
+    # Lấy labels tại các điểm đích
+    target_labels = labels[mask_bool]
+    
+    # Map labels (1-based index) sang flat indices
+    # Cần clip để đảm bảo an toàn index
+    valid_indices = np.clip(target_labels - 1, 0, len(source_indices) - 1)
+    src_flat_indices = source_indices[valid_indices]
+    
+    # Unravel coordinate
+    src_y = src_flat_indices // w
+    src_x = src_flat_indices % w
+    
+    # Copy texture một cách trực tiếp
+    result[mask_bool] = texture_source[src_y, src_x]
+    
+    return result
     
     return result
 
@@ -1330,12 +1357,12 @@ def remove_text_with_mask(image_path, mask_path, output_path):
                     kernel = np.ones((3, 3), np.uint8)
                     roi_mask_dilated = cv2.dilate(roi_mask, kernel, iterations=1)
                     
-                    # Inpainting CHỈ trên ROI
+                    # Inpainting CHỈ trên ROI - hàm này đã bao gồm texture transfer
                     roi_inpainted = roi_only_inpaint_dual(roi_img, roi_mask_dilated, 
                                                           radius_telea=10, radius_ns=5)
                     
-                    # Texture transfer CHỈ trên ROI này
-                    roi_inpainted = _texture_transfer_roi(roi_img, roi_inpainted, roi_mask_dilated)
+                    # NOTE: Không gọi _texture_transfer_roi lần nữa vì roi_only_inpaint_dual đã làm rồi
+                    # Việc gọi 2 lần sẽ gây ra noise hạt đen.
                     
                     return (x1, y1, x2, y2, roi_inpainted, i)
                     
@@ -1436,14 +1463,18 @@ def _texture_transfer_roi(original_rgb, inpainted_rgb, roi_mask):
         
         # === Bước 3: Tính texture statistics và tạo variation ===
         texture_std = np.std(texture_high_freq[non_mask], axis=0) + 1e-6
-        texture_strength = np.clip(texture_std * 1.5, 5, 30)
+        # Reduce strength significantly - gentle mode
+        texture_strength = np.clip(texture_std * 0.3, 0.5, 5)
         
         # Random variation để tái tạo chi tiết tự nhiên
         np.random.seed(int(np.sum(roi_mask) % 1000))
-        random_texture = np.random.randn(rh, rw, 3).astype(np.float32) * texture_strength * 0.25
+        random_texture = np.random.randn(rh, rw, 3).astype(np.float32)
+        if HAS_CV2:
+             random_texture = cv2.GaussianBlur(random_texture, (5, 5), 2.0)
+        random_texture = random_texture * texture_strength * 0.1
         
         # Kết hợp texture map và random variation
-        combined_texture = texture_map * 0.75 + random_texture * 0.25
+        combined_texture = texture_map * 0.9 + random_texture * 0.1
         
         # === Bước 4: Áp dụng texture vào vùng mask ===
         mask_3ch = np.stack([mask_area] * 3, axis=-1).astype(np.float32)
