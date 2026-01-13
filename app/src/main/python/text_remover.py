@@ -5,6 +5,9 @@ import math
 import sys
 import logging
 import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from functools import partial
+import multiprocessing
 
 # Try to import cv2 for advanced inpainting
 try:
@@ -12,6 +15,18 @@ try:
     HAS_CV2 = True
 except Exception:
     HAS_CV2 = False
+
+# Check for xphoto module (advanced inpainting)
+HAS_XPHOTO = False
+try:
+    if HAS_CV2:
+        import cv2.xphoto
+        HAS_XPHOTO = True
+except Exception:
+    HAS_XPHOTO = False
+
+# Optimal number of workers for parallel processing
+MAX_WORKERS = min(multiprocessing.cpu_count(), 8)
 
 def create_text_stroke_mask(img_array, x1, y1, x2, y2):
     """
@@ -498,91 +513,442 @@ def get_border_color(img_array, x1, y1, x2, y2, border_width=5):
         return None
 
 
-def color_aware_inpaint(img_array, mask, x1, y1, x2, y2):
+def exemplar_based_inpaint(img_array, mask, patch_size=9):
     """
-    Inpainting có nhận thức màu sắc - blend màu từ viền xung quanh.
-    Tốt hơn cho manga với nền gradient/màu phức tạp.
-    mask: local mask cho vùng [y1:y2, x1:x2], shape = (y2-y1, x2-x1)
+    Exemplar-based inpainting - thuật toán tương tự Content-Aware Fill của Photoshop.
+    Tìm và copy patch tương tự từ vùng không bị mask để tái tạo texture.
+    
+    Thuật toán:
+    1. Tìm pixel ưu tiên cao nhất ở biên mask (dựa trên gradient và confidence)
+    2. Tìm patch tương tự nhất từ vùng source
+    3. Copy patch đó vào vùng target
+    4. Lặp lại cho đến khi fill hết
+    """
+    if not HAS_CV2:
+        return img_array
+    
+    img = img_array.copy()
+    h, w = img.shape[:2]
+    
+    # Đảm bảo mask là binary
+    mask = (mask > 0).astype(np.uint8) * 255
+    
+    # Confidence map - ban đầu = 1 cho vùng không mask, 0 cho vùng mask
+    confidence = (mask == 0).astype(np.float32)
+    
+    half_patch = patch_size // 2
+    
+    # Số iteration tối đa
+    max_iterations = 10000
+    iteration = 0
+    
+    while True:
+        iteration += 1
+        if iteration > max_iterations:
+            break
+            
+        # Tìm biên của vùng mask (fill front)
+        kernel = np.ones((3, 3), np.uint8)
+        dilated = cv2.dilate(mask, kernel)
+        fill_front = dilated - mask
+        
+        # Tìm các pixel trên fill front
+        front_pixels = np.argwhere(fill_front > 0)
+        if len(front_pixels) == 0:
+            break  # Đã fill xong
+        
+        # Tính priority cho mỗi pixel trên front
+        best_priority = -1
+        best_pixel = None
+        
+        # Tính gradient của ảnh
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY).astype(np.float32)
+        grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        
+        # Tính normal của fill front (gradient của mask)
+        mask_float = mask.astype(np.float32)
+        normal_x = cv2.Sobel(mask_float, cv2.CV_32F, 1, 0, ksize=3)
+        normal_y = cv2.Sobel(mask_float, cv2.CV_32F, 0, 1, ksize=3)
+        
+        # Sample một số pixel từ front để tăng tốc
+        sample_size = min(100, len(front_pixels))
+        sampled_indices = np.random.choice(len(front_pixels), sample_size, replace=False)
+        
+        for idx in sampled_indices:
+            py, px = front_pixels[idx]
+            
+            if py < half_patch or py >= h - half_patch or px < half_patch or px >= w - half_patch:
+                continue
+            
+            # Confidence term
+            patch_confidence = confidence[py-half_patch:py+half_patch+1, px-half_patch:px+half_patch+1]
+            C = np.mean(patch_confidence)
+            
+            # Data term (dot product của gradient và normal)
+            gx, gy = grad_x[py, px], grad_y[py, px]
+            nx, ny = normal_x[py, px], normal_y[py, px]
+            
+            # Isophote direction (perpendicular to gradient)
+            iso_x, iso_y = -gy, gx
+            
+            D = abs(iso_x * nx + iso_y * ny) / 255.0 + 0.001
+            
+            priority = C * D
+            
+            if priority > best_priority:
+                best_priority = priority
+                best_pixel = (py, px)
+        
+        if best_pixel is None:
+            # Fallback: chọn pixel đầu tiên
+            for (py, px) in front_pixels:
+                if py >= half_patch and py < h - half_patch and px >= half_patch and px < w - half_patch:
+                    best_pixel = (py, px)
+                    break
+        
+        if best_pixel is None:
+            break
+        
+        py, px = best_pixel
+        
+        # Lấy patch tại vị trí này
+        target_patch = img[py-half_patch:py+half_patch+1, px-half_patch:px+half_patch+1].copy()
+        target_mask = mask[py-half_patch:py+half_patch+1, px-half_patch:px+half_patch+1].copy()
+        
+        # Tìm patch tương tự nhất từ vùng source (không bị mask)
+        best_match = None
+        best_ssd = float('inf')
+        
+        # Tìm kiếm trong vùng xung quanh trước (local search)
+        search_radius = min(100, max(h, w) // 2)
+        
+        for sy in range(max(half_patch, py - search_radius), min(h - half_patch, py + search_radius), 3):
+            for sx in range(max(half_patch, px - search_radius), min(w - half_patch, px + search_radius), 3):
+                # Bỏ qua nếu patch này chứa vùng mask
+                source_mask = mask[sy-half_patch:sy+half_patch+1, sx-half_patch:sx+half_patch+1]
+                if np.any(source_mask > 0):
+                    continue
+                
+                source_patch = img[sy-half_patch:sy+half_patch+1, sx-half_patch:sx+half_patch+1]
+                
+                # Tính SSD chỉ cho phần không bị mask của target
+                valid_mask = (target_mask == 0)
+                if not np.any(valid_mask):
+                    continue
+                
+                diff = (source_patch.astype(np.float32) - target_patch.astype(np.float32)) ** 2
+                ssd = np.sum(diff * valid_mask[:, :, np.newaxis])
+                
+                if ssd < best_ssd:
+                    best_ssd = ssd
+                    best_match = source_patch.copy()
+        
+        # Nếu không tìm được trong local, tìm global
+        if best_match is None:
+            for sy in range(half_patch, h - half_patch, 5):
+                for sx in range(half_patch, w - half_patch, 5):
+                    source_mask = mask[sy-half_patch:sy+half_patch+1, sx-half_patch:sx+half_patch+1]
+                    if np.any(source_mask > 0):
+                        continue
+                    
+                    source_patch = img[sy-half_patch:sy+half_patch+1, sx-half_patch:sx+half_patch+1]
+                    
+                    valid_mask = (target_mask == 0)
+                    if not np.any(valid_mask):
+                        continue
+                    
+                    diff = (source_patch.astype(np.float32) - target_patch.astype(np.float32)) ** 2
+                    ssd = np.sum(diff * valid_mask[:, :, np.newaxis])
+                    
+                    if ssd < best_ssd:
+                        best_ssd = ssd
+                        best_match = source_patch.copy()
+        
+        if best_match is not None:
+            # Copy phần mask của best_match vào target
+            fill_mask = target_mask > 0
+            target_patch[fill_mask] = best_match[fill_mask]
+            
+            # Ghi lại vào ảnh
+            img[py-half_patch:py+half_patch+1, px-half_patch:px+half_patch+1] = target_patch
+            
+            # Cập nhật mask và confidence
+            mask[py-half_patch:py+half_patch+1, px-half_patch:px+half_patch+1][fill_mask] = 0
+            
+            old_confidence = confidence[py-half_patch:py+half_patch+1, px-half_patch:px+half_patch+1]
+            new_confidence = np.mean(old_confidence[~fill_mask]) if np.any(~fill_mask) else 0.5
+            confidence[py-half_patch:py+half_patch+1, px-half_patch:px+half_patch+1][fill_mask] = new_confidence
+    
+    return img
+
+
+def weight_aware_inpaint(img_array, mask, x1, y1, x2, y2):
+    """
+    Inpainting đơn giản và nhanh sử dụng cv2.inpaint.
+    Kết hợp TELEA và NS để có kết quả tốt nhất.
+    CHỈ xử lý vùng ROI, giữ nguyên các vùng khác.
     """
     if not HAS_CV2:
         return None
-    
-    result = img_array.copy()
+        
     h, w = img_array.shape[:2]
     
-    # Lấy màu viền
-    border_color = get_border_color(img_array, x1, y1, x2, y2, border_width=8)
+    # Trích xuất vùng ROI với padding
+    region = img_array[y1:y2, x1:x2].copy()
+    roi_mask = mask[y1:y2, x1:x2].copy()
     
-    if border_color is None:
-        # Fallback to standard inpainting
-        full_mask = np.zeros((h, w), dtype=np.uint8)
-        mask = _ensure_mask_roi(mask, h, w, x1, y1, x2, y2)
-        # Ensure mask is properly ROI-sized before placing it into full_mask
-        mask = _ensure_mask_roi(mask, h, w, x1, y1, x2, y2)
-        full_mask[y1:y2, x1:x2] = mask
-        return smart_inpaint(img_array, full_mask, radius=3)
-    
-    # Tạo gradient fill từ các cạnh
-    region_h = y2 - y1
-    region_w = x2 - x1
-    
-    if region_h <= 0 or region_w <= 0:
+    if roi_mask.sum() == 0:
         return img_array
     
-    # Lấy màu từ 4 cạnh
-    top_colors = img_array[max(0, y1-3):y1, x1:x2] if y1 > 0 else None
-    bottom_colors = img_array[y2:min(h, y2+3), x1:x2] if y2 < h else None
-    left_colors = img_array[y1:y2, max(0, x1-3):x1] if x1 > 0 else None
-    right_colors = img_array[y1:y2, x2:min(w, x2+3)] if x2 < w else None
+    # Đảm bảo mask là uint8
+    roi_mask = roi_mask.astype(np.uint8)
     
-    # Tính màu trung bình cho mỗi cạnh
-    top_avg = np.mean(top_colors, axis=(0, 1)) if top_colors is not None and top_colors.size > 0 else border_color
-    bottom_avg = np.mean(bottom_colors, axis=(0, 1)) if bottom_colors is not None and bottom_colors.size > 0 else border_color
-    left_avg = np.mean(left_colors, axis=(0, 1)) if left_colors is not None and left_colors.size > 0 else border_color
-    right_avg = np.mean(right_colors, axis=(0, 1)) if right_colors is not None and right_colors.size > 0 else border_color
+    # Convert sang BGR cho OpenCV
+    region_bgr = cv2.cvtColor(region, cv2.COLOR_RGB2BGR)
     
-    # Tạo gradient blend cho vùng text
-    for ry in range(region_h):
-        for rx in range(region_w):
-            py = y1 + ry  # Global y coordinate
-            px = x1 + rx  # Global x coordinate
-            
-            if py >= h or px >= w:
-                continue
-            
-            # Chỉ fill pixel trong mask (sử dụng local coordinates cho mask)
-            if ry >= mask.shape[0] or rx >= mask.shape[1]:
-                continue
-            if mask[ry, rx] == 0:
-                continue
-            
-            # Tính weight dựa trên khoảng cách đến các cạnh
-            # Bilinear interpolation
-            ty = ry / max(1, region_h - 1)  # 0 = top, 1 = bottom
-            tx = rx / max(1, region_w - 1)  # 0 = left, 1 = right
-            
-            # Interpolate vertically
-            top_blend = (1 - tx) * left_avg + tx * right_avg
-            bottom_blend = (1 - tx) * left_avg + tx * right_avg
-            
-            # More weight to nearest edges
-            top_weight = 1 - ty
-            bottom_weight = ty
-            left_weight = 1 - tx
-            right_weight = tx
-            
-            # Weighted average of 4 edges
-            total_weight = top_weight + bottom_weight + left_weight + right_weight
-            color = (
-                top_weight * top_avg + 
-                bottom_weight * bottom_avg + 
-                left_weight * left_avg + 
-                right_weight * right_avg
-            ) / total_weight
-            
-            result[py, px] = color.astype(np.uint8)
+    # Bước 1: TELEA với radius lớn để propagate structure
+    inpainted = cv2.inpaint(region_bgr, roi_mask, 10, cv2.INPAINT_TELEA)
+    
+    # Bước 2: NS để làm mượt
+    inpainted = cv2.inpaint(inpainted, roi_mask, 5, cv2.INPAINT_NS)
+    
+    # Convert lại RGB
+    filled_rgb = cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB)
+    
+    # CHỈ cập nhật vùng ROI, giữ nguyên phần còn lại
+    result = img_array.copy()
+    result[y1:y2, x1:x2] = filled_rgb
     
     return result
+
+
+def roi_only_inpaint(region_rgb, roi_mask, radius=5):
+    """
+    Inpainting CHỈ trên vùng ROI đã được crop.
+    Trả về vùng ROI đã được inpaint.
+    Hàm này được thiết kế để chạy song song.
+    
+    Args:
+        region_rgb: numpy array RGB của vùng ROI
+        roi_mask: mask uint8 của vùng ROI (255 = cần inpaint)
+        radius: bán kính inpainting
+    
+    Returns:
+        numpy array RGB của vùng ROI đã inpaint
+    """
+    if not HAS_CV2:
+        return region_rgb
+    
+    if roi_mask.sum() == 0:
+        return region_rgb
+    
+    # Đảm bảo mask là uint8
+    roi_mask = roi_mask.astype(np.uint8)
+    
+    # Convert sang BGR cho OpenCV
+    region_bgr = cv2.cvtColor(region_rgb, cv2.COLOR_RGB2BGR)
+    
+    # TELEA inpainting - nhanh và hiệu quả
+    inpainted = cv2.inpaint(region_bgr, roi_mask, radius, cv2.INPAINT_TELEA)
+    
+    # Convert lại RGB
+    return cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB)
+
+
+def roi_only_inpaint_dual(region_rgb, roi_mask, radius_telea=10, radius_ns=5):
+    """
+    Inpainting kết hợp TELEA + NS + TEXTURE TRANSFER CHỈ trên vùng ROI.
+    Tái tạo chi tiết ảnh thay vì chỉ bôi mờ.
+    
+    Args:
+        region_rgb: numpy array RGB của vùng ROI
+        roi_mask: mask uint8 của vùng ROI (255 = cần inpaint)
+        radius_telea: bán kính cho TELEA
+        radius_ns: bán kính cho Navier-Stokes
+    
+    Returns:
+        numpy array RGB của vùng ROI đã inpaint với chi tiết được tái tạo
+    """
+    if not HAS_CV2:
+        return region_rgb
+    
+    if roi_mask.sum() == 0:
+        return region_rgb
+    
+    # Đảm bảo mask là uint8
+    roi_mask = roi_mask.astype(np.uint8)
+    rh, rw = roi_mask.shape
+    
+    # Convert sang BGR cho OpenCV
+    region_bgr = cv2.cvtColor(region_rgb, cv2.COLOR_RGB2BGR)
+    original_bgr = region_bgr.copy()
+    
+    # Bước 1: TELEA với radius lớn để propagate structure
+    inpainted = cv2.inpaint(region_bgr, roi_mask, radius_telea, cv2.INPAINT_TELEA)
+    
+    # Bước 2: NS để làm mượt edges
+    inpainted = cv2.inpaint(inpainted, roi_mask, radius_ns, cv2.INPAINT_NS)
+    
+    # === Bước 3: TEXTURE TRANSFER để tái tạo chi tiết ===
+    # Lấy texture từ vùng xung quanh (không bị mask)
+    non_mask = (roi_mask == 0)
+    mask_area = (roi_mask > 0)
+    
+    if np.sum(non_mask) > 50 and np.sum(mask_area) > 0:
+        # Extract high-frequency texture từ vùng gốc
+        blur_original = cv2.GaussianBlur(original_bgr, (5, 5), 0)
+        texture_high_freq = original_bgr.astype(np.float32) - blur_original.astype(np.float32)
+        
+        # Copy texture từ vùng source gần nhất vào vùng mask
+        texture_map = _copy_nearest_texture_fast(texture_high_freq, roi_mask)
+        
+        # Tính texture statistics từ vùng source
+        texture_std = np.std(texture_high_freq[non_mask], axis=0) + 1e-6
+        texture_strength = np.clip(texture_std * 1.2, 3, 25)
+        
+        # Tạo random texture variation để thêm chi tiết
+        np.random.seed(42)
+        random_texture = np.random.randn(rh, rw, 3).astype(np.float32) * texture_strength * 0.2
+        
+        # Kết hợp texture map và random variation
+        combined_texture = texture_map * 0.8 + random_texture * 0.2
+        
+        # Áp dụng texture vào vùng mask
+        mask_3ch = np.stack([mask_area] * 3, axis=-1).astype(np.float32)
+        textured = inpainted.astype(np.float32) + combined_texture * mask_3ch
+        textured = np.clip(textured, 0, 255).astype(np.uint8)
+        
+        # Soft blend ở biên để transition mượt
+        soft_mask = cv2.GaussianBlur(roi_mask.astype(np.float32), (5, 5), 0) / 255.0
+        soft_mask = soft_mask[:, :, np.newaxis]
+        inpainted = (textured * soft_mask + inpainted * (1 - soft_mask)).astype(np.uint8)
+    
+    # === Bước 4: Sharpen để tăng độ nét ===
+    # Unsharp mask
+    blurred = cv2.GaussianBlur(inpainted, (0, 0), 2)
+    sharpened = cv2.addWeighted(inpainted, 1.3, blurred, -0.3, 0)
+    
+    # Chỉ sharpen vùng mask
+    mask_3ch = np.stack([mask_area] * 3, axis=-1)
+    inpainted = np.where(mask_3ch, sharpened, inpainted)
+    
+    # Convert lại RGB
+    return cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB)
+
+
+def _copy_nearest_texture_fast(texture_source, mask):
+    """
+    Copy texture từ vùng source gần nhất vào vùng mask.
+    Sử dụng distance transform để tìm pixel source gần nhất - nhanh hơn.
+    """
+    if not HAS_CV2:
+        return texture_source
+    
+    h, w = mask.shape
+    result = texture_source.copy()
+    
+    # Distance transform để tìm pixel nguồn gần nhất
+    dist, labels = cv2.distanceTransformWithLabels(
+        (mask == 0).astype(np.uint8), 
+        cv2.DIST_L2, 
+        5,
+        labelType=cv2.DIST_LABEL_PIXEL
+    )
+    
+    # Tạo lookup table từ labels đến coordinates
+    # labels chứa index của pixel nguồn gần nhất
+    indices = np.arange(h * w).reshape(h, w)
+    source_indices = indices[mask == 0]
+    
+    # Với mỗi pixel trong mask, copy texture từ nguồn gần nhất
+    mask_indices = np.where(mask > 0)
+    for i in range(len(mask_indices[0])):
+        py, px = mask_indices[0][i], mask_indices[1][i]
+        label = labels[py, px]
+        
+        # Tìm coordinate của pixel nguồn
+        if label > 0 and label <= len(source_indices):
+            src_idx = source_indices[label - 1] if label <= len(source_indices) else 0
+            sy, sx = src_idx // w, src_idx % w
+            
+            if 0 <= sy < h and 0 <= sx < w and mask[sy, sx] == 0:
+                # Copy với một chút variation
+                variation = 0.9 + 0.2 * np.random.random()
+                result[py, px] = texture_source[sy, sx] * variation
+    
+    return result
+
+
+def process_single_block_parallel(args):
+    """
+    Xử lý một block text đơn lẻ - được thiết kế để chạy song song.
+    Chỉ xử lý vùng ROI của block, không chạm đến các pixel khác.
+    
+    Args:
+        args: tuple (block_idx, block, img_array_shape, img_array_bytes)
+    
+    Returns:
+        tuple (x1, y1, x2, y2, processed_roi, block_idx) hoặc None nếu thất bại
+    """
+    block_idx, block, img_shape, img_bytes, has_cv2 = args
+    
+    try:
+        # Reconstruct image array from bytes (for ProcessPoolExecutor)
+        img_array = np.frombuffer(img_bytes, dtype=np.uint8).reshape(img_shape)
+        height, width = img_array.shape[:2]
+        
+        x = int(block.get("x", 0))
+        y = int(block.get("y", 0))
+        bw = int(block.get("width", 0))
+        bh = int(block.get("height", 0))
+
+        # Clamp to image bounds
+        x1 = max(0, x)
+        y1 = max(0, y)
+        x2 = min(width, x + bw)
+        y2 = min(height, y + bh)
+
+        if x2 <= x1 or y2 <= y1:
+            return None
+
+        # Tạo text stroke mask CHỈ cho vùng ROI
+        local_text_mask = create_text_stroke_mask(img_array, x1, y1, x2, y2)
+        try:
+            local_text_mask = _ensure_mask_roi(local_text_mask, height, width, x1, y1, x2, y2)
+        except Exception:
+            local_text_mask = np.zeros((y2 - y1, x2 - x1), dtype=np.uint8)
+
+        if np.sum(local_text_mask) == 0:
+            return None
+
+        # Trích xuất ROI từ ảnh gốc
+        roi_original = img_array[y1:y2, x1:x2].copy()
+        
+        # Inpainting CHỈ trên ROI
+        if has_cv2:
+            roi_inpainted = roi_only_inpaint_dual(roi_original, local_text_mask)
+        else:
+            # Fallback cho trường hợp không có OpenCV
+            roi_inpainted = roi_original.copy()
+            # Simple average fill
+            mask_bool = local_text_mask > 0
+            if np.any(mask_bool):
+                non_mask_pixels = roi_original[~mask_bool]
+                if len(non_mask_pixels) > 0:
+                    fill_color = np.mean(non_mask_pixels, axis=0).astype(np.uint8)
+                    roi_inpainted[mask_bool] = fill_color
+        
+        return (x1, y1, x2, y2, roi_inpainted, block_idx)
+        
+    except Exception as e:
+        logging.error(f"Error processing block {block_idx}: {e}")
+        return None
+
+
+def color_aware_inpaint(img_array, mask, x1, y1, x2, y2):
+    # Wrapper để giữ tương thích, sử dụng thuật toán mới
+    return weight_aware_inpaint(img_array, mask, x1, y1, x2, y2)
 
 
 def smart_inpaint(img_array, mask, radius=3):
@@ -695,8 +1061,8 @@ def pil_inpaint_fallback(img_array, mask, iterations=10):
 
 def remove_text(image_path, blocks_json, output_path):
     """
-    Xóa text từ ảnh sử dụng inpainting.
-    Thử smart detection trước, nếu không detect được text thì dùng simple mask.
+    Xóa text từ ảnh sử dụng inpainting với xử lý song song.
+    CHỈ tái tạo các vùng bị xóa text, GIỮ NGUYÊN các vùng khác.
     
     Args:
         image_path: Đường dẫn đến ảnh gốc
@@ -726,11 +1092,14 @@ def remove_text(image_path, blocks_json, output_path):
         img_array = np.array(img)
         height, width = img_array.shape[:2]
 
+        # GIỮ NGUYÊN ảnh gốc, chỉ cập nhật các vùng ROI
         result_array = img_array.copy()
 
-        # Process each block independently (do not combine masks across blocks)
-        def _process_block(block_idx, block):
-            # This worker computes an ROI-sized processed image for the given block, or None
+        def _process_block_roi_only(block_idx, block):
+            """
+            Xử lý một block text - CHỈ trả về vùng ROI đã được inpaint.
+            Không chạm đến bất kỳ pixel nào ngoài vùng ROI.
+            """
             try:
                 x = int(block.get("x", 0))
                 y = int(block.get("y", 0))
@@ -746,6 +1115,7 @@ def remove_text(image_path, blocks_json, output_path):
                 if x2 <= x1 or y2 <= y1:
                     return None
 
+                # Tạo text stroke mask CHỈ cho vùng ROI
                 local_text_mask = create_text_stroke_mask(img_array, x1, y1, x2, y2)
                 try:
                     local_text_mask = _ensure_mask_roi(local_text_mask, height, width, x1, y1, x2, y2)
@@ -755,133 +1125,88 @@ def remove_text(image_path, blocks_json, output_path):
                 if np.sum(local_text_mask) == 0:
                     return None
 
-                # Allowed margin
-                max_dim = max(bw, bh)
-
-                # overlay check
-                try:
-                    overlay = is_overlay_region(img_array, x1, y1, x2, y2)
-                except Exception:
-                    overlay = False
-
-                proc = None
-                if overlay:
-                    if not HAS_CV2:
-                        full_mask = np.zeros((height, width), dtype=np.uint8)
-                        full_mask[y1:y2, x1:x2] = local_text_mask
-                        tmp = pil_inpaint_fallback(img_array, full_mask)
-                        if tmp is not None:
-                            proc = _extract_or_resize_to_roi(tmp, x1, y1, x2, y2)
-                    else:
-                        full = _fill_mask_iteratively(img_array.copy(), local_text_mask.copy(), x1, y1, max_dim)
-                        if full is not None:
-                            proc = full[y1:y2, x1:x2]
-                else:
+                # Trích xuất vùng ROI từ ảnh gốc
+                roi_original = img_array[y1:y2, x1:x2].copy()
+                
+                # === INPAINTING CHỈ TRÊN VÙNG ROI ===
+                roi_inpainted = None
+                
+                if HAS_CV2:
+                    # Sử dụng ROI-only inpainting (nhanh và hiệu quả)
+                    roi_inpainted = roi_only_inpaint_dual(roi_original, local_text_mask)
+                    
+                    # Edge smoothing CHỈ trên ROI
                     try:
-                        tmp = color_aware_inpaint(img_array.copy(), local_text_mask, x1, y1, x2, y2)
+                        kernel_small = np.ones((3, 3), np.uint8)
+                        edge_mask = cv2.dilate(local_text_mask, kernel_small, iterations=1) - \
+                                   cv2.erode(local_text_mask, kernel_small, iterations=1)
+                        
+                        if np.sum(edge_mask) > 0:
+                            # Inpaint nhẹ ở biên để làm mượt
+                            roi_bgr = cv2.cvtColor(roi_inpainted, cv2.COLOR_RGB2BGR)
+                            edge_smoothed = cv2.inpaint(roi_bgr, edge_mask, 2, cv2.INPAINT_TELEA)
+                            roi_inpainted = cv2.cvtColor(edge_smoothed, cv2.COLOR_BGR2RGB)
                     except Exception:
-                        tmp = None
-                    if tmp is not None:
-                        proc = _extract_or_resize_to_roi(tmp, x1, y1, x2, y2)
-                    else:
-                        if not HAS_CV2:
-                            full_mask = np.zeros((height, width), dtype=np.uint8)
-                            full_mask[y1:y2, x1:x2] = local_text_mask
-                            tmp2 = pil_inpaint_fallback(img_array, full_mask)
-                            if tmp2 is not None:
-                                proc = _extract_or_resize_to_roi(tmp2, x1, y1, x2, y2)
-                        else:
-                            full = _fill_mask_iteratively(img_array.copy(), local_text_mask.copy(), x1, y1, max_dim)
-                            if full is not None:
-                                proc = full[y1:y2, x1:x2]
-
-                # Final verify
-                if proc is None:
+                        pass
+                else:
+                    # Fallback: sử dụng PIL inpainting trên ROI
+                    roi_inpainted = _pil_inpaint_roi(roi_original, local_text_mask)
+                
+                # Kiểm tra kết quả
+                if roi_inpainted is None:
+                    return None
+                
+                if roi_inpainted.shape[:2] != (y2 - y1, x2 - x1):
+                    roi_inpainted = _extract_or_resize_to_roi(roi_inpainted, x1, y1, x2, y2)
+                
+                if roi_inpainted is None:
                     return None
 
-                if proc.shape[:2] != (y2 - y1, x2 - x1):
-                    proc = _extract_or_resize_to_roi(proc, x1, y1, x2, y2)
-
-                # Apply smoothing step (edge-aware small-radius inpainting) on a local copy
-                try:
-                    local_result = img_array.copy()
-                    local_result[y1:y2, x1:x2] = proc
-
-                    # Compute edge mask (small kernel) from local_text_mask
-                    if HAS_CV2:
-                        kernel_small = np.ones((3, 3), np.uint8)
-                        edge_mask = cv2.dilate(local_text_mask, kernel_small, iterations=1) - cv2.erode(local_text_mask, kernel_small, iterations=1)
-                        # Compute safety band
-                        inv = (local_text_mask == 0).astype('uint8') * 255
-                        dist = cv2.distanceTransform(inv, cv2.DIST_L2, 5)
-                        allowed_margin = max(1, min(int(max_dim * 2), max(width, height)))
-                        safety_band = (dist <= float(allowed_margin)).astype('uint8') * 255
-                        limited_edge = cv2.bitwise_and(edge_mask, safety_band)
-                        full_edge_mask = np.zeros((height, width), dtype=np.uint8)
-                        limited_edge_roi = _ensure_mask_roi(limited_edge, height, width, x1, y1, x2, y2)
-                        full_edge_mask[y1:y2, x1:x2] = limited_edge_roi
-                        try:
-                            tmp_s = smart_inpaint(local_result, full_edge_mask, radius=2)
-                            if tmp_s is not None:
-                                local_result = tmp_s
-                        except Exception:
-                            pass
-
-                    # Forced fallback: if ROI hasn't changed vs original, do aggressive inpaint
-                    roi_before = img_array[y1:y2, x1:x2]
-                    roi_after = local_result[y1:y2, x1:x2]
-                    if roi_before.shape == roi_after.shape and np.array_equal(roi_before, roi_after):
-                        if HAS_CV2:
-                            full_box_mask = np.zeros((height, width), dtype=np.uint8)
-                            full_box_mask[y1:y2, x1:x2] = 255
-                            tmpf = smart_inpaint(local_result, full_box_mask, radius=6)
-                            if tmpf is not None:
-                                local_result = tmpf
-                        else:
-                            full_box_mask = np.zeros((height, width), dtype=np.uint8)
-                            full_box_mask[y1:y2, x1:x2] = 255
-                            tmpf = pil_inpaint_fallback(local_result, full_box_mask)
-                            if tmpf is not None:
-                                procf = _extract_or_resize_to_roi(tmpf, x1, y1, x2, y2)
-                                if procf is not None and procf.shape[:2] == (y2 - y1, x2 - x1):
-                                    local_result[y1:y2, x1:x2] = procf
-
-                    # Extract final ROI
-                    final_proc = local_result[y1:y2, x1:x2]
-                    proc = final_proc
-                except Exception:
-                    # if any smoothing fails, keep proc as-is
-                    pass
-
-                return (x1, y1, x2, y2, proc, block_idx)
+                return (x1, y1, x2, y2, roi_inpainted, block_idx)
+                
             except Exception as e:
                 logging.error(f"Error processing block {block_idx}: {e}")
                 return None
 
-        # Run blocks in parallel (threaded) and then apply results sequentially
+        # === XỬ LÝ SONG SONG ===
         results = []
-        if len(blocks) > 1:
-            max_workers = min(4, len(blocks))
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(_process_block, idx, block) for idx, block in enumerate(blocks)]
-                for fut in concurrent.futures.as_completed(futures):
-                    res = fut.result()
-                    if res is not None:
-                        results.append(res)
+        num_blocks = len(blocks)
+        
+        if num_blocks > 1:
+            # Sử dụng ThreadPoolExecutor cho nhiều blocks
+            # (ThreadPool tốt hơn ProcessPool vì share memory với img_array)
+            max_workers = min(MAX_WORKERS, num_blocks)
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit tất cả các tasks cùng lúc
+                future_to_block = {
+                    executor.submit(_process_block_roi_only, idx, block): idx 
+                    for idx, block in enumerate(blocks)
+                }
+                
+                # Thu thập kết quả khi hoàn thành
+                for future in concurrent.futures.as_completed(future_to_block):
+                    try:
+                        result = future.result()
+                        if result is not None:
+                            results.append(result)
+                    except Exception as e:
+                        logging.error(f"Block processing error: {e}")
         else:
-            for idx, block in enumerate(blocks):
-                r = _process_block(idx, block)
-                if r is not None:
-                    results.append(r)
+            # Xử lý đơn lẻ nếu chỉ có 1 block
+            result = _process_block_roi_only(0, blocks[0])
+            if result is not None:
+                results.append(result)
 
-        # Apply results sequentially to avoid race conditions / overlapping mishandling
-        for (x1, y1, x2, y2, proc, block_idx) in results:
+        # === ÁP DỤNG KẾT QUẢ VÀO ẢNH GỐC ===
+        # Chỉ cập nhật các vùng ROI đã được xử lý
+        for (x1, y1, x2, y2, roi_processed, block_idx) in results:
             try:
-                if proc is not None and proc.shape[:2] == (y2 - y1, x2 - x1):
-                    result_array[y1:y2, x1:x2] = proc
-            except Exception:
-                pass
-            # All smoothing and fallback are performed within the worker; nothing to do here.
+                if roi_processed is not None and roi_processed.shape[:2] == (y2 - y1, x2 - x1):
+                    # CHỈ cập nhật vùng ROI này, không chạm các pixel khác
+                    result_array[y1:y2, x1:x2] = roi_processed
+            except Exception as e:
+                logging.error(f"Error applying result for block {block_idx}: {e}")
         
         if result_array is None:
             return "Error: Inpainting failed"
@@ -900,14 +1225,58 @@ def remove_text(image_path, blocks_json, output_path):
         return f"Error: {str(e)}"
 
 
+def _pil_inpaint_roi(roi_rgb, roi_mask, iterations=8):
+    """
+    PIL-based inpainting CHỈ trên vùng ROI.
+    Fallback khi không có OpenCV.
+    
+    Args:
+        roi_rgb: numpy array RGB của vùng ROI
+        roi_mask: mask uint8 của vùng ROI (255 = cần inpaint)
+        iterations: số vòng lặp
+    
+    Returns:
+        numpy array RGB của vùng ROI đã inpaint
+    """
+    result = roi_rgb.copy().astype(np.float32)
+    rh, rw = roi_mask.shape
+    mask_bool = roi_mask > 0
+    
+    for _ in range(iterations):
+        # Tạo ảnh blur
+        result_img = Image.fromarray(result.astype(np.uint8))
+        blurred_img = result_img.filter(ImageFilter.GaussianBlur(radius=2))
+        blurred = np.array(blurred_img).astype(np.float32)
+        
+        # Fill từng pixel trong mask
+        for y in range(1, rh - 1):
+            for x in range(1, rw - 1):
+                if mask_bool[y, x]:
+                    neighbors = []
+                    for dy in [-1, 0, 1]:
+                        for dx in [-1, 0, 1]:
+                            if dy == 0 and dx == 0:
+                                continue
+                            ny, nx = y + dy, x + dx
+                            if 0 <= ny < rh and 0 <= nx < rw:
+                                if not mask_bool[ny, nx]:
+                                    neighbors.append(result[ny, nx])
+                                else:
+                                    neighbors.append(blurred[ny, nx])
+                    
+                    if neighbors:
+                        avg_neighbor = np.mean(neighbors, axis=0)
+                        result[y, x] = 0.7 * avg_neighbor + 0.3 * blurred[y, x]
+    
+    return result.astype(np.uint8)
+
+
 def remove_text_with_mask(image_path, mask_path, output_path):
     """
     Xóa text từ ảnh sử dụng mask bitmap (đen trắng).
-    
-    Args:
-        image_path: Đường dẫn ảnh gốc
-        mask_path: Đường dẫn ảnh mask (trắng = vùng cần xóa, đen = giữ nguyên)
-        output_path: Đường dẫn lưu kết quả
+    Mask: vùng trắng (255) = vùng cần xóa, vùng đen (0) = giữ nguyên.
+    CHỈ tái tạo các vùng bị mask, GIỮ NGUYÊN các vùng khác.
+    Sử dụng xử lý song song để tăng tốc độ.
     """
     try:
         # Load images
@@ -915,37 +1284,337 @@ def remove_text_with_mask(image_path, mask_path, output_path):
         if img.mode != 'RGB':
             img = img.convert('RGB')
         img_array = np.array(img)
+        h, w = img_array.shape[:2]
         
         mask_img = Image.open(mask_path).convert('L')
-        # Ensure mask matches image size
         if mask_img.size != img.size:
-             mask_img = mask_img.resize(img.size, Image.NEAREST)
-             
+            mask_img = mask_img.resize(img.size, Image.NEAREST)
         mask_array = np.array(mask_img)
         
-        # Binary mask: > 128 is "remove"
+        # Binary mask - vùng trắng = cần xóa
         mask_binary = (mask_array > 128).astype(np.uint8) * 255
         
-        # If OpenCV available, use Telea or NS
+        # Đếm số pixel cần xóa
+        mask_pixels = np.sum(mask_binary > 0)
+        
+        if mask_pixels == 0:
+            img.save(output_path, quality=100)
+            return output_path
+        
+        # GIỮ NGUYÊN ảnh gốc, chỉ cập nhật vùng mask
+        result_array = img_array.copy()
+        
         if HAS_CV2:
-             # Convert to BGR for OpenCV
-            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-            # Dilate mask slightly to cover edges
-            kernel = np.ones((5,5), np.uint8)
-            dilated_mask = cv2.dilate(mask_binary, kernel, iterations=1)
+            # Tìm các connected components trong mask để xử lý song song
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_binary)
             
-            # Inpaint
-            res_bgr = cv2.inpaint(img_bgr, dilated_mask, 3, cv2.INPAINT_TELEA)
-            res_rgb = cv2.cvtColor(res_bgr, cv2.COLOR_BGR2RGB)
-            final_img = Image.fromarray(res_rgb)
+            def _process_mask_region(region_info):
+                """Xử lý một vùng mask đơn lẻ - CHỈ trên ROI"""
+                try:
+                    i, x, y, bw, bh, area = region_info
+                    if area < 10:
+                        return None
+                    
+                    # Thêm padding nhỏ
+                    pad = max(5, min(20, int(min(bw, bh) * 0.2)))
+                    x1 = max(0, x - pad)
+                    y1 = max(0, y - pad)
+                    x2 = min(w, x + bw + pad)
+                    y2 = min(h, y + bh + pad)
+                    
+                    # Trích xuất vùng ROI
+                    roi_img = img_array[y1:y2, x1:x2].copy()
+                    roi_mask = mask_binary[y1:y2, x1:x2].copy()
+                    
+                    # Dilate mask nhẹ
+                    kernel = np.ones((3, 3), np.uint8)
+                    roi_mask_dilated = cv2.dilate(roi_mask, kernel, iterations=1)
+                    
+                    # Inpainting CHỈ trên ROI
+                    roi_inpainted = roi_only_inpaint_dual(roi_img, roi_mask_dilated, 
+                                                          radius_telea=10, radius_ns=5)
+                    
+                    # Texture transfer CHỈ trên ROI này
+                    roi_inpainted = _texture_transfer_roi(roi_img, roi_inpainted, roi_mask_dilated)
+                    
+                    return (x1, y1, x2, y2, roi_inpainted, i)
+                    
+                except Exception as e:
+                    logging.error(f"Error processing mask region {i}: {e}")
+                    return None
+            
+            # Chuẩn bị danh sách các vùng cần xử lý
+            regions = []
+            for i in range(1, num_labels):
+                x, y, bw, bh, area = stats[i]
+                regions.append((i, x, y, bw, bh, area))
+            
+            # Xử lý song song
+            results = []
+            if len(regions) > 1:
+                max_workers = min(MAX_WORKERS, len(regions))
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_region = {
+                        executor.submit(_process_mask_region, region): region[0]
+                        for region in regions
+                    }
+                    for future in concurrent.futures.as_completed(future_to_region):
+                        try:
+                            result = future.result()
+                            if result is not None:
+                                results.append(result)
+                        except Exception as e:
+                            logging.error(f"Region processing error: {e}")
+            else:
+                for region in regions:
+                    result = _process_mask_region(region)
+                    if result is not None:
+                        results.append(result)
+            
+            # Áp dụng kết quả - CHỈ cập nhật các vùng ROI
+            for (x1, y1, x2, y2, roi_processed, region_idx) in results:
+                try:
+                    if roi_processed is not None and roi_processed.shape[:2] == (y2 - y1, x2 - x1):
+                        # Chỉ cập nhật những pixel trong mask, giữ nguyên pixel khác
+                        roi_mask = mask_binary[y1:y2, x1:x2]
+                        mask_3ch = np.stack([roi_mask > 0] * 3, axis=-1)
+                        result_array[y1:y2, x1:x2] = np.where(
+                            mask_3ch,
+                            roi_processed,
+                            result_array[y1:y2, x1:x2]
+                        )
+                except Exception as e:
+                    logging.error(f"Error applying mask region {region_idx}: {e}")
+            
+            final_img = Image.fromarray(result_array)
         else:
-            # Fallback to PIL inpainting
-            # Note: This PIL fallback is slow and basic
-            res_array = pil_inpaint_fallback(img_array, mask_binary, iterations=5)
-            final_img = Image.fromarray(res_array)
+            # Fallback PIL - xử lý từng vùng mask
+            final_img = Image.fromarray(pil_inpaint_fallback(img_array, mask_binary, iterations=10))
             
-        final_img.save(output_path, quality=95)
+        final_img.save(output_path, quality=100)
         return output_path
         
     except Exception as e:
-        return f"Error: {str(e)}"
+        import traceback
+        error_msg = f"Error: {str(e)}\n{traceback.format_exc()}"
+        return error_msg
+
+
+def _texture_transfer_roi(original_rgb, inpainted_rgb, roi_mask):
+    """
+    Transfer texture CHỈ trên vùng ROI đã được inpaint.
+    Tái tạo chi tiết ảnh từ vùng xung quanh.
+    
+    Args:
+        original_rgb: vùng ROI gốc (RGB)
+        inpainted_rgb: vùng ROI đã inpaint (RGB)
+        roi_mask: mask của vùng ROI
+    
+    Returns:
+        numpy array RGB với texture đã được transfer và chi tiết được tái tạo
+    """
+    if not HAS_CV2:
+        return inpainted_rgb
+    
+    result = inpainted_rgb.copy()
+    rh, rw = roi_mask.shape
+    
+    # Convert sang BGR
+    result_bgr = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
+    original_bgr = cv2.cvtColor(original_rgb, cv2.COLOR_RGB2BGR)
+    
+    non_mask = (roi_mask == 0)
+    mask_area = (roi_mask > 0)
+    
+    if np.sum(non_mask) > 30 and np.sum(mask_area) > 0:
+        # === Bước 1: Extract high-frequency texture từ vùng gốc ===
+        blur_original = cv2.GaussianBlur(original_bgr, (5, 5), 0)
+        texture_high_freq = original_bgr.astype(np.float32) - blur_original.astype(np.float32)
+        
+        # === Bước 2: Copy texture từ vùng source gần nhất ===
+        texture_map = _copy_nearest_texture_fast(texture_high_freq, roi_mask)
+        
+        # === Bước 3: Tính texture statistics và tạo variation ===
+        texture_std = np.std(texture_high_freq[non_mask], axis=0) + 1e-6
+        texture_strength = np.clip(texture_std * 1.5, 5, 30)
+        
+        # Random variation để tái tạo chi tiết tự nhiên
+        np.random.seed(int(np.sum(roi_mask) % 1000))
+        random_texture = np.random.randn(rh, rw, 3).astype(np.float32) * texture_strength * 0.25
+        
+        # Kết hợp texture map và random variation
+        combined_texture = texture_map * 0.75 + random_texture * 0.25
+        
+        # === Bước 4: Áp dụng texture vào vùng mask ===
+        mask_3ch = np.stack([mask_area] * 3, axis=-1).astype(np.float32)
+        textured = result_bgr.astype(np.float32) + combined_texture * mask_3ch
+        textured = np.clip(textured, 0, 255).astype(np.uint8)
+        
+        # === Bước 5: Soft blend ở biên để transition mượt ===
+        soft_mask = cv2.GaussianBlur(roi_mask.astype(np.float32), (5, 5), 0) / 255.0
+        soft_mask = soft_mask[:, :, np.newaxis]
+        result_bgr = (textured * soft_mask + result_bgr * (1 - soft_mask)).astype(np.uint8)
+        
+        # === Bước 6: Sharpen để tăng độ nét chi tiết ===
+        blurred = cv2.GaussianBlur(result_bgr, (0, 0), 2)
+        sharpened = cv2.addWeighted(result_bgr, 1.4, blurred, -0.4, 0)
+        
+        # Chỉ sharpen vùng mask
+        mask_3ch_bool = np.stack([mask_area] * 3, axis=-1)
+        result_bgr = np.where(mask_3ch_bool, sharpened, result_bgr)
+    
+    return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+
+
+def texture_transfer_inpaint(original_bgr, inpainted_bgr, mask):
+    """
+    Transfer texture thực từ vùng xung quanh vào vùng đã inpaint.
+    Sử dụng patch-based texture synthesis + sharpening để tái tạo chi tiết rõ nét.
+    """
+    if not HAS_CV2:
+        return inpainted_bgr
+    
+    h, w = original_bgr.shape[:2]
+    result = inpainted_bgr.copy()
+    
+    # Bước 1: Sharpen toàn bộ ảnh inpainted trước
+    result = sharpen_image(result, strength=1.5)
+    
+    # Tìm các connected components trong mask
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
+    
+    for i in range(1, num_labels):
+        x, y, bw, bh, area = stats[i]
+        if area < 10:
+            continue
+        
+        # Mở rộng vùng tìm kiếm texture
+        pad = max(50, max(bw, bh) * 2)
+        x1 = max(0, x - pad)
+        y1 = max(0, y - pad)
+        x2 = min(w, x + bw + pad)
+        y2 = min(h, y + bh + pad)
+        
+        region_mask = mask[y1:y2, x1:x2]
+        region_original = original_bgr[y1:y2, x1:x2]
+        region_inpainted = result[y1:y2, x1:x2]
+        
+        # Tách texture từ vùng source (không bị mask)
+        # Dùng kernel nhỏ hơn để giữ nhiều chi tiết hơn
+        blur_original = cv2.GaussianBlur(region_original, (5, 5), 0)
+        texture_high_freq = region_original.astype(np.float32) - blur_original.astype(np.float32)
+        
+        # Lấy texture từ vùng source (không bị mask)
+        non_mask = (region_mask == 0)
+        mask_area = (region_mask > 0)
+        
+        if np.sum(non_mask) > 100 and np.sum(mask_area) > 0:
+            # Phương pháp 1: Copy texture thực từ vùng gần nhất
+            # Sử dụng distance transform để tìm pixel gần nhất
+            dist_transform = cv2.distanceTransform((region_mask == 0).astype(np.uint8), cv2.DIST_L2, 5)
+            
+            # Tạo texture map bằng cách copy từ vùng source gần nhất
+            texture_map = copy_nearest_texture(texture_high_freq, region_mask, patch_size=7)
+            
+            # Phương pháp 2: Thêm high-frequency detail
+            # Tính mean texture từ vùng source
+            texture_mean = np.mean(texture_high_freq[non_mask], axis=0)
+            texture_std = np.std(texture_high_freq[non_mask], axis=0) + 1e-6
+            
+            # Normalize và scale texture
+            texture_strength = np.clip(texture_std * 1.5, 5, 30)  # Tăng cường độ texture
+            
+            # Kết hợp texture map và random variation
+            np.random.seed(42)  # Reproducible
+            random_variation = np.random.randn(*region_inpainted.shape).astype(np.float32)
+            random_texture = random_variation * texture_strength * 0.3
+            
+            # Blend cả hai loại texture
+            combined_texture = texture_map * 0.7 + random_texture * 0.3
+            
+            # Chỉ áp dụng vào vùng mask
+            mask_3ch = np.stack([mask_area] * 3, axis=-1).astype(np.float32)
+            
+            # Áp dụng texture với cường độ cao hơn
+            textured = region_inpainted.astype(np.float32) + combined_texture * mask_3ch
+            textured = np.clip(textured, 0, 255).astype(np.uint8)
+            
+            # Soft blend ở biên với kernel nhỏ hơn để giữ nét
+            soft_mask = cv2.GaussianBlur(region_mask.astype(np.float32), (3, 3), 0) / 255.0
+            soft_mask = soft_mask[:, :, np.newaxis]
+            
+            blended = (textured * soft_mask + region_inpainted * (1 - soft_mask)).astype(np.uint8)
+            result[y1:y2, x1:x2] = blended
+    
+    # Bước cuối: Sharpen lần nữa ở vùng mask
+    result = sharpen_masked_region(result, mask, strength=1.2)
+    
+    return result
+
+
+def sharpen_image(img_bgr, strength=1.5):
+    """Sharpen ảnh sử dụng unsharp mask."""
+    if not HAS_CV2:
+        return img_bgr
+    
+    # Unsharp mask: sharpened = original + (original - blurred) * strength
+    blurred = cv2.GaussianBlur(img_bgr, (0, 0), 3)
+    sharpened = cv2.addWeighted(img_bgr, 1 + strength, blurred, -strength, 0)
+    return sharpened
+
+
+def sharpen_masked_region(img_bgr, mask, strength=1.2):
+    """Sharpen chỉ vùng được mask."""
+    if not HAS_CV2:
+        return img_bgr
+    
+    # Dilate mask một chút để sharpen cả biên
+    kernel = np.ones((3, 3), np.uint8)
+    dilated = cv2.dilate(mask, kernel, iterations=1)
+    
+    # Sharpen toàn bộ
+    sharpened = sharpen_image(img_bgr, strength)
+    
+    # Chỉ lấy vùng sharpened ở nơi có mask
+    mask_3ch = np.stack([dilated > 0] * 3, axis=-1)
+    result = np.where(mask_3ch, sharpened, img_bgr)
+    
+    return result
+
+
+def copy_nearest_texture(texture_source, mask, patch_size=7):
+    """
+    Copy texture từ vùng source gần nhất vào vùng mask.
+    Sử dụng patch-based approach để giữ coherent texture.
+    """
+    h, w = mask.shape
+    result = texture_source.copy()
+    
+    # Vị trí các pixel cần điền (trong mask)
+    mask_indices = np.where(mask > 0)
+    if len(mask_indices[0]) == 0:
+        return result
+    
+    # Vị trí các pixel source (ngoài mask)
+    source_indices = np.where(mask == 0)
+    if len(source_indices[0]) == 0:
+        return result
+    
+    source_coords = np.column_stack((source_indices[0], source_indices[1]))
+    
+    # Với mỗi pixel trong mask, tìm pixel source gần nhất và copy texture
+    half_patch = patch_size // 2
+    
+    for idx in range(len(mask_indices[0])):
+        py, px = mask_indices[0][idx], mask_indices[1][idx]
+        
+        # Tìm pixel source gần nhất
+        distances = np.sqrt((source_coords[:, 0] - py)**2 + (source_coords[:, 1] - px)**2)
+        nearest_idx = np.argmin(distances)
+        sy, sx = source_coords[nearest_idx]
+        
+        # Copy texture value (có thêm một chút random variation)
+        if 0 <= sy < h and 0 <= sx < w:
+            result[py, px] = texture_source[sy, sx] * (0.8 + 0.4 * np.random.random())
+    
+    return result
