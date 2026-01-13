@@ -127,7 +127,8 @@ fun ImageViewer(
     translatingImages: Map<Uri, TranslationStatus> = emptyMap(),
     isTextRemovalMode: Boolean = false,
     onToggleTextRemovalMode: () -> Unit = {},
-    onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> }
+    onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> },
+    brushSize: Float = 40f
 ) {
     val context = LocalContext.current
     val readPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -443,8 +444,8 @@ fun ImageViewer(
                                 }
                                 if (isTextRemovalMode) {
                                     val dummy = drawTrigger
-                                    val strokeStyle = Stroke(width = 40f, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                                    textRemovalPaths.forEach { drawPath(it.first, Color.Red.copy(alpha = 0.5f), style = strokeStyle) }
+                                    val strokeStyle = Stroke(width = brushSize, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+                                    textRemovalPaths.forEach { drawPath(it.first, Color.Red.copy(alpha = 0.5f), style = Stroke(width = it.second, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)) }
                                     currentPaintingPath.value?.let { drawPath(it, Color.Red.copy(alpha = 0.5f), style = strokeStyle) }
                                 }
                             }
@@ -478,7 +479,7 @@ fun ImageViewer(
                                             }
                                             drawTrigger++; change.consume()
                                         } else if (change.changedToUp()) {
-                                            currentPaintingPath.value?.let { textRemovalPaths.add(it to 40f) }
+                                            currentPaintingPath.value?.let { textRemovalPaths.add(it to brushSize) }
                                             currentPaintingPath.value = null; magnifierPosition = null; magnifierSourcePosition = null
                                             drawTrigger++; change.consume()
                                         }
@@ -525,8 +526,11 @@ fun ImageViewer(
                                     val maskBmp = android.graphics.Bitmap.createBitmap(originalImageWidth.toInt(), originalImageHeight.toInt(), android.graphics.Bitmap.Config.ARGB_8888)
                                     val canvas = android.graphics.Canvas(maskBmp).apply { drawColor(android.graphics.Color.BLACK) }
                                     val s = originalImageWidth / imageWidth; val matrix = android.graphics.Matrix().apply { setScale(s, s) }
-                                    val paint = android.graphics.Paint().apply { color = android.graphics.Color.WHITE; style = android.graphics.Paint.Style.STROKE; strokeWidth = 40f * s; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND }
-                                    textRemovalPaths.forEach { canvas.drawPath(it.first.asAndroidPath().apply { transform(matrix) }, paint) }
+                                    val paint = android.graphics.Paint().apply { color = android.graphics.Color.WHITE; style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND }
+                                    textRemovalPaths.forEach { pair ->
+                                        paint.strokeWidth = pair.second * s
+                                        canvas.drawPath(pair.first.asAndroidPath().apply { transform(matrix) }, paint)
+                                    }
                                     onRemoveTextWithMask(uri, maskBmp); textRemovalPaths.clear()
                                 }
                             }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) { Text("Xóa vùng này", color = Color.White) }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -60,6 +61,8 @@ fun ViewerScreen(
     var showSpeedSlider by remember { mutableStateOf(false) }
     var autoScrollEnabled by remember { mutableStateOf(false) }
     var scrollSpeed by remember { mutableStateOf(5f) }
+    var brushSize by remember { mutableStateOf(40f) }
+    var showBrushSizeSlider by remember { mutableStateOf(false) }
     val uiState by viewModel.uiState.collectAsState()
     val allRoomIds by viewModel.allRoomIds.collectAsState()
     val context = LocalContext.current
@@ -399,7 +402,17 @@ fun ViewerScreen(
                     onShowSpeedSliderChange = { showSpeedSlider = !showSpeedSlider },
                     isLoadingMoreImages = uiState.isLoadingMoreImages
                 )
-                IconButton(onClick = { viewModel.setTextRemovalMode(!uiState.isTextRemovalMode) }) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .pointerInput(uiState.isTextRemovalMode) {
+                            detectTapGestures(
+                                onTap = { viewModel.setTextRemovalMode(!uiState.isTextRemovalMode) },
+                                onLongPress = { showBrushSizeSlider = !showBrushSizeSlider }
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = Icons.Default.AutoFixHigh,
                         contentDescription = "Xóa text thủ công",
@@ -730,6 +743,14 @@ fun ViewerScreen(
             showSpeedSlider = showSpeedSlider
         )
         
+        // Slider chỉnh độ dày bút khi xóa text
+        if (showBrushSizeSlider) {
+            BrushSizeSlider(
+                brushSize = brushSize,
+                onBrushSizeChange = { brushSize = it }
+            )
+        }
+        
         ImageViewer(
             imageUris = uiState.imageUris,
             translatedTexts = uiState.translatedTexts,
@@ -795,7 +816,8 @@ fun ViewerScreen(
             remainingImagesCount = uiState.remainingImages.size,
             isTextRemovalMode = uiState.isTextRemovalMode,
             onToggleTextRemovalMode = { viewModel.setTextRemovalMode(!uiState.isTextRemovalMode) },
-            onRemoveTextWithMask = viewModel::removeTextWithMask
+            onRemoveTextWithMask = viewModel::removeTextWithMask,
+            brushSize = brushSize
         )
         Dialogs(
             showInsertAtIndexDialog = showInsertAtIndexDialog,
@@ -1058,5 +1080,34 @@ fun RoomNavigation(
         } else {
             Spacer(modifier = Modifier.width(48.dp))
         }
+    }
+}
+
+@Composable
+fun BrushSizeSlider(
+    brushSize: Float,
+    onBrushSizeChange: (Float) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Cỡ bút:", modifier = Modifier.padding(end = 8.dp), style = MaterialTheme.typography.bodyMedium)
+        Slider(
+            value = brushSize,
+            onValueChange = onBrushSizeChange,
+            valueRange = 10f..150f,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = brushSize.toInt().toString(),
+            modifier = Modifier.padding(start = 8.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
     }
 }
