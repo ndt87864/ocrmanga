@@ -597,6 +597,17 @@ fun drawTextOnCanvas(drawScope: DrawScope,
     )
     paint.textSize = optimalFontSize
     borderPaint?.textSize = optimalFontSize
+    // Ensure shadow paint scales when final font size is adjusted
+    shadowPaint?.let { sp ->
+        try {
+            sp.textSize = optimalFontSize
+            val radius = if (shadowRadius > 0f) shadowRadius else (optimalFontSize * 0.14f).coerceAtLeast(1f)
+            val dx = (optimalFontSize * 0.04f)
+            val dy = (optimalFontSize * 0.04f)
+            val finalShadow = (shadowColor?.copy(alpha = shadowAlpha) ?: Color.Black.copy(alpha = shadowAlpha))
+            sp.setShadowLayer(radius, dx, dy, finalShadow.toArgb())
+        } catch (_: Exception) { }
+    }
     val lines = wrappedText.split("\n")
     val fontMetrics = paint.fontMetrics
     val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
