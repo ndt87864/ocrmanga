@@ -249,6 +249,17 @@ fun TranslationEditor(
                             )
                         }
 
+
+                        // Nút bật/tắt chế độ xóa text thủ công (cục tẩy)
+                        IconButton(
+                            onClick = onToggleTextRemovalMode
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoFixHigh,
+                                contentDescription = "Chế độ xóa text (Tô đỏ vùng cần xóa)",
+                                tint = if (isTextRemovalMode) Color.Red else MaterialTheme.colorScheme.onBackground
+                            )
+                        }
                         Box {
                             IconButton(onClick = { showShapeMenu = true }) {
                                 Icon(
@@ -399,17 +410,6 @@ fun TranslationEditor(
                             enabled = isBlockSelected
                         ) {
                             Icon(Icons.Default.Delete, "Xóa vùng đã chọn", tint = if (isBlockSelected) Color.Red else Color.Gray)
-                        }
-
-                        // Nút bật/tắt chế độ xóa text thủ công (cục tẩy)
-                        IconButton(
-                            onClick = onToggleTextRemovalMode
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoFixHigh,
-                                contentDescription = "Chế độ xóa text (Tô đỏ vùng cần xóa)",
-                                tint = if (isTextRemovalMode) Color.Red else MaterialTheme.colorScheme.onBackground
-                            )
                         }
 
                         IconButton(

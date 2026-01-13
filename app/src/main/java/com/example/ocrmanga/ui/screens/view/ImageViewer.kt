@@ -44,6 +44,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
@@ -52,6 +53,7 @@ import coil.ImageLoader
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.ui.screens.view.TranslationOverlay
+import com.example.ocrmanga.ui.screens.view.MagnifierPopup
 import com.example.ocrmanga.data.models.TranslationStatus
 import java.io.IOException
 
@@ -382,11 +384,14 @@ fun ImageViewer(
             val currentPaintingPath = remember { mutableStateOf<androidx.compose.ui.graphics.Path?>(null) }
             // Biến đếm để ép buộc Canvas vẽ lại khi Path thay đổi content bên trong
             var drawTrigger by remember { mutableStateOf(0) }
+            // State cho magnifier popup
+            var magnifierPosition by remember { mutableStateOf<Offset?>(null) }
             
             LaunchedEffect(isTextRemovalMode) {
                 if (!isTextRemovalMode) {
                     textRemovalPaths.clear()
                     currentPaintingPath.value = null
+                    magnifierPosition = null
                 }
             }
             
@@ -508,6 +513,7 @@ fun ImageViewer(
                             .onGloballyPositioned { coordinates ->
                                 imageWidth = coordinates.size.width.toFloat()
                                 imageHeight = coordinates.size.height.toFloat()
+                                Log.d("ImageViewer", "[IMAGE SIZE] Updated: ${imageWidth}x${imageHeight}")
                             },
                         contentScale = ContentScale.FillWidth,
                         onState = { state -> imageLoadState = state }
@@ -605,6 +611,8 @@ fun ImageViewer(
                                             moveTo(startPos.x, startPos.y) 
                                         }
                                         currentPaintingPath.value = path
+                                        magnifierPosition = startPos // Hiển thị magnifier
+                                        Log.d("ImageViewer", "[MAGNIFIER] Show at position: $startPos")
                                         drawTrigger++ // Force initial draw
                                         
                                         down.consume()
@@ -613,6 +621,7 @@ fun ImageViewer(
                                         drag(down.id) { change ->
                                             val pos = change.position
                                             path.lineTo(pos.x, pos.y)
+                                            magnifierPosition = pos // Cập nhật vị trí magnifier
                                             // Cập nhật trigger để Canvas vẽ lại nét đang vẽ
                                             drawTrigger++
                                             change.consume()
@@ -623,6 +632,8 @@ fun ImageViewer(
                                             textRemovalPaths.add(finalPath to 40f)
                                         }
                                         currentPaintingPath.value = null
+                                        magnifierPosition = null // Ẩn magnifier
+                                        Log.d("ImageViewer", "[MAGNIFIER] Hide")
                                         drawTrigger++
                                     }
                                 }
@@ -1019,8 +1030,22 @@ fun ImageViewer(
                             }
                         }
                     }
+                
+                // Magnifier popup khi đang tô vùng xóa - ĐẶT CUỐI CÙNG ĐỂ CÓ Z-INDEX CAO NHẤT
+                magnifierPosition?.let { pos ->
+                    Log.d("ImageViewer", "[MAGNIFIER] Rendering MagnifierPopup at: $pos, imageSize: ${imageWidth}x${imageHeight}")
+                    MagnifierPopup(
+                        magnifierPosition = pos,
+                        imageWidth = imageWidth,
+                        imageHeight = imageHeight,
+                        imageUri = uri, // ✅ Truyền Uri ảnh vào
+                        modifier = Modifier
+                            .matchParentSize()
+                            .zIndex(999f) // Z-index RẤT CAO để luôn hiển thị trên cùng
+                    )
                 }
             }
+        }
         }
         
         // Loading indicator ở cuối danh sách khi đang tải thêm ảnh
