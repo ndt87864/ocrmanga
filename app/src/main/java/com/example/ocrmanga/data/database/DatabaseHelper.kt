@@ -209,9 +209,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             var hasFontFamily = false
             var hasFontSize = false
             var hasOverlayInset = false
-            var hasOverlayInsetHorizontal = false
-            var hasOverlayInsetVertical = false
-            var hasOverlayRotation = false
             while (c.moveToNext()) {
                 val columnName = c.getString(c.getColumnIndexOrThrow("name"))
                 when (columnName) {
@@ -221,9 +218,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     COLUMN_BLOCK_FONT_FAMILY -> hasFontFamily = true
                     COLUMN_BLOCK_FONT_SIZE -> hasFontSize = true
                     COLUMN_BLOCK_OVERLAY_INSET -> hasOverlayInset = true
-                    COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL -> hasOverlayInsetHorizontal = true
-                    COLUMN_BLOCK_OVERLAY_INSET_VERTICAL -> hasOverlayInsetVertical = true
-                    COLUMN_BLOCK_OVERLAY_ROTATION -> hasOverlayRotation = true
                 }
             }
             c.close()
@@ -247,16 +241,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
             }
             // Thêm cột overlay_inset_horizontal và overlay_inset_vertical
-            if (!hasOverlayInsetHorizontal) {
-                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
-            }
-            if (!hasOverlayInsetVertical) {
-                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_VERTICAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
-            }
+            try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
+            try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_INSET_VERTICAL REAL DEFAULT 0.0") } catch (e: Exception) { /* ignore */ }
             // Thêm cột overlay_rotation cho xoay overlay riêng biệt
-            if (!hasOverlayRotation) {
-                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_ROTATION REAL") } catch (e: Exception) { /* ignore */ }
-            }
+            try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_ROTATION REAL") } catch (e: Exception) { /* ignore */ }
         } catch (e: Exception) {
             Log.w(TAG, "Không thể tự động thêm cột vào bảng image_blocks", e)
         }
@@ -1267,6 +1255,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     val blocksToSave = textBlocks.filter { !it.pendingDelete }
                     Log.i(TAG, "applyPendingChangesForRoom: imageId=$imageId totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
                     
+                    // Persist each translation + image_block
                     blocksToSave.forEach { textBlock ->
                         val bounds = textBlock.bounds
                         // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
@@ -1316,6 +1305,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 Log.w(TAG, "Không thể lưu image_block cho image $imageId khi applyPendingChanges", e)
                             }
                         }
+                    }
+
+                    // Set image-level is_translated flag based on whether we saved any blocks
+                    try {
+                        val isTranslatedValue = if (blocksToSave.isNotEmpty()) 1 else 0
+                        val isTranslatedValues = ContentValues().apply { put(COLUMN_IS_TRANSLATED, isTranslatedValue) }
+                        db.update(TABLE_IMAGES, isTranslatedValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                        Log.i(TAG, "applyPendingChangesForRoom: Updated is_translated=$isTranslatedValue for imageId=$imageId")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "applyPendingChangesForRoom: Failed to update is_translated for imageId=$imageId", e)
                     }
                 }
 
@@ -2300,6 +2299,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     // ✅ Truyền lineSpacing từ TextBlockInfo
                                     lineSpacing = textBlock.lineSpacing
                                 )
+                                // After inserting blocks, update image-level metadata: original_text + is_translated
+                                try {
+                                    val updatedImageValues = ContentValues().apply {
+                                        put(COLUMN_ORIGINAL_TEXT, originalText)
+                                        put(COLUMN_IS_TRANSLATED, if (blocksToSave.isNotEmpty()) 1 else 0)
+                                    }
+                                    db.update(TABLE_IMAGES, updatedImageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "updateMangaRoomSelective: Failed to update image metadata for imageId=$imageId", e)
+                                }
+
                                 // Clear change flag after successful save
                                 try { clearImageChange(imageId) } catch (e: Exception) { /* ignore */ }
                                 // Delete pending translations after successful save

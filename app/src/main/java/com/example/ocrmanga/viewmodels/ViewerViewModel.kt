@@ -415,14 +415,30 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update {
             it.copy(
                 translatedTexts = it.translatedTexts + (uri to newPair),
-                translatedStatus = it.translatedStatus + (uri to true)
+                translatedStatus = it.translatedStatus + (uri to true),
+                translationEnabled = true, // Ensure UI shows translations immediately after manual edit
+                translationVersion = it.translationVersion + 1, // Force UI update
+                recentlySavedUris = it.recentlySavedUris + uri, // Mark uri so ImageViewer can apply blocks immediately
+                reopenEditorUris = it.reopenEditorUris + uri // Request editor to reopen after blocks are applied
             )
         }
         // Mark this uri as dirty (edited) so later saveRoom can update only changed images
         dirtyUris.add(uri)
-        // Also mark DB change flag if this URI is associated with a saved image
+        // If this image belongs to a saved room, also set image-level is_translated=1 immediately (temporary)
         val rid = _uiState.value.roomId
         val imageId = uriToImageId[uri]
+        if (imageId != null) {
+            try {
+                val db = databaseHelper.writableDatabase
+                val values = android.content.ContentValues().apply { put(DatabaseHelper.COLUMN_IS_TRANSLATED, 1) }
+                db.update(DatabaseHelper.TABLE_IMAGES, values, "${DatabaseHelper.COLUMN_IMAGE_ID} = ?", arrayOf(imageId.toString()))
+                Log.i(TAG, "Marked image as temporarily translated in TABLE_IMAGES for imageId=$imageId")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to set is_translated in DB for imageId=$imageId", e)
+            }
+        }
+
+        // Also mark DB change flag if this URI is associated with a saved room so auto-save/count works
         if (rid != null && imageId != null) {
             try {
                 val numChanged = databaseHelper.markImageChanged(imageId, rid)
@@ -437,6 +453,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         updatedBlocks.forEachIndexed { idx, block ->
             //log.i(TAG, "[UPDATE] Block[$idx] rotation=${block.rotation} text='${block.text}' uri=$uri")
         }
+    }
+
+    fun clearRecentlySavedUri(uri: android.net.Uri) {
+        _uiState.update { it.copy(recentlySavedUris = it.recentlySavedUris - uri) }
+    }
+
+    fun clearReopenEditorUri(uri: android.net.Uri) {
+        _uiState.update { it.copy(reopenEditorUris = it.reopenEditorUris - uri) }
     }
 
     fun updateGlobalFont(fontName: String) {
@@ -2570,5 +2594,7 @@ data class ViewerUiState(
     val translatingImages: Map<Uri, com.example.ocrmanga.data.models.TranslationStatus> = emptyMap(),
     // Vị trí scroll cần nhảy đến sau khi reload (null = không nhảy)
     val scrollToIndexAfterReload: Int? = null,
-    val isTextRemovalMode: Boolean = false // Chế độ xóa text thủ công (vẽ mask)
+    val isTextRemovalMode: Boolean = false, // Chế độ xóa text thủ công (vẽ mask)
+    val recentlySavedUris: Set<android.net.Uri> = emptySet(), // URIs saved via editor but not yet applied in UI
+    val reopenEditorUris: Set<android.net.Uri> = emptySet() // URIs for which editor should reopen after blocks are applied
 )

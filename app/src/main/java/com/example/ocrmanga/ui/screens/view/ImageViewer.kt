@@ -125,6 +125,16 @@ fun ImageViewer(
     isLoadingMoreImages: Boolean = false,
     remainingImagesCount: Int = 0,
     translatingImages: Map<Uri, TranslationStatus> = emptyMap(),
+    // URIs recently saved from the editor; used to apply saved blocks immediately
+    recentlySavedUris: Set<Uri> = emptySet(),
+    // Callback to clear the recently-saved marker for a URI after it's been applied
+    onClearRecentlySavedUri: ((Uri) -> Unit)? = null,
+    // URIs for which we should re-open the editor after saved blocks are applied
+    reopenEditorUris: Set<Uri> = emptySet(),
+    // Callback to clear the reopen-editor marker for a URI after it's been handled
+    onClearReopenEditorUri: ((Uri) -> Unit)? = null,
+    // Callback to request that the caller open the editor for a URI (invoked after blocks applied)
+    onRequestOpenEditor: ((Uri) -> Unit)? = null,
     isTextRemovalMode: Boolean = false,
     onToggleTextRemovalMode: () -> Unit = {},
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> },
@@ -369,7 +379,14 @@ fun ImageViewer(
                     val _conf = LocalConfiguration.current; val _sw = _conf.screenWidthDp.toFloat()
 
                     LaunchedEffect(uri, translationVersion, dragBlocks, imageWidth, imageHeight, isInWindow, _sw) {
+                        // Allow immediate apply when either not in edit mode OR this uri was recently saved via editor
+                        val isRecentSave = recentlySavedUris.contains(uri)
                         if (!isInWindow) { precomputedRegionsState.value = emptyList(); return@LaunchedEffect }
+                        if (editTranslationMode && !isRecentSave) {
+                            // While actively editing (and not just-saved), avoid overriding user's in-progress edits
+                            // do not recalc precomputed regions here
+                            return@LaunchedEffect
+                        }
                         val screenScaleFactor = (_sw / 360f).coerceIn(0.5f, 2.0f)
                         withContext(kotlinx.coroutines.Dispatchers.Default) {
                             val list = dragBlocks.filter { !it.block.pendingDelete }.mapNotNull { dragBlock ->
@@ -382,6 +399,16 @@ fun ImageViewer(
                                 PrecomputedRegion(block, rect, fontSize, dragBlock.rotation, dragBlock.overlayRotation, dragBlock.whiteoutColor, dragBlock.textColor, dragBlock.overlayAlpha, dragBlock.textBoldness, dragBlock.overlaySaturation, dragBlock.textSaturation, dragBlock.lineSpacing, dragBlock.textBorderColor, dragBlock.textBorderThickness, dragBlock.textBorderAlpha, dragBlock.textShadowColor, dragBlock.textShadowAlpha, dragBlock.textShadowRadius, dragBlock.overlayInset * scale, dragBlock.overlayInsetHorizontal * scale, dragBlock.overlayInsetVertical * scale)
                             }
                             precomputedRegionsState.value = list
+                        }
+                        // If this was a recent save, clear the flag so we don't reapply repeatedly
+                        if (isRecentSave) {
+                            try { onClearRecentlySavedUri?.invoke(uri) } catch (e: Exception) {}
+                        }
+                        // If caller requested reopen editor for this uri, invoke callback and clear flag
+                        val shouldReopen = reopenEditorUris.contains(uri)
+                        if (shouldReopen) {
+                            try { onRequestOpenEditor?.invoke(uri) } catch (e: Exception) {}
+                            try { onClearReopenEditorUri?.invoke(uri) } catch (e: Exception) {}
                         }
                     }
 

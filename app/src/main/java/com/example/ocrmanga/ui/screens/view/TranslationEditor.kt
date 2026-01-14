@@ -1039,6 +1039,8 @@ fun TranslationEditor(
                                 list.removeAt(idx)
                                 list.addAll(idx, newBlocks)
                             })
+                            // Immediately apply the edited parts so they show in the viewer
+                            onSave()
                         }
                         showEditBlockDialog = false
                     }) { Text("Lưu") }
