@@ -982,6 +982,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             
             // Load auto-translate setting for this room
             val autoTranslate = databaseHelper.getAutoTranslateSetting(roomId)
+            // Load ancient/"cổ trang" translation setting for this room
+            val ancientMode = databaseHelper.getAncientTranslationSetting(roomId)
             
             // getMangaRoom đã cleanup duplicates trong DB, nên allImages đã unique
             val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
@@ -1074,7 +1076,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     sourceLanguages = sourceLangsForBatch,
                     remainingImages = remainingImages,
                     translationVersion = it.translationVersion + 1,
-                    autoTranslateEnabled = autoTranslate
+                    autoTranslateEnabled = autoTranslate,
+                    isAncientTranslationMode = ancientMode
                 )
             }
             Log.i(TAG, "loadRoomInternal completed: initialBatch=${initialBatch.size} remainingImages=${remainingImages.size} total=${initialBatch.size + remainingImages.size}")
@@ -1891,9 +1894,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      * Bật/tắt chế độ dịch cổ trang
      */
     fun toggleAncientTranslationMode() {
-        _uiState.update { it.copy(isAncientTranslationMode = !it.isAncientTranslationMode) }
-        val message = if (_uiState.value.isAncientTranslationMode) "Đã BẬT chế độ dịch cổ trang" else "Đã TẮT chế độ dịch cổ trang"
-        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+        val roomId = uiState.value.roomId ?: return
+        val newValue = !uiState.value.isAncientTranslationMode
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                databaseHelper.setAncientTranslationSetting(roomId, newValue)
+                _uiState.update { it.copy(isAncientTranslationMode = newValue) }
+                withContext(Dispatchers.Main) {
+                    val message = if (newValue) "Đã BẬT chế độ dịch cổ trang" else "Đã TẮT chế độ dịch cổ trang"
+                    Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error toggling ancient translation mode", e)
+            }
+        }
     }
 
     /**

@@ -573,6 +573,25 @@ fun ViewerScreen(
                                     showMainMenu = false
                                 }
                             )
+
+                            // Chế độ dịch cổ trang (Ancient mode) - hiển thị dưới tùy chọn Tự động dịch
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            if (uiState.isAncientTranslationMode) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                                            null,
+                                            modifier = Modifier.padding(end = 8.dp),
+                                            tint = if (uiState.isAncientTranslationMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                        )
+                                        Text(if (uiState.isAncientTranslationMode) "Chế độ dịch cổ trang: BẬT" else "Chế độ dịch cổ trang: TẮT")
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.toggleAncientTranslationMode()
+                                    showMainMenu = false
+                                }
+                            )
                         }
                     }
                     DropdownMenu(

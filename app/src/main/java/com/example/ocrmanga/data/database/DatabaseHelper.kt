@@ -252,7 +252,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 18
+    private const val DATABASE_VERSION = 19
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -294,6 +294,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     const val TABLE_ROOM_SETTINGS = "room_settings"
     const val COLUMN_SETTING_ROOM_ID = "room_id"
     const val COLUMN_AUTO_TRANSLATE_NEW_IMAGES = "auto_translate_new_images" // 0 = disabled, 1 = enabled
+    const val COLUMN_ANCIENT_TRANSLATION_ENABLED = "ancient_translation_enabled" // 0 = disabled, 1 = enabled
 
     // Image blocks table (per-image text/overlay blocks)
     const val TABLE_IMAGE_BLOCKS = "image_blocks"
@@ -464,6 +465,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             CREATE TABLE IF NOT EXISTS $TABLE_ROOM_SETTINGS (
                 $COLUMN_SETTING_ROOM_ID INTEGER PRIMARY KEY,
                 $COLUMN_AUTO_TRANSLATE_NEW_IMAGES INTEGER NOT NULL DEFAULT 1,
+                $COLUMN_ANCIENT_TRANSLATION_ENABLED INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY ($COLUMN_SETTING_ROOM_ID) REFERENCES $TABLE_ROOMS($COLUMN_ROOM_ID) ON DELETE CASCADE
             )
             """
@@ -800,6 +802,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.i(TAG, "Đã migrate bảng translations sang cấu trúc mới (text_id, image_id, translated_text, pending_delete, apply_merge)")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi migrate bảng translations", e)
+            }
+        }
+
+        // Add ancient translation setting for rooms (version 19)
+        if (oldVersion < 19) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_ROOM_SETTINGS ADD COLUMN $COLUMN_ANCIENT_TRANSLATION_ENABLED INTEGER NOT NULL DEFAULT 0")
+                // Ensure existing rows have a default value of 0
+                try {
+                    db.execSQL("UPDATE $TABLE_ROOM_SETTINGS SET $COLUMN_ANCIENT_TRANSLATION_ENABLED = 0 WHERE $COLUMN_ANCIENT_TRANSLATION_ENABLED IS NULL")
+                } catch (e: Exception) {
+                    // ignore if update fails
+                }
+                Log.i(TAG, "Đã thêm cột $COLUMN_ANCIENT_TRANSLATION_ENABLED vào bảng $TABLE_ROOM_SETTINGS")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm cột ancient_translation_enabled vào $TABLE_ROOM_SETTINGS", e)
             }
         }
     }
@@ -1493,6 +1511,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             // Initialize room settings with default auto-translate enabled
             try {
                 setAutoTranslateSetting(roomId, true)
+                // Initialize ancient translation setting as disabled by default
+                try { setAncientTranslationSetting(roomId, false) } catch (e: Exception) { /* ignore */ }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to initialize room settings for roomId=$roomId", e)
             }
@@ -3214,6 +3234,55 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error setting auto-translate for roomId=$roomId", e)
+        }
+    }
+
+    /**
+     * Get ancient translation (cổ trang) setting for a room. Returns false (disabled) by default.
+     */
+    fun getAncientTranslationSetting(roomId: Long): Boolean {
+        val db = readableDatabase
+        try {
+            val cursor = db.rawQuery(
+                "SELECT $COLUMN_ANCIENT_TRANSLATION_ENABLED FROM $TABLE_ROOM_SETTINGS WHERE $COLUMN_SETTING_ROOM_ID = ?",
+                arrayOf(roomId.toString())
+            )
+            val result = if (cursor.moveToFirst()) {
+                cursor.getInt(0) == 1
+            } else {
+                // Default to disabled if no setting exists
+                false
+            }
+            cursor.close()
+            return result
+        } catch (e: Exception) {
+            Log.w(TAG, "Error getting ancient translation setting for roomId=$roomId", e)
+            return false // Default to disabled on error
+        }
+    }
+
+    /**
+     * Set ancient translation setting for a room.
+     */
+    fun setAncientTranslationSetting(roomId: Long, enabled: Boolean) {
+        val db = writableDatabase
+        try {
+            val values = ContentValues().apply {
+                put(COLUMN_SETTING_ROOM_ID, roomId)
+                put(COLUMN_ANCIENT_TRANSLATION_ENABLED, if (enabled) 1 else 0)
+            }
+            val updated = db.update(
+                TABLE_ROOM_SETTINGS,
+                values,
+                "$COLUMN_SETTING_ROOM_ID = ?",
+                arrayOf(roomId.toString())
+            )
+            if (updated == 0) {
+                // Insert if not exists
+                db.insert(TABLE_ROOM_SETTINGS, null, values)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting ancient translation for roomId=$roomId", e)
         }
     }
 
