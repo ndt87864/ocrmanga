@@ -382,11 +382,7 @@ fun ImageViewer(
                         // Allow immediate apply when either not in edit mode OR this uri was recently saved via editor
                         val isRecentSave = recentlySavedUris.contains(uri)
                         if (!isInWindow) { precomputedRegionsState.value = emptyList(); return@LaunchedEffect }
-                        if (editTranslationMode && !isRecentSave) {
-                            // While actively editing (and not just-saved), avoid overriding user's in-progress edits
-                            // do not recalc precomputed regions here
-                            return@LaunchedEffect
-                        }
+                        // Allow recalculation during editing to show real-time changes
                         val screenScaleFactor = (_sw / 360f).coerceIn(0.5f, 2.0f)
                         withContext(kotlinx.coroutines.Dispatchers.Default) {
                             val list = dragBlocks.filter { !it.block.pendingDelete }.mapNotNull { dragBlock ->

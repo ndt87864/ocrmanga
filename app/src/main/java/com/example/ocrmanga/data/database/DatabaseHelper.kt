@@ -252,7 +252,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 19
+    private const val DATABASE_VERSION = 20
         private const val TAG = "DatabaseHelper"
         
             /**

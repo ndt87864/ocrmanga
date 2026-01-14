@@ -756,7 +756,7 @@ fun ViewerScreen(
                             context, uri, maskBmp
                         )
                         if (resultUri != null) {
-                            // Use replaceImageUri with persist=false to make this a temporary replacement
+                            // Use rep   laceImageUri with persist=false to make this a temporary replacement
                             viewModel.replaceImageUri(uri, resultUri, persist = false)
                             Toast.makeText(context, "Đã xóa text thành công!", Toast.LENGTH_SHORT).show()
                         } else {

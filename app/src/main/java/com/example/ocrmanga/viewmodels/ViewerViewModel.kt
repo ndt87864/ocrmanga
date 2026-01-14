@@ -412,6 +412,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         
         val newPair = current.first to updatedBlocks
+        // Only reopen editor for new translations (images that didn't have blocks before)
+        val shouldReopenEditor = currentBlocks.isEmpty()
         _uiState.update {
             it.copy(
                 translatedTexts = it.translatedTexts + (uri to newPair),
@@ -419,7 +421,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationEnabled = true, // Ensure UI shows translations immediately after manual edit
                 translationVersion = it.translationVersion + 1, // Force UI update
                 recentlySavedUris = it.recentlySavedUris + uri, // Mark uri so ImageViewer can apply blocks immediately
-                reopenEditorUris = it.reopenEditorUris + uri // Request editor to reopen after blocks are applied
+                reopenEditorUris = if (shouldReopenEditor) it.reopenEditorUris + uri else it.reopenEditorUris
             )
         }
         // Mark this uri as dirty (edited) so later saveRoom can update only changed images
