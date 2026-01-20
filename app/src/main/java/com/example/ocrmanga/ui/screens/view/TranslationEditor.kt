@@ -113,6 +113,9 @@ fun TranslationEditor(
     var resizeMode by remember { mutableStateOf(0) }
     var resizeDropdownExpanded by remember { mutableStateOf(false) }
     var showEditBlockDialog by remember { mutableStateOf(false) }
+    // Khi mở dialog sửa/ thêm bản dịch, lưu trạng thái xem ảnh đã có block trước đó chưa.
+    // Nếu đã có block, khi lưu chúng ta sẽ KHÔNG tự động gọi onSave() để về chế độ xem.
+    var openedWithExistingBlocks by remember { mutableStateOf(false) }
     var isRotatingClockwise by remember { mutableStateOf(false) }
     var isRotatingCounterClockwise by remember { mutableStateOf(false) }
     // State cho xoay overlay
@@ -414,6 +417,8 @@ fun TranslationEditor(
 
                         IconButton(
                             onClick = {
+                                // Lưu trạng thái ban đầu: ảnh đã có block hay chưa trước khi mở dialog
+                                openedWithExistingBlocks = dragBlocks.isNotEmpty()
                                 if (isBlockSelected) {
                                     showEditBlockDialog = true
                                 } else {
@@ -1039,10 +1044,16 @@ fun TranslationEditor(
                                 list.removeAt(idx)
                                 list.addAll(idx, newBlocks)
                             })
-                            // Immediately apply the edited parts so they show in the viewer
-                            onSave()
+                            // Nếu ảnh ban đầu KHÔNG có block thì tự động gọi onSave() (về chế độ xem).
+                            // Nếu ảnh đã có block từ trước (openedWithExistingBlocks == true),
+                            // chỉ cập nhật dragBlocks mà KHÔNG tự động lưu/thoát.
+                            if (!openedWithExistingBlocks) {
+                                onSave()
+                            }
                         }
                         showEditBlockDialog = false
+                        // Reset flag để lần mở sau sẽ tính lại từ dragBlocks hiện tại
+                        openedWithExistingBlocks = false
                     }) { Text("Lưu") }
                 },
                 dismissButton = {
