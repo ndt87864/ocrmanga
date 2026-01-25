@@ -822,6 +822,24 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        Log.w(TAG, "Downgrading database from version $oldVersion to $newVersion. Dropping all tables.")
+        try {
+            db.execSQL("DROP TABLE IF EXISTS translations")
+            db.execSQL("DROP TABLE IF EXISTS translations_new")
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_API_KEYS")
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_IMAGE_BLOCKS")
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_CHANGE_IMAGES")
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_ROOM_SETTINGS")
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_IMAGES")
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_ROOMS")
+            onCreate(db)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during database downgrade", e)
+            throw e
+        }
+    }
+
     // --- Helper methods for image blocks CRUD ---
     fun insertImageBlock(imageId: Long,
                          x: Int, y: Int, width: Int, height: Int,
@@ -3286,9 +3304,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
-    init {
-        migrateRoomImageLinks()
-    }
+    // init {
+    //     migrateRoomImageLinks()
+    // }
 
     // Cursor helper extensions for safe reads
     private fun android.database.Cursor.getIntOrNull(index: Int): Int? {
