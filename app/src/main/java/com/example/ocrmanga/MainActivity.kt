@@ -34,10 +34,12 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = { finish() },
                                 onNavigateToViewer = { imageUris: List<String> ->
                                     navController.currentBackStackEntry?.savedStateHandle?.set("imageUris", imageUris)
+                                    navController.currentBackStackEntry?.savedStateHandle?.remove<Long>("roomId")
                                     navController.navigate("viewer")
                                 },
                                 onNavigateToRoom = { roomId ->
                                     navController.currentBackStackEntry?.savedStateHandle?.set("roomId", roomId)
+                                    navController.currentBackStackEntry?.savedStateHandle?.remove<List<String>>("imageUris")
                                     navController.navigate("viewer")
                                 },
                                 onNavigateToApiKeyManagement = {
@@ -52,14 +54,9 @@ class MainActivity : ComponentActivity() {
                             val prev = navController.previousBackStackEntry
                             val imageUris = prev?.savedStateHandle?.get<List<String>>("imageUris") ?: emptyList()
                             val roomId = prev?.savedStateHandle?.get<Long>("roomId")
-                            // Clear savedStateHandle keys so they don't persist and accidentally
-                            // affect subsequent navigations (stale roomId/imageUris reuse).
-                            try {
-                                prev?.savedStateHandle?.remove<List<String>>("imageUris")
-                            } catch (_: Exception) { prev?.savedStateHandle?.set("imageUris", emptyList<String>()) }
-                            try {
-                                prev?.savedStateHandle?.remove<Long>("roomId")
-                            } catch (_: Exception) { prev?.savedStateHandle?.set("roomId", null) }
+                            // Removed auto-clear of keys to allow restoration after process death
+                            // Keys are now explicitly managed (cleared) in the navigation callbacks above
+                            // to ensure mutual exclusivity without data loss during lifecycle events.
 
                             ViewerScreen(
                                 imageUris = imageUris,
