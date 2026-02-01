@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.nativeCanvas
 import com.example.ocrmanga.data.models.TextBlockInfo
+import com.example.ocrmanga.data.models.TextAlignMode
 import java.io.IOException
 import android.provider.MediaStore
 import kotlin.math.max
@@ -521,8 +522,10 @@ fun drawTextOnCanvas(drawScope: DrawScope,
     lineSpacing: Float = 1.0f, // Khoảng cách dòng, multiplier (1.0 = bình thường)
     shadowColor: Color? = null, // Màu đổ bóng chữ
     shadowAlpha: Float = 1.0f, // Alpha multiplier for shadow (0.0 - 1.0)
-    shadowRadius: Float = 0f // Blur radius in px for shadow; 0 = use default proportional radius
+    shadowRadius: Float = 0f, // Blur radius in px for shadow; 0 = use default proportional radius
+    textAlign: com.example.ocrmanga.data.models.TextAlignMode = com.example.ocrmanga.data.models.TextAlignMode.CENTER
 ) {
+    val whenAligned = textAlign
 
     // ...existing code...
     // Tạo paint cho viền text (nếu có yêu cầu viền)
@@ -595,6 +598,8 @@ fun drawTextOnCanvas(drawScope: DrawScope,
         shapeType = shapeType,
         lineSpacing = lineSpacing
     )
+    // Use textAlign to affect drawing positions (default CENTER behavior)
+    // textAlign will be applied below when drawing each line.
     paint.textSize = optimalFontSize
     borderPaint?.textSize = optimalFontSize
     // Ensure shadow paint scales when final font size is adjusted
@@ -642,14 +647,26 @@ fun drawTextOnCanvas(drawScope: DrawScope,
             // Start Y position: top of overlay + vertical margin - ascent to position baseline correctly
             val startY = y + verticalMargin - fontMetrics.ascent
 
-            var currentY = startY
+                    var currentY = startY
             for ((index, line) in lines.withIndex()) {
                 if (line.isNotBlank()) {
                     val centerX = x + width / 2
-                    // Draw shadow behind text and border so it shows outside rounded corners
-                    shadowPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
-                    borderPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
-                    canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
+                    when (whenAligned) {
+                        TextAlignMode.LEFT -> {
+                            // left-align inside box with small padding
+                            paint.textAlign = android.graphics.Paint.Align.LEFT
+                            val leftX = x + 4f
+                            shadowPaint?.let { canvas.nativeCanvas.drawText(line, leftX, currentY, it) }
+                            borderPaint?.let { canvas.nativeCanvas.drawText(line, leftX, currentY, it) }
+                            canvas.nativeCanvas.drawText(line, leftX, currentY, paint)
+                        }
+                        TextAlignMode.CENTER -> {
+                            paint.textAlign = android.graphics.Paint.Align.CENTER
+                            shadowPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
+                            borderPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
+                            canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
+                        }
+                    }
                 }
                 currentY += lineHeight
             }

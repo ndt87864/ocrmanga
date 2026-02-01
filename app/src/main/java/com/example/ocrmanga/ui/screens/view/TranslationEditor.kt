@@ -947,6 +947,29 @@ fun TranslationEditor(
                             }
                         }
 
+                        // Alignment selection (Left / Center / Center lower longer)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val alignOptions = listOf(
+                                com.example.ocrmanga.data.models.TextAlignMode.LEFT to "Trái",
+                                com.example.ocrmanga.data.models.TextAlignMode.CENTER to "Giữa"
+                            )
+                            alignOptions.forEach { (mode, label) ->
+                                OutlinedButton(
+                                    onClick = {
+                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                            val old = list[idx]
+                                            list[idx] = old.copy(block = old.block.copy(textAlign = mode))
+                                        })
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    border = BorderStroke(1.dp, if (block.textAlign == mode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
+                                ) {
+                                    Text(label)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+
                         // Existing translation parts
                         editedParts.forEachIndexed { i, part ->
                             OutlinedTextField(

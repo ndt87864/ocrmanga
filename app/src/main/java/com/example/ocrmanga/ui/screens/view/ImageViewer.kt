@@ -74,7 +74,8 @@ data class DragBlockState(
     val textShadowRadius: Float = 0f,
     val overlayInset: Float = 0f,
     val overlayInsetHorizontal: Float = 0f,
-    val overlayInsetVertical: Float = 0f
+    val overlayInsetVertical: Float = 0f,
+    val textAlign: com.example.ocrmanga.data.models.TextAlignMode = com.example.ocrmanga.data.models.TextAlignMode.CENTER
 )
 
 data class PrecomputedRegion(
@@ -237,7 +238,8 @@ fun ImageViewer(
                         textShadowRadius = block.shadowRadius ?: 0f,
                         overlayInset = block.overlayInset,
                         overlayInsetHorizontal = block.overlayInsetHorizontal,
-                        overlayInsetVertical = block.overlayInsetVertical
+                        overlayInsetVertical = block.overlayInsetVertical,
+                        textAlign = block.textAlign
                     )
                 } else null
 
@@ -258,6 +260,7 @@ fun ImageViewer(
                             overlayAlpha = it.overlayAlpha,
                             textBoldness = it.textBoldness,
                             overlaySaturation = it.overlaySaturation,
+                            textAlign = it.textAlign,
                             textSaturation = it.textSaturation,
                             lineSpacing = it.lineSpacing,
                             textBorderColor = it.customBorderColor?.let { c -> Color(c) },
@@ -461,7 +464,8 @@ fun ImageViewer(
                                             lineSpacing = region.lineSpacing,
                                             shadowColor = region.textShadowColor,
                                             shadowAlpha = region.textShadowAlpha,
-                                            shadowRadius = region.textShadowRadius
+                                            shadowRadius = region.textShadowRadius,
+                                            textAlign = block.textAlign
                                         )
                                     }
                                 }

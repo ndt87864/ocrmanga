@@ -5,6 +5,8 @@ import android.graphics.Rect
 
 // Thêm bubbleId để phân biệt các block thuộc các khung thoại khác nhau
 
+enum class TextAlignMode { LEFT, CENTER }
+
 data class TextBlockInfo(
     val fontFamily: String = "mto_comic_2", // Font chữ mặc định cho dịch
     val text: String,
@@ -17,6 +19,7 @@ data class TextBlockInfo(
         else if (fontFamily == "mighty_zero") 0.92f
         else 1.0f, // Khoảng cách dòng (multiplier), comic_1 = 1.09, mặc định = 1.0
     val isVertical: Boolean = false,
+    val textAlign: TextAlignMode = TextAlignMode.CENTER,
     val rotation: Float? = null,
     val polygon: Path? = null,
     val wordCountsPerLine: List<Int>? = null, // New field to store word counts per line

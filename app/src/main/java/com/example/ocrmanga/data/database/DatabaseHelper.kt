@@ -252,7 +252,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 20
+    private const val DATABASE_VERSION = 21
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -332,6 +332,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     const val COLUMN_BLOCK_FONT_FAMILY = "font_family"
     const val COLUMN_BLOCK_FONT_SIZE = "font_size"
     const val COLUMN_BLOCK_LINE_SPACING = "line_spacing"
+    const val COLUMN_BLOCK_TEXT_ALIGN = "text_align"
         // change_images table to track whether an image has been interacted with
         const val TABLE_CHANGE_IMAGES = "change_images"
         const val COLUMN_CHANGE_IMAGE_ID = "change_image_id"
@@ -432,6 +433,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_BLOCK_FONT_FAMILY TEXT DEFAULT '',
                 $COLUMN_BLOCK_FONT_SIZE REAL DEFAULT 12.0,
                 line_spacing REAL DEFAULT 1.0,
+                $COLUMN_BLOCK_TEXT_ALIGN TEXT DEFAULT 'CENTER',
                 FOREIGN KEY ($COLUMN_BLOCK_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
             """
@@ -701,6 +703,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.w(TAG, "Không thể thêm cột line_spacing (có thể đã tồn tại)", e)
             }
         }
+        // Add text_align column in version 21
+        if (oldVersion < 21) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_TEXT_ALIGN TEXT DEFAULT 'CENTER'")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm cột text_align (có thể đã tồn tại)", e)
+            }
+        }
         // Add pending_delete column to translations in version 14
         if (oldVersion < 14) {
             try {
@@ -822,24 +832,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
-    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        Log.w(TAG, "Downgrading database from version $oldVersion to $newVersion. Dropping all tables.")
-        try {
-            db.execSQL("DROP TABLE IF EXISTS translations")
-            db.execSQL("DROP TABLE IF EXISTS translations_new")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_API_KEYS")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_IMAGE_BLOCKS")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_CHANGE_IMAGES")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_ROOM_SETTINGS")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_IMAGES")
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_ROOMS")
-            onCreate(db)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during database downgrade", e)
-            throw e
-        }
-    }
-
     // --- Helper methods for image blocks CRUD ---
     fun insertImageBlock(imageId: Long,
                          x: Int, y: Int, width: Int, height: Int,
@@ -867,7 +859,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                          rotation: Float = 0f,
                          fontFamily: String = "",
                          fontSize: Float = 12f,
-                         lineSpacing: Float = 1.0f
+                         lineSpacing: Float = 1.0f,
+                         textAlign: String = "CENTER"
     ): Long {
         val db = writableDatabase
         if (shadowColor != null || shadowAlpha != 1.0f || shadowRadius != 0f) {
@@ -908,6 +901,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put(COLUMN_BLOCK_FONT_FAMILY, fontFamily)
                             put(COLUMN_BLOCK_FONT_SIZE, fontSize)
                             put(COLUMN_BLOCK_LINE_SPACING, lineSpacing)
+                            put(COLUMN_BLOCK_TEXT_ALIGN, textAlign)
                         }
                         val id = db.insert(TABLE_IMAGE_BLOCKS, null, values)
         // Explicit log when shadow properties are present to make it easy to spot
@@ -960,6 +954,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val rotation = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_ROTATION), 0f)
         val fontFamily = cursor.getString(idx(COLUMN_BLOCK_FONT_FAMILY)) ?: "mto_astro_city"
         val fontSize = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_FONT_SIZE), 12f)
+        val textAlignStr = try { cursor.getString(idx(COLUMN_BLOCK_TEXT_ALIGN)) } catch (e: Exception) { "CENTER" }
+        val textAlign = try { com.example.ocrmanga.data.models.TextAlignMode.valueOf(textAlignStr) } catch (e: Exception) { com.example.ocrmanga.data.models.TextAlignMode.CENTER }
         return com.example.ocrmanga.data.models.ImageBlock(
             blockId = id,
             imageId = imageId,
@@ -989,7 +985,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             shadowRadius = shadowRadius,
             rotation = rotation,
             fontFamily = if (fontFamily.isNullOrBlank()) "mto_astro_city" else fontFamily,
-            fontSize = fontSize
+            fontSize = fontSize,
+            textAlign = textAlign
         )
     }
 
@@ -1335,7 +1332,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     fontFamily = textBlock.fontFamily,
                                     fontSize = textBlock.fontSize,
                                     // ✅ Truyền lineSpacing từ TextBlockInfo
-                                    lineSpacing = textBlock.lineSpacing
+                                    lineSpacing = textBlock.lineSpacing,
+                                    textAlign = textBlock.textAlign.name
                                 )
                             } catch (e: Exception) {
                                 Log.w(TAG, "Không thể lưu image_block cho image $imageId khi applyPendingChanges", e)
@@ -1502,7 +1500,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize,
-                                            lineSpacing = textBlock.lineSpacing
+                                            lineSpacing = textBlock.lineSpacing,
+                                            textAlign = textBlock.textAlign.name
                                         )
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -1762,7 +1761,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize,
-                                            lineSpacing = textBlock.lineSpacing
+                                            lineSpacing = textBlock.lineSpacing,
+                                            textAlign = textBlock.textAlign.name
                                         )
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -1863,7 +1863,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             rotation = textBlock.rotation ?: 0f,
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize,
-                                            lineSpacing = textBlock.lineSpacing
+                                            lineSpacing = textBlock.lineSpacing,
+                                            textAlign = textBlock.textAlign.name
                                         )
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -2335,7 +2336,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     fontFamily = textBlock.fontFamily,
                                     fontSize = textBlock.fontSize,
                                     // ✅ Truyền lineSpacing từ TextBlockInfo
-                                    lineSpacing = textBlock.lineSpacing
+                                    lineSpacing = textBlock.lineSpacing,
+                                    textAlign = textBlock.textAlign.name
                                 )
                                 // After inserting blocks, update image-level metadata: original_text + is_translated
                                 try {
@@ -2640,6 +2642,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 } catch (e: Exception) { null }
                 val shadowAlpha = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
                 val shadowRadius = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_RADIUS)).toFloat() } catch (e: Exception) { 0f }
+                val textAlignStr = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_ALIGN)) } catch (e: Exception) { "CENTER" }
+                val textAlignEnum = try { com.example.ocrmanga.data.models.TextAlignMode.valueOf(textAlignStr) } catch (e: Exception) { com.example.ocrmanga.data.models.TextAlignMode.CENTER }
                 
                 // Log để debug
                 if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {
@@ -2655,6 +2659,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     fontSize = fontSize,
                     lineSpacing = lineSpacing,
                     rotation = rotation,
+                    textAlign = textAlignEnum,
                     originalImageWidth = null,
                     originalImageHeight = null,
                     shapeType = overlayType,
@@ -2826,6 +2831,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 } catch (e: Exception) { null }
                 val shadowAlpha = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
                 val shadowRadius = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_RADIUS)).toFloat() } catch (e: Exception) { 0f }
+                val textAlignStr = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_ALIGN)) } catch (e: Exception) { "CENTER" }
+                val textAlignEnum = try { com.example.ocrmanga.data.models.TextAlignMode.valueOf(textAlignStr) } catch (e: Exception) { com.example.ocrmanga.data.models.TextAlignMode.CENTER }
                 
                 // Log để debug
                 if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {
@@ -2841,6 +2848,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     fontSize = fontSize,
                     lineSpacing = lineSpacing,
                     rotation = rotation,
+                    textAlign = textAlignEnum,
                     originalImageWidth = null,
                     originalImageHeight = null,
                     shapeType = overlayType,
@@ -3304,9 +3312,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
-    // init {
-    //     migrateRoomImageLinks()
-    // }
+    init {
+        migrateRoomImageLinks()
+    }
 
     // Cursor helper extensions for safe reads
     private fun android.database.Cursor.getIntOrNull(index: Int): Int? {

@@ -403,7 +403,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 old.shadowAlpha != new.shadowAlpha ||
                 old.shadowRadius != new.shadowRadius ||
                 old.fontFamily != new.fontFamily ||
-                old.shapeType != new.shapeType
+                old.shapeType != new.shapeType ||
+                old.textAlign != new.textAlign
             }
         
         // Only mark as dirty and changed if there are actual changes
@@ -2279,13 +2280,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 }
 
                                                 // Create text paint with boldness
+                                                fun mapAlign(a: com.example.ocrmanga.data.models.TextAlignMode): Paint.Align = when(a) {
+                                                    com.example.ocrmanga.data.models.TextAlignMode.LEFT -> Paint.Align.LEFT
+                                                    com.example.ocrmanga.data.models.TextAlignMode.CENTER -> Paint.Align.CENTER
+                                                }
                                                 val tp = TextPaint().apply {
                                                     isAntiAlias = true
                                                     color = textColor
                                                     textSize = finalFontSizeForBitmap
-                                                    textAlign = Paint.Align.CENTER
+                                                    textAlign = mapAlign(block.textAlign)
                                                     this.typeface = typeface ?: Typeface.DEFAULT
-                                                    
+
                                                     // Apply boldness
                                                     if (block.textBoldness > 1.0f) {
                                                         style = Paint.Style.FILL_AND_STROKE
@@ -2302,7 +2307,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         color = block.customBorderColor
                                                         alpha = (block.borderAlpha * 255).toInt().coerceIn(0, 255)
                                                         textSize = finalFontSizeForBitmap
-                                                        textAlign = Paint.Align.CENTER
+                                                        textAlign = mapAlign(block.textAlign)
                                                         style = Paint.Style.STROKE
                                                         // Scale borderThickness from view to bitmap coordinates
                                                         strokeWidth = block.borderThickness / bitmapToViewScale
@@ -2317,7 +2322,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         color = block.customShadowColor
                                                         alpha = (block.shadowAlpha * 255).toInt().coerceIn(0, 255)
                                                         textSize = finalFontSizeForBitmap
-                                                        textAlign = Paint.Align.CENTER
+                                                        textAlign = mapAlign(block.textAlign)
                                                         style = Paint.Style.FILL
                                                         this.typeface = typeface ?: Typeface.DEFAULT
                                                         // Scale shadow parameters from view to bitmap coordinates
@@ -2507,6 +2512,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         shadowAlpha = state.textShadowAlpha,
                         shadowRadius = state.textShadowRadius,
                         lineSpacing = state.lineSpacing,
+                        // Persist alignment
+                        textAlign = state.textAlign,
                         // Log the resulting TextBlockInfo shadow values for debugging
                         // (log after copy isn't trivial here; include in-line values)
                         fontSize = state.fontSize ?: b.fontSize,
