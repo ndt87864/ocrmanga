@@ -7,6 +7,7 @@ import android.content.Intent
 import android.util.Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -22,6 +23,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ocrmanga.data.models.TranslationMode
@@ -40,6 +42,7 @@ fun ViewerScreen(
     var showRoomNav by remember { mutableStateOf(false) }
     var showTranslationMenu by remember { mutableStateOf(false) }
     var showMainMenu by remember { mutableStateOf(false) }
+    var showRoomFontDialog by remember { mutableStateOf(false) }
     var showInsertAtIndexDialog by remember { mutableStateOf(false) }
     var insertAtIndex by remember { mutableStateOf("") }
     var showEditTitleDialog by remember { mutableStateOf(false) }
@@ -434,6 +437,19 @@ fun ViewerScreen(
                             },
                             onClick = {
                                 editTranslationMode = !editTranslationMode
+                                showMainMenu = false
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.FontDownload, null, modifier = Modifier.padding(end = 8.dp))
+                                    Text("Thay đổi font phòng")
+                                }
+                            },
+                            onClick = {
+                                showRoomFontDialog = true
                                 showMainMenu = false
                             }
                         )
@@ -834,7 +850,55 @@ fun ViewerScreen(
             imageUris = uiState.imageUris,
             viewModel = viewModel
         )
-        
+
+        // Dialog thay đổi font cho cả phòng
+        if (showRoomFontDialog) {
+            val allBlocks = uiState.translatedTexts.values.flatMap { it.second }
+            val currentMostUsed = allBlocks.groupingBy { it.fontFamily }.eachCount().maxByOrNull { it.value }?.key ?: FontRegistry.fontOptions.first().first
+            var selectedFontKey by remember { mutableStateOf(currentMostUsed) }
+
+            AlertDialog(
+                onDismissRequest = { showRoomFontDialog = false },
+                title = { Text("Thay đổi font phòng") },
+                text = {
+                    Column {
+                        Text("Chọn font sẽ áp dụng cho tất cả bản dịch trong phòng:")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                            items(FontRegistry.fontOptions.size) { idx ->
+                                val (key, ff) = FontRegistry.fontOptions[idx]
+                                Row(modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedFontKey = key }
+                                    .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.material3.RadioButton(
+                                        selected = (selectedFontKey == key),
+                                        onClick = { selectedFontKey = key }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(FontRegistry.displayNameFor(key), style = androidx.compose.ui.text.TextStyle(fontFamily = ff))
+                                        Text(key, style = androidx.compose.ui.text.TextStyle(fontSize = 12.sp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = {
+                        viewModel.updateGlobalFont(selectedFontKey)
+                        showRoomFontDialog = false
+                    }) { Text("Áp dụng") }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { showRoomFontDialog = false }) { Text("Hủy") }
+                }
+            )
+        }
+
         // Text Removal Loading Popup
         if (isRemovingText) {
             Box(
