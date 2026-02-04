@@ -19,3 +19,4 @@ app/.gitignore
 my-release-key.jks
 upload_certificate.pem
 app/release/*
+app/src/main/python/*
