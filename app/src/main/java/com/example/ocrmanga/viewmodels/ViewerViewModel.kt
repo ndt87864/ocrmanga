@@ -2164,9 +2164,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                             // Skip exporting overlays that have no text
                                             if (block.text.isBlank()) continue
                                             try {
-                                                val bounds = block.bounds
-                                                val boundsWidth = (bounds.right - bounds.left).toFloat()
-                                                val boundsHeight = (bounds.bottom - bounds.top).toFloat()
+                                                // Calculate scale relation between current bitmap and original image to match ImageViewer logic
+                                                val blockOriginalW = block.originalImageWidth?.toFloat() ?: src.width.toFloat()
+                                                val srcScaleX = if (blockOriginalW > 0) src.width.toFloat() / blockOriginalW else 1f
+                                                
+                                                // Calculate vertical offset (centering) if aspect ratio changed (FillWidth logic)
+                                                val blockOriginalH = block.originalImageHeight?.toFloat() ?: src.height.toFloat()
+                                                val scaledBlockH = blockOriginalH * srcScaleX
+                                                val offsetY = if (src.height.toFloat() > scaledBlockH) (src.height.toFloat() - scaledBlockH) / 2f else 0f
+
+                                                // Adjust bounds from original coordinates to current src bitmap coordinates
+                                                val adjBoundsLeft = block.bounds.left * srcScaleX
+                                                val adjBoundsTop = block.bounds.top * srcScaleX + offsetY
+                                                val adjBoundsWidth = (block.bounds.right - block.bounds.left) * srcScaleX
+                                                val adjBoundsHeight = (block.bounds.bottom - block.bounds.top) * srcScaleX
+                                                
+                                                val bounds = block.bounds // Keep for reference if needed, but use adj... values
+                                                val boundsWidth = adjBoundsWidth
+                                                val boundsHeight = adjBoundsHeight
                                                 
                                                 // Apply overlay saturation to overlay color
                                                 val rawOverlayColor = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
@@ -2191,20 +2206,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 val insetV = block.overlayInsetVertical
                                                 val overlayRectF = if (insetH > 0f || insetV > 0f) {
                                                     RectF(
-                                                        bounds.left.toFloat() + insetH,
-                                                        bounds.top.toFloat() + insetV,
-                                                        bounds.right.toFloat() - insetH,
-                                                        bounds.bottom.toFloat() - insetV
+                                                        adjBoundsLeft + insetH,
+                                                        adjBoundsTop + insetV,
+                                                        adjBoundsLeft + adjBoundsWidth - insetH,
+                                                        adjBoundsTop + adjBoundsHeight - insetV
                                                     ).takeIf { it.width() > 0 && it.height() > 0 } 
-                                                        ?: RectF(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat())
+                                                        ?: RectF(adjBoundsLeft, adjBoundsTop, adjBoundsLeft + adjBoundsWidth, adjBoundsTop + adjBoundsHeight)
                                                 } else {
-                                                    RectF(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat())
+                                                    RectF(adjBoundsLeft, adjBoundsTop, adjBoundsLeft + adjBoundsWidth, adjBoundsTop + adjBoundsHeight)
                                                 }
                                                 
                                                 // Apply overlayRotation for overlay (different from text rotation)
                                                 val overlayRotationAngle = block.overlayRotation ?: 0f
-                                                val cx = bounds.left + boundsWidth / 2f
-                                                val cy = bounds.top + boundsHeight / 2f
+                                                val cx = adjBoundsLeft + adjBoundsWidth / 2f
+                                                val cy = adjBoundsTop + adjBoundsHeight / 2f
                                                 
                                                 if (overlayRotationAngle != 0f) {
                                                     canvas.save()
@@ -2351,8 +2366,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 // Calculate text drawing area with padding (exactly like view mode)
                                                 // textPadding is already calculated as ratio (0.15 for oval, 0 for rect)
                                                 val textPaddingPx = boundsWidth * textPadding
-                                                val textLeft = bounds.left.toFloat() + textPaddingPx
-                                                val textTop = bounds.top.toFloat() + textPaddingPx
+                                                val textLeft = adjBoundsLeft + textPaddingPx
+                                                val textTop = adjBoundsTop + textPaddingPx
                                                 val textDrawWidth = boundsWidth - 2 * textPaddingPx
                                                 val textDrawHeight = boundsHeight - 2 * textPaddingPx
 
@@ -2386,10 +2401,35 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     for (line in lines) {
                                                         if (line.isNotBlank()) {
                                                             val centerX = textLeft + textDrawWidth / 2f
-                                                            // Draw shadow, then border, then text
-                                                            shadowPaint?.let { canvas.drawText(line, centerX, currentY, it) }
-                                                            borderPaint?.let { canvas.drawText(line, centerX, currentY, it) }
-                                                            canvas.drawText(line, centerX, currentY, tp)
+                                                            // Logic alignment ngang (Horizontal Alignment)
+                                                            // Fix lỗi lệch text sang phải: Nếu là LEFT thì vẽ từ mép trái, CENTER thì vẽ từ tâm
+                                                            when (block.textAlign) {
+                                                                com.example.ocrmanga.data.models.TextAlignMode.LEFT -> {
+                                                                    // Trong View (ImageTextUtils), có padding hardcode là 4f
+                                                                    // Cần scale 4f này về bitmap coordinate
+                                                                    val paddingLeft = 4f / bitmapToViewScale
+                                                                    val drawX = textLeft + paddingLeft
+                                                                    
+                                                                    // Ensure Paint is set to LEFT
+                                                                    tp.textAlign = Paint.Align.LEFT
+                                                                    shadowPaint?.textAlign = Paint.Align.LEFT
+                                                                    borderPaint?.textAlign = Paint.Align.LEFT
+                                                                    
+                                                                    shadowPaint?.let { canvas.drawText(line, drawX, currentY, it) }
+                                                                    borderPaint?.let { canvas.drawText(line, drawX, currentY, it) }
+                                                                    canvas.drawText(line, drawX, currentY, tp)
+                                                                }
+                                                                else -> { // CENTER or others
+                                                                    // Ensure Paint is set to CENTER
+                                                                    tp.textAlign = Paint.Align.CENTER
+                                                                    shadowPaint?.textAlign = Paint.Align.CENTER
+                                                                    borderPaint?.textAlign = Paint.Align.CENTER
+                                                                    
+                                                                    shadowPaint?.let { canvas.drawText(line, centerX, currentY, it) }
+                                                                    borderPaint?.let { canvas.drawText(line, centerX, currentY, it) }
+                                                                    canvas.drawText(line, centerX, currentY, tp)
+                                                                }
+                                                            }
                                                         }
                                                         currentY += lineHeight
                                                     }
