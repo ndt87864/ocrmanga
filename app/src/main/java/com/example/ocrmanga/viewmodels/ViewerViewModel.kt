@@ -2235,11 +2235,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 if (overlayRotationAngle != 0f) {
                                                     canvas.restore()
                                                 }
-                                                val displayMetrics = app.resources.displayMetrics
-                                                val screenWidthPx = displayMetrics.widthPixels.toFloat()
-                                                val bitmapToViewScale = screenWidthPx / src.width.toFloat()
+                                                // Use standardized reference screen for export to ensure consistency across devices
+                                                // Consistent with ImageViewer's baseWidthDp = 360f
+                                                val refSamepleDensity = 3.0f // High enough density for accurate text measurement
+                                                val refScreenWidthPx = 360f * refSamepleDensity // 1080px
+                                                val bitmapToViewScale = refScreenWidthPx / src.width.toFloat()
                                                 
-                                                // Scale bounds từ bitmap coordinate → view coordinate
+                                                // Scale bounds từ bitmap coordinate → view coordinate (simulated)
                                                 val scaledWidth = boundsWidth * bitmapToViewScale
                                                 val scaledHeight = boundsHeight * bitmapToViewScale
                                                 
@@ -2249,12 +2251,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 val textWidth = scaledWidth * (1 - 2 * textPadding)
                                                 val textHeight = scaledHeight * (1 - 2 * textPadding)
                                                 
-                                                // Tính screenScaleFactor để điều chỉnh theo màn hình device
-                                                val screenWidthDp = screenWidthPx / displayMetrics.density
-                                                val baseWidthDp = 360f
-                                                val screenScaleFactor = (screenWidthDp / baseWidthDp).coerceIn(0.5f, 2.0f)
+                                                // Tính screenScaleFactor
+                                                // Vì ta đang giả lập màn hình chuẩn 360dp, scale factor sẽ luôn là 1.0f
+                                                // Điều này giúp loại bỏ sai lệch do mật độ màn hình thiết bị user gây ra (lỗi font to/nhỏ bất thường)
+                                                val screenScaleFactor = 1.0f
                                                 
-                                                // fontSize = base * screenScale (giống view mode)
+                                                // fontSize = base * screenScale
                                                 val baseFontSize = block.fontSize
                                                 val scaledFontSize = baseFontSize * screenScaleFactor
 
