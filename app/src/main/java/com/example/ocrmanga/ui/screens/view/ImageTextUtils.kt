@@ -655,6 +655,8 @@ fun drawTextOnCanvas(drawScope: DrawScope,
                         TextAlignMode.LEFT -> {
                             // left-align inside box with small padding
                             paint.textAlign = android.graphics.Paint.Align.LEFT
+                            borderPaint?.textAlign = android.graphics.Paint.Align.LEFT
+                            shadowPaint?.textAlign = android.graphics.Paint.Align.LEFT
                             val leftX = x + 4f
                             shadowPaint?.let { canvas.nativeCanvas.drawText(line, leftX, currentY, it) }
                             borderPaint?.let { canvas.nativeCanvas.drawText(line, leftX, currentY, it) }
@@ -662,6 +664,8 @@ fun drawTextOnCanvas(drawScope: DrawScope,
                         }
                         TextAlignMode.CENTER -> {
                             paint.textAlign = android.graphics.Paint.Align.CENTER
+                            borderPaint?.textAlign = android.graphics.Paint.Align.CENTER
+                            shadowPaint?.textAlign = android.graphics.Paint.Align.CENTER
                             shadowPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
                             borderPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
                             canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
