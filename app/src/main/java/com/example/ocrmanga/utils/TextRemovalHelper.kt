@@ -3,9 +3,7 @@ package com.example.ocrmanga.utils
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import com.chaquo.python.PyObject
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
+import android.graphics.BitmapFactory
 import android.graphics.Bitmap
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.google.gson.Gson
@@ -23,9 +21,12 @@ object TextRemovalHelper {
     /**
      * Khởi tạo Python (gọi một lần khi app khởi động)
      */
+    private var inpainter: com.example.ocrmanga.ml.PythonTextRemover? = null
+
     fun initializePython(context: Context) {
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(context))
+        if (inpainter == null) {
+            inpainter = com.example.ocrmanga.ml.PythonTextRemover(context.applicationContext)
+            Log.d(TAG, "PythonTextRemover initialized")
         }
     }
     
@@ -68,30 +69,28 @@ object TextRemovalHelper {
             val outputPath = outputFile.absolutePath
             
             Log.d(TAG, "Starting text removal: image=$imagePath, blocks=${blocksData.size}, output=$outputPath")
-            
-            // Gọi Python script
-            val python = Python.getInstance()
-            val module = python.getModule("text_remover")
-            val result: PyObject = module.callAttr("remove_text", imagePath, blocksJson, outputPath)
-            val resultString = result.toString()
-            
-            Log.d(TAG, "Python result: $resultString")
-            
-            // Kiểm tra kết quả
-            if (resultString.startsWith("Error:")) {
-                Log.e(TAG, "Python error: $resultString")
+
+            // Use PythonTextRemover (subprocess) instead of Chaquopy to call text_remover
+            val remover = inpainter ?: run {
+                Log.e(TAG, "PythonTextRemover not initialized")
                 return@withContext null
             }
-            
-            // Kiểm tra file output có tồn tại không
-            if (!outputFile.exists()) {
-                Log.e(TAG, "Output file does not exist: $outputPath")
+
+            // Convert blocks to android.graphics.Rect list
+            val rects = blocks.map { b -> b.bounds }
+
+            val resultBitmap = remover.inpaintFromBlocks(BitmapFactory.decodeFile(imagePath), rects)
+
+            if (resultBitmap == null) {
+                Log.e(TAG, "Python inpainting returned null or failed")
                 return@withContext null
             }
-            
-            Log.d(TAG, "Text removal successful: $outputPath")
-            
-            // Trả về Uri của file đã xóa text
+
+            // Save result bitmap to output file (JPEG)
+            java.io.FileOutputStream(outputFile).use { out ->
+                resultBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            }
+
             return@withContext Uri.fromFile(outputFile)
             
         } catch (e: Exception) {
@@ -156,30 +155,24 @@ object TextRemovalHelper {
             java.io.FileOutputStream(maskFile).use { out ->
                 maskBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
             }
-            val maskPath = maskFile.absolutePath
 
-            // Tạo file output
-            val outputFile = File(context.cacheDir, "inpainted_mask_${System.currentTimeMillis()}.jpg")
-            val outputPath = outputFile.absolutePath
-
-            Log.d(TAG, "Starting mask removal: image=$imagePath, mask=$maskPath")
-
-            val python = Python.getInstance()
-            val module = python.getModule("text_remover")
-            
-            // Gọi hàm Python
-            val result = module.callAttr("remove_text_with_mask", imagePath, maskPath, outputPath)
-            val resultString = result.toString()
-
-            Log.d(TAG, "Python result: $resultString")
-
-            if (resultString.startsWith("Error:")) {
-                Log.e(TAG, "Python error: $resultString")
+            val remover = inpainter ?: run {
+                Log.e(TAG, "PythonTextRemover not initialized for mask inpaint")
                 return@withContext null
             }
 
-            if (!outputFile.exists()) {
+            // Convert image to Bitmap and call inpaintWithMask
+            val srcBmp = BitmapFactory.decodeFile(imagePath)
+            val resultBitmap = remover.inpaintWithMask(srcBmp, maskBitmap)
+
+            if (resultBitmap == null) {
+                Log.e(TAG, "Mask-based inpainting failed")
                 return@withContext null
+            }
+
+            val outputFile = File(context.cacheDir, "inpainted_mask_${System.currentTimeMillis()}.jpg")
+            java.io.FileOutputStream(outputFile).use { out ->
+                resultBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
             }
 
             return@withContext Uri.fromFile(outputFile)

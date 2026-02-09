@@ -33,102 +33,75 @@ except Exception:
     HAS_XPHOTO = False
 
 # Optimal number of workers for parallel processing
+# Optimal number of workers for parallel processing
 MAX_WORKERS = min(multiprocessing.cpu_count(), 8)
+
+# Import image_inpainter module
+try:
+    import image_inpainter
+    HAS_INPAINTER = True
+except Exception:
+    HAS_INPAINTER = False
+
+# Constants from LamaInpainter.kt
+ELEMENT_PADDING = 30
+CONTEXT_PADDING = 256
+COMPLEXITY_THRESHOLD = 15.0 # Adjusted for Python implementation logic
 
 def create_text_stroke_mask(img_array, x1, y1, x2, y2):
     """
     Tạo mask CHỈ cho nét chữ thực sự trong vùng bounding box.
-    Sử dụng edge detection + color analysis để tìm chính xác pixel text.
+    Sử dụng gradient analysis + color analysis để bắt trọn nét chữ anti-aliased.
     """
     if not HAS_CV2:
-        # Fallback: mask toàn bộ vùng
         mask = np.zeros((img_array.shape[0], img_array.shape[1]), dtype=np.uint8)
         mask[y1:y2, x1:x2] = 255
         return mask
     
     h, w = img_array.shape[:2]
-    
-    # Validate bounds
-    x1 = max(0, min(x1, w))
-    y1 = max(0, min(y1, h))
-    x2 = max(0, min(x2, w))
-    y2 = max(0, min(y2, h))
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(w, x2), min(h, y2)
     
     if x2 <= x1 or y2 <= y1:
         return np.zeros((h, w), dtype=np.uint8)
     
-    # Crop vùng cần xử lý
     region = img_array[y1:y2, x1:x2].copy()
     rh, rw = region.shape[:2]
-    
-    if rh < 2 or rw < 2:
-        return np.zeros((h, w), dtype=np.uint8)
-    
-    # Convert to grayscale
     gray = cv2.cvtColor(region, cv2.COLOR_RGB2GRAY)
     
-    # === Phương pháp 1: Detect text đen/tối ===
-    # Text thường tối hơn nền
-    mean_val = np.mean(gray)
+    # === Method 1: Improved adaptive thresholding ===
+    blur = cv2.medianBlur(gray, 3)
+    thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
     
-    if mean_val > 127:
-        # Nền sáng, text tối
-        threshold_val = min(mean_val - 40, 150)
-        _, dark_text = cv2.threshold(gray, threshold_val, 255, cv2.THRESH_BINARY_INV)
-    else:
-        # Nền tối, text có thể sáng
-        threshold_val = max(mean_val + 40, 100)
-        _, dark_text = cv2.threshold(gray, threshold_val, 255, cv2.THRESH_BINARY)
+    # === Method 2: Gradient analysis (Canny) ===
+    edges = cv2.Canny(blur, 40, 120)
+    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
     
-    # === Phương pháp 2: Detect text màu (saturation cao) ===
+    # === Method 3: Color analysis (Saturation) ===
     hsv = cv2.cvtColor(region, cv2.COLOR_RGB2HSV)
-    saturation = hsv[:, :, 1]
-    _, colored_text = cv2.threshold(saturation, 100, 255, cv2.THRESH_BINARY)
+    sat = hsv[:, :, 1]
+    _, sat_mask = cv2.threshold(sat, 80, 255, cv2.THRESH_BINARY)
     
-    # === Kết hợp ===
-    text_mask = cv2.bitwise_or(dark_text, colored_text)
+    # Combine
+    text_mask = cv2.bitwise_or(thresh, edges)
+    text_mask = cv2.bitwise_or(text_mask, sat_mask)
     
-    # === Làm sạch mask ===
-    # Loại bỏ noise nhỏ
-    kernel_open = np.ones((2, 2), np.uint8)
-    text_mask = cv2.morphologyEx(text_mask, cv2.MORPH_OPEN, kernel_open)
+    # Clean up gaps inside letters (Premium touch)
+    kernel_close = np.ones((3, 3), np.uint8)
+    text_mask = cv2.morphologyEx(text_mask, cv2.MORPH_CLOSE, kernel_close)
     
-    # Dilate nhẹ để bắt toàn bộ viền chữ (bao gồm cả stroke trắng rộng)
-    # Tăng cường dilation để đảm bảo xóa sạch bóng chữ
-    kernel_dilate = np.ones((5, 5), np.uint8)
+    # Dilation to cover halos/strokes
+    # Dynamic dilation based on region size
+    dilate_size = max(3, min(11, int(min(rh, rw) / 15)))
+    kernel_dilate = np.ones((dilate_size, dilate_size), np.uint8)
     text_mask = cv2.dilate(text_mask, kernel_dilate, iterations=1)
     
-    # Expand mask to include halo/stroke - stroke trắng trong manga thường khá rộng
-    try:
-        # Tăng cường expansion để bao phủ vùng viền trắng của chữ
-        expand_px = max(2, min(15, int(min(rh, rw) / 30)))
-        if expand_px > 1:
-            kernel_expand = np.ones((expand_px, expand_px), np.uint8)
-            text_mask = cv2.dilate(text_mask, kernel_expand, iterations=1)
-    except Exception:
-        pass
-    
-    # Tạo full mask
+    # Build final full mask
     full_mask = np.zeros((h, w), dtype=np.uint8)
-    # Ensure text_mask is ROI-sized (rh,rw)
-    try:
-        if text_mask.shape[:2] == (rh, rw):
-            full_mask[y1:y2, x1:x2] = text_mask
-        else:
-            # fallback: resize to ROI and assign
-            if HAS_CV2:
-                resized = cv2.resize(text_mask, (rw, rh), interpolation=cv2.INTER_NEAREST)
-                full_mask[y1:y2, x1:x2] = resized
-            else:
-                from PIL import Image as _PILImage
-                pil = _PILImage.fromarray(text_mask)
-                resized = pil.resize((rw, rh), resample=_PILImage.NEAREST)
-                full_mask[y1:y2, x1:x2] = np.array(resized)
-    except Exception:
-        # In extreme cases, fill the box
-        full_mask[y1:y2, x1:x2] = 255
+    full_mask[y1:y2, x1:x2] = text_mask
     
     return full_mask
+
 
 
 def create_simple_mask(img_array, x1, y1, x2, y2, padding=2):
@@ -1121,170 +1094,320 @@ def pil_inpaint_fallback(img_array, mask, iterations=10):
     return result.astype(np.uint8)
 
 
+
+class Rect:
+    """Helper class for clustering bounding boxes"""
+    def __init__(self, x, y, w, h):
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+
+    @property
+    def left(self): return self.x
+    @property
+    def top(self): return self.y 
+    @property
+    def right(self): return self.x + self.w
+    @property
+    def bottom(self): return self.y + self.h
+
+    def intersects(self, other, threshold=0):
+        # Check intersection with threshold (padding)
+        # expanded logic for "near" interaction
+        return not (self.right + threshold < other.left or
+                    self.left - threshold > other.right or
+                    self.bottom + threshold < other.top or
+                    self.top - threshold > other.bottom)
+
+    def union(self, other):
+        x = min(self.left, other.left)
+        y = min(self.top, other.top)
+        r = max(self.right, other.right)
+        b = max(self.bottom, other.bottom)
+        self.x = x
+        self.y = y
+        self.w = max(0, r - x)
+        self.h = max(0, b - y)
+        return self
+
+    def to_json(self):
+        return {"x": self.x, "y": self.y, "width": self.w, "height": self.h}
+
+
+def cluster_text_blocks(blocks, threshold=256):
+    """
+    Nhóm các blocks gần nhau thành cluster (Logic từ LamaInpainter.kt).
+    clusters = clusterRects(paddedBlocks, 256)
+    """
+    if not blocks:
+        return []
+
+    # Initialize clusters from blocks (with padding)
+    # block is dict {"x":, "y":, ...}
+    clusters = []
+    for b in blocks:
+        x = int(b.get('x', 0))
+        y = int(b.get('y', 0))
+        w = int(b.get('width', 0))
+        h = int(b.get('height', 0))
+        # Add slight padding for initial rects? LamaInpainter adds ELEMENT_PADDING
+        pad = ELEMENT_PADDING
+        rect = Rect(max(0, x - pad), max(0, y - pad), w + pad*2, h + pad*2)
+        # Store original block references can be tricky after merge.
+        # But we only need the merged BOUNDING BOX for context.
+        # We will re-scan original blocks to see which fall into this cluster.
+        clusters.append(rect)
+
+    # Merge process
+    merged = True
+    while merged:
+        merged = False
+        i = 0
+        while i < len(clusters):
+            j = i + 1
+            while j < len(clusters):
+                r1 = clusters[i]
+                r2 = clusters[j]
+
+                # Check intersection or proximity (threshold)
+                # intersects(other, threshold) checks if they overlap or are within threshold
+                if r1.intersects(r2, threshold):
+                    r1.union(r2)
+                    clusters.pop(j)
+                    merged = True
+                else:
+                    j += 1
+            i += 1
+            
+    return clusters
+
+
+
+def _create_roi_mask_helper(img_array, x1, y1, x2, y2):
+    """
+    Helper to get mask for a block without allocating full image.
+    Uses logic similar to create_text_stroke_mask but returns ROI only.
+    """
+    # Simply crop + threshold logic to avoid huge alloc
+    # For now, we reuse existing create_text_stroke_mask but crop the result immediately
+    # This is not memory optimal but code-reuse optimal.
+    # Future optimization: Refactor create_text_stroke_mask to return ROI.
+    full = create_text_stroke_mask(img_array, x1, y1, x2, y2)
+    return full[y1:y2, x1:x2]
+
+
+def _process_cluster_task(args):
+    """
+    Worker function to process a single cluster of blocks.
+    Executes 'Lama-like' logic: Context Analysis -> Strategy Selection -> Inpaint.
+    """
+    cluster_idx, cluster_rect_json, all_blocks, img_shape, img_bytes, has_cv2, has_postprocessor, is_manga_mode = args
+    
+    try:
+        # Reconstruct image from shared bytes
+        img_array = np.frombuffer(img_bytes, dtype=np.uint8).reshape(img_shape)
+        h, w = img_array.shape[:2]
+        
+        # Parse context rect
+        cx = cluster_rect_json['x']
+        cy = cluster_rect_json['y']
+        cw = cluster_rect_json['width']
+        ch = cluster_rect_json['height']
+        
+        # Expand context (CONTEXT_PADDING)
+        pad = CONTEXT_PADDING
+        ctx_x1 = max(0, cx - pad)
+        ctx_y1 = max(0, cy - pad)
+        ctx_x2 = min(w, cx + cw + pad)
+        ctx_y2 = min(h, cy + ch + pad)
+        
+        if ctx_x2 <= ctx_x1 or ctx_y2 <= ctx_y1:
+            return None
+            
+        # Crop Context Image
+        context_img = img_array[ctx_y1:ctx_y2, ctx_x1:ctx_x2].copy()
+        ch_ctx, cw_ctx = context_img.shape[:2]
+        
+        # Manga Mode: Preprocess for Manga -> Grayscale (Logic from LamaInpainter.kt)
+        if is_manga_mode and has_cv2:
+            # Convert to gray then back to RGB to kill and bleeding colors
+            gray = cv2.cvtColor(context_img, cv2.COLOR_RGB2GRAY)
+            context_img = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
+
+        # Generate Filtered Mask for this Context
+        context_mask = np.zeros((ch_ctx, cw_ctx), dtype=np.uint8)
+        found_blocks = False
+        
+        for b in all_blocks:
+            bx, by, bw, bh = int(b.get('x',0)), int(b.get('y',0)), int(b.get('width',0)), int(b.get('height',0))
+            bx2, by2 = bx+bw, by+bh
+            
+            # Intersection with Context
+            ix1, iy1 = max(ctx_x1, bx), max(ctx_y1, by)
+            ix2, iy2 = min(ctx_x2, bx2), min(ctx_y2, by2)
+            
+            if ix2 > ix1 and iy2 > iy1:
+                found_blocks = True
+                block_roi_mask = _create_roi_mask_helper(img_array, bx, by, bx2, by2)
+                
+                # ROI local bounds
+                b_y1, b_y2 = iy1 - by, iy2 - by
+                b_x1, b_x2 = ix1 - bx, ix2 - bx
+                
+                if b_y2 > b_y1 and b_x2 > b_x1:
+                    mask_part = block_roi_mask[b_y1:b_y2, b_x1:b_x2]
+                    # Place into context_mask
+                    c_y1, c_y2 = iy1 - ctx_y1, iy2 - ctx_y1
+                    c_x1, c_x2 = ix1 - ctx_x1, ix2 - ctx_x1
+                    context_mask[c_y1:c_y2, c_x1:c_x2] = cv2.bitwise_or(context_mask[c_y1:c_y2, c_x1:c_x2], mask_part)
+
+        if not found_blocks or np.sum(context_mask) == 0:
+            return None
+
+        # Analyze Background Complexity
+        is_simple, avg_color = False, (255, 255, 255)
+        if HAS_INPAINTER:
+            is_simple, avg_color = image_inpainter.analyze_background_complexity(
+                context_img, context_mask, edge_size=15, complexity_threshold=COMPLEXITY_THRESHOLD
+            )
+        
+        # Select Strategy
+        inpainted_patch = None
+        if is_simple and HAS_INPAINTER:
+            # Strategy: Simple Fill for flat backgrounds
+            inpainted_patch = image_inpainter.simple_inpaint(context_img, context_mask, avg_color)
+        else:
+            # Strategy: Advanced Inpaint
+            if has_cv2:
+                inpainted_patch = image_inpainter.roi_only_inpaint_dual(context_img, context_mask)
+            else:
+                inpainted_patch = _pil_inpaint_roi(context_img, context_mask)
+            
+            # Post-processing
+            if has_postprocessor and has_cv2:
+                try:
+                    # Level 'strong' for non-simple areas to capture texture
+                    inpainted_patch = image_postprocessor.post_process_inpainted_region(
+                         context_img, inpainted_patch, context_mask, level='strong'
+                    )
+                except Exception:
+                    pass
+
+        return (ctx_x1, ctx_y1, ctx_x2, ctx_y2, inpainted_patch, context_mask)
+
+    except Exception as e:
+        logging.error(f"Cluster processing failed: {e}")
+        return None
+
+
+
 def remove_text(image_path, blocks_json, output_path):
     """
-    Xóa text từ ảnh sử dụng inpainting với xử lý song song.
-    CHỈ tái tạo các vùng bị xóa text, GIỮ NGUYÊN các vùng khác.
+    Xóa text từ ảnh - Logic mới: Clustering + Context Aware Analysis (Lama-like).
     
-    Args:
-        image_path: Đường dẫn đến ảnh gốc
-        blocks_json: JSON string chứa danh sách blocks cần xóa
-                     Format: [{"x": int, "y": int, "width": int, "height": int}, ...]
-        output_path: Đường dẫn lưu ảnh đã xóa text
-    
-    Returns:
-        str: Đường dẫn đến ảnh đã xóa text hoặc error message
+    1. Gom nhóm các blocks gần nhau.
+    2. Phân tích ngữ cảnh rộng (context) của từng nhóm.
+    3. Tự động chọn Simple Fill hoặc Advanced Inpaint dựa trên độ phức tạp nền.
     """
     try:
-        # Đọc ảnh
+        # Load Image
         img = Image.open(image_path)
         if img is None:
             return f"Error: Cannot read image from {image_path}"
-        
-        # Convert to RGB if needed
         if img.mode != 'RGB':
             img = img.convert('RGB')
         
-        # Parse blocks JSON
-        blocks = json.loads(blocks_json)
-        if not blocks or len(blocks) == 0:
-            return "Error: No blocks provided"
-        
-        # Convert to numpy array
         img_array = np.array(img)
-        height, width = img_array.shape[:2]
-
-        # GIỮ NGUYÊN ảnh gốc, chỉ cập nhật các vùng ROI
-        result_array = img_array.copy()
-
-        def _process_block_roi_only(block_idx, block):
-            """
-            Xử lý một block text - CHỈ trả về vùng ROI đã được inpaint.
-            Không chạm đến bất kỳ pixel nào ngoài vùng ROI.
-            """
-            try:
-                x = int(block.get("x", 0))
-                y = int(block.get("y", 0))
-                bw = int(block.get("width", 0))
-                bh = int(block.get("height", 0))
-
-                # Clamp to image bounds
-                x1 = max(0, x)
-                y1 = max(0, y)
-                x2 = min(width, x + bw)
-                y2 = min(height, y + bh)
-
-                if x2 <= x1 or y2 <= y1:
-                    return None
-
-                # Tạo text stroke mask CHỈ cho vùng ROI
-                local_text_mask = create_text_stroke_mask(img_array, x1, y1, x2, y2)
-                try:
-                    local_text_mask = _ensure_mask_roi(local_text_mask, height, width, x1, y1, x2, y2)
-                except Exception:
-                    local_text_mask = np.zeros((y2 - y1, x2 - x1), dtype=np.uint8)
-
-                if np.sum(local_text_mask) == 0:
-                    return None
-
-                # Trích xuất vùng ROI từ ảnh gốc
-                roi_original = img_array[y1:y2, x1:x2].copy()
-                
-                # === INPAINTING CHỈ TRÊN VÙNG ROI ===
-                roi_inpainted = None
-                
-                if HAS_CV2:
-                    # Sử dụng ROI-only inpainting (nhanh và hiệu quả)
-                    roi_inpainted = roi_only_inpaint_dual(roi_original, local_text_mask)
-                    
-                    # === POST-PROCESSING CAO CẤP ===
-                    if HAS_POSTPROCESSOR:
-                        try:
-                            # Áp dụng bộ lọc hậu kỳ từ module image_postprocessor
-                            # Sử dụng level 'strong' để tối ưu độ nét và bám sát texture gốc
-                            # Tăng cường lọc chi tiết để ảnh sắc nét hơn (giống AI Upscaling)
-                            roi_inpainted = image_postprocessor.post_process_inpainted_region(
-                                roi_original, 
-                                roi_inpainted, 
-                                local_text_mask, 
-                                level='strong' 
-                            )
-                        except Exception as e:
-                            logging.error(f"Post-processing failed for block: {e}")
-                else:
-                    # Fallback: sử dụng PIL inpainting trên ROI
-                    roi_inpainted = _pil_inpaint_roi(roi_original, local_text_mask)
-                
-                # Kiểm tra kết quả
-                if roi_inpainted is None:
-                    return None
-                
-                if roi_inpainted.shape[:2] != (y2 - y1, x2 - x1):
-                    roi_inpainted = _extract_or_resize_to_roi(roi_inpainted, x1, y1, x2, y2)
-                
-                if roi_inpainted is None:
-                    return None
-
-                return (x1, y1, x2, y2, roi_inpainted, block_idx)
-                
-            except Exception as e:
-                logging.error(f"Error processing block {block_idx}: {e}")
-                return None
-
-        # === XỬ LÝ SONG SONG ===
-        results = []
-        num_blocks = len(blocks)
+        h, w = img_array.shape[:2]
         
-        if num_blocks > 1:
-            # Sử dụng ThreadPoolExecutor cho nhiều blocks
-            # (ThreadPool tốt hơn ProcessPool vì share memory với img_array)
-            max_workers = min(MAX_WORKERS, num_blocks)
+        # Parse Blocks
+        blocks = json.loads(blocks_json)
+        if not blocks:
+            return "Error: No blocks provided"
             
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Submit tất cả các tasks cùng lúc
-                future_to_block = {
-                    executor.submit(_process_block_roi_only, idx, block): idx 
-                    for idx, block in enumerate(blocks)
-                }
-                
-                # Thu thập kết quả khi hoàn thành
-                for future in concurrent.futures.as_completed(future_to_block):
-                    try:
-                        result = future.result()
-                        if result is not None:
-                            results.append(result)
-                    except Exception as e:
-                        logging.error(f"Block processing error: {e}")
-        else:
-            # Xử lý đơn lẻ nếu chỉ có 1 block
-            result = _process_block_roi_only(0, blocks[0])
-            if result is not None:
-                results.append(result)
+        # === PRE-ANALYSIS: Manga Mode Detection ===
+        is_manga_mode = False
+        if HAS_CV2:
+            # Check saturation of the image
+            hsv = cv2.cvtColor(img_array, cv2.COLOR_RGB2HSV)
+            avg_saturation = np.mean(hsv[:, :, 1])
+            if avg_saturation < 5.0: # Very low saturation -> likely B&W manga
+                is_manga_mode = True
+                logging.info("Manga Mode detected (avg_saturation={:.2f})".format(avg_saturation))
 
-        # === ÁP DỤNG KẾT QUẢ VÀO ẢNH GỐC ===
-        # Chỉ cập nhật các vùng ROI đã được xử lý
-        for (x1, y1, x2, y2, roi_processed, block_idx) in results:
-            try:
-                if roi_processed is not None and roi_processed.shape[:2] == (y2 - y1, x2 - x1):
-                    # CHỈ cập nhật vùng ROI này, không chạm các pixel khác
-                    result_array[y1:y2, x1:x2] = roi_processed
-            except Exception as e:
-                logging.error(f"Error applying result for block {block_idx}: {e}")
+        # === STEP 1: CLUSTERING ===
+        # Provide blocks to cluster engine
+        clusters_rects = cluster_text_blocks(blocks, threshold=CONTEXT_PADDING) # Merge if close
         
-        if result_array is None:
-            return "Error: Inpainting failed"
+        # Prepare for Parallel Processing
+        img_bytes = img_array.tobytes()
+        img_shape = img_array.shape
         
-        # Convert back to PIL Image
+        args_list = []
+        for i, c in enumerate(clusters_rects):
+            c_json = c.to_json()
+            args_list.append((
+                i, c_json, blocks, img_shape, img_bytes, HAS_CV2, HAS_POSTPROCESSOR, is_manga_mode
+            ))
+
+            
+        results = []
+        
+        # === STEP 2: PARALLEL EXECUTION ===
+        if len(args_list) > 0:
+            # Use ThreadPool logic
+            max_workers = min(MAX_WORKERS, len(args_list))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(_process_cluster_task, arg) for arg in args_list]
+                for f in concurrent.futures.as_completed(futures):
+                    try:
+                        res = f.result()
+                        if res: results.append(res)
+                    except Exception as e:
+                        logging.error(f"Task failed: {e}")
+        
+        # === STEP 3: BLEND BACK ===
+        # Logic: Update result_array with patches
+        result_array = img_array.copy()
+        
+        for (ctx_x1, ctx_y1, ctx_x2, ctx_y2, patch, mask) in results:
+            if patch is None: continue
+            
+            # Blend logic
+            # Only update pixels where mask > 0
+            # Ensure shapes match
+            rh = ctx_y2 - ctx_y1
+            rw = ctx_x2 - ctx_x1
+            if patch.shape[:2] != (rh, rw):
+                continue
+                
+            # Direct update or Soft Blend?
+            # Mask is available. Use mask.
+            mask_bool = mask > 0
+            
+            # Only define destination slice
+            dst_slice = result_array[ctx_y1:ctx_y2, ctx_x1:ctx_x2]
+            
+            # Apply patch to destination using mask
+            # This ensures we don't overwrite non-ROI parts of the context
+            dst_slice[mask_bool] = patch[mask_bool]
+            
+            # Optional: seamless blend at patch boundaries?
+            # Since patch matches context exactly, hard edges might appear at context box?
+            # No, because 'mask' is only the text blocks INSIDE the context.
+            # We ONLY touch the text blocks. The rest of 'patch' matches 'dst_slice' (original).
+            # So no seams at context boundary. Good.
+            
+        # Save
         result_img = Image.fromarray(result_array)
-        
-        # Save result with max quality
         result_img.save(output_path, quality=100)
         
         return output_path
-            
-    except json.JSONDecodeError as e:
-        return f"Error: Invalid JSON format - {str(e)}"
+        
     except Exception as e:
+        import traceback
+        logging.error(traceback.format_exc())
         return f"Error: {str(e)}"
 
 
@@ -1337,9 +1460,6 @@ def _pil_inpaint_roi(roi_rgb, roi_mask, iterations=8):
 def remove_text_with_mask(image_path, mask_path, output_path):
     """
     Xóa text từ ảnh sử dụng mask bitmap (đen trắng).
-    Mask: vùng trắng (255) = vùng cần xóa, vùng đen (0) = giữ nguyên.
-    CHỈ tái tạo các vùng bị mask, GIỮ NGUYÊN các vùng khác.
-    Sử dụng xử lý song song để tăng tốc độ.
     """
     try:
         # Load images
@@ -1357,110 +1477,87 @@ def remove_text_with_mask(image_path, mask_path, output_path):
         # Binary mask - vùng trắng = cần xóa
         mask_binary = (mask_array > 128).astype(np.uint8) * 255
         
-        # Đếm số pixel cần xóa
-        mask_pixels = np.sum(mask_binary > 0)
-        
-        if mask_pixels == 0:
+        if np.sum(mask_binary > 0) == 0:
             img.save(output_path, quality=100)
             return output_path
         
-        # GIỮ NGUYÊN ảnh gốc, chỉ cập nhật vùng mask
+        # Manga Mode detection
+        is_manga_mode = False
+        if HAS_CV2:
+            hsv = cv2.cvtColor(img_array, cv2.COLOR_RGB2HSV)
+            if np.mean(hsv[:, :, 1]) < 5.0:
+                is_manga_mode = True
+
         result_array = img_array.copy()
         
         if HAS_CV2:
-            # Tìm các connected components trong mask để xử lý song song
             num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_binary)
             
             def _process_mask_region(region_info):
-                """Xử lý một vùng mask đơn lẻ - CHỈ trên ROI"""
+                """Xử lý một vùng mask đơn lẻ"""
                 try:
                     i, x, y, bw, bh, area = region_info
-                    if area < 10:
-                        return None
+                    if area < 2: return None
                     
-                    # Thêm padding nhỏ
-                    pad = max(5, min(20, int(min(bw, bh) * 0.2)))
-                    x1 = max(0, x - pad)
-                    y1 = max(0, y - pad)
-                    x2 = min(w, x + bw + pad)
-                    y2 = min(h, y + bh + pad)
+                    # Context Expand (similar to CONTEXT_PADDING but smaller for manual mask)
+                    pad = ELEMENT_PADDING
+                    ctx_x1, ctx_y1 = max(0, x - pad), max(0, y - pad)
+                    ctx_x2, ctx_y2 = min(w, x + bw + pad), min(h, y + bh + pad)
                     
-                    # Trích xuất vùng ROI
-                    roi_img = img_array[y1:y2, x1:x2].copy()
-                    roi_mask = mask_binary[y1:y2, x1:x2].copy()
+                    # Trích xuất vùng Context
+                    context_img = img_array[ctx_y1:ctx_y2, ctx_x1:ctx_x2].copy()
+                    context_mask = mask_binary[ctx_y1:ctx_y2, ctx_x1:ctx_x2].copy()
                     
-                    # Dilate mask nhẹ
-                    kernel = np.ones((3, 3), np.uint8)
-                    roi_mask_dilated = cv2.dilate(roi_mask, kernel, iterations=1)
+                    if is_manga_mode:
+                        gray = cv2.cvtColor(context_img, cv2.COLOR_RGB2GRAY)
+                        context_img = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
                     
-                    # Inpainting CHỈ trên ROI - hàm này đã bao gồm texture transfer
-                    roi_inpainted = roi_only_inpaint_dual(roi_img, roi_mask_dilated, 
-                                                          radius_telea=10, radius_ns=5)
+                    # Analyze Complexity
+                    is_simple, avg_color = False, (255, 255, 255)
+                    if HAS_INPAINTER:
+                        is_simple, avg_color = image_inpainter.analyze_background_complexity(
+                            context_img, context_mask, edge_size=10, complexity_threshold=COMPLEXITY_THRESHOLD
+                        )
                     
-                    # === POST-PROCESSING CAO CẤP ===
-                    if HAS_POSTPROCESSOR:
-                        try:
-                            roi_inpainted = image_postprocessor.post_process_inpainted_region(
-                                roi_img,
-                                roi_inpainted,
-                                roi_mask_dilated,
-                                level='medium'
-                            )
-                        except Exception as e:
-                            logging.error(f"Post-processing failed for region: {e}")
+                    # Strategy
+                    if is_simple and HAS_INPAINTER:
+                        inpainted_patch = image_inpainter.simple_inpaint(context_img, context_mask, avg_color)
+                    else:
+                        inpainted_patch = image_inpainter.roi_only_inpaint_dual(context_img, context_mask)
+                        if HAS_POSTPROCESSOR:
+                            try:
+                                inpainted_patch = image_postprocessor.post_process_inpainted_region(
+                                    context_img, inpainted_patch, context_mask, level='medium'
+                                )
+                            except Exception: pass
                     
-                    return (x1, y1, x2, y2, roi_inpainted, i)
+                    return (ctx_x1, ctx_y1, ctx_x2, ctx_y2, inpainted_patch, context_mask)
                     
                 except Exception as e:
                     logging.error(f"Error processing mask region {i}: {e}")
                     return None
             
-            # Chuẩn bị danh sách các vùng cần xử lý
             regions = []
             for i in range(1, num_labels):
                 x, y, bw, bh, area = stats[i]
                 regions.append((i, x, y, bw, bh, area))
             
-            # Xử lý song song
             results = []
-            if len(regions) > 1:
-                max_workers = min(MAX_WORKERS, len(regions))
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    future_to_region = {
-                        executor.submit(_process_mask_region, region): region[0]
-                        for region in regions
-                    }
-                    for future in concurrent.futures.as_completed(future_to_region):
-                        try:
-                            result = future.result()
-                            if result is not None:
-                                results.append(result)
-                        except Exception as e:
-                            logging.error(f"Region processing error: {e}")
-            else:
-                for region in regions:
-                    result = _process_mask_region(region)
-                    if result is not None:
-                        results.append(result)
+            max_workers = min(MAX_WORKERS, len(regions))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(_process_mask_region, r) for r in regions]
+                for f in concurrent.futures.as_completed(futures):
+                    res = f.result()
+                    if res: results.append(res)
             
-            # Áp dụng kết quả - CHỈ cập nhật các vùng ROI
-            for (x1, y1, x2, y2, roi_processed, region_idx) in results:
-                try:
-                    if roi_processed is not None and roi_processed.shape[:2] == (y2 - y1, x2 - x1):
-                        # Chỉ cập nhật những pixel trong mask, giữ nguyên pixel khác
-                        roi_mask = mask_binary[y1:y2, x1:x2]
-                        mask_3ch = np.stack([roi_mask > 0] * 3, axis=-1)
-                        result_array[y1:y2, x1:x2] = np.where(
-                            mask_3ch,
-                            roi_processed,
-                            result_array[y1:y2, x1:x2]
-                        )
-                except Exception as e:
-                    logging.error(f"Error applying mask region {region_idx}: {e}")
+            for (x1, y1, x2, y2, patch, mask) in results:
+                if patch is not None:
+                    # Apply using mask to avoid touching context padding
+                    mask_bool = mask > 0
+                    result_array[y1:y2, x1:x2][mask_bool] = patch[mask_bool]
             
             final_img = Image.fromarray(result_array)
         else:
-            # Fallback PIL - xử lý từng vùng mask
             final_img = Image.fromarray(pil_inpaint_fallback(img_array, mask_binary, iterations=10))
             
         final_img.save(output_path, quality=100)

@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.jetbrainsKotlinAndroid)
     // Sử dụng KSP version tương thích với Kotlin 1.9.10
     id("com.google.devtools.ksp") version "1.9.10-1.0.13"
-    id("com.chaquo.python")
+    // Chaquopy plugin removed
 }
 
 android {
@@ -27,19 +27,7 @@ android {
         }
     }
     
-    // Chaquopy Python configuration
-    defaultConfig {
-        ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-        }
-    }
-    
-    flavorDimensions += "pyVersion"
-    productFlavors {
-        create("py310") {
-            dimension = "pyVersion"
-        }
-    }
+    // Removed Chaquopy / Python product flavors: app builds a single APK variant now
 
     buildTypes {
         release {
@@ -73,28 +61,7 @@ android {
     }
 }
 
-// Chaquopy Python configuration
-chaquopy {
-    defaultConfig {
-        version = "3.10"
-        pip {
-            install("Pillow")
-            install("numpy")
-            // OpenCV for advanced inpainting (text removal)
-            install("opencv-python")
-        }
-    }
-    productFlavors {
-        getByName("py310") {
-            version = "3.10"
-        }
-    }
-    sourceSets {
-        getByName("main") {
-            srcDir("src/main/python")
-        }
-    }
-}
+// Chaquopy removed: app no longer uses embedded Python via Chaquopy
 
 dependencies {
     implementation(libs.androidx.core.ktx)
