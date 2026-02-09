@@ -43,6 +43,7 @@ import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.HarmCategory
 import com.google.ai.client.generativeai.type.SafetySetting
 import com.google.ai.client.generativeai.type.BlockThreshold
+import com.google.ai.client.generativeai.type.generationConfig
 import com.google.gson.stream.JsonReader
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.io.StringReader
@@ -140,6 +141,15 @@ class TranslationRepository(private val application: Application) {
     // Mistral API keys
     private var mistralApiKeys: List<String> = emptyList()
     private var mistralKeyUsageQueue: MutableList<String> = mutableListOf()
+    private var currentMistralModelIndex = 0
+    private val mistralModels = listOf(
+        "mistral-medium-latest",
+        "mistral-large-3-25-12",      // Frontier - Tốt nhất (v25.12)
+        "mistral-small-3-2-25-06",    // Frontier - cân bằng tốc độ/chất lượng (v25.06)
+        "ministral-3-14b-25-12",      // Frontier - Mạnh (v25.12)
+        "ministral-3-8b-25-12",       // Frontier - Nhỏ nhưng mạnh (v25.12)
+        "mistral-nemo-12b-24-07"      // Open source - Fallback (v24.07)
+    )
     private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
     // Toast spam prevention for Mistral errors
     @Volatile private var mistralErrorToastShown = false
@@ -210,10 +220,14 @@ class TranslationRepository(private val application: Application) {
 
             // Build JSON body using Gson to avoid invalid JSON
             val gson = com.google.gson.Gson()
+            val systemMessage = mapOf("role" to "system", "content" to "Bạn là phiên dịch viên chuyên nghiệp cấp cao, chuyên bản địa hóa truyện tranh sang tiếng Việt. Bạn CHỈ trả về bản dịch, không giải thích, không ghi chú.")
             val message = mapOf("role" to "user", "content" to prompt)
             val bodyMap = mapOf(
-                "model" to "mistral-medium-latest",
-                "messages" to listOf(message)
+                "model" to getCurrentMistralModel(),
+                "messages" to listOf(systemMessage, message),
+                "temperature" to 0.4,
+                "top_p" to 0.85,
+                "max_tokens" to 10000
             )
             val requestBody = gson.toJson(bodyMap)
 
@@ -362,10 +376,14 @@ class TranslationRepository(private val application: Application) {
 
             // Build JSON body using Gson to avoid invalid JSON
             val gson = com.google.gson.Gson()
+            val systemMessage = mapOf("role" to "system", "content" to "Bạn là phiên dịch viên chuyên nghiệp cấp cao, chuyên bản địa hóa truyện tranh sang tiếng Việt. Output CHỈ gồm các dòng 'Block #N: <bản dịch>'. Không giải thích, không ghi chú, không markdown.")
             val message = mapOf("role" to "user", "content" to prompt)
             val bodyMap = mapOf(
-                "model" to "mistral-medium-latest",
-                "messages" to listOf(message)
+                "model" to getCurrentMistralModel(),
+                "messages" to listOf(systemMessage, message),
+                "temperature" to 0.4,
+                "top_p" to 0.85,
+                "max_tokens" to 10000
             )
             val requestBody = gson.toJson(bodyMap)
 
@@ -485,8 +503,20 @@ class TranslationRepository(private val application: Application) {
                             translation = translation.replace(Regex("""^(Dịch|Translation|Gốc|Original)(\s*\(.*?\))?\s*:\s*""", RegexOption.IGNORE_CASE), "")
                             
                             // Reject analysis/notes -> use empty string which will fallback later
-                            if (translation.contains("-> Block #") || translation.startsWith("(Lưu ý:") || translation.contains("Lưu ý: Tôi buộc phải")) {
+                            val isAnnotation = translation.contains("-> Block #") || 
+                                translation.startsWith("(Lưu ý:") || 
+                                translation.contains("Lưu ý: Tôi buộc phải") ||
+                                translation.matches(Regex("""^\(.*[Gg]ộp.*[Bb]lock.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Xx]em.*[Bb]lock.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Kk]hông dịch.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Bb]ỏ qua.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Tt]ham chiếu.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Mm]erged.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Ss]ee.*[Bb]lock.*\)$""")) ||
+                                (translation.startsWith("(") && translation.endsWith(")") && translation.length < 60)
+                            if (isAnnotation) {
                                  translation = ""
+                                 Log.w("TranslationRepository", "[MISTRAL-PARSE] Block #${blockIndex + 1} bị reject vì là chú thích: ${translation.take(50)}")
                             }
                             
                             if (blockIndex >= 0) {
@@ -588,6 +618,14 @@ class TranslationRepository(private val application: Application) {
 
     private fun getCurrentGeminiModel(): String {
         return geminiModels[currentGeminiModelIndex]
+    }
+
+    private fun getCurrentMistralModel(): String {
+        val model = mistralModels[currentMistralModelIndex]
+        // Rotate to next model for next call
+        currentMistralModelIndex = (currentMistralModelIndex + 1) % mistralModels.size
+        Log.i("TranslationRepository", "[MISTRAL] Sử dụng model: $model (index: ${(currentMistralModelIndex - 1 + mistralModels.size) % mistralModels.size})")
+        return model
     }
 
     private fun preloadRecognitionModels() {
@@ -1549,13 +1587,28 @@ class TranslationRepository(private val application: Application) {
                     val result = recognizer.process(scaledInputImage).await()
                     
                     if (result.text.isNotEmpty()) {
-                        // Áp dụng post-processing để sửa lỗi OCR
+                        // Áp dụng post-processing để sửa lỗi OCR (bao gồm lọc CJK cho Latin mode)
                         val processedText = postProcessOCRText(result.text, forceScript)
                         
+                        // Với Latin mode: kiểm tra thêm, nếu text vẫn chứa nhiều CJK -> bỏ qua
+                        val isLatinForAllScales = forceScript == "en" || forceScript == "es"
+                        val cleanedText = if (isLatinForAllScales) {
+                            val cjkRemain = Regex("[\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]")
+                                .findAll(processedText).count()
+                            val totalNonSpace = processedText.count { !it.isWhitespace() }
+                            if (totalNonSpace > 0 && cjkRemain.toFloat() / totalNonSpace > 0.3f) {
+                                "" // Quá nhiều CJK trong kết quả Latin -> bỏ
+                            } else {
+                                processedText
+                            }
+                        } else {
+                            processedText
+                        }
+                        
                         // Chỉ thêm nếu text có ý nghĩa và chưa có
-                        val normalizedText = processedText.trim().lowercase()
-                        if (processedText.isNotBlank() && !seenTexts.contains(normalizedText)) {
-                            allResults.add(Pair(scale, processedText))
+                        val normalizedText = cleanedText.trim().lowercase()
+                        if (cleanedText.isNotBlank() && !seenTexts.contains(normalizedText)) {
+                            allResults.add(Pair(scale, cleanedText))
                             seenTexts.add(normalizedText)
                         }
                     }
@@ -1655,12 +1708,15 @@ class TranslationRepository(private val application: Application) {
         // Group results by recognizer để dùng cho kiểm tra lỗi Chinese
         val groupedByRecognizer = results.groupBy { it.recognizer }
         // Tìm script mong muốn dựa trên forceScript hoặc đoán từ text
+        val isLatinForBest = forceScript == "en" || forceScript == "es"
         val scriptPattern = when (forceScript) {
             "zh" -> Regex("[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]") // Chinese
             "ja" -> Regex("[\u3040-\u309F\u30A0-\u30FF]") // Japanese
             "ko" -> Regex("[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]") // Korean
+            "en", "es" -> Regex("[A-Za-z]") // Latin characters
             else -> Regex("[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]")
         }
+        val cjkPenaltyPattern = Regex("[\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]")
         // Chọn bestResult: ưu tiên confidence, text dài, nhiều block, nhiều ký tự script mong muốn
         val bestResult = results.maxByOrNull { result ->
             val elements = result.textResult.textBlocks.flatMap { b -> b.lines }.flatMap { l -> l.elements }
@@ -1668,8 +1724,13 @@ class TranslationRepository(private val application: Application) {
             val length = result.textResult.text.length
             val blockCount = result.textResult.textBlocks.size
             val scriptCharCount = scriptPattern.findAll(result.textResult.text).count()
-            // Ưu tiên: confidence * 2 + length/100 + blockCount*0.5 + scriptCharCount*0.2
-            (confidence * 2.0) + (length / 100.0) + (blockCount * 0.5) + (scriptCharCount * 0.2)
+            // Với Latin mode: trừ điểm nếu kết quả chứa nhiều CJK
+            val cjkPenalty = if (isLatinForBest) {
+                val cjkCount = cjkPenaltyPattern.findAll(result.textResult.text).count()
+                cjkCount * 0.5 // Mỗi ký tự CJK bị trừ 0.5 điểm
+            } else 0.0
+            // Ưu tiên: confidence * 2 + length/100 + blockCount*0.5 + scriptCharCount*0.2 - cjkPenalty
+            (confidence * 2.0) + (length / 100.0) + (blockCount * 0.5) + (scriptCharCount * 0.2) - cjkPenalty
         }
         if (bestResult == null) {
             Log.e("TranslationRepository", "Không tìm thấy kết quả tốt nhất")
@@ -1699,7 +1760,21 @@ class TranslationRepository(private val application: Application) {
                 val alternativeScaleFactor = alternativeResult.scale
                 //log.i("TranslationRepository", "Kết quả thay thế: scaleFactor=$alternativeScaleFactor, avgFontSize=$alternativeAvgFontSize")
 
+                val cjkPattern = Regex("[\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]") 
+                val isLatinModeAlt = forceScript == "en" || forceScript == "es"
                 val textBlocks = alternativeTextResult.textBlocks.flatMap { block ->
+                    // Kiểm tra block cha có chứa CJK không - nếu có thì ưu tiên giữ tất cả lines
+                    val blockHasCJK = cjkPattern.containsMatchIn(block.text)
+                    
+                    // Nếu đang quét Latin mà block chủ yếu là CJK -> bỏ qua toàn bộ block
+                    if (isLatinModeAlt && blockHasCJK) {
+                        val totalChars = block.text.count { !it.isWhitespace() }
+                        val cjkChars = cjkPattern.findAll(block.text).count()
+                        if (totalChars > 0 && cjkChars.toFloat() / totalChars > 0.5f) {
+                            return@flatMap emptyList<TextBlockInfo>()
+                        }
+                    }
+                    
                     block.lines.mapNotNull { line ->
                         val bounds = line.boundingBox ?: Rect()
                         val scaledBounds = Rect(
@@ -1728,8 +1803,19 @@ class TranslationRepository(private val application: Application) {
                         // Áp dụng post-processing để sửa lỗi OCR (ví dụ: し -> L cho Latin script)
                         val processedText = postProcessOCRText(line.text, forceScript)
                         
-                        // Filter out noise blocks
-                        if (processedText.isBlank() || isNoiseBlock(processedText, scaledBounds, lineConfidence)) {
+                        // Context-aware noise filtering:
+                        // - Lines chứa CJK: luôn giữ (text hợp lệ trong manga)
+                        // - Lines trong block CJK nhưng không chứa CJK: chỉ lọc nếu rõ ràng là noise
+                        // - Lines không liên quan CJK: áp dụng bộ lọc noise đầy đủ
+                        val lineHasCJK = cjkPattern.containsMatchIn(processedText)
+                        val cjkSingleNoise = setOf("ー", "丨", "丶")
+                        val shouldFilter = when {
+                            processedText.isBlank() -> true
+                            lineHasCJK -> processedText.trim() in cjkSingleNoise && scaledBounds.width() * scaledBounds.height() < MIN_BLOCK_AREA
+                            blockHasCJK -> isNoiseBlock(processedText, scaledBounds, lineConfidence)
+                            else -> isNoiseBlock(processedText, scaledBounds, lineConfidence)
+                        }
+                        if (shouldFilter) {
                             null
                         } else {
                             val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
@@ -1785,7 +1871,22 @@ class TranslationRepository(private val application: Application) {
         }
 
         // Process text blocks with font size normalization and noise filtering
+        val cjkPatternMain = Regex("[\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]")
+        val isLatinMode = forceScript == "en" || forceScript == "es"
         val textBlocks = bestTextResult.textBlocks.flatMap { block ->
+            // Kiểm tra block cha có chứa CJK không - nếu có thì ưu tiên giữ tất cả lines
+            val blockHasCJK = cjkPatternMain.containsMatchIn(block.text)
+            
+            // Nếu đang quét Latin mà block chủ yếu là CJK -> bỏ qua toàn bộ block
+            if (isLatinMode && blockHasCJK) {
+                val totalChars = block.text.count { !it.isWhitespace() }
+                val cjkChars = cjkPatternMain.findAll(block.text).count()
+                // Nếu >50% ký tự là CJK -> skip block này khi đang ở Latin mode
+                if (totalChars > 0 && cjkChars.toFloat() / totalChars > 0.5f) {
+                    return@flatMap emptyList<TextBlockInfo>()
+                }
+            }
+            
             block.lines.mapNotNull { line ->
                 val bounds = line.boundingBox ?: Rect()
                 val scaledBounds = Rect(
@@ -1813,8 +1914,19 @@ class TranslationRepository(private val application: Application) {
                 // Áp dụng post-processing để sửa lỗi OCR (ví dụ: し -> L cho Latin script)
                 val processedText = postProcessOCRText(line.text, forceScript)
                 
-                // Filter out noise blocks (sweat drops, body lines, etc.)
-                if (processedText.isBlank() || isNoiseBlock(processedText, scaledBounds, lineConfidence)) {
+                // Context-aware noise filtering:
+                // - Lines chứa CJK: luôn giữ (text hợp lệ trong manga)
+                // - Lines trong block CJK nhưng không chứa CJK: chỉ lọc nếu rõ ràng là noise
+                // - Lines không liên quan CJK: áp dụng bộ lọc noise đầy đủ
+                val lineHasCJK = cjkPatternMain.containsMatchIn(processedText)
+                val cjkSingleNoise = setOf("ー", "丨", "丶")
+                val shouldFilter = when {
+                    processedText.isBlank() -> true
+                    lineHasCJK -> processedText.trim() in cjkSingleNoise && scaledBounds.width() * scaledBounds.height() < MIN_BLOCK_AREA
+                    blockHasCJK -> isNoiseBlock(processedText, scaledBounds, lineConfidence)
+                    else -> isNoiseBlock(processedText, scaledBounds, lineConfidence)
+                }
+                if (shouldFilter) {
                     null // Skip this block
                 } else {
                     val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
@@ -2500,16 +2612,24 @@ class TranslationRepository(private val application: Application) {
 
             try {
                 val safetySettings = listOf(
-                    SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.MEDIUM_AND_ABOVE),
-                    SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.MEDIUM_AND_ABOVE),
-                    SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.MEDIUM_AND_ABOVE),
-                    SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.MEDIUM_AND_ABOVE),
+                    SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.NONE),
+                    SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.NONE),
+                    SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.NONE),
+                    SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.NONE),
                 )
+
+                val config = generationConfig {
+                    temperature = 0.4f
+                    topP = 0.85f
+                    topK = 40
+                    maxOutputTokens = 10000
+                }
 
                 val generativeModel = GenerativeModel(
                     modelName = modelName,
                     apiKey = apiKey,
-                    safetySettings = safetySettings
+                    safetySettings = safetySettings,
+                    generationConfig = config
                 )
 
                 val prompt = TranslationPrompts.getMistralBasicPrompt(originalText)
@@ -2632,10 +2752,18 @@ class TranslationRepository(private val application: Application) {
                     SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.NONE)
                 )
                 
+                val config = generationConfig {
+                    temperature = 0.4f
+                    topP = 0.85f
+                    topK = 40
+                    maxOutputTokens = 10000
+                }
+
                 val generativeModel = GenerativeModel(
                     modelName = modelName,
                     apiKey = useKey,
-                    safetySettings = safetySettings
+                    safetySettings = safetySettings,
+                    generationConfig = config
                 )
                 
                 val prompt = TranslationPrompts.getGeminiMultiScalePrompt(
@@ -2727,8 +2855,20 @@ class TranslationRepository(private val application: Application) {
                             translation = translation.replace(Regex("""^(Dịch|Translation|Gốc|Original)(\s*\(.*?\))?\s*:\s*""", RegexOption.IGNORE_CASE), "")
                             
                             // Reject analysis/notes -> use empty string
-                            if (translation.contains("-> Block #") || translation.startsWith("(Lưu ý:") || translation.contains("Lưu ý: Tôi buộc phải")) {
+                            val isAnnotation = translation.contains("-> Block #") || 
+                                translation.startsWith("(Lưu ý:") || 
+                                translation.contains("Lưu ý: Tôi buộc phải") ||
+                                translation.matches(Regex("""^\(.*[Gg]ộp.*[Bb]lock.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Xx]em.*[Bb]lock.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Kk]hông dịch.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Bb]ỏ qua.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Tt]ham chiếu.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Mm]erged.*\)$""")) ||
+                                translation.matches(Regex("""^\(.*[Ss]ee.*[Bb]lock.*\)$""")) ||
+                                (translation.startsWith("(") && translation.endsWith(")") && translation.length < 60)
+                            if (isAnnotation) {
                                  translation = ""
+                                 Log.w("TranslationRepository", "[GEMINI-PARSE] Block #${blockIndex + 1} bị reject vì là chú thích: ${translation.take(50)}")
                             }
                             
                             if (blockIndex >= 0) {
@@ -2887,6 +3027,27 @@ class TranslationRepository(private val application: Application) {
         if (isLatinScript) {
             // Chuyển し (U+3057 - Hiragana Shi) và シ (U+30B7 - Katakana Shi) thành L
             result = result.replace('し', 'L').replace('シ', 'L')
+            
+            // Loại bỏ TẤT CẢ ký tự tượng hình (CJK) khỏi kết quả Latin
+            // Bao gồm: CJK Unified Ideographs, CJK Extension A/B, Hiragana, Katakana, Hangul, 
+            // CJK Compatibility Ideographs, CJK Symbols, Enclosed CJK, Fullwidth forms
+            result = result.replace(Regex("[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF" +
+                "\u3040-\u309F\u30A0-\u30FF" + // Hiragana, Katakana (trừ đã convert ở trên)
+                "\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F" + // Korean
+                "\u3000-\u303F" + // CJK Symbols and Punctuation
+                "\u31F0-\u31FF" + // Katakana Phonetic Extensions
+                "\uFF65-\uFF9F" + // Halfwidth Katakana
+                "\u2E80-\u2EFF" + // CJK Radicals Supplement
+                "\u3200-\u32FF" + // Enclosed CJK Letters
+                "\u3300-\u33FF" + // CJK Compatibility
+                "\uFE30-\uFE4F" + // CJK Compatibility Forms
+                "\uFF00-\uFF60" + // Fullwidth Latin -> giữ lại, chỉ bỏ CJK fullwidth
+                "]"), "")
+            
+            // Nếu sau khi lọc CJK, text trống hoặc chỉ còn khoảng trắng/dấu câu -> trả về rỗng
+            if (result.trim().isEmpty() || Regex("^[\\s\\-_\\.\\,\\:\\;\\!\\?]+$").matches(result.trim())) {
+                return ""
+            }
         }
         
         // Loại bỏ khoảng trắng thừa
@@ -2908,28 +3069,43 @@ class TranslationRepository(private val application: Application) {
         // Kiểm tra có chứa ký tự CJK không (bonus cho manga text)
         val hasCJK = Regex("[\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]").containsMatchIn(cleanText)
         
+        // CJK text trong manga hầu như luôn hợp lệ (nằm trong bong bóng thoại)
+        // Chỉ lọc CJK nếu là ký tự noise đã biết VÀ kích thước rất nhỏ
+        if (hasCJK) {
+            val cjkNoiseOnly = setOf("ー", "丨", "丶")
+            // Giữ tất cả CJK text trừ khi là single noise char với area cực nhỏ
+            if (cleanText in cjkNoiseOnly && area < MIN_BLOCK_AREA / 2 && bounds.width() < 15 && bounds.height() < 15) {
+                Log.d("TranslationRepository", "[NOISE-FILTER] CJK noise '$text' rejected: area=$area")
+                return true
+            }
+            // Tất cả CJK text khác: luôn giữ
+            return false
+        }
+        
+        // ---- Phần dưới chỉ áp dụng cho non-CJK text ----
+        
         // Count noise indicators (cần nhiều dấu hiệu cùng lúc mới reject)
         var noiseScore = 0
         
-        // 1. Block quá nhỏ về diện tích (ít nghiêm ngặt hơn cho CJK)
+        // 1. Block quá nhỏ về diện tích
         if (area < MIN_BLOCK_AREA / 2) {
-            noiseScore += if (hasCJK) 1 else 2  // Giảm penalty cho CJK
+            noiseScore += 2
         } else if (area < MIN_BLOCK_AREA) {
-            noiseScore += if (hasCJK) 0 else 1  // Không penalty cho CJK nhỏ
+            noiseScore += 1
         }
         
         // 2. Block ngắn với aspect ratio kỳ lạ (nét vẽ mồ hôi, viền)
         if (cleanText.length <= 2) {
             if (aspectRatio > MAX_SINGLE_CHAR_ASPECT_RATIO || aspectRatio < 1.0f / MAX_SINGLE_CHAR_ASPECT_RATIO) {
-                noiseScore += if (hasCJK) 1 else 2  // Giảm penalty cho CJK
+                noiseScore += 2
             }
         }
         
-        // 3. Confidence thấp (ít nghiêm ngặt hơn cho CJK)
-        if (confidence < 0.25f) {  // Tăng ngưỡng từ 0.3 lên 0.25
-            noiseScore += if (hasCJK) 2 else 3  // Giảm penalty cho CJK
+        // 3. Confidence thấp
+        if (confidence < 0.25f) {
+            noiseScore += 3
         } else if (confidence < MIN_OCR_CONFIDENCE) {
-            noiseScore += if (hasCJK) 0 else 1  // Không penalty cho CJK low confidence
+            noiseScore += 1
         }
         
         // 4. Text chỉ chứa các ký tự nhiễu
@@ -2941,23 +3117,17 @@ class TranslationRepository(private val application: Application) {
         // 5. Block chỉ có 1 ký tự phổ biến bị nhận nhầm + size nhỏ
         val commonFalsePositives = setOf(
             "I", "l", "|", "1", "-", "_", ".", ",", "'", "`",
-            "○", "◯", "O", "o", "0",
-            "ー", "一", "丨", "丶"
+            "○", "◯", "O", "o", "0"
         )
         if (cleanText in commonFalsePositives && (bounds.width() < 20 || bounds.height() < 20)) {
             noiseScore += 2
         }
         
-        // Bonus cho CJK: giảm noiseScore nếu có CJK
-        if (hasCJK && noiseScore > 0) {
-            noiseScore -= 1
-        }
-        
-        // Tăng ngưỡng reject từ 3 lên 4 để ít loại bỏ hơn
+        // Ngưỡng reject: cần noiseScore >= 4
         val isNoise = noiseScore >= 4
         
         if (isNoise) {
-            Log.d("TranslationRepository", "[NOISE-FILTER] Block '$text' rejected: noiseScore=$noiseScore (area=$area, confidence=$confidence, aspectRatio=$aspectRatio, hasCJK=$hasCJK)")
+            Log.d("TranslationRepository", "[NOISE-FILTER] Block '$text' rejected: noiseScore=$noiseScore (area=$area, confidence=$confidence, aspectRatio=$aspectRatio)")
         }
         
         return isNoise
