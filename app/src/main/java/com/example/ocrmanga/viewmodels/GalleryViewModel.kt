@@ -2,7 +2,7 @@ package com.example.ocrmanga.viewmodels
 
 import android.app.Application
 import android.net.Uri
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ocrmanga.data.database.DatabaseHelper

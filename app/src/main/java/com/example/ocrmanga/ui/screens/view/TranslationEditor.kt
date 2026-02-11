@@ -1,6 +1,7 @@
 package com.example.ocrmanga.ui.screens.view
 
 import androidx.compose.foundation.BorderStroke
+import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -131,7 +132,7 @@ fun TranslationEditor(
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
                         val newOverlayRot = ((old.overlayRotation ?: 0f) + rotationSpeed) % 360f
-                        android.util.Log.d("TranslationEditor", "[ROTATE OVERLAY CW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
+                        Log.d("TranslationEditor", "[ROTATE OVERLAY CW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
                         list[idx] = old.copy(overlayRotation = newOverlayRot)
                     })
                 }
@@ -148,7 +149,7 @@ fun TranslationEditor(
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
                         val newOverlayRot = ((old.overlayRotation ?: 0f) - rotationSpeed) % 360f
-                        android.util.Log.d("TranslationEditor", "[ROTATE OVERLAY CCW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
+                        Log.d("TranslationEditor", "[ROTATE OVERLAY CCW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
                         list[idx] = old.copy(overlayRotation = newOverlayRot)
                     })
                 }

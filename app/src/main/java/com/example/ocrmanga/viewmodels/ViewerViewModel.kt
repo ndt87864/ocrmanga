@@ -7,7 +7,7 @@ import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.provider.MediaStore
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import android.widget.Toast
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.ColorUtils

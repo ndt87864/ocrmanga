@@ -1,7 +1,7 @@
 package com.example.ocrmanga.ui.screens.view
 
 import android.os.Build
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*

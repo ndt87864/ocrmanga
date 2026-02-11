@@ -6,7 +6,7 @@ import kotlinx.coroutines.withContext
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest

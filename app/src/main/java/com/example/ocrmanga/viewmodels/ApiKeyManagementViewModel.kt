@@ -1,6 +1,6 @@
 package com.example.ocrmanga.viewmodels
 import android.content.Context
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.compose.runtime.mutableStateListOf

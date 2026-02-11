@@ -3,7 +3,7 @@ package com.example.ocrmanga.ml
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray

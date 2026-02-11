@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.*
+import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -556,7 +557,7 @@ private fun DefaultFontSelector(
                 "you_murdere" to FontFamily(Font(R.font.you_murdere))
             )
         } catch (e: Exception) {
-            android.util.Log.e("DefaultFontSelector", "Failed to load fonts", e)
+            Log.e("DefaultFontSelector", "Failed to load fonts", e)
             listOf("Default" to FontFamily.Default)
         }
     }

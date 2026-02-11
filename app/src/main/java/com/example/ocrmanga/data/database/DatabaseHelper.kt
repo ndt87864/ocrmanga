@@ -12,7 +12,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.MediaStore
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.BackgroundType
 import java.io.File

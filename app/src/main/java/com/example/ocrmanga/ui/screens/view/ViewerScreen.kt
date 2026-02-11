@@ -4,7 +4,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import android.content.Intent
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

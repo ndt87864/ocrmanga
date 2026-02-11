@@ -2,7 +2,7 @@ package com.example.ocrmanga.backup
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
 import com.google.api.client.http.FileContent

@@ -19,7 +19,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import android.content.Intent
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.database.DatabaseHelper
 import com.example.ocrmanga.viewmodels.ViewerViewModel

@@ -10,7 +10,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.net.Uri
 import android.provider.MediaStore
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.exifinterface.media.ExifInterface
 import com.example.ocrmanga.data.database.DatabaseHelper
 import com.example.ocrmanga.data.models.RecognitionResult

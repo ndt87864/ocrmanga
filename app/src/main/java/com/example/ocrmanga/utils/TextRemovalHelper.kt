@@ -2,7 +2,7 @@ package com.example.ocrmanga.utils
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import android.graphics.BitmapFactory
 import android.graphics.Bitmap
 import com.example.ocrmanga.data.models.TextBlockInfo

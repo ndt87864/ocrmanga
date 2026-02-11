@@ -2,11 +2,13 @@
 
 package com.example.ocrmanga.ui.screens.view
 
+import com.example.ocrmanga.utils.AppLogger as Log
+
 // import android.content.Context (removed duplicate)
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Log
+
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
@@ -1354,7 +1356,7 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
         try {
             val tHex = textColor?.let { String.format("#%08X", it) } ?: "null"
             val bgHex = if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor?.let { String.format("#%08X", it) } ?: "null" else "WHITE"
-            android.util.Log.i("ImageTextUtils", "[ANALYZE] bounds=${bounds.left},${bounds.top},${bounds.right},${bounds.bottom} background=$bgHex textColor=$tHex")
+            Log.i("ImageTextUtils", "[ANALYZE] bounds=${bounds.left},${bounds.top},${bounds.right},${bounds.bottom} background=$bgHex textColor=$tHex")
         } catch (_: Exception) { }
         return Triple(backgroundType, if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor else null, textColor)
         
