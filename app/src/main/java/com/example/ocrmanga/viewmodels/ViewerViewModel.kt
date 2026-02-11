@@ -278,7 +278,26 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         foundTranslation
                     } else null
                     
-                    val result = translationRepository.translateImage(uri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode)
+                    // If this image has a stored imageId in DB, prefer the canonical DB-stored URI
+                    val canonicalUri = try {
+                        val imgId = uriToImageId[uri]
+                        if (imgId != null) {
+                            val db = databaseHelper.readableDatabase
+                            val cur = db.rawQuery(
+                                "SELECT ${DatabaseHelper.COLUMN_IMAGE_URI} FROM ${DatabaseHelper.TABLE_IMAGES} WHERE ${DatabaseHelper.COLUMN_IMAGE_ID} = ?",
+                                arrayOf(imgId.toString())
+                            )
+                            val stored = if (cur.moveToFirst()) Uri.parse(cur.getString(0)) else null
+                            cur.close()
+                            stored ?: uri
+                        } else uri
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to query canonical URI for $uri", e)
+                        uri
+                    }
+
+                    Log.i(TAG, "Calling translateImage for uri=$uri (canonical=$canonicalUri, imageId=${uriToImageId[uri]}) mode=$mode")
+                    val result = translationRepository.translateImage(canonicalUri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode)
                     
                     Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
                     
