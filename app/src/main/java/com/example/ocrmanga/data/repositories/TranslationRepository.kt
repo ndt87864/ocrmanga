@@ -136,7 +136,7 @@ class TranslationRepository(private val application: Application) {
     private var geminiApiKeys: List<String> = emptyList()
     private var currentGeminiKeyIndex = 0
     private var currentGeminiModelIndex = 0
-    private val geminiModels = listOf("gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash", "gemini-3-flash-preview") // Add more models if needed
+    private val geminiModels = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-3-flash-preview") // Add more models if needed
 
     // Mistral API keys
     private var mistralApiKeys: List<String> = emptyList()
