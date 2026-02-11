@@ -225,7 +225,7 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 0.4,
+                "temperature" to 0.55,
                 "top_p" to 0.85,
                 "max_tokens" to 10000
             )
@@ -381,7 +381,7 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 0.4,
+                "temperature" to 0.55,
                 "top_p" to 0.85,
                 "max_tokens" to 10000
             )
