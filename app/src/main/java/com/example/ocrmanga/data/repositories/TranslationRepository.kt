@@ -2813,10 +2813,11 @@ class TranslationRepository(private val application: Application) {
                 val translatedBlocksMap = mutableMapOf<Int, String>()
                 val lines = content.split("\n")
                 
-//                Log.i("TranslationRepository", "[GEMINI-PARSE] Nội dung trả về từ AI:\n$content")
+                Log.i("TranslationRepository", "[GEMINI-PARSE] Nội dung trả về từ AI:\n$content")
 
-                // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
-                val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
+                // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", "Block #1 Text" etc.
+                // Separator là tùy chọn (?:...)?, thêm dấu gạch ngang - vào danh sách separator
+                val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)(?:\**[:.)-]\**)?\s*(.*)$""")
                 
                 var i = 0
                 while (i < lines.size) {
