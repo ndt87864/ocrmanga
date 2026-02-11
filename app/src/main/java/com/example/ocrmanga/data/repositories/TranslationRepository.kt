@@ -142,13 +142,9 @@ class TranslationRepository(private val application: Application) {
     private var mistralApiKeys: List<String> = emptyList()
     private var mistralKeyUsageQueue: MutableList<String> = mutableListOf()
     private var currentMistralModelIndex = 0
+    // Restrict to a single stable model to avoid inconsistent outputs
     private val mistralModels = listOf(
-        "mistral-medium-latest",
-        "mistral-large-3-25-12",      // Frontier - Tốt nhất (v25.12)
-        "mistral-small-3-2-25-06",    // Frontier - cân bằng tốc độ/chất lượng (v25.06)
-        "ministral-3-14b-25-12",      // Frontier - Mạnh (v25.12)
-        "ministral-3-8b-25-12",       // Frontier - Nhỏ nhưng mạnh (v25.12)
-        "mistral-nemo-12b-24-07"      // Open source - Fallback (v24.07)
+        "mistral-medium-latest"
     )
     private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
     // Toast spam prevention for Mistral errors
@@ -225,9 +221,9 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 0.4,
-                "top_p" to 0.85,
-                "max_tokens" to 10000
+                "temperature" to 1.0,
+                "top_p" to 0.98,
+                "max_tokens" to 4096
             )
             val requestBody = gson.toJson(bodyMap)
 
@@ -381,9 +377,9 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 0.4,
-                "top_p" to 0.85,
-                "max_tokens" to 10000
+                "temperature" to 1.0,
+                "top_p" to 0.98,
+                "max_tokens" to 4096
             )
             val requestBody = gson.toJson(bodyMap)
 
@@ -2650,10 +2646,10 @@ class TranslationRepository(private val application: Application) {
                 )
 
                 val config = generationConfig {
-                    temperature = 0.4f
-                    topP = 0.85f
-                    topK = 40
-                    maxOutputTokens = 10000
+                    temperature = 1.0f
+                    topP = 1.0f
+                    topK = 90
+                    maxOutputTokens = 4096
                 }
 
                 val generativeModel = GenerativeModel(
@@ -2784,10 +2780,10 @@ class TranslationRepository(private val application: Application) {
                 )
                 
                 val config = generationConfig {
-                    temperature = 0.4f
-                    topP = 0.85f
-                    topK = 40
-                    maxOutputTokens = 10000
+                    temperature = 1.0f
+                    topP = 1.0f
+                    topK = 90
+                    maxOutputTokens = 4096
                 }
 
                 val generativeModel = GenerativeModel(
