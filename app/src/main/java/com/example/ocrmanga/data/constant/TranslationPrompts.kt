@@ -82,10 +82,17 @@ object TranslationPrompts {
         
         ■ 1. SUY LUẬN & CHỈNH SỬA OCR (TIỀN ĐIỀU KIỆN):
           - BẮT BUỘC: Phân tích toàn bộ các blocks để nắm "mạch truyện".
-          - SỬA LỖI QUÉT: Các từ vô nghĩa, sai ký tự hoặc thiếu nét phải được hoàn thiện dựa trên ngữ cảnh:
-            + VD: Kanji bị nhận diện nhầm do nét tương đồng (như "午" thành "牛", "人" thành "入") -> phải dựa vào từ đi kèm để sửa lại cho đúng nghĩa.
-            + VD: Các cụm từ bị quét ngắt quãng hoặc dính ký tự lạ -> suy luận từ các block xung quanh để khôi phục cấu trúc câu hoàn chỉnh.
-          - Nếu một block bị tách làm 2 (VD: Block A là nửa đầu câu, Block B là nửa sau), hãy chủ động liên kết ý nghĩa để dịch thành một mạch văn mượt mà.
+          - PHÂN TÍCH CỤM DANH TỪ (RẤT QUAN TRỌNG):
+            + Cấu trúc "AのようなB" (B giống như A) -> B là danh từ chính. Ví dụ: "オタクのような生徒" = "Học sinh trông giống Otaku" (người đó là học sinh). Không dịch thành "Tôi giống Otaku".
+            + Cấu trúc bị động "Aに...れる" (Bị A làm gì đó) -> A là kẻ thực hiện hành động.
+          - SỬA LỖI QUÉT (OCR CORRECTION):
+            + "牛徒" (Ngưu đồ) -> "生徒" (Học sinh) (lỗi nét 'sanh' thành 'ngưu').
+            + "寝込みを...われ" -> "寝込みを襲われ" (Bị tập kích/tấn công lúc ngủ).
+            + "われ" đứng cuối câu bị động thường là "襲われ" (bị tấn công), "言われ" (bị nói), "思われ" (bị tưởng là).
+            + Kanji bị nhận diện nhầm: "午"->"牛", "人"->"入", "工"->"エ".
+            + Các cụm từ bị quét ngắt quãng hoặc dính ký tự lạ -> suy luận từ các block xung quanh để khôi phục cấu trúc câu hoàn chỉnh.
+          - KẾT NỐI TỪNG PHẦN (FRAGMENT): Nếu một block chứa các cụm từ ngắt quãng (do dấu chấm, dấu phẩy thừa của OCR), hãy ghép chúng lại thành câu hoàn chỉnh trước khi dịch.
+            + VD: "オタクのような" ... "牛徒" ... -> "オタクのような生徒" (Học sinh giống Otaku).
 
         ■ 2. VĂN PHONG & LOGIC (LOCALIZATION):
           - QUY LUẬT NHÂN QUẢ (BẮT BUỘC): Luôn sắp xếp lại câu/mệnh đề theo luồng logic: [Nguyên nhân/Tiền tố] -> [Hành động/Biến chuyển] -> [Kết quả/Cảm xúc]. Tuyệt đối không để kết quả đứng trước nguyên nhân nếu điều đó làm câu văn lủng củng.

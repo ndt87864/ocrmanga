@@ -143,12 +143,7 @@ class TranslationRepository(private val application: Application) {
     private var mistralKeyUsageQueue: MutableList<String> = mutableListOf()
     private var currentMistralModelIndex = 0
     private val mistralModels = listOf(
-        "mistral-medium-latest",
-        "mistral-large-3-25-12",      // Frontier - Tốt nhất (v25.12)
-        "mistral-small-3-2-25-06",    // Frontier - cân bằng tốc độ/chất lượng (v25.06)
-        "ministral-3-14b-25-12",      // Frontier - Mạnh (v25.12)
-        "ministral-3-8b-25-12",       // Frontier - Nhỏ nhưng mạnh (v25.12)
-        "mistral-nemo-12b-24-07"      // Open source - Fallback (v24.07)
+        "mistral-medium-latest"      // Open source - Fallback (v24.07)
     )
     private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
     // Toast spam prevention for Mistral errors
@@ -226,8 +221,7 @@ class TranslationRepository(private val application: Application) {
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
                 "temperature" to 1.0,
-                "top_p" to 1.0,
-                "top_k" to 82,
+                "top_p" to 0.98,
                 "max_tokens" to 4096
             )
             val requestBody = gson.toJson(bodyMap)
@@ -350,7 +344,7 @@ class TranslationRepository(private val application: Application) {
             
             TranslationPrompts.getPreviousContextText(previousTranslation)
         } else {
-            Log.i("TranslationRepository", "[MISTRAL-PREV] Không có bản dịch tham khảo")
+            Log.i("TranslationRepository", "[MISTRAL-PREV] Chưa có bản dịch trang trước (Hệ thống sẽ dịch độc lập)")
             ""
         }
         
@@ -383,8 +377,7 @@ class TranslationRepository(private val application: Application) {
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
                 "temperature" to 1.0,
-                "top_p" to 1.0,
-                "top_k" to 82,
+                "top_p" to 0.98,
                 "max_tokens" to 4096
             )
             val requestBody = gson.toJson(bodyMap)
@@ -2724,7 +2717,7 @@ class TranslationRepository(private val application: Application) {
             
             TranslationPrompts.getPreviousContextText(previousTranslation)
         } else {
-            Log.i("TranslationRepository", "[GEMINI-PREV] Không có bản dịch tham khảo")
+            Log.i("TranslationRepository", "[GEMINI-PREV] Chưa có bản dịch trang trước (Hệ thống sẽ dịch độc lập)")
             ""
         }
         
