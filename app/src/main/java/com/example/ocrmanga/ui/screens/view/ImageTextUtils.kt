@@ -1223,52 +1223,59 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
         val rgbDeviation = (rVariance + gVariance + bVariance) / 3
         
         // Phân tích màu text bằng cách lấy mẫu lưới bên trong bounds,
-        // chọn các pixel có độ sáng khác biệt so với nền (ứng viên text),
-        // rồi chọn màu phổ biến nhất trong các ứng viên đó.
+        // chọn các pixel có độ sáng khác biệt so với nền (ứng viên text).
         var textColor: Int? = null
         try {
             val candidates = mutableListOf<Int>()
+            val backgroundBrightness = brightness
+            
+            // Helper to check and add candidate
+            fun checkAndAdd(pixelColor: Int) {
+                val r = (pixelColor shr 16) and 0xFF
+                val g = (pixelColor shr 8) and 0xFF
+                val b = pixelColor and 0xFF
+                val lum = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+                
+                // Check contrast: Text must differ from background
+                val diff = kotlin.math.abs(lum - backgroundBrightness)
+                if (diff >= 30) { // Threshold 30 to avoid noise/artifacts
+                    candidates.add(pixelColor)
+                }
+            }
+
+            // 1. Grid Sampling
             val gridSize = 6 // 6x6 grid sampling
             val stepX = maxOf(1, width / gridSize)
             val stepY = maxOf(1, height / gridSize)
-
-            // background brightness (use previously computed brightness)
-            val backgroundBrightness = brightness
 
             for (dy in 0 until gridSize) {
                 for (dx in 0 until gridSize) {
                     val x = bounds.left + dx * stepX + stepX / 2
                     val y = bounds.top + dy * stepY + stepY / 2
                     if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
-                        try {
-                            val c = bitmap.getPixel(x, y)
-                            val r = (c shr 16) and 0xFF
-                            val g = (c shr 8) and 0xFF
-                            val b = c and 0xFF
-                            val lum = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
-
-                            // Nếu nền sáng, text thường tối; nếu nền tối, text thường sáng.
-                            val diff = kotlin.math.abs(lum - backgroundBrightness)
-                            if (diff >= 25) {
-                                // strong contrast candidate
-                                candidates.add(c)
-                            }
-                        } catch (_: Exception) {
-                        }
+                        try { checkAndAdd(bitmap.getPixel(x, y)) } catch (_: Exception) {}
                     }
                 }
             }
 
-            if (candidates.isEmpty()) {
-                // Fallback: sample central small region
-                val cx = bounds.centerX()
+            // 2. Dense Scan on Center Lines (Fallback if grid missed)
+            // If we found specific candidates in grid, use them. If not (text might be thin or sparse), 
+            // scan the center lines where text is likely to be.
+            if (candidates.size < 3) {
                 val cy = bounds.centerY()
-                for (oy in -2..2) for (ox in -2..2) {
-                    val x = cx + ox
-                    val y = cy + oy
-                    if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
-                        try { candidates.add(bitmap.getPixel(x, y)) } catch (_: Exception) {}
-                    }
+                // Scan horizontal center line
+                for (x in bounds.left until bounds.right step 2) {
+                     if (x in 0 until bitmap.width && cy in 0 until bitmap.height) {
+                        try { checkAndAdd(bitmap.getPixel(x, cy)) } catch (_: Exception) {}
+                     }
+                }
+                
+                // Scan vertical center line
+                val cx = bounds.centerX()
+                for (y in bounds.top until bounds.bottom step 2) {
+                     if (cx in 0 until bitmap.width && y in 0 until bitmap.height) {
+                        try { checkAndAdd(bitmap.getPixel(cx, y)) } catch (_: Exception) {}
+                     }
                 }
             }
 
@@ -1304,10 +1311,29 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
             }
 
             if (textColor == null) {
-                textColor = 0xFF000000.toInt()
+                // Smart Default: Contrast with background
+                textColor = if (backgroundBrightness > 128) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+            }
+            
+            // --- STRICT FIX: Prevent White-on-White and Black-on-Black ---
+            // Yêu cầu: Nền sáng -> không được chứa text trắng. Nền tối -> không được chứa text đen.
+            textColor?.let { color ->
+                val tr = (color shr 16) and 0xFF
+                val tg = (color shr 8) and 0xFF
+                val tb = color and 0xFF
+                val textBrightness = (tr + tg + tb) / 3
+                
+                // Nếu nền sáng (> 170) mà text cũng sáng (> 170) -> Force Black
+                if (backgroundBrightness > 170 && textBrightness > 170) {
+                    textColor = 0xFF000000.toInt()
+                }
+                // Nếu nền tối (< 85) mà text cũng tối (< 85) -> Force White
+                else if (backgroundBrightness < 85 && textBrightness < 85) {
+                    textColor = 0xFFFFFFFF.toInt()
+                }
             }
         } catch (e: Exception) {
-            textColor = 0xFF000000.toInt()
+            textColor = if (brightness > 128) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
         }
 
         val backgroundType = when {
