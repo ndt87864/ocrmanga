@@ -22,14 +22,22 @@ object TranslationPrompts {
         
         [TIỀN XỬ LÝ]
         1. Sửa lỗi OCR: từ dính, sai chính tả, ký tự rác → suy luận từ ngữ cảnh.
-        2. Sắp xếp lại nếu thứ tự từ bị đảo.
+        2. TÁI CẤU TRÚC LOGIC (Đặc biệt cho chữ tượng hình Nhật/Trung/Hàn): Nếu thứ tự từ bị đảo do quét OCR, hãy sắp xếp lại theo luồng logic Việt: 
+           - Đối tượng -> Hành động -> Kết quả.
+           - Thời gian/Trình tự: Việc xảy ra trước -> Việc xảy ra sau.
+           - Trạng thái -> Biến đổi -> Hệ quả.
         $ancientInstruction
         [QUY TẮC BẮT BUỘC]
+        ■ ĐẠI TỪ: Mặc định dùng xưng hô lịch sự/trung tính (tôi, cậu, mình, anh, em...). CHỈ dùng (tao, mày) khi nhân vật đang tức giận, cãi vã hoặc có biểu hiện thô lỗ rõ rệt.
+        ■ ĐỘC THOẠI & LỜI DẪN: 
+          - Độc thoại nội tâm (suy nghĩ): Dùng "mình" hoặc lược bỏ chủ ngữ.
+          - Lời dẫn truyện (narration): KHÔNG dùng "mình", dùng văn phong khách quan hoặc lược bỏ chủ ngữ.
         ■ CHỐNG LẶP: Không lặp đại từ liên tục. "I... I..." → lược bỏ 1, gộp câu.
-        ■ THOÁT Ý: Dịch theo nghĩa, KHÔNG dịch word-for-word. Ưu tiên văn nói tự nhiên.
-        ■ NGẮN GỌN: Câu ngắn → dịch ngắn. Không thêm thắt thừa.
-        ■ TIỂU TỪ: Thêm à, ừ, nhé, nhỉ, đâu, mà, chứ, sao, vậy, cơ... cho tự nhiên.
-        ■ CẤM: từ "và" nối mệnh đề → dùng dấu phẩy hoặc rồi/xong/liền.
+        ■ LOCALIZATION (BẢN ĐỊA HÓA): Đây là quy tắc quan trọng nhất. Dịch như một biên tập viên/biên kịch người Việt. Tuyệt đối KHÔNG dịch word-by-word (sát nghĩa từng từ).
+        ■ THOÁT Ý: Ưu tiên dùng thành ngữ, tiếng lóng, khẩu ngữ phổ biến tại Việt Nam phù hợp với ngữ cảnh.
+        ■ TIỂU TỪ: Bắt buộc thêm các tiểu từ (à, ừ, nhé, nhỉ, đâu, mà, chứ, sao, vậy, cơ, hả...) để câu văn nghe như người Việt nói chuyện đời thực.
+        ■ CHỐNG LẶP & GỘP CÂU: Lược bỏ chủ ngữ thừa, gộp các câu đơn ngắn thành câu ghép mạch lạc mang phong cách văn nói.
+        ■ CẤM: dùng từ "và" để nối các mệnh đề hành động (dùng dấu phẩy hoặc rồi/xong/liền).
         
         [OUTPUT] Chỉ trả về bản dịch. Không giải thích. Không dấu ngoặc kép.
     """.trimIndent()
@@ -72,40 +80,46 @@ object TranslationPrompts {
         
         $ancientInstruction
         
-        === QUY TẮC PHIÊN DỊCH (BẮT BUỘC) ===
+        ■ 1. SUY LUẬN & CHỈNH SỬA OCR (TIỀN ĐIỀU KIỆN):
+          - BẮT BUỘC: Phân tích toàn bộ các blocks để nắm "mạch truyện".
+          - SỬA LỖI QUÉT: Các từ vô nghĩa, sai ký tự hoặc thiếu nét phải được hoàn thiện dựa trên ngữ cảnh:
+            + VD: Kanji bị nhận diện nhầm do nét tương đồng (như "午" thành "牛", "人" thành "入") -> phải dựa vào từ đi kèm để sửa lại cho đúng nghĩa.
+            + VD: Các cụm từ bị quét ngắt quãng hoặc dính ký tự lạ -> suy luận từ các block xung quanh để khôi phục cấu trúc câu hoàn chỉnh.
+          - Nếu một block bị tách làm 2 (VD: Block A là nửa đầu câu, Block B là nửa sau), hãy chủ động liên kết ý nghĩa để dịch thành một mạch văn mượt mà.
+
+        ■ 2. VĂN PHONG & LOGIC (LOCALIZATION):
+          - QUY LUẬT NHÂN QUẢ (BẮT BUỘC): Luôn sắp xếp lại câu/mệnh đề theo luồng logic: [Nguyên nhân/Tiền tố] -> [Hành động/Biến chuyển] -> [Kết quả/Cảm xúc]. Tuyệt đối không để kết quả đứng trước nguyên nhân nếu điều đó làm câu văn lủng củng.
+          - TRÌNH TỰ THỜI GIAN: Sự kiện xảy ra trước phải được dịch trước. Tránh đảo lộn trình tự gây khó hiểu.
+          - TINH CHỈNH TỪ NGỮ: 
+            + Tránh dịch word-by-word. 
+            + Trong các cảnh tự sự mang tính bàng hoàng, dùng từ ngữ miêu tả trạng thái và cảm nhận để tăng độ mượt (VD: thay vì "Ngực tôi to ra" hãy dùng "Cơ thể tôi bắt đầu nhú lên những đường cong lạ lẫm...").
+            + Dùng từ ngữ tinh tế, thoát ý, giàu hình ảnh.
+
+        ■ 3. ĐẠI TỪ & XƯNG HÔ (VÔ CÙNG QUAN TRỌNG):
+          - ĐỘC THOẠI NỘI TÂM / TỰ SỰ / GIỚI THIỆU BẢN THÂN: Tuyệt đối CẤM dùng "tao". Dùng "Tôi", "Mình" hoặc lược bỏ chủ ngữ. Bất kể bản gốc xưng "俺" (Ore) hay gì, nếu là tự sự thì phải dùng xưng hô lịch sự/trung tính.
+          - ĐỐI THOẠI (DIALOGUE): Dùng "tao - mày" CHỈ KHI nhân vật đang thực sự điên tiết, chửi lộn hoặc muốn sỉ nhục người khác.
+          - TÌNH HUỐNG BƠ VƠ / YẾU THẾ: Khi nhân vật bị hại/bị tấn công, họ phải xưng "tôi" hoặc "em" để thể hiện sự bàng hoàng, tuyệt vọng.
+          - TRUNG TÍNH: Ưu tiên [Tôi - Cậu], [Anh - Em], [Mày - Tao] (hạn chế).
+          - NHẤT QUÁN: Đại từ phải nhất quán từ đầu đến cuối trang truyện.
         
-        ■ 1. TIỀN XỬ LÝ OCR:
-          - Sửa lỗi dính từ, sai chính tả, ký tự rác bằng suy luận ngữ cảnh.
-          - So sánh các scale để chọn text chính xác nhất cho mỗi block.
-          - Nếu text vô nghĩa hoàn toàn → suy luận từ ngữ cảnh các block xung quanh.
-        
-        ■ 2. ĐẠI TỪ & XƯNG HÔ:
-          - Xác định MỐI QUAN HỆ nhân vật rồi mới chọn đại từ.
-          - Tình cảm/vợ chồng: anh – em.
-          - Thô bạo/cưỡng ép: tao – mày, gã – con này.
-          - Bạn bè đồng lứa: tao – mày, nó – hắn.
-          - Độc thoại: lược bỏ chủ ngữ hoặc dùng "mình".
-          - NHẤT QUÁN xuyên suốt toàn bộ blocks trong cùng 1 ảnh.
-        
-        ■ 3. CẤU TRÚC CÂU:
+        ■ 4. CẤU TRÚC CÂU:
           - Lược bỏ chủ ngữ lặp: chỉ giữ ở mệnh đề đầu, các mệnh đề sau bỏ.
           - Cấm dùng "và" nối mệnh đề → thay bằng dấu phẩy, rồi, xong, liền.
           - Gộp câu đơn ngắn liền nhau thành câu ghép mạch lạc.
           - Đảo cấu trúc cho thuần Việt: "A if B" → "Nếu B thì A".
         
-        ■ 4. VĂN PHONG:
-          - Dịch THOÁT Ý, cấm dịch word-for-word.
-          - Dùng khẩu ngữ, văn nói đời thường — như người Việt thực sự nói.
-          - Bắt buộc thêm tiểu từ cuối câu: à, ừ, nhé, nhỉ, đâu, cơ, mà, hả, chứ, sao, vậy...
-          - Câu ngắn gốc → dịch ngắn. Không thêm thắt vô nghĩa.
-          - Thuật ngữ chuyên môn → chuyển sang từ đời thường tương đương.
+        ■ 4. VĂN PHONG (LOCALIZATION):
+          - TUYỆT ĐỐI CẤM dịch word-by-word. Bản dịch phải nghe như thể nó được viết bằng tiếng Việt ngay từ đầu.
+          - SỬ DỤNG TIẾNG LÓNG & KHẨU NGỮ: Dùng ngôn từ đời thường của người Việt (ví dụ: "vãi", "thôi xong", "đùa à", "chết tiệt"... khi phù hợp).
+          - THÊM TIỂU TỪ CUỐI CÂU: à, ừ, nhé, nhỉ, đâu, cơ, mà, hả, chứ, sao, vậy... là BẮT BUỘC.
+          - Câu ngắn gốc → dịch ngắn gọn, súc tích. Không thêm thắt từ ngữ "kiểu máy dịch".
+          - Thuật ngữ chuyên môn/địa phương nước ngoài → chuyển sang từ đời thường tương đương trong văn hoá Việt Nam.
         
         ■ 5. KIỂM TRA CHẤT LƯỢNG (tự check trước khi output):
-          ✓ Không lặp đại từ liên tục?
-          ✓ Văn phong tự nhiên, không "máy dịch"?
-          ✓ Đại từ nhất quán xuyên suốt?
-          ✓ Câu có mạch lạc, đọc lên nghe như hội thoại thật?
-          ✓ Không có từ thừa, câu lủng củng?
+          ✓ Văn phong có chất "Localization" (bản địa hóa) chưa, hay vẫn còn mùi "máy dịch"?
+          ✓ Có dùng từ "và" sai cách không?
+          ✓ Đại từ có tự nhiên và nhất quán không?
+          ✓ Câu văn có mạch lạc, đọc lên nghe như hội thoại đời thực không?
         
         === VÍ DỤ DỊCH CHUẨN ===
         ✗ SAI: "Tôi không thể chờ thêm được nữa. Tôi bắt đầu đây."
@@ -168,11 +182,11 @@ object TranslationPrompts {
             
             ⚠ CẶP XƯNG HÔ ĐÃ XÁC LẬP: $mainPronounPair
             
-            QUY TẮC ĐỐI XỨNG:
-            - Cặp "$mainPronounPair" có nghĩa: cả 2 bên đều dùng CHUNG cặp này.
-            - VD cặp "TÔI-CẬU": A nói "TÔI thăm CẬU" → B đáp "CẬU đưa TÔI đi đâu?" (đối xứng).
-            - CẤM lẫn đại từ khác (mình, bạn...) vào hội thoại đã xác lập cặp.
-            - NGOẠI LỆ: Độc thoại (suy nghĩ nội tâm) → dùng "mình" hoặc lược bỏ chủ ngữ.
+            QUY TẮC ĐỐI XỨNG & LINH HOẠT:
+            - Nếu đang dùng cặp "$mainPronounPair": Ưu tiên giữ nguyên để nhất quán.
+            - NGOẠI LỆ QUAN TRỌNG: Nếu cặp đang là "TAO-MÀY" nhưng nhân vật đã hết tức giận/tranh cãi và chuyển sang nói chuyện bình thường → BẮT BUỘC chuyển về xưng hô trung tính (tôi-cậu, mình-cậu, anh-em...).
+            - Độc thoại nội tâm: Dùng "mình" hoặc lược bỏ chủ ngữ.
+            - Lời dẫn truyện: KHÔNG dùng "mình".
             
             """
         } else ""
@@ -180,7 +194,8 @@ object TranslationPrompts {
         return """
         
         === NGỮ CẢNH TỪ ẢNH TRƯỚC ===
-        Cặp xưng hô: ${mainPronounPair ?: "chưa xác định"} → GIỮ NGUYÊN.
+        Cặp xưng hô: ${mainPronounPair ?: "chưa xác định"}.
+        (Lưu ý: Nếu là TAO-MÀY, chỉ giữ tiếp nếu vẫn đang cãi vã gắt gỏng).
         $pronounInstruction
         Nội dung ảnh trước (để nắm mạch truyện):
         $prevBlocks

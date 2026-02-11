@@ -225,9 +225,10 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 0.55,
-                "top_p" to 0.85,
-                "max_tokens" to 10000
+                "temperature" to 1.0,
+                "top_p" to 1.0,
+                "top_k" to 82,
+                "max_tokens" to 4096
             )
             val requestBody = gson.toJson(bodyMap)
 
@@ -381,9 +382,10 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 0.55,
-                "top_p" to 0.85,
-                "max_tokens" to 10000
+                "temperature" to 1.0,
+                "top_p" to 1.0,
+                "top_k" to 82,
+                "max_tokens" to 4096
             )
             val requestBody = gson.toJson(bodyMap)
 
@@ -2619,10 +2621,10 @@ class TranslationRepository(private val application: Application) {
                 )
 
                 val config = generationConfig {
-                    temperature = 0.4f
-                    topP = 0.85f
-                    topK = 40
-                    maxOutputTokens = 10000
+                    temperature = 1.0f
+                    topP = 1.0f
+                    topK = 90
+                    maxOutputTokens = 4096
                 }
 
                 val generativeModel = GenerativeModel(
@@ -2753,10 +2755,10 @@ class TranslationRepository(private val application: Application) {
                 )
                 
                 val config = generationConfig {
-                    temperature = 0.4f
-                    topP = 0.85f
-                    topK = 40
-                    maxOutputTokens = 10000
+                    temperature = 1.0f
+                    topP = 1.0f
+                    topK = 90
+                    maxOutputTokens = 4096
                 }
 
                 val generativeModel = GenerativeModel(
