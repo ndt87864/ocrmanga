@@ -147,7 +147,7 @@ fun ViewerScreen(
                         // Ensure overlay int includes opaque alpha so Color(...) isn't transparent
                         val rawOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
                         val overlayColorInt = rawOverlay or 0xFF000000.toInt()
-                        val textColorInt = block.customTextColor ?: computeDefaultTextColor(overlayColorInt, block.averageBackgroundColor)
+                        val textColorInt = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(overlayColorInt, block.averageBackgroundColor)
 
                         // ✅ Ưu tiên applyMerge từ block load từ DB, giữ nguyên oldBlock nếu có
                         // Nếu load từ DB thì block.applyMerge đã có giá trị đúng từ database

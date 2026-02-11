@@ -310,7 +310,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     
                     val fixedBlocks = blocks.map { block ->
                         val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
-                        val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
+                        val textColor = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
                         block.copy(
                             customOverlayColor = baseOverlay,
                             customTextColor = textColor,
@@ -318,6 +318,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             applyMerge = true
                         )
                     }
+
+                    try {
+                        fixedBlocks.forEachIndexed { i, fb ->
+                            val origHex = fb.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
+                            val custHex = fb.customTextColor?.let { String.format("#%08X", it) } ?: "null"
+                            Log.i(TAG, "[RETRANSLATE] Block #$i: origColor=$origHex customColor=$custHex text='${fb.text.take(40)}'")
+                        }
+                    } catch (_: Exception) { }
                     
                     Log.i(TAG, "[RETRANSLATE] About to update UI state with ${fixedBlocks.size} blocks")
                     
@@ -1067,7 +1075,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val fixedBlocks = blocks.map { block ->
                     val withRotation = if (block.rotation == null) block.copy(rotation = 0f) else block
                     val baseOverlay = withRotation.customOverlayColor ?: 0xFFFFFFFF.toInt()
-                    val textColor = withRotation.customTextColor ?: computeDefaultTextColor(baseOverlay, withRotation.averageBackgroundColor)
+                    val textColor = withRotation.customTextColor ?: withRotation.originalTextColor ?: computeDefaultTextColor(baseOverlay, withRotation.averageBackgroundColor)
                     withRotation.copy(
                         customOverlayColor = baseOverlay, 
                         customTextColor = textColor,
@@ -1811,7 +1819,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 val fixedBlocks = (translatedBlocks as List<TextBlockInfo>).map { block ->
                                         // Prefer an explicit custom overlay color; otherwise use detected average background color; fallback to white
                                         val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
-                                        val textColor = block.customTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
+                                        val textColor = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
                                         block.copy(
                                             customOverlayColor = baseOverlay,
                                             customTextColor = textColor,
@@ -2301,7 +2309,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 val finalFontSizeForBitmap = optimalFontSize / bitmapToViewScale
 
                                                 // Draw text with all properties (font, boldness, border, shadow, line spacing)
-                                                val rawTextColor = block.customTextColor ?: computeDefaultTextColor(overlayColor or 0xFF000000.toInt(), block.averageBackgroundColor)
+                                                val rawTextColor = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(overlayColor or 0xFF000000.toInt(), block.averageBackgroundColor)
                                                 var textColor = if (block.textSaturation != 1.0f) {
                                                     val hsv = FloatArray(3)
                                                     androidx.core.graphics.ColorUtils.colorToHSL(rawTextColor, hsv)

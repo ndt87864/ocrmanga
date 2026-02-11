@@ -218,7 +218,7 @@ fun ImageViewer(
                 ?.filter { !it.pendingDelete }
                 ?.map { block ->
                     val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
-                    val textInt = (block.customTextColor ?: computeDefaultTextColor(overlayInt, block.averageBackgroundColor)) or 0xFF000000.toInt()
+                    val textInt = (block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(overlayInt, block.averageBackgroundColor)) or 0xFF000000.toInt()
                     DragBlockState(
                         block = block.copy(customOverlayColor = overlayInt, customTextColor = textInt, fontSize = block.fontSize),
                         fontSize = null,
@@ -256,7 +256,7 @@ fun ImageViewer(
                             rotation = it.rotation ?: 0f,
                             overlayRotation = it.overlayRotation,
                             whiteoutColor = it.customOverlayColor?.let { c -> Color(c) },
-                            textColor = it.customTextColor?.let { c -> Color(c) },
+                            textColor = (it.customTextColor ?: it.originalTextColor)?.let { c -> Color(c) },
                             overlayAlpha = it.overlayAlpha,
                             textBoldness = it.textBoldness,
                             overlaySaturation = it.overlaySaturation,

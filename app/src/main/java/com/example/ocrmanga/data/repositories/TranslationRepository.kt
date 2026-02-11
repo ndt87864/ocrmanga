@@ -1201,7 +1201,7 @@ class TranslationRepository(private val application: Application) {
                     //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
-                    blocks.add(block.copy(
+                    val newBlock = block.copy(
                         text = reformattedText,
                         bounds = newBounds,
                         fontSize = adjustedFontSize,
@@ -1212,9 +1212,15 @@ class TranslationRepository(private val application: Application) {
                         overlaySaturation = defaultSettingsMistral["overlayBrightness"] as? Float ?: 1.0f,
                         customBorderColor = (defaultSettingsMistral["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
                         borderThickness = defaultSettingsMistral["borderThickness"] as? Float ?: 2.0f,
-                        customTextColor = null, // Always compute for contrast
+                        customTextColor = block.originalTextColor, // preserve OCR-detected text color
                         applyMerge = true
-                    ))
+                    )
+                    try {
+                        val origHex = block.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
+                        val newHex = newBlock.customTextColor?.let { String.format("#%08X", it) } ?: "null"
+                        Log.i("TranslationRepository", "[MISTRAL] Translated block #${index + 1}: origColor=$origHex customColor=$newHex text='${reformattedText.take(40)}'")
+                    } catch (_: Exception) { }
+                    blocks.add(newBlock)
                 }
                 
                 resultText = blocks.joinToString("\n") { it.text }
@@ -1315,7 +1321,7 @@ class TranslationRepository(private val application: Application) {
                     //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
                     
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
-                    blocks.add(block.copy(
+                    val newBlock = block.copy(
                         text = reformattedText,
                         bounds = newBounds,
                         fontSize = adjustedFontSize,
@@ -1326,9 +1332,15 @@ class TranslationRepository(private val application: Application) {
                         overlaySaturation = defaultSettingsGemini["overlayBrightness"] as? Float ?: 1.0f,
                         customBorderColor = (defaultSettingsGemini["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
                         borderThickness = defaultSettingsGemini["borderThickness"] as? Float ?: 2.0f,
-                        customTextColor = null, // Always compute for contrast
+                        customTextColor = block.originalTextColor, // preserve OCR-detected text color
                         applyMerge = true
-                    ))
+                    )
+                    try {
+                        val origHex = block.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
+                        val newHex = newBlock.customTextColor?.let { String.format("#%08X", it) } ?: "null"
+                        Log.i("TranslationRepository", "[GEMINI] Translated block #${index + 1}: origColor=$origHex customColor=$newHex text='${reformattedText.take(40)}'")
+                    } catch (_: Exception) { }
+                    blocks.add(newBlock)
                 }
                 
                 resultText = blocks.joinToString("\n") { it.text }
@@ -1410,12 +1422,20 @@ class TranslationRepository(private val application: Application) {
                             overlaySaturation = defaultSettingsOther["overlayBrightness"] as? Float ?: 1.0f,
                             customBorderColor = (defaultSettingsOther["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
                             borderThickness = defaultSettingsOther["borderThickness"] as? Float ?: 2.0f,
-                            customTextColor = null, // Always compute for contrast
+                            customTextColor = block.originalTextColor, // preserve OCR-detected text color
                             applyMerge = true
                         )
                     }
                 }
-                blocks.addAll(deferredBlocks.awaitAll())
+                val addedBlocks = deferredBlocks.awaitAll()
+                blocks.addAll(addedBlocks)
+                try {
+                    addedBlocks.forEachIndexed { ai, b ->
+                        val origHex = b.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
+                        val custHex = b.customTextColor?.let { String.format("#%08X", it) } ?: "null"
+                        Log.i("TranslationRepository", "[TRANSLATION] Added block #$ai: text='${b.text.take(40)}' origColor=$origHex customColor=$custHex")
+                    }
+                } catch (_: Exception) { }
             }
 
             // Thông báo: đang phân phối bản dịch trở lại tọa độ
@@ -1486,11 +1506,18 @@ class TranslationRepository(private val application: Application) {
                         overlaySaturation = defaultSettingsOther["overlayBrightness"] as? Float ?: 1.0f,
                         customBorderColor = (defaultSettingsOther["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
                         borderThickness = defaultSettingsOther["borderThickness"] as? Float ?: 2.0f,
-                        customTextColor = null, // Always compute for contrast
+                        customTextColor = block.originalTextColor, // preserve OCR-detected text color
                         applyMerge = true
                     ))
                 }
                 val resultText2 = blocks2.joinToString("\n") { it.text }
+                try {
+                    blocks2.forEachIndexed { bi, b ->
+                        val origHex = b.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
+                        val custHex = b.customTextColor?.let { String.format("#%08X", it) } ?: "null"
+                        Log.i("TranslationRepository", "[RETRY] Block #$bi: text='${b.text.take(40)}' origColor=$origHex customColor=$custHex")
+                    }
+                } catch (_: Exception) { }
                 val detectedFinal2 = detectLanguage(resultText2) ?: ""
                 if (detectedFinal2 == "vi") {
                     resultText = resultText2
@@ -1861,7 +1888,11 @@ class TranslationRepository(private val application: Application) {
                 }
 
                 processedTextBlocks.forEachIndexed { index, block ->
-                    //log.i("TranslationRepository", "Khối #$index: text=${block.text}, left=${block.bounds.left}, top=${block.bounds.top}, bottom=${block.bounds.bottom}, fontSize=${block.fontSize}")
+                    try {
+                        val origColorHex = block.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
+                        val avgBgHex = block.averageBackgroundColor?.let { String.format("#%08X", it) } ?: "null"
+                        Log.i("TranslationRepository", "[OCR] Block #$index: text='${block.text.take(40)}', bounds=${block.bounds.left},${block.bounds.top},${block.bounds.right},${block.bounds.bottom}, fontSize=${block.fontSize}, originalColor=$origColorHex, avgBg=$avgBgHex")
+                    } catch (_: Exception) { }
                 }
 
                 val fullText = processedTextBlocks.joinToString("\n") { it.text }

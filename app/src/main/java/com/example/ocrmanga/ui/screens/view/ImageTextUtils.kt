@@ -1220,53 +1220,91 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
         val bVariance = kotlin.math.abs(avgB - avgR)
         val rgbDeviation = (rVariance + gVariance + bVariance) / 3
         
-        // Phân tích màu text từ vùng GẦN TRUNG TÂM của bounds
-        val textSamples = mutableListOf<Int>()
-        val textInset = maxOf(3, minOf(width, height) / 6) // Lấy mẫu sâu vào trong hơn
-        
-        // Lấy mẫu từ vùng sâu bên trong text bounds (tránh viền)
-        val textInnerSamples = listOf(
-            Pair(bounds.left + textInset, bounds.top + textInset),
-            Pair(bounds.right - textInset, bounds.top + textInset),
-            Pair(bounds.left + textInset, bounds.bottom - textInset),
-            Pair(bounds.right - textInset, bounds.bottom - textInset),
-            Pair(bounds.centerX(), bounds.centerY()),
-            // Thêm các điểm gần trung tâm
-            Pair(bounds.centerX() - textInset/2, bounds.centerY()),
-            Pair(bounds.centerX() + textInset/2, bounds.centerY()),
-            Pair(bounds.centerX(), bounds.centerY() - textInset/2),
-            Pair(bounds.centerX(), bounds.centerY() + textInset/2)
-        )
-        
-        textInnerSamples.forEach { (x, y) ->
-            if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
-                textSamples.add(bitmap.getPixel(x, y))
-            }
-        }
-        
-        // Tính màu text trung bình
+        // Phân tích màu text bằng cách lấy mẫu lưới bên trong bounds,
+        // chọn các pixel có độ sáng khác biệt so với nền (ứng viên text),
+        // rồi chọn màu phổ biến nhất trong các ứng viên đó.
         var textColor: Int? = null
-        if (textSamples.isNotEmpty()) {
-            var textTotalR = 0
-            var textTotalG = 0
-            var textTotalB = 0
-            var textTotalA = 0
-            
-            textSamples.forEach { color ->
-                textTotalR += (color shr 16) and 0xFF
-                textTotalG += (color shr 8) and 0xFF
-                textTotalB += color and 0xFF 
-                textTotalA += (color shr 24) and 0xFF
+        try {
+            val candidates = mutableListOf<Int>()
+            val gridSize = 6 // 6x6 grid sampling
+            val stepX = maxOf(1, width / gridSize)
+            val stepY = maxOf(1, height / gridSize)
+
+            // background brightness (use previously computed brightness)
+            val backgroundBrightness = brightness
+
+            for (dy in 0 until gridSize) {
+                for (dx in 0 until gridSize) {
+                    val x = bounds.left + dx * stepX + stepX / 2
+                    val y = bounds.top + dy * stepY + stepY / 2
+                    if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
+                        try {
+                            val c = bitmap.getPixel(x, y)
+                            val r = (c shr 16) and 0xFF
+                            val g = (c shr 8) and 0xFF
+                            val b = c and 0xFF
+                            val lum = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+
+                            // Nếu nền sáng, text thường tối; nếu nền tối, text thường sáng.
+                            val diff = kotlin.math.abs(lum - backgroundBrightness)
+                            if (diff >= 25) {
+                                // strong contrast candidate
+                                candidates.add(c)
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
             }
-            
-            val textAvgR = textTotalR / textSamples.size
-            val textAvgG = textTotalG / textSamples.size
-            val textAvgB = textTotalB / textSamples.size
-            val textAvgA = textTotalA / textSamples.size
-            
-            textColor = (textAvgA shl 24) or (textAvgR shl 16) or (textAvgG shl 8) or textAvgB
-        } else {
-            // Nếu không lấy được mẫu text, mặc định màu đen (0xFF000000)
+
+            if (candidates.isEmpty()) {
+                // Fallback: sample central small region
+                val cx = bounds.centerX()
+                val cy = bounds.centerY()
+                for (oy in -2..2) for (ox in -2..2) {
+                    val x = cx + ox
+                    val y = cy + oy
+                    if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
+                        try { candidates.add(bitmap.getPixel(x, y)) } catch (_: Exception) {}
+                    }
+                }
+            }
+
+            if (candidates.isNotEmpty()) {
+                // Quantize to 16-level buckets per channel to find dominant color
+                val buckets = mutableMapOf<Int, MutableList<Int>>()
+                for (c in candidates) {
+                    val r = (c shr 16) and 0xFF
+                    val g = (c shr 8) and 0xFF
+                    val b = c and 0xFF
+                    val keyR = (r / 16) and 0xF
+                    val keyG = (g / 16) and 0xF
+                    val keyB = (b / 16) and 0xF
+                    val key = (keyR shl 8) or (keyG shl 4) or keyB
+                    buckets.getOrPut(key) { mutableListOf() }.add(c)
+                }
+                val dominantBucket = buckets.maxByOrNull { it.value.size }?.value
+                if (!dominantBucket.isNullOrEmpty()) {
+                    var totR = 0; var totG = 0; var totB = 0; var totA = 0
+                    dominantBucket.forEach { cc ->
+                        totR += (cc shr 16) and 0xFF
+                        totG += (cc shr 8) and 0xFF
+                        totB += cc and 0xFF
+                        totA += (cc shr 24) and 0xFF
+                    }
+                    val n = dominantBucket.size
+                    val avgR = totR / n
+                    val avgG = totG / n
+                    val avgB = totB / n
+                    val avgA = if (totA == 0) 0xFF else totA / n
+                    textColor = (avgA shl 24) or (avgR shl 16) or (avgG shl 8) or avgB
+                }
+            }
+
+            if (textColor == null) {
+                textColor = 0xFF000000.toInt()
+            }
+        } catch (e: Exception) {
             textColor = 0xFF000000.toInt()
         }
 
@@ -1313,6 +1351,11 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
             }
         }
         
+        try {
+            val tHex = textColor?.let { String.format("#%08X", it) } ?: "null"
+            val bgHex = if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor?.let { String.format("#%08X", it) } ?: "null" else "WHITE"
+            android.util.Log.i("ImageTextUtils", "[ANALYZE] bounds=${bounds.left},${bounds.top},${bounds.right},${bounds.bottom} background=$bgHex textColor=$tHex")
+        } catch (_: Exception) { }
         return Triple(backgroundType, if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor else null, textColor)
         
     } catch (e: Exception) {
