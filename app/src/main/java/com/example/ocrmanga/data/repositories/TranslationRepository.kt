@@ -797,10 +797,14 @@ class TranslationRepository(private val application: Application) {
         }
     }
 
-    private fun detectTextOrientationAdvanced(bitmap: Bitmap): TextOrientation {
+    private fun detectTextOrientationAdvanced(bitmap: Bitmap, imageUri: Uri? = null): TextOrientation {
         // Thử quét nhanh với Japanese recognizer để detect orientation
         try {
-            val inputImage = InputImage.fromBitmap(bitmap, 0)
+            val inputImage = if (imageUri != null) {
+                InputImage.fromFilePath(application, imageUri)
+            } else {
+                InputImage.fromBitmap(bitmap, 0)
+            }
             // Sử dụng coroutine blocking vì đây là hàm private helper
             val textResult = kotlinx.coroutines.runBlocking {
                 japaneseRecognizer.process(inputImage).await()
@@ -858,16 +862,17 @@ class TranslationRepository(private val application: Application) {
         bitmap: Bitmap,
         rotationDegrees: Int,
         onlyPreview: Boolean = false,
-        forceScript: String? = null
+        forceScript: String? = null,
+        imageUri: Uri? = null // Thêm imageUri
     ): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
         // Detect orientation trước
-        val detectedOrientation = detectTextOrientationAdvanced(bitmap)
+        val detectedOrientation = detectTextOrientationAdvanced(bitmap, imageUri)
         
         Log.i("TranslationRepository", "[ROTATION-STRATEGY] Detected orientation: $detectedOrientation")
         
         // Nếu là horizontal, quét bình thường
         if (detectedOrientation == TextOrientation.HORIZONTAL) {
-            return@withContext recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript)
+            return@withContext recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript, imageUri)
         }
         
         // Nếu là vertical text, thử quét cả ảnh gốc và ảnh xoay
@@ -875,7 +880,7 @@ class TranslationRepository(private val application: Application) {
         
         // 1. Quét ảnh gốc
         try {
-            val (text, blocks) = recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript)
+            val (text, blocks) = recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript, imageUri)
             val score = calculateOcrScore(text, blocks)
             results.add(Triple(text, blocks, score))
             Log.i("TranslationRepository", "[ROTATION-STRATEGY] Original: text length=${text.length}, blocks=${blocks.size}, score=$score")
@@ -938,7 +943,7 @@ class TranslationRepository(private val application: Application) {
         }
         
         // Fallback: quét bình thường
-        return@withContext recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript)
+        return@withContext recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript, imageUri)
     }
 
     /**
@@ -1055,13 +1060,31 @@ class TranslationRepository(private val application: Application) {
         var detectedScript: String? = null
         var hasOCR = false
         try {
-            bitmap = MediaStore.Images.Media.getBitmap(application.contentResolver, imageUri)
+            // [LOGIC MỚI] Load bitmap chất lượng cao từ file thay vì MediaStore (có thể bị scale)
+            bitmap = try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    val source = android.graphics.ImageDecoder.createSource(application.contentResolver, imageUri)
+                    android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                        decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                        decoder.isMutableRequired = true
+                    }
+                } else {
+                    application.contentResolver.openInputStream(imageUri)?.use {
+                        android.graphics.BitmapFactory.decodeStream(it)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("TranslationRepository", "Lỗi load bitmap chất lượng cao cho $imageUri, fallback to MediaStore", e)
+                @Suppress("DEPRECATION")
+                MediaStore.Images.Media.getBitmap(application.contentResolver, imageUri)
+            }
+
             val rotationDegrees = getRotationDegrees(imageUri)
             //log.i("TranslationRepository", "[INPUT] Đang xử lý ảnh: $imageUri với góc xoay: $rotationDegrees")
 
-            // Phát hiện loại ngôn ngữ trước khi quét (dựa trên bitmap)
+            // Phát hiện loại ngôn ngữ trước khi quét (Sử dụng imageUri để quét trực tiếp file cho preview)
             val previewText = try {
-                val (previewText, _) = recognizeText(bitmap, rotationDegrees, onlyPreview = true)
+                val (previewText, _) = recognizeText(bitmap!!, rotationDegrees, onlyPreview = true, imageUri = imageUri)
                 previewText
             } catch (e: Exception) {
                 ""
@@ -1074,9 +1097,9 @@ class TranslationRepository(private val application: Application) {
             val useRotationStrategy = detectedScript in listOf("ja", "zh", "ko")
             val (rawText, textBlocks) = if (useRotationStrategy) {
                 Log.i("TranslationRepository", "[ROTATION] Sử dụng chiến lược xoay ảnh cho script: $detectedScript")
-                recognizeTextWithRotationStrategy(bitmap, rotationDegrees, forceScript = detectedScript)
+                recognizeTextWithRotationStrategy(bitmap!!, rotationDegrees, forceScript = detectedScript, imageUri = imageUri)
             } else {
-                recognizeText(bitmap, rotationDegrees, forceScript = detectedScript)
+                recognizeText(bitmap!!, rotationDegrees, forceScript = detectedScript, imageUri = imageUri)
             }
             fullText = rawText
             hasOCR = true
@@ -1099,8 +1122,8 @@ class TranslationRepository(private val application: Application) {
 
             // --- LOGIC MỚI CHO MISTRAL: THU THẬP TẤT CẢ KẾT QUẢ OCR TỪ CÁC SCALE ---
             if (mode == TranslationMode.MISTRAL) {
-                // Thu thập tất cả kết quả OCR từ các scale khác nhau
-                val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
+                // Thu đẩy tất cả kết quả OCR từ các scale khác nhau
+                val allOcrResults = recognizeTextAllScales(bitmap!!, rotationDegrees, forceScript = detectedScript, imageUri = imageUri)
                 
                 if (allOcrResults.isEmpty()) {
                     Log.w("TranslationRepository", "Không có kết quả OCR nào từ các scale")
@@ -1224,7 +1247,7 @@ class TranslationRepository(private val application: Application) {
             // --- LOGIC MỚI CHO GEMINI: THU THẬP TẤT CẢ KẾT QUẢ OCR TỪ CÁC SCALE ---
             if (mode == TranslationMode.GEMINI) {
                 // Thu thập tất cả kết quả OCR từ các scale khác nhau
-                val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
+                val allOcrResults = recognizeTextAllScales(bitmap!!, rotationDegrees, forceScript = detectedScript, imageUri = imageUri)
                 
                 if (allOcrResults.isEmpty()) {
                     Log.w("TranslationRepository", "Không có kết quả OCR nào từ các scale")
@@ -1546,7 +1569,8 @@ class TranslationRepository(private val application: Application) {
     private suspend fun recognizeTextAllScales(
         bitmap: Bitmap,
         rotationDegrees: Int,
-        forceScript: String? = null
+        forceScript: String? = null,
+        imageUri: Uri? = null // Thêm imageUri
     ): List<Pair<Float, String>> = withContext(Dispatchers.IO) {
         // Optimized scale factors for manga/comic text - more diverse range
         val scaleFactors = listOf(0.85f, 1.0f, 1.15f, 1.35f)
@@ -1573,45 +1597,58 @@ class TranslationRepository(private val application: Application) {
                 else -> 0 // Standard cho scale trung bình
             }
             
-            recognizers.forEach { recognizer ->
-                var preprocessedBitmap: Bitmap? = null
-                try {
-                    val (preBitmap, _) = preprocessImage(bitmap, scale, enhanceMode)
-                    preprocessedBitmap = preBitmap
-                    val scaledInputImage = InputImage.fromBitmap(preprocessedBitmap, rotationDegrees)
-                    val result = recognizer.process(scaledInputImage).await()
-                    
-                    if (result.text.isNotEmpty()) {
-                        // Áp dụng post-processing để sửa lỗi OCR (bao gồm lọc CJK cho Latin mode)
-                        val processedText = postProcessOCRText(result.text, forceScript)
+            // [TỐI ƯU] Tạo InputImage một lần cho mỗi scale/enhanceMode
+            var preprocessedBitmap: Bitmap? = null
+            val inputImage = try {
+                if (scale == 1.0f && imageUri != null && enhanceMode == 0) {
+                    // [LOGIC MỚI] Quét trực tiếp file cho scale 1.0 mặc định để tăng độ chính xác
+                    InputImage.fromFilePath(application, imageUri)
+                } else {
+                    val (preBmp, _) = preprocessImage(bitmap, scale, enhanceMode)
+                    preprocessedBitmap = preBmp
+                    InputImage.fromBitmap(preBmp, rotationDegrees)
+                }
+            } catch (e: Exception) {
+                Log.e("TranslationRepository", "Failed to create InputImage for scale $scale", e)
+                null
+            }
+
+            if (inputImage != null) {
+                recognizers.forEach { recognizer ->
+                    try {
+                        val result = recognizer.process(inputImage).await()
                         
-                        // Với Latin mode: kiểm tra thêm, nếu text vẫn chứa nhiều CJK -> bỏ qua
-                        val isLatinForAllScales = forceScript == "en" || forceScript == "es"
-                        val cleanedText = if (isLatinForAllScales) {
-                            val cjkRemain = Regex("[\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]")
-                                .findAll(processedText).count()
-                            val totalNonSpace = processedText.count { !it.isWhitespace() }
-                            if (totalNonSpace > 0 && cjkRemain.toFloat() / totalNonSpace > 0.3f) {
-                                "" // Quá nhiều CJK trong kết quả Latin -> bỏ
+                        if (result.text.isNotEmpty()) {
+                            // Áp dụng post-processing để sửa lỗi OCR (bao gồm lọc CJK cho Latin mode)
+                            val processedText = postProcessOCRText(result.text, forceScript)
+                            
+                            // Với Latin mode: kiểm tra thêm, nếu text vẫn chứa nhiều CJK -> bỏ qua
+                            val isLatinForAllScales = forceScript == "en" || forceScript == "es"
+                            val cleanedText = if (isLatinForAllScales) {
+                                val cjkRemain = Regex("[\\u4E00-\\u9FFF\\u3400-\\u4DBF\\u3040-\\u309F\\u30A0-\\u30FF\\uAC00-\\uD7AF]")
+                                    .findAll(processedText).count()
+                                val totalNonSpace = processedText.count { !it.isWhitespace() }
+                                if (totalNonSpace > 0 && cjkRemain.toFloat() / totalNonSpace > 0.3f) {
+                                    "" // Quá nhiều CJK trong kết quả Latin -> bỏ
+                                } else {
+                                    processedText
+                                }
                             } else {
                                 processedText
                             }
-                        } else {
-                            processedText
+                            
+                            // Chỉ thêm nếu text có ý nghĩa và chưa có
+                            val normalizedText = cleanedText.trim().lowercase()
+                            if (cleanedText.isNotBlank() && !seenTexts.contains(normalizedText)) {
+                                allResults.add(Pair(scale, cleanedText))
+                                seenTexts.add(normalizedText)
+                            }
                         }
-                        
-                        // Chỉ thêm nếu text có ý nghĩa và chưa có
-                        val normalizedText = cleanedText.trim().lowercase()
-                        if (cleanedText.isNotBlank() && !seenTexts.contains(normalizedText)) {
-                            allResults.add(Pair(scale, cleanedText))
-                            seenTexts.add(normalizedText)
-                        }
+                    } catch (e: Exception) {
+                        Log.e("TranslationRepository", "OCR failed for scale $scale, enhance=$enhanceMode, recognizer ${recognizer.javaClass.simpleName}", e)
                     }
-                } catch (e: Exception) {
-                    Log.e("TranslationRepository", "OCR failed for scale $scale, enhance=$enhanceMode, recognizer ${recognizer.javaClass.simpleName}", e)
-                } finally {
-                    preprocessedBitmap?.recycle()
                 }
+                preprocessedBitmap?.recycle()
             }
         }
         
@@ -1647,11 +1684,12 @@ class TranslationRepository(private val application: Application) {
         bitmap: Bitmap,
         rotationDegrees: Int,
         onlyPreview: Boolean = false,
-        forceScript: String? = null
+        forceScript: String? = null,
+        imageUri: Uri? = null // Thêm imageUri
     ): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
         // Optimized scale factors for manga/comic text recognition
         // Using more diverse scales to catch text at different sizes
-        val scaleFactors = if (onlyPreview) listOf(0.9f, 1.1f) else listOf(0.85f, 1.0f, 1.15f, 1.3f)
+        val scaleFactors = if (onlyPreview) listOf(0.9f, 1.0f, 1.1f) else listOf(0.85f, 1.0f, 1.15f, 1.3f)
         val recognizers = when (forceScript) {
             "zh" -> listOf(chineseRecognizer)
             "ja" -> listOf(japaneseRecognizer)
@@ -1660,15 +1698,29 @@ class TranslationRepository(private val application: Application) {
             "en", "es" -> listOf(latinRecognizer)
             else -> listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer, latinRecognizer)
         }
-        val deferredResults = scaleFactors.flatMap { scale ->
-            recognizers.map { recognizer ->
-                async {
-                    var preprocessedBitmap: Bitmap? = null
+        val deferredResults = scaleFactors.map { scale ->
+            async {
+                // [TỐI ƯU] Tạo InputImage một lần cho mỗi scale
+                var preprocessedBitmap: Bitmap? = null
+                val inputImage = try {
+                    if (scale == 1.0f && imageUri != null) {
+                        // [LOGIC MỚI] Quét trực tiếp file cho scale 1.0 để tăng độ chính xác
+                        InputImage.fromFilePath(application, imageUri)
+                    } else {
+                        val (preBmp, _) = preprocessImage(bitmap, scale)
+                        preprocessedBitmap = preBmp
+                        InputImage.fromBitmap(preBmp, rotationDegrees)
+                    }
+                } catch (e: Exception) {
+                    Log.e("TranslationRepository", "Failed to create InputImage for scale $scale", e)
+                    null
+                }
+
+                if (inputImage == null) return@async emptyList<RecognitionResult>()
+
+                val resultsForScale = recognizers.map { recognizer ->
                     try {
-                        val (preBitmap, _) = preprocessImage(bitmap, scale)
-                        preprocessedBitmap = preBitmap
-                        val scaledInputImage = InputImage.fromBitmap(preprocessedBitmap, rotationDegrees)
-                        val result = recognizer.process(scaledInputImage).await()
+                        val result = recognizer.process(inputImage).await()
                         val elements = result.textBlocks.flatMap { it.lines }.flatMap { it.elements }
                         val confidence = if (elements.isEmpty()) 0.0 else elements.sumOf { it.confidence.toDouble() } / elements.size
                         val textLength = result.text.length
@@ -1680,22 +1732,18 @@ class TranslationRepository(private val application: Application) {
                             }
                         }
                         val avgFontSize = if (fontSizes.isNotEmpty()) fontSizes.average().toFloat() else 16f
-//                        //log.i(
-//                            "TranslationRepository",
-//                            "Kết quả quét với scaleFactor=$scale, recognizer=${recognizer.javaClass.simpleName}: " +
-//                                    "textLength=$textLength, averageConfidence=$confidence, avgFontSize=$avgFontSize, text=${result.text.take(100)}[...]"
-//                        )
                         RecognitionResult(scale, recognizer, result, avgFontSize)
                     } catch (e: Exception) {
                         Log.e("TranslationRepository", "Nhận diện thất bại cho scale $scale và recognizer ${recognizer.javaClass.simpleName}", e)
                         null
-                    } finally {
-                        preprocessedBitmap?.recycle()
                     }
-                }
+                }.filterNotNull()
+                
+                preprocessedBitmap?.recycle()
+                resultsForScale
             }
         }
-        val results = deferredResults.awaitAll().filterNotNull()
+        val results = deferredResults.awaitAll().flatten()
         if (results.isEmpty()) {
             Log.e("TranslationRepository", "Tất cả nhận diện đều thất bại")
             throw Exception("Không thể nhận diện văn bản trong hình ảnh")
@@ -2011,7 +2059,25 @@ class TranslationRepository(private val application: Application) {
             var assigned = false
             for (cluster in clusters) {
                 val last = cluster.last()
-                if (iou(block.bounds, last.bounds) > iouThreshold && isVerticalOverlapEnough(block.bounds, last.bounds) && !isTooFarVertical(block.bounds, last.bounds)) {
+                
+                // Check if they potentially belong to the same bubble
+                val isSameBubble = if (block.isVertical && last.isVertical) {
+                    // For Vertical Manga: side-by-side columns often have NO IoU but are close horizontally
+                    val hGap = if (block.bounds.left > last.bounds.right) block.bounds.left - last.bounds.right 
+                               else if (last.bounds.left > block.bounds.right) last.bounds.left - block.bounds.right 
+                               else 0
+                    val vOverlap = minOf(block.bounds.bottom, last.bounds.bottom) - maxOf(block.bounds.top, last.bounds.top)
+                    val minHeight = minOf(block.bounds.height(), last.bounds.height())
+                    
+                    // Merge if columns are close horizontally and aligned vertically
+                    (hGap < threshold * 2.5) && (vOverlap > minHeight * 0.4f)
+                } else {
+                    // For horizontal text or generic cases, use IoU and vertical overlap
+                    val iouVal = iou(block.bounds, last.bounds)
+                    iouVal > iouThreshold && isVerticalOverlapEnough(block.bounds, last.bounds)
+                }
+                
+                if (isSameBubble && !isTooFarVertical(block.bounds, last.bounds)) {
                     cluster.add(block)
                     assigned = true
                     break
