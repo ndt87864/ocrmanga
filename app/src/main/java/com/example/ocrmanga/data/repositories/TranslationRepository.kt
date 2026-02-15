@@ -1079,6 +1079,17 @@ class TranslationRepository(private val application: Application) {
             } else {
                 recognizeText(bitmap, rotationDegrees, forceScript = detectedScript)
             }
+            
+            // LOG OCR RESULTS
+            Log.i("TranslationRepository", "===== KẾT QUẢ QUÉT OCR (${textBlocks.size} blocks) =====")
+            textBlocks.forEachIndexed { index, block ->
+                val textColorHex = block.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
+                val overlayColorHex = block.averageBackgroundColor?.let { String.format("#%08X", it) } ?: "null"
+                Log.i("TranslationRepository", "[OCR-BLOCK] #$index: Text='${block.text}'")
+                Log.i("TranslationRepository", "    + Color: Text=$textColorHex, Overlay=$overlayColorHex")
+                Log.i("TranslationRepository", "    + Bounds: ${block.bounds}")
+            }
+            Log.i("TranslationRepository", "================================================")
             fullText = rawText
             hasOCR = true
             //log.i("TranslationRepository", "[INPUT] Văn bản gốc: $fullText, số khối: ${textBlocks.size}")
@@ -1212,9 +1223,13 @@ class TranslationRepository(private val application: Application) {
                         applyMerge = true
                     )
                     try {
-                        val origHex = block.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
-                        val newHex = newBlock.customTextColor?.let { String.format("#%08X", it) } ?: "null"
-                        Log.i("TranslationRepository", "[MISTRAL] Translated block #${index + 1}: origColor=$origHex customColor=$newHex text='${reformattedText.take(40)}'")
+                        val input = block.text
+                        val output = newBlock.text
+                        val bounds = newBlock.bounds
+                        Log.i("TranslationRepository", "[TRANS-MISTRAL] Block #${index + 1}:")
+                        Log.i("TranslationRepository", "    + Input : '$input'")
+                        Log.i("TranslationRepository", "    + Output: '$output'")
+                        Log.i("TranslationRepository", "    + Bounds: $bounds")
                     } catch (_: Exception) { }
                     blocks.add(newBlock)
                 }
@@ -1332,9 +1347,13 @@ class TranslationRepository(private val application: Application) {
                         applyMerge = true
                     )
                     try {
-                        val origHex = block.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
-                        val newHex = newBlock.customTextColor?.let { String.format("#%08X", it) } ?: "null"
-                        Log.i("TranslationRepository", "[GEMINI] Translated block #${index + 1}: origColor=$origHex customColor=$newHex text='${reformattedText.take(40)}'")
+                        val input = block.text
+                        val output = newBlock.text
+                        val bounds = newBlock.bounds
+                        Log.i("TranslationRepository", "[TRANS-GEMINI] Block #${index + 1}:")
+                        Log.i("TranslationRepository", "    + Input : '$input'")
+                        Log.i("TranslationRepository", "    + Output: '$output'")
+                        Log.i("TranslationRepository", "    + Bounds: $bounds")
                     } catch (_: Exception) { }
                     blocks.add(newBlock)
                 }
@@ -1427,9 +1446,13 @@ class TranslationRepository(private val application: Application) {
                 blocks.addAll(addedBlocks)
                 try {
                     addedBlocks.forEachIndexed { ai, b ->
-                        val origHex = b.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
-                        val custHex = b.customTextColor?.let { String.format("#%08X", it) } ?: "null"
-                        Log.i("TranslationRepository", "[TRANSLATION] Added block #$ai: text='${b.text.take(40)}' origColor=$origHex customColor=$custHex")
+                        val input = b.originalText ?: "N/A"
+                        val output = b.text
+                        val bounds = b.bounds
+                        Log.i("TranslationRepository", "[TRANS-OTHER] Block #${ai + 1}:")
+                        Log.i("TranslationRepository", "    + Input : '$input'")
+                        Log.i("TranslationRepository", "    + Output: '$output'")
+                        Log.i("TranslationRepository", "    + Bounds: $bounds")
                     }
                 } catch (_: Exception) { }
             }
@@ -1509,9 +1532,13 @@ class TranslationRepository(private val application: Application) {
                 val resultText2 = blocks2.joinToString("\n") { it.text }
                 try {
                     blocks2.forEachIndexed { bi, b ->
-                        val origHex = b.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
-                        val custHex = b.customTextColor?.let { String.format("#%08X", it) } ?: "null"
-                        Log.i("TranslationRepository", "[RETRY] Block #$bi: text='${b.text.take(40)}' origColor=$origHex customColor=$custHex")
+                        val input = b.originalText ?: "N/A"
+                        val output = b.text
+                        val bounds = b.bounds
+                        Log.i("TranslationRepository", "[TRANS-RETRY] Block #${bi + 1}:")
+                        Log.i("TranslationRepository", "    + Input : '$input'")
+                        Log.i("TranslationRepository", "    + Output: '$output'")
+                        Log.i("TranslationRepository", "    + Bounds: $bounds")
                     }
                 } catch (_: Exception) { }
                 val detectedFinal2 = detectLanguage(resultText2) ?: ""

@@ -1382,7 +1382,6 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
         try {
             val tHex = textColor?.let { String.format("#%08X", it) } ?: "null"
             val bgHex = if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor?.let { String.format("#%08X", it) } ?: "null" else "WHITE"
-            Log.i("ImageTextUtils", "[ANALYZE] bounds=${bounds.left},${bounds.top},${bounds.right},${bounds.bottom} background=$bgHex textColor=$tHex")
         } catch (_: Exception) { }
         return Triple(backgroundType, if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor else null, textColor)
         
