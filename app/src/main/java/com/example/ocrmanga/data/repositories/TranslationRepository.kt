@@ -872,11 +872,12 @@ class TranslationRepository(private val application: Application) {
         }
         
         // Nếu là vertical text, thử quét cả ảnh gốc và ảnh xoay
+        // Sử dụng skipSort=true để lấy raw lines, sau đó merge với thứ tự RTL đúng
         val results = mutableListOf<Triple<String, List<TextBlockInfo>, Double>>()
         
-        // 1. Quét ảnh gốc
+        // 1. Quét ảnh gốc (skipSort để lấy raw lines)
         try {
-            val (text, blocks) = recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript)
+            val (text, blocks) = recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript, skipSort = true)
             val score = calculateOcrScore(text, blocks)
             results.add(Triple(text, blocks, score))
             Log.i("TranslationRepository", "[ROTATION-STRATEGY] Original: text length=${text.length}, blocks=${blocks.size}, score=$score")
@@ -888,7 +889,7 @@ class TranslationRepository(private val application: Application) {
         var rotated90: Bitmap? = null
         try {
             rotated90 = rotateImageForVerticalText(bitmap, 90)
-            val (text90, blocks90) = recognizeText(rotated90, 0, onlyPreview, forceScript)
+            val (text90, blocks90) = recognizeText(rotated90, 0, onlyPreview, forceScript, skipSort = true)
             
             // Transform bounds về tọa độ gốc (đã xoay 90° CW)
             val transformedBlocks = transformBlocksAfterRotation(
@@ -911,7 +912,7 @@ class TranslationRepository(private val application: Application) {
         var rotatedMinus90: Bitmap? = null
         try {
             rotatedMinus90 = rotateImageForVerticalText(bitmap, -90)
-            val (textMinus90, blocksMinus90) = recognizeText(rotatedMinus90, 0, onlyPreview, forceScript)
+            val (textMinus90, blocksMinus90) = recognizeText(rotatedMinus90, 0, onlyPreview, forceScript, skipSort = true)
             
             // Transform bounds về tọa độ gốc (đã xoay -90° CCW)
             val transformedBlocks = transformBlocksAfterRotation(
@@ -935,7 +936,12 @@ class TranslationRepository(private val application: Application) {
         
         if (bestResult != null) {
             Log.i("TranslationRepository", "[ROTATION-STRATEGY] Best result: score=${bestResult.third}, text length=${bestResult.first.length}")
-            return@withContext Pair(bestResult.first, bestResult.second)
+            // Áp dụng sortVerticalTextBlocks trên raw lines với tọa độ gốc
+            // để đảm bảo thứ tự merge đúng: phải → trái (RTL) cho văn bản dọc CJK
+            val rawBlocks = bestResult.second
+            val processedBlocks = sortVerticalTextBlocks(rawBlocks, bitmap)
+            val sortedText = processedBlocks.joinToString("\n") { it.text }
+            return@withContext Pair(sortedText, processedBlocks)
         }
         
         // Fallback: quét bình thường
@@ -1702,7 +1708,8 @@ class TranslationRepository(private val application: Application) {
         bitmap: Bitmap,
         rotationDegrees: Int,
         onlyPreview: Boolean = false,
-        forceScript: String? = null
+        forceScript: String? = null,
+        skipSort: Boolean = false
     ): Pair<String, List<TextBlockInfo>> = withContext(Dispatchers.IO) {
         // Optimized scale factors for manga/comic text recognition
         // Using more diverse scales to catch text at different sizes
@@ -1903,6 +1910,12 @@ class TranslationRepository(private val application: Application) {
                     }
                 }
 
+                // Nếu skipSort, trả về raw lines không merge (dùng cho rotation strategy)
+                if (skipSort) {
+                    val fullText = normalizedTextBlocks.joinToString("\n") { it.text }
+                    return@withContext fullText to normalizedTextBlocks
+                }
+
                 val isVertical = determineTextOrientation(normalizedTextBlocks, alternativeTextResult.text)
                 val processedTextBlocks = if (isVertical) {
                     sortVerticalTextBlocks(normalizedTextBlocks, bitmap)
@@ -2017,6 +2030,12 @@ class TranslationRepository(private val application: Application) {
             } else {
                 cluster
             }
+        }
+
+        // Nếu skipSort, trả về raw lines không merge (dùng cho rotation strategy)
+        if (skipSort) {
+            val fullText = normalizedTextBlocks.joinToString("\n") { it.text }
+            return@withContext fullText to normalizedTextBlocks
         }
 
         val isVertical = determineTextOrientation(normalizedTextBlocks, bestTextResult.text)
@@ -2406,6 +2425,7 @@ class TranslationRepository(private val application: Application) {
                     text = mergedText.toString(),
                     bounds = mergedBounds,
                     fontSize = minFontSize,
+                    isVertical = true, // Đánh dấu là vertical text để downstream merge đúng thứ tự RTL
                     wordCountsPerLine = null, // Reset wordCountsPerLine after merging
                     originalImageWidth = sortedBlocks.firstOrNull()?.originalImageWidth,
                     originalImageHeight = sortedBlocks.firstOrNull()?.originalImageHeight,
@@ -2420,7 +2440,36 @@ class TranslationRepository(private val application: Application) {
             }
         }
 
-        return mergedBlocks.sortedBy { it.bounds.top }
+        // Sắp xếp kết quả cuối: nhóm theo dải ngang (band), trong mỗi band sắp xếp Phải → Trái (RTL)
+        // Đây là thứ tự đọc đúng cho văn bản dọc tiếng Nhật/Trung (manga)
+        if (mergedBlocks.isEmpty()) return mergedBlocks
+        
+        val sortedByTop = mergedBlocks.sortedBy { it.bounds.top }
+        val bands = mutableListOf<MutableList<TextBlockInfo>>()
+        var currentBand = mutableListOf(sortedByTop.first())
+        var bandBottom = sortedByTop.first().bounds.bottom
+        
+        for (block in sortedByTop.drop(1)) {
+            // Block overlap hoặc gần band hiện tại → cùng band
+            val overlapWithBand = block.bounds.top < bandBottom
+            val avgHeight = (block.bounds.height() + currentBand.last().bounds.height()) / 2
+            val closeEnough = (block.bounds.top - bandBottom) < avgHeight
+            
+            if (overlapWithBand || closeEnough) {
+                currentBand.add(block)
+                bandBottom = maxOf(bandBottom, block.bounds.bottom)
+            } else {
+                bands.add(currentBand)
+                currentBand = mutableListOf(block)
+                bandBottom = block.bounds.bottom
+            }
+        }
+        if (currentBand.isNotEmpty()) bands.add(currentBand)
+        
+        // Trong mỗi band: sắp xếp Phải → Trái (descending left)
+        return bands.flatMap { band ->
+            band.sortedByDescending { it.bounds.left }
+        }
     }
 
     private fun determineTextOrientation(textBlocks: List<TextBlockInfo>, fullText: String): Boolean {
@@ -3403,6 +3452,38 @@ class TranslationRepository(private val application: Application) {
                 }
             }
         }
-        return merged
+        // Sắp xếp kết quả cuối: nếu có vertical blocks, sort Phải → Trái (RTL)
+        val hasVertical = merged.any { it.isVertical }
+        return if (hasVertical) {
+            // Nhóm theo dải ngang (band), trong mỗi band sort Phải → Trái
+            val sortedByTop = merged.sortedBy { it.bounds.top }
+            if (sortedByTop.isEmpty()) return merged
+            
+            val bands = mutableListOf<MutableList<TextBlockInfo>>()
+            var currentBand = mutableListOf(sortedByTop.first())
+            var bandBottom = sortedByTop.first().bounds.bottom
+            
+            for (block in sortedByTop.drop(1)) {
+                val overlapWithBand = block.bounds.top < bandBottom
+                val avgHeight = (block.bounds.height() + currentBand.last().bounds.height()) / 2
+                val closeEnough = (block.bounds.top - bandBottom) < avgHeight
+                
+                if (overlapWithBand || closeEnough) {
+                    currentBand.add(block)
+                    bandBottom = maxOf(bandBottom, block.bounds.bottom)
+                } else {
+                    bands.add(currentBand)
+                    currentBand = mutableListOf(block)
+                    bandBottom = block.bounds.bottom
+                }
+            }
+            if (currentBand.isNotEmpty()) bands.add(currentBand)
+            
+            bands.flatMap { band ->
+                band.sortedByDescending { it.bounds.left }
+            }
+        } else {
+            merged
+        }
     }
 }
