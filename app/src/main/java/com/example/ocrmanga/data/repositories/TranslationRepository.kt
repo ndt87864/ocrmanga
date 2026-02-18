@@ -2429,6 +2429,7 @@ class TranslationRepository(private val application: Application) {
                 // Theo dõi bounding box tích lũy của sub-group hiện tại
                 var subGroupMinLeft = sortedBlocks.first().bounds.left
                 var subGroupMaxRight = sortedBlocks.first().bounds.right
+                var subGroupMinTop = sortedBlocks.first().bounds.top
                 var subGroupMaxBottom = sortedBlocks.first().bounds.bottom
                 for (idx in 1 until sortedBlocks.size) {
                     val prev = sortedBlocks[idx - 1]  // block bên phải hơn (left lớn hơn)
@@ -2441,16 +2442,30 @@ class TranslationRepository(private val application: Application) {
                     val noHorizontalOverlap = curr.bounds.right <= subGroupMinLeft
                     val startsAtOrBelowSubGroup = curr.bounds.top >= subGroupMaxBottom - 15
                     val isDiagonallyStacked = noHorizontalOverlap && startsAtOrBelowSubGroup
-                    if (colGap > subGroupThreshold || isDiagonallyStacked) {
+                    // Tiêu chí 3: curr chồng x-range với sub-group (cùng cột thực sự) nhưng
+                    //             khoảng dọc giữa đáy sub-group và đỉnh curr quá lớn (theo cả 2 chiều).
+                    //             Dùng subGroupMinTop để xử lý cả trường hợp curr nằm TRÊN sub-group
+                    //             (do sort descending left, block trên có thể vào subGroup sau block dưới).
+                    //             "Khoảng trống dọc" = gap giữa bounding rect của curr và bounding rect của sub-group.
+                    val hasSameColumnOverlap = curr.bounds.right > subGroupMinLeft && curr.bounds.left < subGroupMaxRight
+                    val actualVerticalGap = when {
+                        curr.bounds.bottom <= subGroupMinTop -> subGroupMinTop - curr.bounds.bottom  // curr ở trên
+                        curr.bounds.top >= subGroupMaxBottom -> curr.bounds.top - subGroupMaxBottom  // curr ở dưới
+                        else -> 0  // curr chồng lên dọc với sub-group → không có gap
+                    }
+                    val isLargeVerticalGapSameColumn = hasSameColumnOverlap && actualVerticalGap > avgBlockHeight * 0.8f
+                    if (colGap > subGroupThreshold || isDiagonallyStacked || isLargeVerticalGapSameColumn) {
                         subGroups.add(currentSubGroup)
                         currentSubGroup = mutableListOf(curr)
                         subGroupMinLeft = curr.bounds.left
                         subGroupMaxRight = curr.bounds.right
+                        subGroupMinTop = curr.bounds.top
                         subGroupMaxBottom = curr.bounds.bottom
                     } else {
                         currentSubGroup.add(curr)
                         subGroupMinLeft = minOf(subGroupMinLeft, curr.bounds.left)
                         subGroupMaxRight = maxOf(subGroupMaxRight, curr.bounds.right)
+                        subGroupMinTop = minOf(subGroupMinTop, curr.bounds.top)
                         subGroupMaxBottom = maxOf(subGroupMaxBottom, curr.bounds.bottom)
                     }
                 }
