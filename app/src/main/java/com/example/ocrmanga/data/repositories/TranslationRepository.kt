@@ -221,9 +221,11 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 1.0,
-                "top_p" to 0.98,
-                "max_tokens" to 4096
+                "temperature" to 0.7,
+                "top_p" to 0.82,
+                "max_tokens" to 3000,
+                "frequency_penalty" to 0.5,
+                "presence_penalty" to 0.3
             )
             val requestBody = gson.toJson(bodyMap)
 
@@ -236,36 +238,35 @@ class TranslationRepository(private val application: Application) {
 
             try {
                 val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
-                if (!response.isSuccessful) {
+                val content = response.use { resp ->
                     val keyPrefix = mistralKey.take(10)
-                    Log.e("TranslationRepository", "[MISTRAL-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${response.code} ${response.message} | Lần thử: ${i + 1}/$maxTries")
-                    if (response.code == 429) {
-                        Log.w("TranslationRepository", "[MISTRAL-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
-                        // Nếu bị 429 thì thử key tiếp theo ngay lập tức
-                        continue
-                    }
-                    if (response.code == 422) {
-                        // Lỗi request không hợp lệ, chỉ log 1 lần, không Toast
-                        if (!mistralErrorToastShown) {
+                    if (!resp.isSuccessful) {
+                        Log.e("TranslationRepository", "[MISTRAL-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${resp.code} ${resp.message} | Lần thử: ${i + 1}/$maxTries")
+                        if (resp.code == 429) {
+                            Log.w("TranslationRepository", "[MISTRAL-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
+                            return@use "##CONTINUE##" // sentinel: thử key tiếp theo
+                        } else if (resp.code == 422) {
+                            if (!mistralErrorToastShown) {
+                                mistralErrorToastShown = true
+                                Log.w("TranslationRepository", "Mistral API error 422: ${resp.message}")
+                            }
+                        } else if (!mistralErrorToastShown) {
                             mistralErrorToastShown = true
-                            Log.w("TranslationRepository", "Mistral API error 422: ${response.message}")
+                            withContext(Dispatchers.Main) {
+                                android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${resp.code} ${resp.message}", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }
-                        return null
+                        return@use null
                     }
-                    if (!mistralErrorToastShown) {
-                        mistralErrorToastShown = true
-                        withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${response.code} ${response.message}", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    return null
+                    val body = resp.body?.string() ?: return@use null
+                    // Parse JSON để lấy phần dịch
+                    val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                    val choices = json["choices"]?.asJsonArray
+                    choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString?.trim()
                 }
-                val body = response.body?.string() ?: return null
-                // Parse JSON để lấy phần dịch
-                val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                val choices = json["choices"]?.asJsonArray
-                val content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
-                return content?.trim()
+                if (content == "##CONTINUE##") continue
+                if (content != null) return content
+                return null // 422 hoặc lỗi parse
             } catch (e: Exception) {
                 lastError = e
                 val keyPrefix = mistralKey.take(10)
@@ -377,9 +378,11 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 1.0,
-                "top_p" to 0.98,
-                "max_tokens" to 4096
+                "temperature" to 0.7,
+                "top_p" to 0.82,
+                "max_tokens" to 3000,
+                "frequency_penalty" to 0.5,
+                "presence_penalty" to 0.3
             )
             val requestBody = gson.toJson(bodyMap)
 
@@ -392,31 +395,30 @@ class TranslationRepository(private val application: Application) {
 
             try {
                 val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
-                if (!response.isSuccessful) {
+                val body = response.use { resp ->
                     val keyPrefix = mistralKey.take(10)
-                    Log.e("TranslationRepository", "[MISTRAL-MULTI-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${response.code} ${response.message} | Lần thử: ${i + 1}/$maxTries")
-                    if (response.code == 429) {
-                        Log.w("TranslationRepository", "[MISTRAL-MULTI-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
-                        // Nếu bị 429 thì thử key tiếp theo ngay lập tức
-                        continue
-                    }
-                    if (response.code == 422) {
-                        // Lỗi request không hợp lệ, chỉ log 1 lần, không Toast
-                        if (!mistralErrorToastShown) {
+                    if (!resp.isSuccessful) {
+                        Log.e("TranslationRepository", "[MISTRAL-MULTI-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${resp.code} ${resp.message} | Lần thử: ${i + 1}/$maxTries")
+                        if (resp.code == 429) {
+                            Log.w("TranslationRepository", "[MISTRAL-MULTI-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
+                            return@use "##CONTINUE##" // sentinel: thử key tiếp theo
+                        } else if (resp.code == 422) {
+                            if (!mistralErrorToastShown) {
+                                mistralErrorToastShown = true
+                                Log.w("TranslationRepository", "Mistral API (multi-scale) error 422: ${resp.message}")
+                            }
+                        } else if (!mistralErrorToastShown) {
                             mistralErrorToastShown = true
-                            Log.w("TranslationRepository", "Mistral API (multi-scale) error 422: ${response.message}")
+                            withContext(Dispatchers.Main) {
+                                android.widget.Toast.makeText(application, "Lỗi dịch Mistral (multi-scale): ${resp.code} ${resp.message}", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }
-                        return null
+                        return@use null
                     }
-                    if (!mistralErrorToastShown) {
-                        mistralErrorToastShown = true
-                        withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(application, "Lỗi dịch Mistral (multi-scale): ${response.code} ${response.message}", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    return null
+                    resp.body?.string()
                 }
-                val body = response.body?.string() ?: return null
+                if (body == "##CONTINUE##") continue
+                if (body == null) return null
                 // Parse JSON để lấy phần dịch
                 val json = com.google.gson.JsonParser.parseString(body).asJsonObject
                 val choices = json["choices"]?.asJsonArray
@@ -2775,11 +2777,13 @@ class TranslationRepository(private val application: Application) {
             val url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=$sourceLanguage&tl=vi&dt=t&q=$encodedText"
             val request = Request.Builder().url(url).build()
             val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.e("TranslationRepository", "Yêu cầu dịch trực tuyến thất bại: ${response.code}")
-                return@withContext originalText
-            }
-            val json = response.body?.string() ?: return@withContext originalText
+            val json = response.use { resp ->
+                if (!resp.isSuccessful) {
+                    Log.e("TranslationRepository", "Yêu cầu dịch trực tuyến thất bại: ${resp.code}")
+                    return@withContext originalText
+                }
+                resp.body?.string()
+            } ?: return@withContext originalText
             val jsonArray = JsonParser.parseString(json).asJsonArray
             if (jsonArray.size() == 0) return@withContext originalText
             val translations = mutableListOf<String>()

@@ -85,13 +85,15 @@ object TranslationPrompts {
         $ancientInstruction
         [QUY TẮC QUAN TRỌNG NHẤT - NGẮN GỌN]
         ★ BẢN DỊCH PHẢI NGẮN. Đây là bong bóng thoại truyện tranh, KHÔNG phải tiểu thuyết.
-        ★ KHÔNG thêm từ đệm, từ nối thừa. KHÔNG kéo dài câu. KHÔNG diễn giải.
-        ★ Mỗi câu dịch phải CÔ ĐỌNG tối đa, giữ đúng ý nhưng dùng ít từ nhất có thể.
-        ★ VÍ DỤ ĐÚNG: 行かね → "Không đi." | ねえ → "Này," | 完成 → "Xong rồi!" | じゃあ頼むわ → "Nhờ cậu nhé."
-        ★ VÍ DỤ SAI (quá dài): 行かね → "Thôi không đi đâu. đâu mà!" | 完成 → "Thế là hoàn tất rồi."
+        ★ KHÔNG thêm từ đệm, từ nối thừa. KHÔNG kéo dài câu.
+        ★ Mỗi câu dịch phải CÔ ĐỌNG với câu ngắn , biến tấu với câu dài , giữ đúng ý nhất có thể.
+        ★ Mỗi cụm block đầu vào là 1 câu riêng , không dịch nhầm ý của block này cho block khác.
         
         [VĂN PHONG]
-        ■ Dịch như người Việt NÓI, không phải VIẾT. Giọng văn tự nhiên, gãy gọn.
+        ■ Dịch như người Việt NÓI, không phải VIẾT. Giọng văn tự nhiênnhiên.
+        ■ CHỐNG LẶP: Không lặp đại từ liên tục. "I... I..." → lược bỏ 1, gộp câu.
+        ■ LOCALIZATION (BẢN ĐỊA HÓA): Đây là quy tắc quan trọng nhất. Dịch như một biên tập viên/biên kịch người Việt. Tuyệt đối KHÔNG dịch word-by-word (sát nghĩa từng từ).
+        ■ THOÁT Ý: Ưu tiên dùng thành ngữ, tiếng lóng, khẩu ngữ phổ biến tại Việt Nam phù hợp với ngữ cảnh.
         ■ ĐẠI TỪ: Mặc định (tôi/cậu/mình). Chỉ dùng (tao/mày) khi nhân vật đang tức giận rõ ràng.
         ■ ĐỘC THOẠI: Dùng "mình" hoặc lược bỏ chủ ngữ. Lời dẫn truyện: văn phong khách quan.
         ■ Thêm tiểu từ (à, nhé, nhỉ, đâu, mà, chứ, sao, cơ, hả...) KHI PHÙ HỢP, không ép.
