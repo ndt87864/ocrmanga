@@ -2366,8 +2366,16 @@ class TranslationRepository(private val application: Application) {
             val sortedByTop = columnBlocks.sortedBy { it.bounds.top }
             val topValues = sortedByTop.map { it.bounds.top }
             val topGaps = topValues.zipWithNext { a, b -> b - a }.filter { it > 0 }
-            val avgTopGap = if (topGaps.isNotEmpty()) topGaps.average().toInt() else 100
-            val verticalThreshold = (avgTopGap * 0.8).toInt().coerceAtLeast(50)
+            // Dùng median thay vì average để tránh outlier gap lớn làm threshold quá cao,
+            // dẫn đến merge nhầm các block từ các speech bubble khác nhau trong cùng cột.
+            val medianTopGap = if (topGaps.isNotEmpty()) {
+                val sorted = topGaps.sorted()
+                if (sorted.size % 2 == 1) sorted[sorted.size / 2]
+                else (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2
+            } else 100
+            // Cap threshold tại 1.5× block height trung bình để tránh merge quá tham lam
+            val avgBlockHeight = sortedByTop.map { it.bounds.height() }.average().toInt().coerceAtLeast(20)
+            val verticalThreshold = (medianTopGap * 1.2).toInt().coerceAtLeast(50).coerceAtMost(avgBlockHeight * 2)
 
             val regions = mutableListOf<MutableList<TextBlockInfo>>()
             var currentRegion = mutableListOf(sortedByTop.first())
@@ -3374,15 +3382,33 @@ class TranslationRepository(private val application: Application) {
                             "leftDiff=$leftDiff (threshold=$leftThreshold), " +
                             "verticalGap=$verticalGap (threshold=$gapThreshold)")
                         */
-                        // Chỉ merge nếu left gần nhau VÀ khoảng cách dọc không quá lớn
-                        // Threshold cho vertical gap: không quá 1.5 lần chiều cao trung bình
-                        if (leftDiff < leftThreshold && verticalGap < gapThreshold) {
+                        // Kiểm tra nếu block nằm sát cột bên cạnh trong cùng speech bubble:
+                        // các cột dọc liền kề nhau (right của cột này ≈ left của cột kia)
+                        // và có overlap dọc đủ lớn → cho phép merge ngay cả khi leftDiff lớn.
+                        val groupRight = group.maxOf { it.bounds.right }
+                        val groupLeft = group.minOf { it.bounds.left }
+                        val horizontalGapToGroup = when {
+                            block.bounds.right <= groupLeft -> groupLeft - block.bounds.right // block ở bên trái group
+                            block.bounds.left >= groupRight -> block.bounds.left - groupRight // block ở bên phải group
+                            else -> 0 // overlap ngang
+                        }
+                        // Overlap dọc giữa block và toàn bộ group
+                        val groupTop = group.minOf { it.bounds.top }
+                        val groupBottom = group.maxOf { it.bounds.bottom }
+                        val verticalOverlap = minOf(block.bounds.bottom, groupBottom) - maxOf(block.bounds.top, groupTop)
+                        val minBlockHeight = minOf(block.bounds.height(), groupBottom - groupTop).coerceAtLeast(1)
+                        val isAdjacentColumn = horizontalGapToGroup <= avgWidth * 0.8f &&
+                            verticalOverlap >= minBlockHeight * 0.3f
+                        
+                        // Chỉ merge nếu left gần nhau VÀ khoảng cách dọc không quá lớn,
+                        // HOẶC nếu là cột liền kề có overlap dọc đủ (cùng speech bubble)
+                        if ((leftDiff < leftThreshold && verticalGap < gapThreshold) || isAdjacentColumn) {
                            // Log.i("TranslationRepository", "[MERGE-CHECK] ✓ MERGE vào group hiện tại")
                             group.add(block)
                             assigned = true
                             break
                         } else {
-                            Log.i("TranslationRepository", "[MERGE-CHECK] ✗ KHÔNG MERGE (leftDiff=${leftDiff >= leftThreshold}, gap=${verticalGap >= gapThreshold})")
+                            Log.i("TranslationRepository", "[MERGE-CHECK] ✗ KHÔNG MERGE (leftDiff=${leftDiff >= leftThreshold}, gap=${verticalGap >= gapThreshold}, adjacentCol=$isAdjacentColumn)")
                         }
                     } else {
                         val topDiff = kotlin.math.abs(block.bounds.top - ref.bounds.top)
