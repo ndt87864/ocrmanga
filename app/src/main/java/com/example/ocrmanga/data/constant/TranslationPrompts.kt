@@ -16,29 +16,29 @@ object TranslationPrompts {
         } else ""
 
         return """
-        [ROLE] Bạn là một phiên dịch viên chuyên nghiệp nhất người việt nam, chuyên dịch truyện tranh sang tiếng Việt.
+        [ROLE] Bạn là phiên dịch viên bản địa chuyên nghiệp, với khả năng dịch truyện tranh sang tiếng Việt một cách điêu luyện, giữ nguyên văn phong và cảm xúc của bản gốc.
         
         [INPUT] $text
         
         [TIỀN XỬ LÝ]
         1. Sửa lỗi OCR: từ dính, sai chính tả, ký tự rác → suy luận từ ngữ cảnh.
-        2. TÁI CẤU TRÚC LOGIC (Đặc biệt cho chữ tượng hình Nhật/Trung/Hàn): Nếu thứ tự từ bị đảo do quét OCR, hãy sắp xếp lại theo luồng logic Việt: 
-           - Đối tượng -> Hành động -> Kết quả.
-           - Thời gian/Trình tự: Việc xảy ra trước -> Việc xảy ra sau.
-           - Trạng thái -> Biến đổi -> Hệ quả.
+        2. TÁI CẤU TRÚC: Nếu thứ tự từ bị đảo do OCR, sắp xếp lại theo logic tiếng Việt.
         $ancientInstruction
-        [QUY TẮC BẮT BUỘC]
-        ■ ĐẠI TỪ: Mặc định dùng xưng hô lịch sự/trung tính (tôi, cậu, mình, anh, em...). CHỈ dùng (tao, mày) khi nhân vật đang tức giận, cãi vã hoặc có biểu hiện thô lỗ rõ rệt.
-        ■ ĐỘC THOẠI & LỜI DẪN: 
-          - Độc thoại nội tâm (suy nghĩ): Dùng "mình" hoặc lược bỏ chủ ngữ.
-          - Lời dẫn truyện (narration): KHÔNG dùng "mình", dùng văn phong khách quan hoặc lược bỏ chủ ngữ.
+        [QUY TẮC QUAN TRỌNG NHẤT - NGẮN GỌN]
+        ★ BẢN DỊCH PHẢI NGẮN. Đây là bong bóng thoại truyện tranh, KHÔNG phải tiểu thuyết.
+        ★ KHÔNG thêm từ đệm, từ nối thừa. KHÔNG kéo dài câu.
+        ★ Mỗi câu dịch phải CÔ ĐỌNG với câu ngắn , biến tấu với câu dài , giữ đúng ý nhất có thể.
+        
+        [VĂN PHONG]
+        ■ Dịch như người Việt NÓI, không phải VIẾT. Giọng văn tự nhiênnhiên.
         ■ CHỐNG LẶP: Không lặp đại từ liên tục. "I... I..." → lược bỏ 1, gộp câu.
         ■ LOCALIZATION (BẢN ĐỊA HÓA): Đây là quy tắc quan trọng nhất. Dịch như một biên tập viên/biên kịch người Việt. Tuyệt đối KHÔNG dịch word-by-word (sát nghĩa từng từ).
         ■ THOÁT Ý: Ưu tiên dùng thành ngữ, tiếng lóng, khẩu ngữ phổ biến tại Việt Nam phù hợp với ngữ cảnh.
-        ■ TIỂU TỪ:thêm các tiểu từ (à, ừ, nhé, nhỉ, đâu, mà, chứ, sao, vậy, cơ, hả...) trong trường hợp phù hợp để câu văn nghe như người Việt nói chuyện đời thực.
-        ■ CHỐNG LẶP & GỘP CÂU: Lược bỏ chủ ngữ thừa, gộp các câu đơn ngắn thành câu ghép mạch lạc mang phong cách văn nói.
-        ■ CẤM: dùng từ "và" để nối các mệnh đề hành động (dùng dấu phẩy hoặc rồi/xong/liền).
-        ■ NỘI DUNG NHẠY CẢM: CHỈ sử dụng các từ ngữ thô tục, tiếng lóng nhạy cảm khi văn bản gốc chứa nội dung 18+ rõ rệt (hành động tình dục, âm thanh nhạy cảm). Ở ngữ cảnh bình thường, tuyệt đối dùng từ ngữ trong sáng, lịch sự.
+        ■ ĐẠI TỪ: Mặc định (tôi/cậu/mình). Chỉ dùng (tao/mày) khi nhân vật đang tức giận rõ ràng.
+        ■ ĐỘC THOẠI: Dùng "mình" hoặc lược bỏ chủ ngữ. Lời dẫn truyện: văn phong khách quan.
+        ■ Thêm tiểu từ (à, nhé, nhỉ, đâu, mà, chứ, sao, cơ, hả...) KHI PHÙ HỢP, không ép.
+        ■ CẤM nối mệnh đề bằng "và" (dùng dấu phẩy hoặc rồi/xong/liền).
+        ■ NỘI DUNG NHẠY CẢM: Chỉ dùng từ thô tục khi gốc chứa nội dung 18+ rõ rệt.
         
         [OUTPUT] Chỉ trả về bản dịch. Không giải thích. Không dấu ngoặc kép.
     """.trimIndent()
@@ -67,10 +67,10 @@ object TranslationPrompts {
         } else ""
 
         return """
-        [ROLE] Phiên dịch viên chuyên nghiệp người việt nam, chuyên dịch truyện tranh sang tiếng Việt.
+        [ROLE] Phiên dịch viên bản địa chuyên dịch truyện tranh Nhật/Trung sang tiếng Việt.
         
         [NHIỆM VỤ] 
-        Phân tích các kết quả OCR multi-scale từ 1 trang truyện, tổng hợp text chính xác nhất, rồi dịch TỪNG BLOCK sang tiếng Việt đạt chất lượng xuất bản.
+        Phân tích OCR multi-scale từ 1 trang truyện, tổng hợp text chính xác nhất, dịch TỪNG BLOCK sang tiếng Việt.
         $previousContextText
         
         === DỮ LIỆU OCR (nhiều scale) ===
@@ -81,23 +81,22 @@ object TranslationPrompts {
         
         [TIỀN XỬ LÝ]
         1. Sửa lỗi OCR: từ dính, sai chính tả, ký tự rác → suy luận từ ngữ cảnh.
-        2. TÁI CẤU TRÚC LOGIC (Đặc biệt cho chữ tượng hình Nhật/Trung/Hàn): Nếu thứ tự từ bị đảo do quét OCR, hãy sắp xếp lại theo luồng logic Việt: 
-           - Đối tượng -> Hành động -> Kết quả.
-           - Thời gian/Trình tự: Việc xảy ra trước -> Việc xảy ra sau.
-           - Trạng thái -> Biến đổi -> Hệ quả.
+        2. TÁI CẤU TRÚC: Nếu thứ tự từ bị đảo do OCR, sắp xếp lại theo logic tiếng Việt.
         $ancientInstruction
-        [QUY TẮC BẮT BUỘC]
-        ■ ĐẠI TỪ: Mặc định dùng xưng hô lịch sự/trung tính (tôi, cậu, mình, anh, em...). CHỈ dùng (tao, mày) khi nhân vật đang tức giận, cãi vã hoặc có biểu hiện thô lỗ rõ rệt.
-        ■ ĐỘC THOẠI & LỜI DẪN: 
-          - Độc thoại nội tâm (suy nghĩ): Dùng "mình" hoặc lược bỏ chủ ngữ.
-          - Lời dẫn truyện (narration): KHÔNG dùng "mình", dùng văn phong khách quan hoặc lược bỏ chủ ngữ.
-        ■ CHỐNG LẶP: Không lặp đại từ liên tục. "I... I..." → lược bỏ 1, gộp câu.
-        ■ LOCALIZATION (BẢN ĐỊA HÓA): Đây là quy tắc quan trọng nhất. Dịch như một biên tập viên/biên kịch người Việt. Tuyệt đối KHÔNG dịch word-by-word (sát nghĩa từng từ).
-        ■ THOÁT Ý: Ưu tiên dùng thành ngữ, tiếng lóng, khẩu ngữ phổ biến tại Việt Nam phù hợp với ngữ cảnh.
-        ■ TIỂU TỪ: Bắt buộc thêm các tiểu từ (à, ừ, nhé, nhỉ, đâu, mà, chứ, sao, vậy, cơ, hả...) để câu văn nghe như người Việt nói chuyện đời thực.
-        ■ CHỐNG LẶP & GỘP CÂU: Lược bỏ chủ ngữ thừa, gộp các câu đơn ngắn thành câu ghép mạch lạc mang phong cách văn nói.
-        ■ CẤM: dùng từ "và" để nối các mệnh đề hành động (dùng dấu phẩy hoặc rồi/xong/liền).
-        ■ NỘI DUNG NHẠY CẢM: CHỈ sử dụng các từ ngữ thô tục, tiếng lóng nhạy cảm khi văn bản gốc chứa nội dung 18+ rõ rệt (hành động tình dục, âm thanh nhạy cảm). Ở ngữ cảnh bình thường, tuyệt đối dùng từ ngữ trong sáng, lịch sự.
+        [QUY TẮC QUAN TRỌNG NHẤT - NGẮN GỌN]
+        ★ BẢN DỊCH PHẢI NGẮN. Đây là bong bóng thoại truyện tranh, KHÔNG phải tiểu thuyết.
+        ★ KHÔNG thêm từ đệm, từ nối thừa. KHÔNG kéo dài câu. KHÔNG diễn giải.
+        ★ Mỗi câu dịch phải CÔ ĐỌNG tối đa, giữ đúng ý nhưng dùng ít từ nhất có thể.
+        ★ VÍ DỤ ĐÚNG: 行かね → "Không đi." | ねえ → "Này," | 完成 → "Xong rồi!" | じゃあ頼むわ → "Nhờ cậu nhé."
+        ★ VÍ DỤ SAI (quá dài): 行かね → "Thôi không đi đâu. đâu mà!" | 完成 → "Thế là hoàn tất rồi."
+        
+        [VĂN PHONG]
+        ■ Dịch như người Việt NÓI, không phải VIẾT. Giọng văn tự nhiên, gãy gọn.
+        ■ ĐẠI TỪ: Mặc định (tôi/cậu/mình). Chỉ dùng (tao/mày) khi nhân vật đang tức giận rõ ràng.
+        ■ ĐỘC THOẠI: Dùng "mình" hoặc lược bỏ chủ ngữ. Lời dẫn truyện: văn phong khách quan.
+        ■ Thêm tiểu từ (à, nhé, nhỉ, đâu, mà, chứ, sao, cơ, hả...) KHI PHÙ HỢP, không ép.
+        ■ CẤM nối mệnh đề bằng "và" (dùng dấu phẩy hoặc rồi/xong/liền).
+        ■ NỘI DUNG NHẠY CẢM: Chỉ dùng từ thô tục khi gốc chứa nội dung 18+ rõ rệt.
         
         [OUTPUT] Chỉ trả về bản dịch. Không giải thích. Không dấu ngoặc kép.
     """.trimIndent()
