@@ -2338,24 +2338,39 @@ class TranslationRepository(private val application: Application) {
         if (textBlocks.isEmpty()) return emptyList()
 
         val sortedByLeft = textBlocks.sortedBy { it.bounds.left }
-        val leftValues = sortedByLeft.map { it.bounds.left }
-        val leftGaps = leftValues.zipWithNext { a, b -> b - a }.filter { it > 0 }
-        val avgLeftGap = if (leftGaps.isNotEmpty()) leftGaps.average().toInt() else 100
-        val horizontalThreshold = (avgLeftGap * 0.8).toInt().coerceAtLeast(50)
+        // Tính khoảng trắng thực sự giữa các cột: right của block trước → left của block sau.
+        // Điều này phân biệt chính xác các cột liền kề (~10px) vs các bubble khác nhau (~60px+).
+        // So sánh left-to-left trước đây bị ảnh hưởng bởi block width nhỏ (~30px)
+        // dẫn đến "avgLeftGap * 0.8" không đủ để tách các bubble riêng biệt.
+        val avgBlockWidth = sortedByLeft.map { it.bounds.width() }.average().toFloat().coerceAtLeast(10f)
+        // interColumnGaps = khoảng trắng thực sự giữa right cạnh của block trước và left cạnh của block sau
+        val interColumnGaps = sortedByLeft.zipWithNext { a, b ->
+            (b.bounds.left - a.bounds.right).coerceAtLeast(0)
+        }.filter { it >= 0 }
+        // Dùng median của interColumnGaps để tránh outlier; threshold = median + 1*avgBlockWidth
+        // Nếu gap < threshold → cùng cột (liền kề), nếu gap >= threshold → cột khác (khác bubble)
+        val medianInterGap = if (interColumnGaps.isNotEmpty()) {
+            val sorted = interColumnGaps.sorted()
+            if (sorted.size % 2 == 1) sorted[sorted.size / 2]
+            else (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2
+        } else 0
+        // Threshold: cho phép gap tới median + 1 block-width → bắt được cột kề mà vẫn tách bubble.
+        // Cap tại 2× avgBlockWidth để cột cách nhau hơn 2 block-width luôn thuộc bubble khác nhau.
+        val horizontalThreshold = (medianInterGap + avgBlockWidth).toInt().coerceAtLeast(20).coerceAtMost((avgBlockWidth * 2).toInt())
 
         val columns = mutableListOf<MutableList<TextBlockInfo>>()
         var currentColumn = mutableListOf(sortedByLeft.first())
-        var lastLeft = sortedByLeft.first().bounds.left
+        var lastRight = sortedByLeft.first().bounds.right  // theo dõi right edge, không phải left
 
         for (block in sortedByLeft.drop(1)) {
-            val currentLeft = block.bounds.left
-            if (currentLeft - lastLeft <= horizontalThreshold) {
+            val interGap = (block.bounds.left - lastRight).coerceAtLeast(0)
+            if (interGap <= horizontalThreshold) {
                 currentColumn.add(block)
             } else {
                 columns.add(currentColumn)
                 currentColumn = mutableListOf(block)
             }
-            lastLeft = currentLeft
+            lastRight = maxOf(lastRight, block.bounds.right)
         }
         if (currentColumn.isNotEmpty()) {
             columns.add(currentColumn)
@@ -2401,50 +2416,74 @@ class TranslationRepository(private val application: Application) {
                         .thenBy { it.bounds.top }
                 )
 
-                val mergedText = StringBuilder()
-                lateinit var mergedBounds: Rect
-                var minFontSize = Float.MAX_VALUE
-                var blockCount = 0
-
-                sortedBlocks.forEachIndexed { blockIndex, block ->
-                    if (mergedText.isNotEmpty()) {
-                        mergedText.append(" ")
-                    }
-                    mergedText.append(block.text)
-                    val wordCount = block.wordCountsPerLine?.sum() ?: block.text.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                    val currentWordCountsPerLine = block.wordCountsPerLine ?: listOf(wordCount)
-                    if (blockCount == 0) {
-                        mergedBounds = Rect(block.bounds)
+                // Chia nhỏ region thành các sub-group theo chiều ngang.
+                // Các cột trong manga đôi khi có x-range chồng lên nhau giữa nhiều bubble,
+                // dẫn đến các block từ bubble khác nhau lọt vào cùng column/region.
+                // Fix: khi duyệt từ phải → trái (sorted by left DESC), nếu khoảng cách giữa
+                // prev.left và curr.right > avgBlockWidth * 1.5 → đây là khoảng trắng giữa
+                // 2 bubble khác nhau, tách thành sub-group riêng.
+                val subGroupThreshold = avgBlockWidth * 1.5f
+                val subGroups = mutableListOf<MutableList<TextBlockInfo>>()
+                var currentSubGroup = mutableListOf(sortedBlocks.first())
+                for (idx in 1 until sortedBlocks.size) {
+                    val prev = sortedBlocks[idx - 1]  // block bên phải hơn (left lớn hơn)
+                    val curr = sortedBlocks[idx]      // block bên trái hơn
+                    // Khoảng trắng thực sự giữa 2 sub-column: prev.bounds.left - curr.bounds.right
+                    // (prev nằm bên phải, curr nằm bên trái; nếu overlap thì âm → 0)
+                    val colGap = (prev.bounds.left - curr.bounds.right).toFloat().coerceAtLeast(0f)
+                    if (colGap > subGroupThreshold) {
+                        subGroups.add(currentSubGroup)
+                        currentSubGroup = mutableListOf(curr)
                     } else {
-                        mergedBounds.set(
-                            minOf(mergedBounds.left, block.bounds.left),
-                            minOf(mergedBounds.top, block.bounds.top),
-                            maxOf(mergedBounds.right, block.bounds.right),
-                            maxOf(mergedBounds.bottom, block.bounds.bottom)
-                        )
+                        currentSubGroup.add(curr)
                     }
-                    minFontSize = minOf(minFontSize, block.fontSize)
-                    blockCount++
                 }
+                subGroups.add(currentSubGroup)
 
-                // Phân tích màu nền và màu text cho merged block
-                val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
-                val mergedBlock = TextBlockInfo(
-                    text = mergedText.toString(),
-                    bounds = mergedBounds,
-                    fontSize = minFontSize,
-                    isVertical = true, // Đánh dấu là vertical text để downstream merge đúng thứ tự RTL
-                    wordCountsPerLine = null, // Reset wordCountsPerLine after merging
-                    originalImageWidth = sortedBlocks.firstOrNull()?.originalImageWidth,
-                    originalImageHeight = sortedBlocks.firstOrNull()?.originalImageHeight,
-                    backgroundType = backgroundType,
-                    averageBackgroundColor = avgColor,
-                    originalTextColor = textColor
-                )
+                subGroups.forEachIndexed { subGroupIndex, subGroupBlocks ->
+                    val mergedText = StringBuilder()
+                    lateinit var mergedBounds: Rect
+                    var minFontSize = Float.MAX_VALUE
+                    var blockCount = 0
 
-                Log.i("TranslationRepository", "Column #$columnIndex, Merged Region #$regionIndex: text=${mergedBlock.text}, left=${mergedBlock.bounds.left}, top=${mergedBlock.bounds.top}, right=${mergedBlock.bounds.right}, bottom=${mergedBlock.bounds.bottom}")
+                    subGroupBlocks.forEach { block ->
+                        if (mergedText.isNotEmpty()) {
+                            mergedText.append(" ")
+                        }
+                        mergedText.append(block.text)
+                        if (blockCount == 0) {
+                            mergedBounds = Rect(block.bounds)
+                        } else {
+                            mergedBounds.set(
+                                minOf(mergedBounds.left, block.bounds.left),
+                                minOf(mergedBounds.top, block.bounds.top),
+                                maxOf(mergedBounds.right, block.bounds.right),
+                                maxOf(mergedBounds.bottom, block.bounds.bottom)
+                            )
+                        }
+                        minFontSize = minOf(minFontSize, block.fontSize)
+                        blockCount++
+                    }
 
-                mergedBlocks.add(mergedBlock)
+                    // Phân tích màu nền và màu text cho merged block
+                    val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
+                    val mergedBlock = TextBlockInfo(
+                        text = mergedText.toString(),
+                        bounds = mergedBounds,
+                        fontSize = minFontSize,
+                        isVertical = true, // Đánh dấu là vertical text để downstream merge đúng thứ tự RTL
+                        wordCountsPerLine = null, // Reset wordCountsPerLine after merging
+                        originalImageWidth = subGroupBlocks.firstOrNull()?.originalImageWidth,
+                        originalImageHeight = subGroupBlocks.firstOrNull()?.originalImageHeight,
+                        backgroundType = backgroundType,
+                        averageBackgroundColor = avgColor,
+                        originalTextColor = textColor
+                    )
+
+                    Log.i("TranslationRepository", "Column #$columnIndex, Merged Region #$regionIndex-$subGroupIndex: text=${mergedBlock.text}, left=${mergedBlock.bounds.left}, top=${mergedBlock.bounds.top}, right=${mergedBlock.bounds.right}, bottom=${mergedBlock.bounds.bottom}")
+
+                    mergedBlocks.add(mergedBlock)
+                }
             }
         }
 
