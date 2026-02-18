@@ -2419,23 +2419,39 @@ class TranslationRepository(private val application: Application) {
                 // Chia nhỏ region thành các sub-group theo chiều ngang.
                 // Các cột trong manga đôi khi có x-range chồng lên nhau giữa nhiều bubble,
                 // dẫn đến các block từ bubble khác nhau lọt vào cùng column/region.
-                // Fix: khi duyệt từ phải → trái (sorted by left DESC), nếu khoảng cách giữa
-                // prev.left và curr.right > avgBlockWidth * 1.5 → đây là khoảng trắng giữa
-                // 2 bubble khác nhau, tách thành sub-group riêng.
+                // Có 2 trường hợp để tách:
+                // 1. khoảng trắng giữa prev.left → curr.right > avgBlockWidth * 1.5
+                // 2. curr hoàn toàn nằm bên trái sub-group hiện tại (không overlap ngang) VÀ
+                //    curr bắt đầu tại hoặc dưới đáy sub-group → là bubble khác xếp chéo dọc
                 val subGroupThreshold = avgBlockWidth * 1.5f
                 val subGroups = mutableListOf<MutableList<TextBlockInfo>>()
                 var currentSubGroup = mutableListOf(sortedBlocks.first())
+                // Theo dõi bounding box tích lũy của sub-group hiện tại
+                var subGroupMinLeft = sortedBlocks.first().bounds.left
+                var subGroupMaxRight = sortedBlocks.first().bounds.right
+                var subGroupMaxBottom = sortedBlocks.first().bounds.bottom
                 for (idx in 1 until sortedBlocks.size) {
                     val prev = sortedBlocks[idx - 1]  // block bên phải hơn (left lớn hơn)
                     val curr = sortedBlocks[idx]      // block bên trái hơn
-                    // Khoảng trắng thực sự giữa 2 sub-column: prev.bounds.left - curr.bounds.right
-                    // (prev nằm bên phải, curr nằm bên trái; nếu overlap thì âm → 0)
+                    // Tiêu chí 1: khoảng trắng ngang giữa prev và curr vượt ngưỡng
                     val colGap = (prev.bounds.left - curr.bounds.right).toFloat().coerceAtLeast(0f)
-                    if (colGap > subGroupThreshold) {
+                    // Tiêu chí 2: curr hoàn toàn nằm bên TRÁI sub-group (không overlap ngang)
+                    //             VÀ curr bắt đầu tại hoặc sau đáy sub-group (xếp chéo dọc)
+                    //             → cặp trên (x cao) và cặp dưới (x thấp) thuộc 2 bubble khác nhau
+                    val noHorizontalOverlap = curr.bounds.right <= subGroupMinLeft
+                    val startsAtOrBelowSubGroup = curr.bounds.top >= subGroupMaxBottom - 15
+                    val isDiagonallyStacked = noHorizontalOverlap && startsAtOrBelowSubGroup
+                    if (colGap > subGroupThreshold || isDiagonallyStacked) {
                         subGroups.add(currentSubGroup)
                         currentSubGroup = mutableListOf(curr)
+                        subGroupMinLeft = curr.bounds.left
+                        subGroupMaxRight = curr.bounds.right
+                        subGroupMaxBottom = curr.bounds.bottom
                     } else {
                         currentSubGroup.add(curr)
+                        subGroupMinLeft = minOf(subGroupMinLeft, curr.bounds.left)
+                        subGroupMaxRight = maxOf(subGroupMaxRight, curr.bounds.right)
+                        subGroupMaxBottom = maxOf(subGroupMaxBottom, curr.bounds.bottom)
                     }
                 }
                 subGroups.add(currentSubGroup)
