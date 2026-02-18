@@ -2467,9 +2467,11 @@ class TranslationRepository(private val application: Application) {
         if (currentBand.isNotEmpty()) bands.add(currentBand)
         
         // Trong mỗi band: sắp xếp Phải → Trái (descending left)
+        // Sau khi sort xong, chuyển isVertical = false để bản dịch tiếng Việt render theo chiều ngang
+        // (tránh lỗi "bản dịch thành cột đứng" khi hệ thống vẽ ép mỗi ký tự một dòng)
         return bands.flatMap { band ->
             band.sortedByDescending { it.bounds.left }
-        }
+        }.map { it.copy(isVertical = false) }
     }
 
     private fun determineTextOrientation(textBlocks: List<TextBlockInfo>, fullText: String): Boolean {
@@ -3479,9 +3481,10 @@ class TranslationRepository(private val application: Application) {
             }
             if (currentBand.isNotEmpty()) bands.add(currentBand)
             
+            // Sau khi sort RTL xong, chuyển isVertical = false để bản dịch tiếng Việt render ngang
             bands.flatMap { band ->
                 band.sortedByDescending { it.bounds.left }
-            }
+            }.map { it.copy(isVertical = false) }
         } else {
             merged
         }
