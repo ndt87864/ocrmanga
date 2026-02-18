@@ -2089,7 +2089,19 @@ class TranslationRepository(private val application: Application) {
             var assigned = false
             for (cluster in clusters) {
                 val last = cluster.last()
-                if (iou(block.bounds, last.bounds) > iouThreshold && isVerticalOverlapEnough(block.bounds, last.bounds) && !isTooFarVertical(block.bounds, last.bounds)) {
+                // Tính khoảng trắng ngang thực sự giữa block và last
+                val hGap = when {
+                    block.bounds.right <= last.bounds.left -> last.bounds.left - block.bounds.right
+                    block.bounds.left >= last.bounds.right -> block.bounds.left - last.bounds.right
+                    else -> 0
+                }
+                val vOverlap = verticalOverlap(block.bounds, last.bounds)
+                val minHgt = minOf(block.bounds.height(), last.bounds.height()).coerceAtLeast(1)
+                // Các cột dọc liền kề trong cùng speech bubble có x-gap nhỏ (< 15px) và
+                // overlap dọc lớn. IoU = 0 vì không chồng x-range → cần check riêng.
+                // Cap 15px để không nhầm với các bubble khác nhau (gap thường ≥ 30px).
+                val isHorizontallyAdjacentColumn = hGap <= 15 && vOverlap >= minHgt * 0.3f
+                if ((iou(block.bounds, last.bounds) > iouThreshold && isVerticalOverlapEnough(block.bounds, last.bounds) && !isTooFarVertical(block.bounds, last.bounds)) || isHorizontallyAdjacentColumn) {
                     cluster.add(block)
                     assigned = true
                     break
@@ -2436,6 +2448,15 @@ class TranslationRepository(private val application: Application) {
                     val curr = sortedBlocks[idx]      // block bên trái hơn
                     // Tiêu chí 1: khoảng trắng ngang giữa prev và curr vượt ngưỡng
                     val colGap = (prev.bounds.left - curr.bounds.right).toFloat().coerceAtLeast(0f)
+                    // Tiêu chí 1b: curr không chồng x-range với sub-group VÀ có khoảng trắng ngang
+                    //              đáng kể → 2 cột riêng biệt trong cùng region.
+                    //              Ngưỡng = max(avgBlockWidth * 0.5, 20px) để tránh split nhầm khi
+                    //              avgBlockWidth nhỏ (block chữ dọc hẹp ~15px → threshold chỉ 7.5px,
+                    //              dễ split nhầm các cột liền kề cùng bubble có gap 4-9px).
+                    val gapToSubGroup = (subGroupMinLeft - curr.bounds.right).toFloat().coerceAtLeast(0f)
+                    val noXOverlapWithSubGroup = curr.bounds.right <= subGroupMinLeft
+                    val separateColumnThreshold = (avgBlockWidth * 0.5f).coerceAtLeast(20f)
+                    val isSeparateColumn = noXOverlapWithSubGroup && gapToSubGroup > separateColumnThreshold
                     // Tiêu chí 2: curr hoàn toàn nằm bên TRÁI sub-group (không overlap ngang)
                     //             VÀ curr bắt đầu tại hoặc sau đáy sub-group (xếp chéo dọc)
                     //             → cặp trên (x cao) và cặp dưới (x thấp) thuộc 2 bubble khác nhau
@@ -2454,7 +2475,7 @@ class TranslationRepository(private val application: Application) {
                         else -> 0  // curr chồng lên dọc với sub-group → không có gap
                     }
                     val isLargeVerticalGapSameColumn = hasSameColumnOverlap && actualVerticalGap > avgBlockHeight * 0.8f
-                    if (colGap > subGroupThreshold || isDiagonallyStacked || isLargeVerticalGapSameColumn) {
+                    if (colGap > subGroupThreshold || isSeparateColumn || isDiagonallyStacked || isLargeVerticalGapSameColumn) {
                         subGroups.add(currentSubGroup)
                         currentSubGroup = mutableListOf(curr)
                         subGroupMinLeft = curr.bounds.left
