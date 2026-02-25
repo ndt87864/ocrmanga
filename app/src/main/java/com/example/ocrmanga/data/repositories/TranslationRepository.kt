@@ -1638,7 +1638,7 @@ class TranslationRepository(private val application: Application) {
         
         val recognizers = when (forceScript) {
             "zh" -> listOf(chineseRecognizer)
-            "ja" -> listOf(japaneseRecognizer)
+            "ja" -> listOf(japaneseRecognizer, chineseRecognizer) // Cả 2 để bắt Kanji tốt hơn
             "ko" -> listOf(koreanRecognizer)
             "en", "es" -> listOf(latinRecognizer)
             else -> listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer, latinRecognizer)
@@ -1738,7 +1738,7 @@ class TranslationRepository(private val application: Application) {
         val scaleFactors = if (onlyPreview) listOf(0.9f, 1.1f) else listOf(0.85f, 1.0f, 1.15f, 1.3f)
         val recognizers = when (forceScript) {
             "zh" -> listOf(chineseRecognizer)
-            "ja" -> listOf(japaneseRecognizer)
+            "ja" -> listOf(japaneseRecognizer, chineseRecognizer) // Cả 2 recognizer để bắt Kanji tốt hơn
             "ko" -> listOf(koreanRecognizer)
             // Treat Spanish ("es") the same as English (Latin script)
             "en", "es" -> listOf(latinRecognizer)
@@ -1749,7 +1749,13 @@ class TranslationRepository(private val application: Application) {
                 async {
                     var preprocessedBitmap: Bitmap? = null
                     try {
-                        val (preBitmap, _) = preprocessImage(bitmap, scale)
+                        // Dùng enhance mode khác nhau theo scale để phát hiện text trên nền phức tạp
+                        val enhanceMode = when {
+                            scale < 1.0f -> 2  // Soft contrast cho scale nhỏ
+                            scale > 1.2f -> 1  // High contrast cho scale lớn (tốt cho text trên nền tối)
+                            else -> 0          // Standard cho scale trung bình
+                        }
+                        val (preBitmap, _) = preprocessImage(bitmap, scale, enhanceMode)
                         preprocessedBitmap = preBitmap
                         val scaledInputImage = InputImage.fromBitmap(preprocessedBitmap, rotationDegrees)
                         val result = recognizer.process(scaledInputImage).await()
@@ -2036,8 +2042,194 @@ class TranslationRepository(private val application: Application) {
             }
         }
 
+        // === MULTI-SCALE FUSION ===
+        // Thu thập text blocks bổ sung từ các scale khác
+        // Text nhỏ hoặc trên nền phức tạp có thể chỉ được phát hiện ở scale khác
+        // Cho phép cross-fusion giữa Japanese và Chinese recognizer (chia sẻ Kanji)
+        // Nhưng KHÔNG merge từ Korean/Latin recognizer khi quét CJK (tránh garbage)
+        val mergedTextBlocks = textBlocks.toMutableList()
+        val cjkRecognizers = setOf(japaneseRecognizer, chineseRecognizer)
+        val otherResults = if (onlyPreview) emptyList() else results.filter { result ->
+            result != bestResult && (
+                result.recognizer == bestResult.recognizer ||
+                // Cho phép cross-fusion giữa Japanese và Chinese recognizer
+                (result.recognizer in cjkRecognizers && bestResult.recognizer in cjkRecognizers)
+            )
+        }
+
+        for (otherResult in otherResults) {
+            val otherScaleFactor = otherResult.scale
+            val otherTextResult = otherResult.textResult
+            val otherAvgFontSize = otherResult.avgFontSize
+
+            val otherBlocks = otherTextResult.textBlocks.flatMap { block ->
+                val blockHasCJK = cjkPatternMain.containsMatchIn(block.text)
+
+                if (isLatinMode && blockHasCJK) {
+                    val totalChars = block.text.count { !it.isWhitespace() }
+                    val cjkChars = cjkPatternMain.findAll(block.text).count()
+                    if (totalChars > 0 && cjkChars.toFloat() / totalChars > 0.5f) {
+                        return@flatMap emptyList<TextBlockInfo>()
+                    }
+                }
+
+                block.lines.mapNotNull { line ->
+                    val bounds = line.boundingBox ?: Rect()
+                    val scaledBounds = Rect(
+                        (bounds.left / otherScaleFactor).toInt(),
+                        (bounds.top / otherScaleFactor).toInt(),
+                        (bounds.right / otherScaleFactor).toInt(),
+                        (bounds.bottom / otherScaleFactor).toInt()
+                    )
+
+                    val elements = line.elements
+                    val lineConfidence = if (elements.isNotEmpty()) {
+                        elements.sumOf { it.confidence.toDouble() }.toFloat() / elements.size
+                    } else { 0f }
+
+                    val fontSizes = elements.mapNotNull { it.boundingBox?.height()?.toFloat()?.div(otherScaleFactor) }
+                    val fontSize = if (fontSizes.isNotEmpty()) {
+                        fontSizes.sorted()[fontSizes.size / 2].coerceAtMost(otherAvgFontSize * 1.2f)
+                    } else { otherAvgFontSize }
+
+                    val processedText = postProcessOCRText(line.text, forceScript)
+
+                    val lineHasCJK = cjkPatternMain.containsMatchIn(processedText)
+                    val cjkSingleNoise = setOf("ー", "丨", "丶")
+                    val shouldFilter = when {
+                        processedText.isBlank() -> true
+                        lineHasCJK -> processedText.trim() in cjkSingleNoise && scaledBounds.width() * scaledBounds.height() < MIN_BLOCK_AREA
+                        blockHasCJK -> isNoiseBlock(processedText, scaledBounds, lineConfidence)
+                        else -> isNoiseBlock(processedText, scaledBounds, lineConfidence)
+                    }
+
+                    if (shouldFilter) null
+                    else {
+                        val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
+                        val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
+                        TextBlockInfo(
+                            text = processedText,
+                            bounds = scaledBounds,
+                            fontSize = fontSize,
+                            wordCountsPerLine = listOf(wordCount),
+                            originalImageWidth = bitmap.width,
+                            originalImageHeight = bitmap.height,
+                            backgroundType = backgroundType,
+                            averageBackgroundColor = avgColor,
+                            originalTextColor = textColor
+                        )
+                    }
+                }
+            }
+
+            // Thêm blocks mới không overlap đáng kể với blocks hiện có
+            for (newBlock in otherBlocks) {
+                val hasSignificantOverlap = mergedTextBlocks.any { existing ->
+                    val overlapLeft = maxOf(existing.bounds.left, newBlock.bounds.left)
+                    val overlapTop = maxOf(existing.bounds.top, newBlock.bounds.top)
+                    val overlapRight = minOf(existing.bounds.right, newBlock.bounds.right)
+                    val overlapBottom = minOf(existing.bounds.bottom, newBlock.bounds.bottom)
+                    val overlapArea = maxOf(0, overlapRight - overlapLeft) * maxOf(0, overlapBottom - overlapTop)
+                    val newBlockArea = newBlock.bounds.width() * newBlock.bounds.height()
+                    val existingArea = existing.bounds.width() * existing.bounds.height()
+                    val smallerArea = minOf(newBlockArea, existingArea).coerceAtLeast(1)
+                    overlapArea.toFloat() / smallerArea > 0.4f
+                }
+                if (!hasSignificantOverlap) {
+                    mergedTextBlocks.add(newBlock)
+                    Log.i("TranslationRepository", "[MULTI-SCALE] Added block from scale=${otherResult.scale}: '${newBlock.text}'")
+                }
+            }
+        }
+
+        if (mergedTextBlocks.size > textBlocks.size) {
+            Log.i("TranslationRepository", "[MULTI-SCALE] Total blocks: ${textBlocks.size} (best) + ${mergedTextBlocks.size - textBlocks.size} (other scales) = ${mergedTextBlocks.size}")
+        }
+
+        // === RAW BITMAP SCAN ===
+        // Quét thêm trên ảnh gốc (không grayscale/contrast) để bắt text mà preprocessing phá hủy
+        // VD: text trên nền phức tạp, text màu nhạt, SFX manga, text trên nền tối
+        if (!onlyPreview) {
+            val rawBlocksBefore = mergedTextBlocks.size
+            // Dùng lại danh sách recognizers đã xác định ở trên (có đúng type TextRecognizer)
+            for (rawRecognizer in recognizers) {
+                try {
+                    val rawInputImage = InputImage.fromBitmap(bitmap, rotationDegrees)
+                    val rawResult = rawRecognizer.process(rawInputImage).await()
+
+                    for (rawBlock in rawResult.textBlocks) {
+                        val rawBlockHasCJK = cjkPatternMain.containsMatchIn(rawBlock.text)
+                        if (isLatinMode && rawBlockHasCJK) {
+                            val totalCharsRaw = rawBlock.text.count { c -> !c.isWhitespace() }
+                            val cjkCharsRaw = cjkPatternMain.findAll(rawBlock.text).count()
+                            if (totalCharsRaw > 0 && cjkCharsRaw.toFloat() / totalCharsRaw > 0.5f) continue
+                        }
+
+                        for (rawLine in rawBlock.lines) {
+                            val rawBounds = rawLine.boundingBox ?: continue
+                            val rawElements = rawLine.elements
+                            val rawLineConfidence = if (rawElements.isNotEmpty()) {
+                                rawElements.sumOf { el -> el.confidence.toDouble() }.toFloat() / rawElements.size
+                            } else { 0f }
+
+                            val rawFontSizes = rawElements.mapNotNull { el -> el.boundingBox?.height()?.toFloat() }
+                            val rawFontSize = if (rawFontSizes.isNotEmpty()) {
+                                rawFontSizes.sorted()[rawFontSizes.size / 2]
+                            } else { bestAvgFontSize }
+
+                            val rawProcessedText = postProcessOCRText(rawLine.text, forceScript)
+                            val rawLineHasCJK = cjkPatternMain.containsMatchIn(rawProcessedText)
+                            val rawCjkSingleNoise = setOf("ー", "丨", "丶")
+                            val rawShouldFilter = when {
+                                rawProcessedText.isBlank() -> true
+                                rawLineHasCJK -> rawProcessedText.trim() in rawCjkSingleNoise && rawBounds.width() * rawBounds.height() < MIN_BLOCK_AREA
+                                rawBlockHasCJK -> isNoiseBlock(rawProcessedText, rawBounds, rawLineConfidence)
+                                else -> isNoiseBlock(rawProcessedText, rawBounds, rawLineConfidence)
+                            }
+                            if (rawShouldFilter) continue
+
+                            // Kiểm tra overlap với blocks hiện có
+                            val rawHasOverlap = mergedTextBlocks.any { existing ->
+                                val oLeft = maxOf(existing.bounds.left, rawBounds.left)
+                                val oTop = maxOf(existing.bounds.top, rawBounds.top)
+                                val oRight = minOf(existing.bounds.right, rawBounds.right)
+                                val oBottom = minOf(existing.bounds.bottom, rawBounds.bottom)
+                                val oArea = maxOf(0, oRight - oLeft) * maxOf(0, oBottom - oTop)
+                                val smaller = minOf(
+                                    rawBounds.width() * rawBounds.height(),
+                                    existing.bounds.width() * existing.bounds.height()
+                                ).coerceAtLeast(1)
+                                oArea.toFloat() / smaller > 0.4f
+                            }
+                            if (!rawHasOverlap) {
+                                val rawWordCount = rawProcessedText.split(Regex("\\s+")).filter { w -> w.isNotEmpty() }.size
+                                val (rawBgType, rawAvgColor, rawTextColor) = analyzeBackgroundAndTextColor(bitmap, rawBounds)
+                                mergedTextBlocks.add(TextBlockInfo(
+                                    text = rawProcessedText,
+                                    bounds = rawBounds,
+                                    fontSize = rawFontSize,
+                                    wordCountsPerLine = listOf(rawWordCount),
+                                    originalImageWidth = bitmap.width,
+                                    originalImageHeight = bitmap.height,
+                                    backgroundType = rawBgType,
+                                    averageBackgroundColor = rawAvgColor,
+                                    originalTextColor = rawTextColor
+                                ))
+                                Log.i("TranslationRepository", "[RAW-SCAN] Added block: '${rawProcessedText}' bounds=$rawBounds")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w("TranslationRepository", "[RAW-SCAN] Failed: ${e.message}")
+                }
+            }
+            if (mergedTextBlocks.size > rawBlocksBefore) {
+                Log.i("TranslationRepository", "[RAW-SCAN] Added ${mergedTextBlocks.size - rawBlocksBefore} new blocks from raw bitmap scan")
+            }
+        }
+
         // Check for font size consistency within clusters
-        val clusters = groupBlocksIntoClusters(textBlocks)
+        val clusters = groupBlocksIntoClusters(mergedTextBlocks)
         val normalizedTextBlocks = clusters.flatMap { cluster ->
             val fontSizes = cluster.map { it.fontSize }
             if (fontSizes.isNotEmpty()) {
