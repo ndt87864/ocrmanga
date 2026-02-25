@@ -271,6 +271,16 @@ class TranslationRepository(private val application: Application) {
                 lastError = e
                 val keyPrefix = mistralKey.take(10)
                 Log.e("TranslationRepository", "[MISTRAL-EXCEPTION] Key bị lỗi: ${keyPrefix}... | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${i + 1}/$maxTries", e)
+                // Lỗi mạng: không có Internet hoặc không phân giải được DNS -> bỏ qua retry
+                if (e is java.net.UnknownHostException || e is java.net.SocketTimeoutException || e is java.net.ConnectException) {
+                    if (!mistralErrorToastShown) {
+                        mistralErrorToastShown = true
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(application, "Không có kết nối mạng. Vui lòng kiểm tra Internet.", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    return null
+                }
                 if (!mistralErrorToastShown) {
                     mistralErrorToastShown = true
                     withContext(Dispatchers.Main) {
@@ -579,6 +589,16 @@ class TranslationRepository(private val application: Application) {
                 lastError = e
                 val keyPrefix = mistralKey.take(10)
                 Log.e("TranslationRepository", "[MISTRAL-MULTI-EXCEPTION] Key bị lỗi: ${keyPrefix}... | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${i + 1}/$maxTries", e)
+                // Lỗi mạng: không có Internet hoặc không phân giải được DNS -> bỏ qua retry
+                if (e is java.net.UnknownHostException || e is java.net.SocketTimeoutException || e is java.net.ConnectException) {
+                    if (!mistralErrorToastShown) {
+                        mistralErrorToastShown = true
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(application, "Không có kết nối mạng. Vui lòng kiểm tra Internet.", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    return null
+                }
                 if (!mistralErrorToastShown) {
                     mistralErrorToastShown = true
                     withContext(Dispatchers.Main) {
