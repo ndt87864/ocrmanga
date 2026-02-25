@@ -221,11 +221,11 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 0.7,
-                "top_p" to 0.82,
-                "max_tokens" to 3000,
-                "frequency_penalty" to 0.5,
-                "presence_penalty" to 0.3
+                "temperature" to 0.78,
+                "top_p" to 0.95,
+                "max_tokens" to 2048,
+                "frequency_penalty" to 0.45,
+                "presence_penalty" to 0.4
             )
             val requestBody = gson.toJson(bodyMap)
 
@@ -388,11 +388,11 @@ class TranslationRepository(private val application: Application) {
             val bodyMap = mapOf(
                 "model" to getCurrentMistralModel(),
                 "messages" to listOf(systemMessage, message),
-                "temperature" to 0.7,
-                "top_p" to 0.82,
-                "max_tokens" to 3000,
-                "frequency_penalty" to 0.5,
-                "presence_penalty" to 0.3
+                "temperature" to 0.78,
+                "top_p" to 0.95,
+                "max_tokens" to 2048,
+                "frequency_penalty" to 0.45,
+                "presence_penalty" to 0.4
             )
             val requestBody = gson.toJson(bodyMap)
 
