@@ -17,6 +17,7 @@ import com.example.ocrmanga.data.models.RecognitionResult
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.constant.TranslationPrompts
+import com.example.ocrmanga.data.translation.TranslationTeamManager
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
@@ -55,6 +56,7 @@ import kotlin.math.max
 class TranslationRepository(private val application: Application) {
     
     private val themePreferences = ThemePreferences(application)
+    private val teamManager by lazy { TranslationTeamManager(application) }
     
     /**
      * Lấy tất cả cài đặt font và style mặc định từ cài đặt người dùng
@@ -1168,13 +1170,23 @@ class TranslationRepository(private val application: Application) {
                 }*/
                 
                 // Gửi tất cả kết quả cho Mistral AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
-                val translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation, isAncientMode)
-                
+                var translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation, isAncientMode)
+
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Mistral không trả về kết quả dịch")
                     lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
                     return@withContext Triple("", emptyList(), "zh")
                 }
+
+                // Team Manager: review & revision bản dịch (3 vòng cho Mistral)
+                translatedTexts = teamManager.orchestrateReview(
+                    initialTranslations = translatedTexts,
+                    textBlocks = mergedBlocks,
+                    mode = TranslationMode.MISTRAL,
+                    isAncientMode = isAncientMode
+                )
+
+                val finalTranslatedTexts = translatedTexts
                 
                 //Log.i("TranslationRepository", "[MISTRAL] Số bản dịch nhận được: ${translatedTexts.size}")
                 
@@ -1190,7 +1202,7 @@ class TranslationRepository(private val application: Application) {
                 val blocks = mutableListOf<TextBlockInfo>()
                 mergedBlocks.forEachIndexed { index, block ->
                     // Lấy văn bản dịch tương ứng với block này
-                    val translatedTextForBlock = translatedTexts.getOrNull(index) ?: block.text
+                    val translatedTextForBlock = finalTranslatedTexts.getOrNull(index) ?: block.text
                     
                     // Post-process bản dịch
                     val naturalText = postProcessTranslation(translatedTextForBlock)
@@ -1292,13 +1304,23 @@ class TranslationRepository(private val application: Application) {
                 }
                 */
                 // Gửi tất cả kết quả cho Gemini AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
-                val translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation, isAncientMode)
-                
+                var translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation, isAncientMode)
+
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Gemini không trả về kết quả dịch")
                     lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
                     return@withContext Triple("", emptyList(), "zh")
                 }
+
+                // Team Manager: review & revision bản dịch (1 vòng cho Gemini)
+                translatedTexts = teamManager.orchestrateReview(
+                    initialTranslations = translatedTexts,
+                    textBlocks = mergedBlocks,
+                    mode = TranslationMode.GEMINI,
+                    isAncientMode = isAncientMode
+                )
+
+                val finalTranslatedTexts = translatedTexts
                 
                 //Log.i("TranslationRepository", "[GEMINI] Số bản dịch nhận được: ${translatedTexts.size}")
                 
@@ -1314,7 +1336,7 @@ class TranslationRepository(private val application: Application) {
                 val blocks = mutableListOf<TextBlockInfo>()
                 mergedBlocks.forEachIndexed { index, block ->
                     // Lấy văn bản dịch tương ứng với block này
-                    val translatedTextForBlock = translatedTexts.getOrNull(index) ?: block.text
+                    val translatedTextForBlock = finalTranslatedTexts.getOrNull(index) ?: block.text
                     
                     // Post-process bản dịch
                     val naturalText = postProcessTranslation(translatedTextForBlock)
