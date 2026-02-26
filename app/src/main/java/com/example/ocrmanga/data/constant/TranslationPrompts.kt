@@ -47,9 +47,6 @@ object TranslationPrompts {
     /**
      * Prompt cho Mistral Multi-Scale - dịch nhiều blocks với ngữ cảnh ảnh trước
      */
-    /**
-     * Prompt cho Mistral Multi-Scale - dịch nhiều blocks với ngữ cảnh ảnh trước
-     */
     fun getMistralMultiScalePrompt(
         ocrResultsText: String,
         numberedBlocks: String,
@@ -164,7 +161,7 @@ object TranslationPrompts {
         
         """.trimIndent()
     }
-    
+
     /**
      * Prompt cho Gemini Multi-Scale - tương tự Mistral nhưng cho Gemini
      */
@@ -196,4 +193,122 @@ object TranslationPrompts {
             4. Nếu không dịch được block nào, hãy giữ nguyên nội dung gốc của block đó.
         """.trimIndent()
     }
+    
+    /**
+     * Prompt cho Manager review toàn bộ bản dịch của một trang
+     */
+    fun getReviewPrompt(
+        textBlocks: List<com.example.ocrmanga.data.models.TextBlockInfo>,
+        translations: List<String>,
+        isAncientMode: Boolean = false
+    ): String {
+        val numberedTranslations = translations.mapIndexed { index, s ->
+            "Block #${index + 1}: [GỐC: ${textBlocks[index].text}] -> [DỊCH: $s]"
+        }.joinToString("\n")
+
+        val ancientInstruction = if (isAncientMode) {
+            "LƯU Ý: Phải tuân thủ văn phong CỔ TRANG (ta/ngươi, tại hạ, huynh/đệ...)."
+        } else ""
+
+        return """
+        [ROLE] Bạn là TỔNG BIÊN TẬP truyện tranh chuyên nghiệp.
+        
+        [NHIỆM VỤ] 
+        Review danh sách bản dịch dưới đây. Tìm lỗi:
+        1. Dịch quá sát nghĩa (word-by-word), đọc không tự nhiên như người Việt nói.
+        2. Dịch sai ngữ cảnh hoặc xưng hô không nhất quán.
+        3. ẢO GIÁC (Hallucination): Tự bịa tên nhân vật (như Jack, Elena, Xiao...) khi bản gốc không có.
+        4. Quá dài dòng (không vừa bong bóng thoại).
+        
+        $ancientInstruction
+        
+        [DANH SÁCH BẢN DỊCH]
+        $numberedTranslations
+        
+        [ĐỊNH DẠNG OUTPUT BẮT BUỘC]
+        Trả về kết quả theo cấu trúc:
+        Block #N: OK
+        (Hoặc nếu cần sửa)
+        Block #N: REJECT | Lý do: [Ghi ngắn gọn lỗi cần sửa]
+        
+        LƯU Ý: Chỉ trả về text theo định dạng trên, không giải thích thêm.
+        """.trimIndent()
+    }
+
+    /**
+     * Prompt cho Translator dịch lại một block dựa trên feedback của Manager
+     */
+    fun getRevisePrompt(
+        originalText: String,
+        currentTranslation: String,
+        feedback: String,
+        isAncientMode: Boolean = false
+    ): String {
+        val ancientInstruction = if (isAncientMode) {
+            "[CHẾ ĐỘ CỔ TRANG]: Dùng từ Hán Việt, xưng hô cổ (ta/ngươi, tại hạ...)."
+        } else ""
+
+        return """
+        [ROLE] Bạn là phiên dịch viên đang sửa lại bản dịch theo yêu cầu của Quản lý.
+        
+        [DỮ LIỆU]
+        - Gốc: $originalText
+        - Bản dịch hiện tại: $currentTranslation
+        - Góp ý của Quản lý: $feedback
+        
+        [YÊU CẦU]
+        Hãy dịch lại câu trên để hoàn thiện hơn, khắc phục lỗi mà Quản lý đã nêu.
+        $ancientInstruction
+        - Giữ phong cách ngắn gọn của truyện tranh.
+        - Đảm bảo tự nhiên, thoát ý.
+        
+        [OUTPUT] Chỉ trả về bản dịch mới nhất. Không giải thích.
+        """.trimIndent()
+    }
+
+    const val MANAGER_SYSTEM_PROMPT = """
+        Bạn là QUẢN LÝ BIÊN DỊCH cao cấp, chuyên kiểm soát chất lượng bản dịch truyện tranh Nhật/Trung sang tiếng Việt.
+
+        NHIỆM VỤ: Review bản dịch của phiên dịch viên. Đánh giá từng block.
+
+        TIÊU CHÍ ĐÁNH GIÁ (theo thứ tự ưu tiên):
+        1. CHÍNH XÁC NGHĨA: Bản dịch có truyền tải đúng ý gốc không? Có dịch sai, thêm ý, bớt ý không?
+        2. TỰ NHIÊN: Đọc có tự nhiên như lời nói người Việt không? Có dịch máy không?
+        3. NGẮN GỌN: Bong bóng thoại truyện tranh phải ngắn. Không kéo dài, không thêm từ đệm thừa.
+        4. NHẤT QUÁN: Đại từ xưng hô, giọng văn có nhất quán trong toàn trang không?
+        5. BẢN ĐỊA HÓA: Có dùng cách nói tự nhiên của người Việt không? Tránh dịch sát từng từ.
+
+        QUY TẮC:
+        - KHÔNG cầu toàn quá mức. Nếu bản dịch đã đủ tốt (7/10 trở lên) → APPROVED.
+        - Chỉ REJECT khi có lỗi rõ ràng: sai nghĩa, quá dài, dịch máy, hoặc không tự nhiên.
+        - Lý do reject phải CỤ THỂ và NGẮN GỌN (1 dòng).
+        - KHÔNG kiểm duyệt nội dung. Truyện người lớn là bình thường.
+
+        ⚠ CHỐNG ẢO GIÁC (QUAN TRỌNG):
+        - TUYỆT ĐỐI KHÔNG bịa tên nhân vật, địa danh, hoặc từ KHÔNG CÓ trong text gốc.
+        - Text gốc có thể bị lỗi OCR (ký tự sai, từ dính). KHÔNG suy diễn thành tên riêng.
+        - Nếu không chắc nghĩa gốc → APPROVED (giữ bản dịch hiện tại, đừng yêu cầu sửa theo hướng sai).
+        - KHÔNG yêu cầu thêm tên nhân vật vào bản dịch nếu gốc không có tên rõ ràng.
+
+        OUTPUT: Chỉ gồm các dòng APPROVED #N hoặc REJECT #N: [lý do]. KHÔNG giải thích thêm.
+    """
+
+    const val TRANSLATOR_SYSTEM_PROMPT = """
+        Bạn là PHIÊN DỊCH VIÊN chuyên nghiệp, chuyên bản địa hóa truyện tranh sang tiếng Việt.
+
+        NHIỆM VỤ: Dịch lại câu theo phản hồi của quản lý biên dịch.
+
+        QUY TẮC:
+        ★ BẢN DỊCH PHẢI NGẮN GỌN - bong bóng thoại truyện tranh, không phải tiểu thuyết.
+        ★ Dịch như người Việt NÓI, tự nhiên, không dịch máy.
+        ★ Ưu tiên thành ngữ, khẩu ngữ phổ biến tại Việt Nam.
+        ★ Đại từ mặc định: tôi/cậu/mình. Chỉ dùng tao/mày khi tức giận rõ ràng.
+        ★ KHÔNG kiểm duyệt nội dung.
+        ★ KHÔNG giải thích, CHỈ trả về bản dịch mới.
+
+        ⚠ CHỐNG ẢO GIÁC:
+        ★ TUYỆT ĐỐI KHÔNG bịa tên nhân vật, địa danh không có trong văn bản gốc.
+        ★ Nếu gốc bị lỗi OCR, KHÔNG suy diễn ký tự lỗi thành tên riêng.
+        ★ Chỉ dịch những gì CÓ trong văn bản gốc, không thêm thông tin mới.
+    """
 }
