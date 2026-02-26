@@ -55,7 +55,11 @@ data class TextBlockInfo(
     val applyMerge: Boolean = true
     ,
     // Trạng thái chờ xóa bản dịch (ẩn khỏi view, có thể khôi phục)
-    val pendingDelete: Boolean = false
+    val pendingDelete: Boolean = false,
+    // Gradient text properties
+    val textGradientColors: List<Int>? = null, // List of colors for gradient
+    val textGradientOffsets: List<Float>? = null, // Ratios for each color (0.0 - 1.0)
+    val textGradientType: Int = 0 // 0=Top-Down, 1=Left-Right, 2=Diagonal
 )
 
 enum class BackgroundType {

@@ -264,7 +264,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 21
+    private const val DATABASE_VERSION = 22
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -345,6 +345,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     const val COLUMN_BLOCK_FONT_SIZE = "font_size"
     const val COLUMN_BLOCK_LINE_SPACING = "line_spacing"
     const val COLUMN_BLOCK_TEXT_ALIGN = "text_align"
+    // Gradient text properties
+    const val COLUMN_BLOCK_TEXT_GRADIENT_COLORS = "text_gradient_colors" // Comma-separated hex or int
+    const val COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS = "text_gradient_offsets" // Comma-separated floats
+    const val COLUMN_BLOCK_TEXT_GRADIENT_TYPE = "text_gradient_type" // 0, 1, 2
         // change_images table to track whether an image has been interacted with
         const val TABLE_CHANGE_IMAGES = "change_images"
         const val COLUMN_CHANGE_IMAGE_ID = "change_image_id"
@@ -446,6 +450,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_BLOCK_FONT_SIZE REAL DEFAULT 12.0,
                 line_spacing REAL DEFAULT 1.0,
                 $COLUMN_BLOCK_TEXT_ALIGN TEXT DEFAULT 'CENTER',
+                $COLUMN_BLOCK_TEXT_GRADIENT_COLORS TEXT,
+                $COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS TEXT,
+                $COLUMN_BLOCK_TEXT_GRADIENT_TYPE INTEGER DEFAULT 0,
                 FOREIGN KEY ($COLUMN_BLOCK_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
             """
@@ -842,6 +849,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.w(TAG, "Không thể thêm cột ancient_translation_enabled vào $TABLE_ROOM_SETTINGS", e)
             }
         }
+        // Version 22: Thêm các cột gradient cho text trong image_blocks
+        if (oldVersion < 22) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_TEXT_GRADIENT_COLORS TEXT")
+                db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS TEXT")
+                db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_TEXT_GRADIENT_TYPE INTEGER DEFAULT 0")
+                Log.i(TAG, "Đã thêm các cột gradient vào bảng $TABLE_IMAGE_BLOCKS")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm các cột gradient vào $TABLE_IMAGE_BLOCKS", e)
+            }
+        }
     }
 
     // --- Helper methods for image blocks CRUD ---
@@ -872,7 +890,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                          fontFamily: String = "",
                          fontSize: Float = 12f,
                          lineSpacing: Float = 1.0f,
-                         textAlign: String = "CENTER"
+                         textAlign: String = "CENTER",
+                         textGradientColors: List<Int>? = null,
+                         textGradientOffsets: List<Float>? = null,
+                         textGradientType: Int = 0
     ): Long {
         val db = writableDatabase
         if (shadowColor != null || shadowAlpha != 1.0f || shadowRadius != 0f) {
@@ -914,6 +935,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put(COLUMN_BLOCK_FONT_SIZE, fontSize)
                             put(COLUMN_BLOCK_LINE_SPACING, lineSpacing)
                             put(COLUMN_BLOCK_TEXT_ALIGN, textAlign)
+                            put(COLUMN_BLOCK_TEXT_GRADIENT_COLORS, textGradientColors?.joinToString(",") { it.toString() })
+                            put(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS, textGradientOffsets?.joinToString(",") { it.toString() })
+                            put(COLUMN_BLOCK_TEXT_GRADIENT_TYPE, textGradientType)
                         }
                         val id = db.insert(TABLE_IMAGE_BLOCKS, null, values)
         // Explicit log when shadow properties are present to make it easy to spot
@@ -951,6 +975,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val overlayInsetV = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_OVERLAY_INSET_VERTICAL), 0f)
         val overlayRotation = cursor.getFloatOrNull(idx(COLUMN_BLOCK_OVERLAY_ROTATION))
         val textColor = cursor.getIntOrNull(idx(COLUMN_BLOCK_TEXT_COLOR))
+        val textGradientColors = cursor.getString(idx(COLUMN_BLOCK_TEXT_GRADIENT_COLORS))?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toIntOrNull() }
+        val textGradientOffsets = cursor.getString(idx(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS))?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toFloatOrNull() }
+        val textGradientType = cursor.getIntOrDefault(idx(COLUMN_BLOCK_TEXT_GRADIENT_TYPE), 0)
         val textBrightness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_TEXT_BRIGHTNESS), 1.0f)
         val textBoldness = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_TEXT_BOLDNESS), 1.0f)
         val textSat = cursor.getFloatOrDefault(idx(COLUMN_BLOCK_TEXT_SATURATION), 1.0f)
@@ -998,7 +1025,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             rotation = rotation,
             fontFamily = if (fontFamily.isNullOrBlank()) "mto_astro_city" else fontFamily,
             fontSize = fontSize,
-            textAlign = textAlign
+            textAlign = textAlign,
+            textGradientColors = textGradientColors,
+            textGradientOffsets = textGradientOffsets,
+            textGradientType = textGradientType
         )
     }
 
@@ -1345,7 +1375,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     fontSize = textBlock.fontSize,
                                     // ✅ Truyền lineSpacing từ TextBlockInfo
                                     lineSpacing = textBlock.lineSpacing,
-                                    textAlign = textBlock.textAlign.name
+                                    textAlign = textBlock.textAlign.name,
+                                    textGradientColors = textBlock.textGradientColors,
+                                    textGradientOffsets = textBlock.textGradientOffsets,
+                                    textGradientType = textBlock.textGradientType
                                 )
                             } catch (e: Exception) {
                                 Log.w(TAG, "Không thể lưu image_block cho image $imageId khi applyPendingChanges", e)
@@ -1513,7 +1546,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize,
                                             lineSpacing = textBlock.lineSpacing,
-                                            textAlign = textBlock.textAlign.name
+                                            textAlign = textBlock.textAlign.name,
+                                            textGradientColors = textBlock.textGradientColors,
+                                            textGradientOffsets = textBlock.textGradientOffsets,
+                                            textGradientType = textBlock.textGradientType
                                         )
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -1774,7 +1810,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize,
                                             lineSpacing = textBlock.lineSpacing,
-                                            textAlign = textBlock.textAlign.name
+                                            textAlign = textBlock.textAlign.name,
+                                            textGradientColors = textBlock.textGradientColors,
+                                            textGradientOffsets = textBlock.textGradientOffsets,
+                                            textGradientType = textBlock.textGradientType
                                         )
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -1876,7 +1915,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             fontFamily = textBlock.fontFamily,
                                             fontSize = textBlock.fontSize,
                                             lineSpacing = textBlock.lineSpacing,
-                                            textAlign = textBlock.textAlign.name
+                                            textAlign = textBlock.textAlign.name,
+                                            textGradientColors = textBlock.textGradientColors,
+                                            textGradientOffsets = textBlock.textGradientOffsets,
+                                            textGradientType = textBlock.textGradientType
                                         )
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -2349,7 +2391,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     fontSize = textBlock.fontSize,
                                     // ✅ Truyền lineSpacing từ TextBlockInfo
                                     lineSpacing = textBlock.lineSpacing,
-                                    textAlign = textBlock.textAlign.name
+                                    textAlign = textBlock.textAlign.name,
+                                    textGradientColors = textBlock.textGradientColors,
+                                    textGradientOffsets = textBlock.textGradientOffsets,
+                                    textGradientType = textBlock.textGradientType
                                 )
                                 // After inserting blocks, update image-level metadata: original_text + is_translated
                                 try {
@@ -2657,6 +2702,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val textAlignStr = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_ALIGN)) } catch (e: Exception) { "CENTER" }
                 val textAlignEnum = try { com.example.ocrmanga.data.models.TextAlignMode.valueOf(textAlignStr) } catch (e: Exception) { com.example.ocrmanga.data.models.TextAlignMode.CENTER }
                 
+                val textGradientColors = try {
+                    val colorsStr = blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_COLORS))
+                    colorsStr?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toIntOrNull() }
+                } catch (e: Exception) { null }
+                val textGradientOffsets = try {
+                    val offsetsStr = blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS))
+                    offsetsStr?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toFloatOrNull() }
+                } catch (e: Exception) { null }
+                val textGradientType = try { blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_TYPE)) } catch (e: Exception) { 0 }
+                
                 // Log để debug
                 if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {
                     Log.i(TAG, "getMangaRoom ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInset insetH=$overlayInsetH insetV=$overlayInsetV")
@@ -2693,7 +2748,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     applyMerge = false,
                     overlayInsetHorizontal = overlayInsetH,
                     overlayInsetVertical = overlayInsetV,
-                    overlayRotation = overlayRotation
+                    overlayRotation = overlayRotation,
+                    textGradientColors = textGradientColors,
+                    textGradientOffsets = textGradientOffsets,
+                    textGradientType = textGradientType
                 ))
             }
             blockCursor.close()
@@ -2846,6 +2904,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val textAlignStr = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_ALIGN)) } catch (e: Exception) { "CENTER" }
                 val textAlignEnum = try { com.example.ocrmanga.data.models.TextAlignMode.valueOf(textAlignStr) } catch (e: Exception) { com.example.ocrmanga.data.models.TextAlignMode.CENTER }
                 
+                val textGradientColors = try {
+                    val colorsStr = blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_COLORS))
+                    colorsStr?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toIntOrNull() }
+                } catch (e: Exception) { null }
+                val textGradientOffsets = try {
+                    val offsetsStr = blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS))
+                    offsetsStr?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toFloatOrNull() }
+                } catch (e: Exception) { null }
+                val textGradientType = try { blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_TYPE)) } catch (e: Exception) { 0 }
+                
                 // Log để debug
                 if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {
                     Log.i(TAG, "getTranslationsForImages ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInset insetH=$overlayInsetH insetV=$overlayInsetV")
@@ -2882,7 +2950,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     applyMerge = false,
                     overlayInsetHorizontal = overlayInsetH,
                     overlayInsetVertical = overlayInsetV,
-                    overlayRotation = overlayRotation
+                    overlayRotation = overlayRotation,
+                    textGradientColors = textGradientColors,
+                    textGradientOffsets = textGradientOffsets,
+                    textGradientType = textGradientType
                 ))
             }
             blockCursor.close()

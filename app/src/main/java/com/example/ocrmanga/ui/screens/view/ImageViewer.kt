@@ -75,7 +75,10 @@ data class DragBlockState(
     val overlayInset: Float = 0f,
     val overlayInsetHorizontal: Float = 0f,
     val overlayInsetVertical: Float = 0f,
-    val textAlign: com.example.ocrmanga.data.models.TextAlignMode = com.example.ocrmanga.data.models.TextAlignMode.CENTER
+    val textAlign: com.example.ocrmanga.data.models.TextAlignMode = com.example.ocrmanga.data.models.TextAlignMode.CENTER,
+    val textGradientColors: List<Int>? = null,
+    val textGradientOffsets: List<Float>? = null,
+    val textGradientType: Int = 0
 )
 
 data class PrecomputedRegion(
@@ -99,7 +102,10 @@ data class PrecomputedRegion(
     val textShadowRadius: Float = 0f,
     val overlayInset: Float = 0f,
     val overlayInsetHorizontal: Float = 0f,
-    val overlayInsetVertical: Float = 0f
+    val overlayInsetVertical: Float = 0f,
+    val textGradientColors: List<Int>? = null,
+    val textGradientOffsets: List<Float>? = null,
+    val textGradientType: Int = 0
 )
 
 @Composable
@@ -239,7 +245,10 @@ fun ImageViewer(
                         overlayInset = block.overlayInset,
                         overlayInsetHorizontal = block.overlayInsetHorizontal,
                         overlayInsetVertical = block.overlayInsetVertical,
-                        textAlign = block.textAlign
+                        textAlign = block.textAlign,
+                        textGradientColors = block.textGradientColors,
+                        textGradientOffsets = block.textGradientOffsets,
+                        textGradientType = block.textGradientType
                     )
                 } else null
 
@@ -271,7 +280,10 @@ fun ImageViewer(
                             textShadowRadius = it.shadowRadius ?: 0f,
                             overlayInset = it.overlayInset,
                             overlayInsetHorizontal = it.overlayInsetHorizontal,
-                            overlayInsetVertical = it.overlayInsetVertical
+                            overlayInsetVertical = it.overlayInsetVertical,
+                            textGradientColors = it.textGradientColors,
+                            textGradientOffsets = it.textGradientOffsets,
+                            textGradientType = it.textGradientType
                         )
                     } ?: emptyList()
 
@@ -395,7 +407,7 @@ fun ImageViewer(
                                 val offsetY = if (imageHeight > (block.originalImageHeight?.toFloat() ?: originalImageHeight) * scale) (imageHeight - (block.originalImageHeight?.toFloat() ?: originalImageHeight) * scale) / 2 else 0f
                                 val rect = Rect((block.bounds.left * scale) + dragBlock.offset.x, (block.bounds.top * scale) + offsetY + dragBlock.offset.y, (block.bounds.right * scale) + dragBlock.offset.x, (block.bounds.bottom * scale) + offsetY + dragBlock.offset.y)
                                 val fontSize = (if (editTranslationMode) computeEditModeFontSize(block, dragBlock.fontSize) else block.fontSize) * screenScaleFactor
-                                PrecomputedRegion(block, rect, fontSize, dragBlock.rotation, dragBlock.overlayRotation, dragBlock.whiteoutColor, dragBlock.textColor, dragBlock.overlayAlpha, dragBlock.textBoldness, dragBlock.overlaySaturation, dragBlock.textSaturation, dragBlock.lineSpacing, dragBlock.textBorderColor, dragBlock.textBorderThickness, dragBlock.textBorderAlpha, dragBlock.textShadowColor, dragBlock.textShadowAlpha, dragBlock.textShadowRadius, dragBlock.overlayInset * scale, dragBlock.overlayInsetHorizontal * scale, dragBlock.overlayInsetVertical * scale)
+                                PrecomputedRegion(block, rect, fontSize, dragBlock.rotation, dragBlock.overlayRotation, dragBlock.whiteoutColor, dragBlock.textColor, dragBlock.overlayAlpha, dragBlock.textBoldness, dragBlock.overlaySaturation, dragBlock.textSaturation, dragBlock.lineSpacing, dragBlock.textBorderColor, dragBlock.textBorderThickness, dragBlock.textBorderAlpha, dragBlock.textShadowColor, dragBlock.textShadowAlpha, dragBlock.textShadowRadius, dragBlock.overlayInset * scale, dragBlock.overlayInsetHorizontal * scale, dragBlock.overlayInsetVertical * scale, dragBlock.textGradientColors, dragBlock.textGradientOffsets, dragBlock.textGradientType)
                             }
                             precomputedRegionsState.value = list
                         }
@@ -465,7 +477,10 @@ fun ImageViewer(
                                             shadowColor = region.textShadowColor,
                                             shadowAlpha = region.textShadowAlpha,
                                             shadowRadius = region.textShadowRadius,
-                                            textAlign = block.textAlign
+                                            textAlign = block.textAlign,
+                                            textGradientColors = region.textGradientColors,
+                                            textGradientOffsets = region.textGradientOffsets,
+                                            textGradientType = region.textGradientType
                                         )
                                     }
                                 }

@@ -525,7 +525,10 @@ fun drawTextOnCanvas(drawScope: DrawScope,
     shadowColor: Color? = null, // Màu đổ bóng chữ
     shadowAlpha: Float = 1.0f, // Alpha multiplier for shadow (0.0 - 1.0)
     shadowRadius: Float = 0f, // Blur radius in px for shadow; 0 = use default proportional radius
-    textAlign: com.example.ocrmanga.data.models.TextAlignMode = com.example.ocrmanga.data.models.TextAlignMode.CENTER
+    textAlign: com.example.ocrmanga.data.models.TextAlignMode = com.example.ocrmanga.data.models.TextAlignMode.CENTER,
+    textGradientColors: List<Int>? = null,
+    textGradientOffsets: List<Float>? = null,
+    textGradientType: Int = 0
 ) {
     val whenAligned = textAlign
 
@@ -546,9 +549,15 @@ fun drawTextOnCanvas(drawScope: DrawScope,
         }
     } else null
 
+    val gradientColorsArr = textGradientColors?.toIntArray()
+    val gradientPositionsArr = textGradientOffsets?.toFloatArray()
+
     // Tạo paint cho text chính
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
-        this.color = color.toArgb()
+        if (gradientColorsArr == null || gradientColorsArr.size < 2) {
+            this.color = color.toArgb()
+        }
+        // Shader sẽ được gán cho từng ký tự trong vòng lặp vẽ nếu có gradient
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.CENTER // Đổi từ LEFT sang CENTER để căn giữa
         // Use cached Typeface to avoid repeated asset loads
@@ -636,7 +645,14 @@ fun drawTextOnCanvas(drawScope: DrawScope,
                     borderPaint?.let {
                         canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, it)
                     }
-                    canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, paint)
+                    if (gradientColorsArr != null && gradientColorsArr.size >= 2) {
+                        drawTextPerCharacter(
+                            canvas.nativeCanvas, line, centeredY, -fontMetrics.ascent, paint,
+                            gradientColorsArr, gradientPositionsArr, textGradientType, fontMetrics
+                        )
+                    } else {
+                        canvas.nativeCanvas.drawText(line, centeredY, -fontMetrics.ascent, paint)
+                    }
                     canvas.nativeCanvas.restore()
                     currentX -= lineHeight
                 }
@@ -662,7 +678,14 @@ fun drawTextOnCanvas(drawScope: DrawScope,
                             val leftX = x + 4f
                             shadowPaint?.let { canvas.nativeCanvas.drawText(line, leftX, currentY, it) }
                             borderPaint?.let { canvas.nativeCanvas.drawText(line, leftX, currentY, it) }
-                            canvas.nativeCanvas.drawText(line, leftX, currentY, paint)
+                            if (gradientColorsArr != null && gradientColorsArr.size >= 2) {
+                                drawTextPerCharacter(
+                                    canvas.nativeCanvas, line, leftX, currentY, paint,
+                                    gradientColorsArr, gradientPositionsArr, textGradientType, fontMetrics
+                                )
+                            } else {
+                                canvas.nativeCanvas.drawText(line, leftX, currentY, paint)
+                            }
                         }
                         TextAlignMode.CENTER -> {
                             paint.textAlign = android.graphics.Paint.Align.CENTER
@@ -670,7 +693,14 @@ fun drawTextOnCanvas(drawScope: DrawScope,
                             shadowPaint?.textAlign = android.graphics.Paint.Align.CENTER
                             shadowPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
                             borderPaint?.let { canvas.nativeCanvas.drawText(line, centerX, currentY, it) }
-                            canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
+                            if (gradientColorsArr != null && gradientColorsArr.size >= 2) {
+                                drawTextPerCharacter(
+                                    canvas.nativeCanvas, line, centerX, currentY, paint,
+                                    gradientColorsArr, gradientPositionsArr, textGradientType, fontMetrics
+                                )
+                            } else {
+                                canvas.nativeCanvas.drawText(line, centerX, currentY, paint)
+                            }
                         }
                     }
                 }
@@ -679,6 +709,71 @@ fun drawTextOnCanvas(drawScope: DrawScope,
 
         }
     }
+}
+
+private fun drawTextPerCharacter(
+    canvas: android.graphics.Canvas,
+    text: String,
+    tx: Float,
+    ty: Float,
+    paint: android.graphics.Paint,
+    colors: IntArray,
+    positions: FloatArray?,
+    gradientType: Int,
+    fontMetrics: android.graphics.Paint.FontMetrics
+) {
+    if (text.isEmpty()) return
+    val originalAlign = paint.textAlign
+    
+    // Calculate local starting x based on alignment
+    val totalWidth = paint.measureText(text)
+    val startX = when (originalAlign) {
+        android.graphics.Paint.Align.LEFT -> tx
+        android.graphics.Paint.Align.CENTER -> tx - totalWidth / 2f
+        android.graphics.Paint.Align.RIGHT -> tx - totalWidth
+        else -> tx
+    }
+    
+    // Draw character by character
+    paint.textAlign = android.graphics.Paint.Align.LEFT
+    var currentX = startX
+    
+    for (char in text) {
+        val s = char.toString()
+        val charWidth = paint.measureText(s)
+        
+        // Define character boundaries
+        val top = ty + fontMetrics.ascent
+        val bottom = ty + fontMetrics.descent
+        
+        // Apply gradient shader for this character specifically
+        paint.shader = when (gradientType) {
+            0 -> android.graphics.LinearGradient( // Top-Down
+                currentX, top, currentX, bottom,
+                colors, positions, android.graphics.Shader.TileMode.CLAMP
+            )
+            1 -> android.graphics.LinearGradient( // Left-Right
+                currentX, ty, currentX + charWidth, ty,
+                colors, positions, android.graphics.Shader.TileMode.CLAMP
+            )
+            2 -> android.graphics.LinearGradient( // Diagonal (TL-BR)
+                currentX, top, currentX + charWidth, bottom,
+                colors, positions, android.graphics.Shader.TileMode.CLAMP
+            )
+            3 -> android.graphics.LinearGradient( // Diagonal (TR-BL)
+                currentX + charWidth, top, currentX, bottom,
+                colors, positions, android.graphics.Shader.TileMode.CLAMP
+            )
+            else -> null
+        }
+        
+        canvas.drawText(s, currentX, ty, paint)
+        currentX += charWidth
+    }
+    
+    // Restore alignment and clear shader
+    paint.textAlign = originalAlign
+    paint.shader = null
 }
 
 fun adjustWhiteoutBounds(

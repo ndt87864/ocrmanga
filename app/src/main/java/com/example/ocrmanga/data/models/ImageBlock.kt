@@ -33,5 +33,8 @@ data class ImageBlock(
     val rotation: Float = 0f,
     val fontFamily: String = "mto_astro_city",
     val fontSize: Float = 12f,
-    val textAlign: TextAlignMode = TextAlignMode.CENTER
+    val textAlign: TextAlignMode = TextAlignMode.CENTER,
+    val textGradientColors: List<Int>? = null,
+    val textGradientOffsets: List<Float>? = null,
+    val textGradientType: Int = 0
 )

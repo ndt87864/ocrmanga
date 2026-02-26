@@ -117,6 +117,9 @@ fun ViewerScreen(
                         shadowAlpha = dragBlock.textShadowAlpha,
                         shadowRadius = dragBlock.textShadowRadius,
                         lineSpacing = dragBlock.lineSpacing,
+                        textGradientColors = dragBlock.textGradientColors,
+                        textGradientOffsets = dragBlock.textGradientOffsets,
+                        textGradientType = dragBlock.textGradientType,
                         applyMerge = false
                     ) 
                 })
@@ -180,7 +183,10 @@ fun ViewerScreen(
                             // BỔ SUNG SHADOW
                             textShadowColor = block.customShadowColor?.let { Color(it) },
                             textShadowAlpha = block.shadowAlpha,
-                            textShadowRadius = block.shadowRadius
+                            textShadowRadius = block.shadowRadius,
+                            textGradientColors = block.textGradientColors,
+                            textGradientOffsets = block.textGradientOffsets,
+                            textGradientType = block.textGradientType
                         )
                     }
 
@@ -499,7 +505,10 @@ fun ViewerScreen(
                                                     // persist shadow edits too
                                                     customShadowColor = dragBlock.textShadowColor?.toArgb(),
                                                     shadowAlpha = dragBlock.textShadowAlpha,
-                                                    shadowRadius = dragBlock.textShadowRadius
+                                                    shadowRadius = dragBlock.textShadowRadius,
+                                                    textGradientColors = dragBlock.textGradientColors,
+                                                    textGradientOffsets = dragBlock.textGradientOffsets,
+                                                    textGradientType = dragBlock.textGradientType
                                                 )
                                             }
                                         )
@@ -738,6 +747,9 @@ fun ViewerScreen(
                         customShadowColor = dragBlock.textShadowColor?.toArgb(),
                         shadowAlpha = dragBlock.textShadowAlpha,
                         shadowRadius = dragBlock.textShadowRadius,
+                        textGradientColors = dragBlock.textGradientColors,
+                        textGradientOffsets = dragBlock.textGradientOffsets,
+                        textGradientType = dragBlock.textGradientType,
                         // Đánh dấu rằng block này đã được edit manual, không áp dụng merge logic
                         applyMerge = false
                     ) 
