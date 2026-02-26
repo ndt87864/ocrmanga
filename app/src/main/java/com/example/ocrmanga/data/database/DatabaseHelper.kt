@@ -935,9 +935,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put(COLUMN_BLOCK_FONT_SIZE, fontSize)
                             put(COLUMN_BLOCK_LINE_SPACING, lineSpacing)
                             put(COLUMN_BLOCK_TEXT_ALIGN, textAlign)
-                            put(COLUMN_BLOCK_TEXT_GRADIENT_COLORS, textGradientColors?.joinToString(",") { it.toString() })
-                            put(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS, textGradientOffsets?.joinToString(",") { it.toString() })
+                            val gradientColorsStr = textGradientColors?.joinToString(",") { it.toString() }
+                            val gradientOffsetsStr = textGradientOffsets?.joinToString(",") { it.toString() }
+                            
+                            put(COLUMN_BLOCK_TEXT_GRADIENT_COLORS, gradientColorsStr)
+                            put(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS, gradientOffsetsStr)
                             put(COLUMN_BLOCK_TEXT_GRADIENT_TYPE, textGradientType)
+                            
+                            if (gradientColorsStr != null) {
+                                Log.i(TAG, "[DB-WRITE-GRADIENT] imageId=$imageId colors=$gradientColorsStr type=$textGradientType")
+                            }
                         }
                         val id = db.insert(TABLE_IMAGE_BLOCKS, null, values)
         // Explicit log when shadow properties are present to make it easy to spot
@@ -2913,6 +2920,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     offsetsStr?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toFloatOrNull() }
                 } catch (e: Exception) { null }
                 val textGradientType = try { blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_TYPE)) } catch (e: Exception) { 0 }
+                
+                // Log chi tiết dữ liệu gradient đọc được
+                if (textGradientColors != null && textGradientColors.isNotEmpty()) {
+                    Log.i(TAG, "[DB-READ-GRADIENT] imageId=$imageId colors=$textGradientColors offsets=$textGradientOffsets type=$textGradientType")
+                }
                 
                 // Log để debug
                 if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {

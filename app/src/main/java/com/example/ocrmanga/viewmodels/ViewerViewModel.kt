@@ -431,7 +431,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 old.shadowRadius != new.shadowRadius ||
                 old.fontFamily != new.fontFamily ||
                 old.shapeType != new.shapeType ||
-                old.textAlign != new.textAlign
+                old.textAlign != new.textAlign ||
+                old.textGradientColors != new.textGradientColors ||
+                old.textGradientOffsets != new.textGradientOffsets ||
+                old.textGradientType != new.textGradientType
             }
         
         // Only mark as dirty and changed if there are actual changes
@@ -452,6 +455,37 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 reopenEditorUris = if (shouldReopenEditor) it.reopenEditorUris + uri else it.reopenEditorUris
             )
         }
+        // Log old vs new text colors / gradients for debugging persistence issues
+        try {
+            updatedBlocks.forEachIndexed { idx, newBlock ->
+                val oldBlock = currentBlocks.getOrNull(idx)
+                
+                // Chi tiết màu text
+                val oldTextColor = oldBlock?.customTextColor
+                val newTextColor = newBlock.customTextColor
+                val oldColorHex = oldTextColor?.let { String.format("#%08X", it) } ?: "null"
+                val newColorHex = newTextColor?.let { String.format("#%08X", it) } ?: "null"
+                
+                // Chi tiết Gradient
+                val oldGrad = oldBlock?.textGradientColors
+                val newGrad = newBlock.textGradientColors
+                val oldGradStr = oldGrad?.joinToString(",") { c -> String.format("#%08X", c) } ?: "null"
+                val newGradStr = newGrad?.joinToString(",") { c -> String.format("#%08X", c) } ?: "null"
+                val oldGradType = oldBlock?.textGradientType ?: 0
+                val newGradType = newBlock.textGradientType
+                
+                Log.i(TAG, "[SAVE-BLOCK-COLORS] Block[$idx] uri=$uri")
+                Log.i(TAG, "  -> TEXT COLOR: $oldColorHex -> $newColorHex")
+                Log.i(TAG, "  -> GRADIENT: $oldGradStr (Type:$oldGradType) -> $newGradStr (Type:$newGradType)")
+                
+                if (oldGrad != newGrad || oldGradType != newGradType) {
+                    Log.i(TAG, "  -> GRADIENT CHANGED detected for block $idx")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed logging color comparison after updateTranslatedBlocks for uri=$uri", e)
+        }
+
         // Mark this uri as dirty (edited) so later saveRoom can update only changed images
         dirtyUris.add(uri)
         // If this image belongs to a saved room, also set image-level is_translated=1 immediately (temporary)
@@ -588,7 +622,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             state.copy(translatingImages = state.translatingImages + (uri to status))
         }
     }
-
     /**
      * Xóa trạng thái dịch của một ảnh (khi dịch xong hoặc lỗi)
      */
@@ -597,7 +630,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             state.copy(translatingImages = state.translatingImages - uri)
         }
     }
-
+    
     /**
      * Xóa tất cả trạng thái dịch
      */
@@ -1816,16 +1849,45 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 
                 if (uiState.value.imageUris.contains(uri)) {
                     if (original.isNotEmpty() || (translatedBlocks as? List<*>)?.isNotEmpty() == true) {
+                                // Try to preserve per-block customizations (including gradients) from any existing translation
+                                val existingBlocks = _uiState.value.translatedTexts[uri]?.second ?: emptyList()
+
+                                fun intersectionRatio(a: android.graphics.Rect, b: android.graphics.Rect): Float {
+                                    val left = maxOf(a.left, b.left)
+                                    val top = maxOf(a.top, b.top)
+                                    val right = minOf(a.right, b.right)
+                                    val bottom = minOf(a.bottom, b.bottom)
+                                    if (right <= left || bottom <= top) return 0f
+                                    val inter = (right - left).toFloat() * (bottom - top).toFloat()
+                                    val minArea = minOf((a.width()).toFloat() * (a.height()).toFloat(), (b.width()).toFloat() * (b.height()).toFloat())
+                                    return if (minArea <= 0f) 0f else inter / minArea
+                                }
+
                                 val fixedBlocks = (translatedBlocks as List<TextBlockInfo>).map { block ->
-                                        // Prefer an explicit custom overlay color; otherwise use detected average background color; fallback to white
-                                        val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
-                                        val textColor = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
-                                        block.copy(
-                                            customOverlayColor = baseOverlay,
-                                            customTextColor = textColor,
-                                            // Set applyMerge = true khi translation mới để áp dụng logic chống chồng lấn
-                                            applyMerge = true
-                                        )
+                                    // Prefer an explicit custom overlay color; otherwise use detected average background color; fallback to white
+                                    val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                                    val textColor = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
+
+                                    // Find best matching existing block by bounding-box overlap to preserve gradient & offset settings
+                                    val bestMatch = existingBlocks.maxByOrNull { existing ->
+                                        intersectionRatio(existing.bounds, block.bounds)
+                                    }
+                                    val overlap = if (bestMatch != null) intersectionRatio(bestMatch.bounds, block.bounds) else 0f
+
+                                    val preservedGradientColors = if (overlap >= 0.35f) bestMatch?.textGradientColors ?: block.textGradientColors else block.textGradientColors
+                                    val preservedGradientOffsets = if (overlap >= 0.35f) bestMatch?.textGradientOffsets ?: block.textGradientOffsets else block.textGradientOffsets
+                                    val preservedGradientType = if (overlap >= 0.35f) bestMatch?.textGradientType ?: block.textGradientType else block.textGradientType
+
+                                    block.copy(
+                                        customOverlayColor = baseOverlay,
+                                        customTextColor = textColor,
+                                        // preserve any existing gradient customizations when a matching block is found
+                                        textGradientColors = preservedGradientColors,
+                                        textGradientOffsets = preservedGradientOffsets,
+                                        textGradientType = preservedGradientType,
+                                        // Set applyMerge = true khi translation mới để áp dụng logic chống chồng lấn
+                                        applyMerge = true
+                                    )
                                 }
                                 
                         // Lưu lại bản dịch mới nhất để truyền cho ảnh tiếp theo trong batch sau
