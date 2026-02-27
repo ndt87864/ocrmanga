@@ -53,7 +53,12 @@ object TextRemovalHelper {
                 return@withContext null
             }
 
-            val inpaintBlocks = blocks.map { LamaInpainter.InpaintBlock(it.bounds, it.shapeType) }
+            val inpaintBlocks = blocks.map {
+                LamaInpainter.InpaintBlock(
+                    it.bounds, it.shapeType,
+                    it.overlayInsetHorizontal, it.overlayInsetVertical
+                )
+            }
             Log.d(TAG, "Removing text: ${inpaintBlocks.size} blocks, image ${bitmap.width}x${bitmap.height}")
 
             val resultBitmap = LamaInpainter.inpaintBlocks(bitmap, inpaintBlocks, onProgress)

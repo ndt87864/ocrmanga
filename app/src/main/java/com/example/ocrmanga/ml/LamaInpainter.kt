@@ -32,10 +32,8 @@ object LamaInpainter {
 
     private const val TAG = "LamaInpainter"
     private const val MODEL_PATH = "models/LaMa-Dilated_float.tflite"
-    private const val ELEMENT_PADDING = 20
-    private const val CONTEXT_PADDING = 128
-    private const val CLUSTER_DISTANCE = 100
-    private const val MASK_FEATHER_RADIUS = 10
+    private const val MASK_PADDING = 10          // Must cover text at overlay edges
+    private const val CONTEXT_PADDING = 128     // Extra context around crop for model quality
 
     private var interpreter: Interpreter? = null
     private var isInitialized = false
@@ -54,7 +52,12 @@ object LamaInpainter {
     private var combBuf: ByteBuffer? = null
 
     enum class ImageType { GRAYSCALE, COLOR }
-    data class InpaintBlock(val bounds: Rect, val shapeType: Int = 0) // 0=rect, 1=oval
+    data class InpaintBlock(
+        val bounds: Rect,
+        val shapeType: Int = 0, // 0=rect, 1=oval
+        val overlayInsetHorizontal: Float = 0f,
+        val overlayInsetVertical: Float = 0f
+    )
     private data class ColorScale(val r: Float, val g: Float, val b: Float)
 
     fun initialize(context: Context) {
@@ -132,17 +135,24 @@ object LamaInpainter {
 
             val fullMask = createMaskFromBlocks(image.width, image.height, blocks)
 
-            // Pad blocks and cluster nearby ones to reduce inference calls
-            val paddedBlocks = blocks.map { InpaintBlock(
+            // Process each block independently (no clustering) for max quality
+            val paddedBlocks = blocks.map {
+                val insetBounds = Rect(
+                    (it.bounds.left + it.overlayInsetHorizontal.toInt()),
+                    (it.bounds.top + it.overlayInsetVertical.toInt()),
+                    (it.bounds.right - it.overlayInsetHorizontal.toInt()),
+                    (it.bounds.bottom - it.overlayInsetVertical.toInt())
+                )
+                val effectiveBounds = if (insetBounds.width() > 0 && insetBounds.height() > 0) insetBounds else it.bounds
                 Rect(
-                    (it.bounds.left - ELEMENT_PADDING).coerceAtLeast(0),
-                    (it.bounds.top - ELEMENT_PADDING).coerceAtLeast(0),
-                    (it.bounds.right + ELEMENT_PADDING).coerceAtMost(image.width),
-                    (it.bounds.bottom + ELEMENT_PADDING).coerceAtMost(image.height)
-                ),
-                it.shapeType
-            )}
-            val clusters = clusterRects(paddedBlocks.map { it.bounds }, CLUSTER_DISTANCE)
+                    (effectiveBounds.left - MASK_PADDING).coerceAtLeast(0),
+                    (effectiveBounds.top - MASK_PADDING).coerceAtLeast(0),
+                    (effectiveBounds.right + MASK_PADDING).coerceAtMost(image.width),
+                    (effectiveBounds.bottom + MASK_PADDING).coerceAtMost(image.height)
+                )
+            }
+            // Each block is its own cluster - no merging to avoid smearing
+            val clusters = paddedBlocks.map { listOf(it) }
             Log.d(TAG, "inpaintBlocks: ${blocks.size} blocks -> ${clusters.size} clusters, type=$imageType")
 
             val result = processRegionClusters(workImage, fullMask, clusters, onProgress)
@@ -329,7 +339,7 @@ object LamaInpainter {
         return if (maxX < 0) null else Rect(minX, minY, maxX + 1, maxY + 1)
     }
 
-    // ── Blending with local multiplicative color correction ───────────────
+    // ── Hard-mask blending with color correction ──────────────────────────
 
     private fun blendCropIntoResult(
         result: Bitmap, crop: Bitmap, fullMask: Bitmap, cropRect: Rect
@@ -346,22 +356,17 @@ object LamaInpainter {
             if (Color.red(maskPx[i]) > 10 || Color.green(maskPx[i]) > 10 || Color.blue(maskPx[i]) > 10) 1f else 0f
         }
 
-        val feathered = fastBoxBlur(binary, cw, ch, MASK_FEATHER_RADIUS)
-
-        // Local multiplicative color correction for this crop
+        // Color correction from border pixels
         val scale = computeColorScale(resultPx, cropPx, binary, cw, ch)
         Log.d(TAG, "Local color scale: R=${"%.3f".format(scale.r)}, G=${"%.3f".format(scale.g)}, B=${"%.3f".format(scale.b)}")
 
+        // Hard mask: only replace pixels inside mask, no feathering
         for (i in 0 until cw * ch) {
-            val alpha = feathered[i]
-            if (alpha > 0.001f) {
+            if (binary[i] > 0.5f) {
                 val ir = (Color.red(cropPx[i]) * scale.r).roundToInt().coerceIn(0, 255)
                 val ig = (Color.green(cropPx[i]) * scale.g).roundToInt().coerceIn(0, 255)
                 val ib = (Color.blue(cropPx[i]) * scale.b).roundToInt().coerceIn(0, 255)
-                val rr = (Color.red(resultPx[i]) * (1f - alpha) + ir * alpha).roundToInt().coerceIn(0, 255)
-                val rg = (Color.green(resultPx[i]) * (1f - alpha) + ig * alpha).roundToInt().coerceIn(0, 255)
-                val rb = (Color.blue(resultPx[i]) * (1f - alpha) + ib * alpha).roundToInt().coerceIn(0, 255)
-                resultPx[i] = Color.argb(255, rr, rg, rb)
+                resultPx[i] = Color.argb(255, ir, ig, ib)
             }
         }
         result.setPixels(resultPx, 0, cw, cropRect.left, cropRect.top, cw, ch)
@@ -550,17 +555,25 @@ object LamaInpainter {
         val canvas = Canvas(mask); canvas.drawColor(Color.BLACK)
         val paint = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL; isAntiAlias = true }
         for (block in blocks) {
+            // Apply overlay insets to match the actual visible overlay area
+            val insetBounds = Rect(
+                (block.bounds.left + block.overlayInsetHorizontal.toInt()),
+                (block.bounds.top + block.overlayInsetVertical.toInt()),
+                (block.bounds.right - block.overlayInsetHorizontal.toInt()),
+                (block.bounds.bottom - block.overlayInsetVertical.toInt())
+            )
+            // Skip if insets make the rect invalid
+            if (insetBounds.width() <= 0 || insetBounds.height() <= 0) continue
+
             val paddedRect = Rect(
-                (block.bounds.left - ELEMENT_PADDING).coerceAtLeast(0),
-                (block.bounds.top - ELEMENT_PADDING).coerceAtLeast(0),
-                (block.bounds.right + ELEMENT_PADDING).coerceAtMost(w),
-                (block.bounds.bottom + ELEMENT_PADDING).coerceAtMost(h)
+                (insetBounds.left - MASK_PADDING).coerceAtLeast(0),
+                (insetBounds.top - MASK_PADDING).coerceAtLeast(0),
+                (insetBounds.right + MASK_PADDING).coerceAtMost(w),
+                (insetBounds.bottom + MASK_PADDING).coerceAtMost(h)
             )
             if (block.shapeType == 1) {
-                // Oval shape - draws inscribed ellipse within the padded bounds
                 canvas.drawOval(RectF(paddedRect), paint)
             } else {
-                // Rectangle shape (default)
                 canvas.drawRect(paddedRect, paint)
             }
         }
