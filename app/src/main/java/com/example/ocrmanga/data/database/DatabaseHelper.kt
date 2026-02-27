@@ -257,6 +257,22 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             if (!hasOverlayRotation) {
                 try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_OVERLAY_ROTATION REAL") } catch (e: Exception) { /* ignore */ }
             }
+            // Thêm các cột kích thước ảnh gốc cho bảng image_blocks (original_width, original_height)
+            var hasOrigWidth = false
+            var hasOrigHeight = false
+            val c2 = db.rawQuery("PRAGMA table_info($TABLE_IMAGE_BLOCKS)", null)
+            while (c2.moveToNext()) {
+                val col = c2.getString(c2.getColumnIndexOrThrow("name"))
+                if (col == COLUMN_BLOCK_ORIGINAL_WIDTH) hasOrigWidth = true
+                if (col == COLUMN_BLOCK_ORIGINAL_HEIGHT) hasOrigHeight = true
+            }
+            c2.close()
+            if (!hasOrigWidth) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_ORIGINAL_WIDTH INTEGER") } catch (e: Exception) { /* ignore */ }
+            }
+            if (!hasOrigHeight) {
+                try { db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_ORIGINAL_HEIGHT INTEGER") } catch (e: Exception) { /* ignore */ }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Không thể tự động thêm cột vào bảng image_blocks", e)
         }
@@ -345,10 +361,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     const val COLUMN_BLOCK_FONT_SIZE = "font_size"
     const val COLUMN_BLOCK_LINE_SPACING = "line_spacing"
     const val COLUMN_BLOCK_TEXT_ALIGN = "text_align"
-    // Gradient text properties
-    const val COLUMN_BLOCK_TEXT_GRADIENT_COLORS = "text_gradient_colors" // Comma-separated hex or int
-    const val COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS = "text_gradient_offsets" // Comma-separated floats
-    const val COLUMN_BLOCK_TEXT_GRADIENT_TYPE = "text_gradient_type" // 0, 1, 2
+        // Gradient text properties
+        const val COLUMN_BLOCK_TEXT_GRADIENT_COLORS = "text_gradient_colors" // Comma-separated hex or int
+        const val COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS = "text_gradient_offsets" // Comma-separated floats
+        const val COLUMN_BLOCK_TEXT_GRADIENT_TYPE = "text_gradient_type" // 0, 1, 2
+        
+        // Original image dimensions for scaling
+        const val COLUMN_BLOCK_ORIGINAL_WIDTH = "original_width"
+        const val COLUMN_BLOCK_ORIGINAL_HEIGHT = "original_height"
+
         // change_images table to track whether an image has been interacted with
         const val TABLE_CHANGE_IMAGES = "change_images"
         const val COLUMN_CHANGE_IMAGE_ID = "change_image_id"
@@ -893,7 +914,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                          textAlign: String = "CENTER",
                          textGradientColors: List<Int>? = null,
                          textGradientOffsets: List<Float>? = null,
-                         textGradientType: Int = 0
+                         textGradientType: Int = 0,
+                         originalWidth: Int? = null,
+                         originalHeight: Int? = null
     ): Long {
         val db = writableDatabase
         if (shadowColor != null || shadowAlpha != 1.0f || shadowRadius != 0f) {
@@ -941,6 +964,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put(COLUMN_BLOCK_TEXT_GRADIENT_COLORS, gradientColorsStr)
                             put(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS, gradientOffsetsStr)
                             put(COLUMN_BLOCK_TEXT_GRADIENT_TYPE, textGradientType)
+                            
+                            originalWidth?.let { put(COLUMN_BLOCK_ORIGINAL_WIDTH, it) }
+                            originalHeight?.let { put(COLUMN_BLOCK_ORIGINAL_HEIGHT, it) }
                             
                             if (gradientColorsStr != null) {
                                 Log.i(TAG, "[DB-WRITE-GRADIENT] imageId=$imageId colors=$gradientColorsStr type=$textGradientType")
@@ -1385,7 +1411,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     textAlign = textBlock.textAlign.name,
                                     textGradientColors = textBlock.textGradientColors,
                                     textGradientOffsets = textBlock.textGradientOffsets,
-                                    textGradientType = textBlock.textGradientType
+                                    textGradientType = textBlock.textGradientType,
+                                    originalWidth = textBlock.originalImageWidth,
+                                    originalHeight = textBlock.originalImageHeight
                                 )
                             } catch (e: Exception) {
                                 Log.w(TAG, "Không thể lưu image_block cho image $imageId khi applyPendingChanges", e)
@@ -1556,7 +1584,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             textAlign = textBlock.textAlign.name,
                                             textGradientColors = textBlock.textGradientColors,
                                             textGradientOffsets = textBlock.textGradientOffsets,
-                                            textGradientType = textBlock.textGradientType
+                                            textGradientType = textBlock.textGradientType,
+                                            originalWidth = textBlock.originalImageWidth,
+                                            originalHeight = textBlock.originalImageHeight
                                         )
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -1925,7 +1955,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                             textAlign = textBlock.textAlign.name,
                                             textGradientColors = textBlock.textGradientColors,
                                             textGradientOffsets = textBlock.textGradientOffsets,
-                                            textGradientType = textBlock.textGradientType
+                                            textGradientType = textBlock.textGradientType,
+                                            originalWidth = textBlock.originalImageWidth,
+                                            originalHeight = textBlock.originalImageHeight
                                         )
                                     } catch (e: Exception) {
                                         Log.w(TAG, "Không thể lưu image_block cho image $imageId", e)
@@ -2399,10 +2431,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     // ✅ Truyền lineSpacing từ TextBlockInfo
                                     lineSpacing = textBlock.lineSpacing,
                                     textAlign = textBlock.textAlign.name,
-                                    textGradientColors = textBlock.textGradientColors,
-                                    textGradientOffsets = textBlock.textGradientOffsets,
-                                    textGradientType = textBlock.textGradientType
-                                )
+                                     textGradientColors = textBlock.textGradientColors,
+                                     textGradientOffsets = textBlock.textGradientOffsets,
+                                     textGradientType = textBlock.textGradientType,
+                                     originalWidth = textBlock.originalImageWidth,
+                                     originalHeight = textBlock.originalImageHeight
+                                 )
                                 // After inserting blocks, update image-level metadata: original_text + is_translated
                                 try {
                                     val updatedImageValues = ContentValues().apply {
@@ -2934,6 +2968,15 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val finalTextColor = textColor ?: 0xFF000000.toInt()
                 val finalFontFamily = if (fontFamily.isNullOrBlank()) "mto_astro_city" else fontFamily
                 
+                val origWidth = try { 
+                    val idx = blockCursor.getColumnIndex(COLUMN_BLOCK_ORIGINAL_WIDTH)
+                    if (idx >= 0 && !blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
+                } catch (e: Exception) { null }
+                val origHeight = try { 
+                    val idx = blockCursor.getColumnIndex(COLUMN_BLOCK_ORIGINAL_HEIGHT)
+                    if (idx >= 0 && !blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
+                } catch (e: Exception) { null }
+
                 textBlocks.add(TextBlockInfo(
                     text = translatedText,
                     bounds = bounds,
@@ -2941,8 +2984,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     lineSpacing = lineSpacing,
                     rotation = rotation,
                     textAlign = textAlignEnum,
-                    originalImageWidth = null,
-                    originalImageHeight = null,
+                    originalImageWidth = origWidth,
+                    originalImageHeight = origHeight,
                     shapeType = overlayType,
                     backgroundType = BackgroundType.WHITE,
                     averageBackgroundColor = overlayColor,

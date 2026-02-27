@@ -18,6 +18,7 @@ import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.repositories.TranslationRepository
 import com.example.ocrmanga.ui.screens.view.computeDefaultTextColor
+import com.example.ocrmanga.ui.screens.view.getImageDimensions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -1587,15 +1588,53 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun replaceImageUri(oldUri: Uri, newUri: Uri, persist: Boolean = true) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // SIMPLE LOGIC: Just swap the file content, keep the same URL in DB
-                // This preserves ALL translations, insets, bounds, etc. automatically
+                // Get image dimensions for scaling calculations
+                val oldDims = getImageDimensions(getApplication(), oldUri)
+                val newDims = getImageDimensions(getApplication(), newUri)
+                
+                Log.d(TAG, "replaceImageUri: Scaling from ${oldDims.first}x${oldDims.second} to ${newDims.first}x${newDims.second}")
+                
+                // Calculate scale factors
+                val scaleX = if (oldDims.first > 0) newDims.first.toFloat() / oldDims.first.toFloat() else 1.0f
+                val scaleY = if (oldDims.second > 0) newDims.second.toFloat() / oldDims.second.toFloat() else 1.0f
+                
+                // If dimensions are valid and changed, perform scaling
+                val shouldScale = (scaleX != 1.0f || scaleY != 1.0f) && oldDims.first > 0 && newDims.first > 0
+                
                 val imageId = uriToImageId.entries.find { it.key.toString() == oldUri.toString() }?.value
                 
+                var transformedBlocks: List<TextBlockInfo>? = null
+
+                if (shouldScale) {
+                    // 1. Scale blocks in memory
+                    _uiState.update { state ->
+                        val newTranslatedTexts = state.translatedTexts.toMutableMap()
+                        val pair = newTranslatedTexts[oldUri]
+                        if (pair != null) {
+                            val scaledBlocks = pair.second.map { block ->
+                                block.copyAndScale(scaleX, scaleY, newDims.first, newDims.second)
+                            }
+                            transformedBlocks = scaledBlocks
+                            newTranslatedTexts[oldUri] = pair.first to scaledBlocks
+                        }
+                        state.copy(translatedTexts = newTranslatedTexts)
+                    }
+                }
+
                 if (imageId != null && _uiState.value.roomId != null && persist) {
                     // Call DB helper to overwrite the old file with new content
                     // The stored URI remains the same, so all translations/blocks are preserved
                     val stored = databaseHelper.replaceImageFileOnly(imageId, newUri)
                     if (stored != null) {
+                        // 2. If we scaled, we MUST save the new coordinates to the DB immediately
+                        // because we just replaced the file but kept the old URI as the key.
+                        if (transformedBlocks != null) {
+                            val originalText = _uiState.value.translatedTexts[oldUri]?.first ?: ""
+                            val updateMap = mapOf(imageId to (originalText to transformedBlocks!!))
+                            databaseHelper.applyPendingChangesForRoom(_uiState.value.roomId!!, updateMap)
+                            Log.i(TAG, "replaceImageUri: Persisted ${transformedBlocks!!.size} scaled blocks for imageId=$imageId")
+                        }
+
                         // bump version so UI invalidates Coil cache and reloads the new file
                         bumpImageVersion(imageId)
                         // bump reload token for the URI to force UI refresh
@@ -2290,9 +2329,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     alpha = (block.overlayAlpha * 255).toInt().coerceIn(0, 255)
                                                 }
                                                 
-                                                // Apply overlay inset (inset values are stored in view coordinates, need to convert to bitmap coordinates)
-                                                val insetH = block.overlayInsetHorizontal
-                                                val insetV = block.overlayInsetVertical
+                                                // Apply overlay inset (inset values are stored in original image coordinates, need to scale to current bitmap coordinates)
+                                                val insetH = (if (block.overlayInsetHorizontal != 0f) block.overlayInsetHorizontal else block.overlayInset) * srcScaleX
+                                                val insetV = (if (block.overlayInsetVertical != 0f) block.overlayInsetVertical else block.overlayInset) * srcScaleX
                                                 val overlayRectF = if (insetH > 0f || insetV > 0f) {
                                                     RectF(
                                                         adjBoundsLeft + insetH,

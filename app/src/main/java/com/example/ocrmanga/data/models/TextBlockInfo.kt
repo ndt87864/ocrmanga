@@ -60,7 +60,25 @@ data class TextBlockInfo(
     val textGradientColors: List<Int>? = null, // List of colors for gradient
     val textGradientOffsets: List<Float>? = null, // Ratios for each color (0.0 - 1.0)
     val textGradientType: Int = 0 // 0=Top-Down, 1=Left-Right, 2=Diagonal
-)
+) {
+    fun copyAndScale(scaleX: Float, scaleY: Float, newWidth: Int, newHeight: Int): TextBlockInfo {
+        return this.copy(
+            bounds = Rect(
+                (bounds.left * scaleX).toInt(),
+                (bounds.top * scaleY).toInt(),
+                (bounds.right * scaleX).toInt(),
+                (bounds.bottom * scaleY).toInt()
+            ),
+            // fontSize, borderThickness, shadowRadius are DP-based (relative to 360dp base),
+            // they don't change when image resolution changes.
+            overlayInset = overlayInset * scaleX,
+            overlayInsetHorizontal = overlayInsetHorizontal * scaleX,
+            overlayInsetVertical = overlayInsetVertical * scaleY,
+            originalImageWidth = newWidth,
+            originalImageHeight = newHeight
+        )
+    }
+}
 
 enum class BackgroundType {
     WHITE,      // Nền trắng - sử dụng bôi đen bình thường
