@@ -25,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.nativeCanvas
@@ -59,7 +60,7 @@ fun TranslationEditor(
     // --- STATE MANAGEMENT ---
     val isBlockSelected = selectedIndex != null
     var currentPage by remember { mutableStateOf(0) }
-    val totalPages = 5 // 5 trang: Lưu+Hình dạng, Sửa+Xóa, Xoay, Màu sắc, Gradient
+    val totalPages = 4 // 4 trang: Lưu+Hình dạng, Sửa+Xóa, Xoay, Màu sắc
 
     // Hoist state variables to the top level to prevent them from resetting on page change
     var showShapeMenu by remember { mutableStateOf(false) }
@@ -89,8 +90,6 @@ fun TranslationEditor(
     var showOverlayInsetDialog by remember { mutableStateOf(false) }
     // Lưu giá trị lineSpacing hiện tại của block đang chọn để truyền vào form
     var initialLineSpacing by remember { mutableStateOf(1.0f) }
-    // State cho gradient
-    var showGradientPicker by remember { mutableStateOf(false) }
 
     // --- EFFECTS ---
     // Hoist LaunchedEffects to the top level so they are always active
@@ -720,11 +719,36 @@ fun TranslationEditor(
                                 onClick = { if (isBlockSelected) showTextColorPicker = true },
                                 enabled = isBlockSelected
                             ) {
-                                val currentTextColor = selectedIndex?.let { dragBlocks[it].textColor } ?: Color.Black
+                                val sel = selectedIndex?.let { dragBlocks[it] }
+                                val currentTextColor = sel?.textColor ?: Color.Black
+                                val gradColors = sel?.textGradientColors
+                                val gradType = sel?.textGradientType ?: 0
+
                                 Box(
                                     modifier = Modifier
                                         .size(24.dp)
-                                        .background(currentTextColor, CircleShape)
+                                        .then(
+                                            if (gradColors != null && gradColors.size >= 2) {
+                                                val colorsList = gradColors.map { Color(it) }
+                                                val brush = when (gradType) {
+                                                    0 -> androidx.compose.ui.graphics.Brush.verticalGradient(colorsList)
+                                                    1 -> androidx.compose.ui.graphics.Brush.horizontalGradient(colorsList)
+                                                    2 -> androidx.compose.ui.graphics.Brush.linearGradient(
+                                                        colors = colorsList,
+                                                        start = androidx.compose.ui.geometry.Offset.Zero,
+                                                        end = androidx.compose.ui.geometry.Offset.Infinite
+                                                    )
+                                                    else -> androidx.compose.ui.graphics.Brush.linearGradient(
+                                                        colors = colorsList,
+                                                        start = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, 0f),
+                                                        end = androidx.compose.ui.geometry.Offset(0f, Float.POSITIVE_INFINITY)
+                                                    )
+                                                }
+                                                Modifier.background(brush, CircleShape)
+                                            } else {
+                                                Modifier.background(currentTextColor, CircleShape)
+                                            }
+                                        )
                                         .border(1.dp, Color.Gray, CircleShape)
                                 )
                             }
@@ -806,70 +830,6 @@ fun TranslationEditor(
                                 enabled = isBlockSelected
                             ) {
                                 Icon(Icons.Default.Refresh, "Reset màu mặc định", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
-                            }
-                        }
-                    }
-                    // --- TRANG 5: GRADIENT ---
-                    4 -> {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Nút mở Gradient Picker
-                            Button(
-                                onClick = { if (isBlockSelected) showGradientPicker = true },
-                                enabled = isBlockSelected,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isBlockSelected) MaterialTheme.colorScheme.secondary else Color.Gray
-                                ),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Icon(Icons.Default.Gradient, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Gradient", fontSize = 12.sp)
-                            }
-
-                            // Nút xoay nhanh loại gradient (0 -> 1 -> 2 -> 0)
-                            if (isBlockSelected && selectedIndex != null) {
-                                val currentType = dragBlocks[selectedIndex].textGradientType
-                                IconButton(
-                                    onClick = {
-                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                            val old = list[selectedIndex]
-                                            list[selectedIndex] = old.copy(textGradientType = (currentType + 1) % 4)
-                                        })
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = when(currentType) {
-                                            0 -> Icons.Default.VerticalAlignBottom
-                                            1 -> Icons.Default.AlignHorizontalLeft
-                                            2 -> Icons.Default.ScreenRotation // TL-BR
-                                            else -> Icons.Default.ScreenRotation // TR-BL (cùng icon nhưng logic khác)
-                                        },
-                                        contentDescription = "Loại Gradient",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-
-                            // Nút xóa Gradient (về màu tĩnh)
-                            IconButton(
-                                onClick = {
-                                    selectedIndex?.let { idx ->
-                                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                                            val old = list[idx]
-                                            list[idx] = old.copy(
-                                                textGradientColors = null,
-                                                textGradientOffsets = null
-                                            )
-                                        })
-                                    }
-                                },
-                                enabled = isBlockSelected && (selectedIndex?.let { dragBlocks[it].textGradientColors != null } ?: false)
-                            ) {
-                                Icon(Icons.Default.FormatColorReset, "Xóa Gradient", tint = Color.Red)
                             }
                         }
                     }
@@ -1142,22 +1102,43 @@ fun TranslationEditor(
 
         // Dialog chọn màu text
         if (showTextColorPicker && isBlockSelected && selectedIndex != null) {
-            val idx = selectedIndex
-            val currentColor = dragBlocks[idx].textColor ?: Color.Black
-            val currentBoldness = dragBlocks[idx].textBoldness
-            val currentSaturation = dragBlocks[idx].textSaturation
+            val idx = selectedIndex!!
+            val block = dragBlocks[idx]
+            val currentColor = block.textColor ?: Color.Black
+            val currentBoldness = block.textBoldness
+            val currentSaturation = block.textSaturation
+            
             ColorPickerDialog(
                 title = "Chọn màu chữ",
-                // Text không cần alpha, luôn set về 1.0 (không trong suốt)
                 initialColor = currentColor.copy(alpha = 1f),
                 initialAlpha = 1f, // Text luôn không trong suốt
                 initialBoldness = currentBoldness,
                 initialSaturation = currentSaturation,
                 isOverlayDialog = false,
+                supportGradient = true,
+                initialGradientColors = block.textGradientColors?.map { Color(it) } ?: listOf(Color.Black, Color.White),
+                initialGradientOffsets = block.textGradientOffsets ?: listOf(0f, 1f),
+                initialGradientType = block.textGradientType,
                 onColorSelected = { color ->
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
-                        list[idx] = old.copy(textColor = color)
+                        list[idx] = old.copy(
+                            textColor = color,
+                            textGradientColors = null,
+                            textGradientOffsets = null
+                        )
+                    })
+                    showTextColorPicker = false
+                },
+                onGradientSelected = { colors, offsets, gType ->
+                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                        val old = list[idx]
+                        list[idx] = old.copy(
+                            textGradientColors = colors.map { it.toArgb() },
+                            textGradientOffsets = offsets,
+                            textGradientType = gType,
+                            textColor = null // Clear single color when gradient is selected
+                        )
                     })
                     showTextColorPicker = false
                 },
@@ -1385,174 +1366,316 @@ fun TranslationEditor(
                 }
             )
         }
-
-        // Dialog chọn Gradient
-        if (showGradientPicker && isBlockSelected && selectedIndex != null) {
-            val idx = selectedIndex
-            val currentColors = dragBlocks[idx].textGradientColors?.map { Color(it) } ?: listOf(Color.Black, Color.White)
-            val currentOffsets = dragBlocks[idx].textGradientOffsets ?: listOf(0f, 1f)
-            val currentType = dragBlocks[idx].textGradientType
-            
-            GradientPickerDialog(
-                initialColors = currentColors,
-                initialOffsets = currentOffsets,
-                initialType = currentType,
-                onGradientSelected = { colors, offsets, type ->
-                    onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                        val old = list[idx]
-                        list[idx] = old.copy(
-                            textGradientColors = colors.map { it.toArgb() },
-                            textGradientOffsets = offsets,
-                            textGradientType = type
-                        )
-                    })
-                    showGradientPicker = false
-                },
-                onDismiss = { showGradientPicker = false }
-            )
-        }
     }
 }
 
+
 @Composable
-fun GradientPickerDialog(
-    initialColors: List<Color>,
-    initialOffsets: List<Float>,
-    initialType: Int,
-    onGradientSelected: (List<Color>, List<Float>, Int) -> Unit,
+fun ColorPickerDialog(
+    title: String,
+    initialColor: Color,
+    initialAlpha: Float = 1.0f,
+    initialBoldness: Float = 1.0f,
+    initialSaturation: Float = 1.0f,
+    initialThickness: Float = 0.0f,
+    maxThickness: Float = 20.0f,
+    isOverlayDialog: Boolean = false,
+    supportGradient: Boolean = false,
+    initialGradientColors: List<Color> = listOf(Color.Black, Color.White),
+    initialGradientOffsets: List<Float> = listOf(0f, 1f),
+    initialGradientType: Int = 0,
+    onColorSelected: (Color) -> Unit,
+    onGradientSelected: ((List<Color>, List<Float>, Int) -> Unit)? = null,
+    onAlphaChanged: ((Float) -> Unit)? = null,
+    onBoldnessChanged: ((Float) -> Unit)? = null,
+    onSaturationChanged: ((Float) -> Unit)? = null,
+    onThicknessChanged: ((Float) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
-    var colors by remember { mutableStateOf(initialColors.toMutableList()) }
-    var offsets by remember { mutableStateOf(initialOffsets.toMutableList()) }
-    var gradientType by remember { mutableStateOf(initialType) }
+    var selectedColor by remember { mutableStateOf(initialColor) }
+    var currentAlpha by remember { mutableStateOf(initialAlpha) }
+    var currentBoldness by remember { mutableStateOf(initialBoldness) }
+    var currentSaturation by remember { mutableStateOf(initialSaturation) }
+    var currentThickness by remember { mutableStateOf(initialThickness) }
+
+    // Gradient state
+    var isGradientMode by remember { 
+        mutableStateOf(supportGradient && onGradientSelected != null && initialGradientColors.size >= 2 && initialGradientColors != listOf(Color.Black, Color.White)) 
+    }
+    var colors by remember { mutableStateOf(initialGradientColors.toMutableList()) }
+    var offsets by remember { mutableStateOf(initialGradientOffsets.toMutableList()) }
+    var gradientType by remember { mutableStateOf(initialGradientType) }
     var editingColorIndex by remember { mutableStateOf<Int?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Cấu hình Gradient") },
+        title = { 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, modifier = Modifier.weight(1f))
+                if (supportGradient && onGradientSelected != null) {
+                    Row(
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp))
+                            .padding(2.dp)
+                    ) {
+                        Surface(
+                            onClick = { isGradientMode = false },
+                            color = if (!isGradientMode) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Text("Đơn", 
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (!isGradientMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Surface(
+                            onClick = { isGradientMode = true },
+                            color = if (isGradientMode) MaterialTheme.colorScheme.secondary else Color.Transparent,
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Text("Gradient", 
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (isGradientMode) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        },
         text = {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
+                    .fillMaxWidth()
             ) {
-                // Preview box
+                // --- PREVIEW ---
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(60.dp)
-                        .background(
-                            brush = when (gradientType) {
-                                0 -> androidx.compose.ui.graphics.Brush.verticalGradient(
-                                    colorStops = offsets.zip(colors).toTypedArray()
-                                )
-                                1 -> androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                    colorStops = offsets.zip(colors).toTypedArray()
-                                )
-                                2 -> androidx.compose.ui.graphics.Brush.linearGradient(
-                                    colorStops = offsets.zip(colors).toTypedArray(),
-                                    start = Offset(0f, 0f),
-                                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-                                )
-                                else -> androidx.compose.ui.graphics.Brush.linearGradient(
-                                    colorStops = offsets.zip(colors).toTypedArray(),
-                                    start = Offset(Float.POSITIVE_INFINITY, 0f),
-                                    end = Offset(0f, Float.POSITIVE_INFINITY)
-                                )
-                            },
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        .border(1.dp, Color.Gray, RoundedCornerShape(8.dp))
-                )
-                
-                Spacer(Modifier.height(16.dp))
-
-                Text("Hướng Gradient:", style = MaterialTheme.typography.titleSmall)
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.padding(vertical = 8.dp)
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    val types = listOf("Dọc", "Ngang", "Chéo \u2198", "Chéo \u2199")
-                    // Row 1: Vertical and Horizontal
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (i in 0..1) {
-                            FilterChip(
-                                selected = gradientType == i,
-                                onClick = { gradientType = i },
-                                label = { Text(types[i], fontSize = 12.sp) }
-                            )
-                        }
-                    }
-                    // Row 2: Diagonals
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (i in 2..3) {
-                            FilterChip(
-                                selected = gradientType == i,
-                                onClick = { gradientType = i },
-                                label = { Text(types[i], fontSize = 12.sp) }
-                            )
-                        }
-                    }
+                    val previewText = "AaBbCcDd"
+                    OutlinedTextPreview(
+                        text = previewText,
+                        textColor = if (!isOverlayDialog && onThicknessChanged == null) selectedColor else Color.Black,
+                        borderColor = if (!isOverlayDialog && onThicknessChanged != null) selectedColor.copy(alpha = currentAlpha) else Color.Transparent,
+                        borderThickness = if (!isOverlayDialog && onThicknessChanged != null) currentThickness else 0f,
+                        isGradientMode = isGradientMode,
+                        gradientColors = colors,
+                        gradientOffsets = offsets,
+                        gradientType = gradientType
+                    )
                 }
 
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
-
-                Text("Các mốc màu:", style = MaterialTheme.typography.titleSmall)
-                colors.forEachIndexed { index, color ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .background(color, CircleShape)
-                                .border(1.dp, Color.Gray, CircleShape)
-                                .clickable { editingColorIndex = index }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Slider(
-                            value = offsets[index],
-                            onValueChange = { 
-                                val newOffsets = offsets.toMutableList()
-                                newOffsets[index] = it
-                                offsets = newOffsets
-                            },
-                            valueRange = 0f..1f,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(onClick = {
-                            if (colors.size > 2) {
-                                colors = colors.toMutableList().also { it.removeAt(index) }
-                                offsets = offsets.toMutableList().also { it.removeAt(index) }
+                if (!isGradientMode) {
+                    // --- MÀU ĐƠN UI ---
+                    com.example.ocrmanga.ui.components.AdvancedColorPicker(
+                        selectedColor = selectedColor,
+                        onColorSelected = { color ->
+                            color?.let { 
+                                selectedColor = if (isOverlayDialog) {
+                                    it.copy(alpha = currentAlpha)
+                                } else {
+                                    it.copy(alpha = 1f)
+                                }
                             }
-                        }) {
-                            Icon(Icons.Default.Delete, null, tint = Color.Red)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        showAlphaSlider = false,
+                        showPredefinedColors = !isOverlayDialog
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                } else {
+                    // --- GRADIENT UI ---
+                    Spacer(Modifier.height(8.dp))
+                    Text("Hướng Gradient:", style = MaterialTheme.typography.titleSmall)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    ) {
+                        val types = listOf("Dọc", "Ngang", "Chéo \u2198", "Chéo \u2199")
+                        val icons = listOf(Icons.Default.VerticalAlignBottom, Icons.Default.AlignHorizontalLeft, Icons.Default.ScreenRotation, Icons.Default.ScreenRotation)
+                        
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            for (i in 0..1) {
+                                FilterChip(
+                                    selected = gradientType == i,
+                                    onClick = { gradientType = i },
+                                    label = { 
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(icons[i], null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(types[i], fontSize = 11.sp)
+                                        }
+                                    }
+                                )
+                            }
                         }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            for (i in 2..3) {
+                                FilterChip(
+                                    selected = gradientType == i,
+                                    onClick = { gradientType = i },
+                                    label = { 
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(icons[i], null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(types[i], fontSize = 11.sp)
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+
+                    Text("Các mốc màu:", style = MaterialTheme.typography.titleSmall)
+                    colors.forEachIndexed { index, color ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(color, CircleShape)
+                                    .border(1.dp, Color.Gray, CircleShape)
+                                    .clickable { editingColorIndex = index }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Slider(
+                                value = offsets[index],
+                                onValueChange = { 
+                                    val newOffsets = offsets.toMutableList()
+                                    newOffsets[index] = it
+                                    offsets = newOffsets
+                                },
+                                valueRange = 0f..1f,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = {
+                                if (colors.size > 2) {
+                                    colors = colors.toMutableList().also { it.removeAt(index) }
+                                    offsets = offsets.toMutableList().also { it.removeAt(index) }
+                                }
+                            }) {
+                                Icon(Icons.Default.Delete, null, tint = Color.Red)
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            colors = colors.toMutableList().also { it.add(Color.Gray) }
+                            offsets = offsets.toMutableList().also { it.add(1f) }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Add, null)
+                        Text("Thêm màu")
                     }
                 }
 
-                Button(
-                    onClick = {
-                        colors = colors.toMutableList().also { it.add(Color.Gray) }
-                        offsets = offsets.toMutableList().also { it.add(1f) }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) {
-                    Icon(Icons.Default.Add, null)
-                    Text("Thêm màu")
+                // --- SHARED ADJUSTMENTS (Visible in both modes) ---
+                if (isOverlayDialog && onAlphaChanged != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Độ trong suốt overlay: ${(currentAlpha * 100).toInt()}%", 
+                         style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentAlpha,
+                        onValueChange = { newAlpha ->
+                            currentAlpha = newAlpha
+                            selectedColor = selectedColor.copy(alpha = newAlpha)
+                            onAlphaChanged(newAlpha)
+                        },
+                        valueRange = 0f..1.0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                
+                if (!isOverlayDialog && onBoldnessChanged != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Độ đậm chữ: ${(currentBoldness * 100).toInt()}%", 
+                         style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentBoldness,
+                        onValueChange = { newBoldness ->
+                            currentBoldness = newBoldness
+                            onBoldnessChanged(newBoldness)
+                        },
+                        valueRange = 0.5f..2.0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                
+                if (onSaturationChanged != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Độ bão hòa màu: ${(currentSaturation * 100).toInt()}%", 
+                         style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentSaturation,
+                        onValueChange = { newSaturation ->
+                            currentSaturation = newSaturation
+                            onSaturationChanged(newSaturation)
+                        },
+                        valueRange = 0f..2f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (!isOverlayDialog && onAlphaChanged != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Độ đậm viền: ${(currentAlpha * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentAlpha,
+                        onValueChange = { newAlpha ->
+                            currentAlpha = newAlpha
+                            onAlphaChanged(newAlpha)
+                        },
+                        valueRange = 0f..1.0f,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                if (!isOverlayDialog && onThicknessChanged != null) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Text("Độ dày viền: ${"%.1f".format(currentThickness)}",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = currentThickness,
+                        onValueChange = { newThickness ->
+                            currentThickness = newThickness
+                            onThicknessChanged(newThickness)
+                        },
+                        valueRange = 0f..maxThickness,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onGradientSelected(colors, offsets, gradientType) }) {
+            TextButton(onClick = { 
+                if (isGradientMode && onGradientSelected != null) {
+                    onGradientSelected(colors, offsets, gradientType)
+                } else {
+                    val finalColor = if (isOverlayDialog) selectedColor.copy(alpha = currentAlpha) else selectedColor
+                    onColorSelected(finalColor)
+                }
+                onDismiss()
+            }) {
                 Text("Áp dụng")
             }
         },
-        dismissButton = {
+        dismissButton = {       
             TextButton(onClick = onDismiss) {
                 Text("Hủy")
             }
@@ -1575,209 +1698,27 @@ fun GradientPickerDialog(
     }
 }
 
-
-@Composable
-fun ColorPickerDialog(
-    title: String,
-    initialColor: Color,
-    initialAlpha: Float = 1.0f,
-    initialBoldness: Float = 1.0f,
-    initialSaturation: Float = 1.0f,
-    initialThickness: Float = 0.0f, // Thêm tham số này
-    maxThickness: Float = 20.0f,
-    isOverlayDialog: Boolean = false,
-    onColorSelected: (Color) -> Unit,
-    onAlphaChanged: ((Float) -> Unit)? = null,
-    onBoldnessChanged: ((Float) -> Unit)? = null,
-    onSaturationChanged: ((Float) -> Unit)? = null,
-    onThicknessChanged: ((Float) -> Unit)? = null, // Thêm callback này
-    onDismiss: () -> Unit
-) {
-    var selectedColor by remember { mutableStateOf(initialColor) }
-    var currentAlpha by remember { mutableStateOf(initialAlpha) }
-    var currentBoldness by remember { mutableStateOf(initialBoldness) }
-    var currentSaturation by remember { mutableStateOf(initialSaturation) }
-    var currentThickness by remember { mutableStateOf(initialThickness) } // Thêm state này
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .fillMaxWidth()
-            ) {
-                // --- PREVIEW TEXT THAY VÌ BOX MÀU ---
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Lấy text mẫu, màu chữ, màu viền, độ dày từ state hiện tại
-                    val previewText = "AaBb"
-                    if (!isOverlayDialog && onThicknessChanged != null) {
-                        OutlinedTextPreview(
-                            text = previewText,
-                            textColor = Color.Black, // hoặc cho phép truyền vào
-                            borderColor = selectedColor.copy(alpha = currentAlpha),
-                            borderThickness = currentThickness
-                        )
-                    } else {
-                        Text(
-                            text = previewText,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                color = selectedColor
-                            )
-                        )
-                    }
-                }
-
-                // Sử dụng AdvancedColorPicker giống như trong ThemeSettingsScreen
-                // Cấu hình theo loại dialog: overlay hoặc text
-                com.example.ocrmanga.ui.components.AdvancedColorPicker(
-                    selectedColor = selectedColor,
-                    onColorSelected = { color ->
-                        color?.let { 
-                            selectedColor = if (isOverlayDialog) {
-                                // Giữ nguyên alpha hiện tại cho overlay
-                                it.copy(alpha = currentAlpha)
-                            } else {
-                                // Text không cần alpha, luôn set về 1.0
-                                it.copy(alpha = 1f)
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    showAlphaSlider = false, // Ẩn slider alpha cho cả overlay và text
-                    showPredefinedColors = !isOverlayDialog // Chỉ hiện màu có sẵn cho text
-                )
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Slider độ trong suốt cho overlay - quản lý riêng alpha
-                if (isOverlayDialog && onAlphaChanged != null) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text("Độ trong suốt overlay: ${(currentAlpha * 100).toInt()}%", 
-                         style = MaterialTheme.typography.bodyMedium)
-                    Slider(
-                        value = currentAlpha,
-                        onValueChange = { newAlpha ->
-                            currentAlpha = newAlpha
-                            // Cập nhật màu với alpha mới
-                            selectedColor = selectedColor.copy(alpha = newAlpha)
-                            onAlphaChanged(newAlpha)
-                        },
-                        valueRange = 0f..1.0f, // Đặt giá trị thấp nhất là 0% thay vì 10%
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                
-                // Slider độ đậm cho text
-                if (!isOverlayDialog && onBoldnessChanged != null) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text("Độ đậm chữ: ${(currentBoldness * 100).toInt()}%", 
-                         style = MaterialTheme.typography.bodyMedium)
-                    Slider(
-                        value = currentBoldness,
-                        onValueChange = { newBoldness ->
-                            currentBoldness = newBoldness
-                            onBoldnessChanged(newBoldness)
-                        },
-                        valueRange = 0.5f..2.0f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                
-                // Slider độ bão hòa
-                if (onSaturationChanged != null) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text("Độ bão hòa màu: ${(currentSaturation * 100).toInt()}%", 
-                         style = MaterialTheme.typography.bodyMedium)
-                    Slider(
-                        value = currentSaturation,
-                        onValueChange = { newSaturation ->
-                            currentSaturation = newSaturation
-                            onSaturationChanged(newSaturation)
-                        },
-                        valueRange = 0f..2f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // Slider độ đậm viền (alpha)
-                if (!isOverlayDialog && onAlphaChanged != null) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text("Độ đậm viền: ${(currentAlpha * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodyMedium)
-                    Slider(
-                        value = currentAlpha,
-                        onValueChange = { newAlpha ->
-                            currentAlpha = newAlpha
-                            onAlphaChanged(newAlpha)
-                        },
-                        valueRange = 0f..1.0f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // Slider độ dày viền
-                if (!isOverlayDialog && onThicknessChanged != null) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text("Độ dày viền: ${"%.1f".format(currentThickness)}",
-                        style = MaterialTheme.typography.bodyMedium)
-                    Slider(
-                        value = currentThickness,
-                        onValueChange = { newThickness ->
-                            currentThickness = newThickness
-                            onThicknessChanged(newThickness)
-                        },
-                        valueRange = 0f..maxThickness,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { 
-                // Sử dụng màu với alpha hiện tại cho overlay
-                val finalColor = if (isOverlayDialog) {
-                    selectedColor.copy(alpha = currentAlpha)
-                } else {
-                    selectedColor
-                }
-                onColorSelected(finalColor)
-                onDismiss()
-            }) {
-                Text("Áp dụng")
-            }
-        },
-        dismissButton = {       
-            TextButton(onClick = onDismiss) {
-                Text("Hủy")
-            }
-        }
-    )
-}
-
 @Composable
 fun OutlinedTextPreview(
     text: String,
     textColor: Color,
     borderColor: Color,
-    borderThickness: Float
+    borderThickness: Float,
+    isGradientMode: Boolean = false,
+    gradientColors: List<Color> = emptyList(),
+    gradientOffsets: List<Float> = emptyList(),
+    gradientType: Int = 0
 ) {
     // Draw a more accurate preview using native Canvas so we can render:
     // shadow (blurred) -> stroke (outline) -> fill (text). This makes the
     // shadow appear outside the stroke and around rounded glyph corners.
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val textStyle = MaterialTheme.typography.bodyLarge
-    val textSizePx = with(density) { textStyle.fontSize.toPx() }
+    val textStyle = MaterialTheme.typography.headlineLarge
+    val textSizePx = with(density) { 48.sp.toPx() }
 
     Canvas(modifier = Modifier
         .fillMaxWidth()
-        .height(56.dp)) {
+        .height(100.dp)) {
         val native = drawContext.canvas.nativeCanvas
         // center coordinates
         val cx = size.width / 2f
@@ -1789,6 +1730,23 @@ fun OutlinedTextPreview(
             color = textColor.toArgb()
             style = android.graphics.Paint.Style.FILL
             textAlign = android.graphics.Paint.Align.CENTER
+        }
+
+        if (isGradientMode && gradientColors.size >= 2) {
+            val colorsArr = gradientColors.map { it.toArgb() }.toIntArray()
+            val posArr = gradientOffsets.toFloatArray()
+            val fm = fillPaint.fontMetrics
+            val top = cy + fm.ascent
+            val bottom = cy + fm.descent
+            val textWidth = fillPaint.measureText(text)
+            
+            fillPaint.shader = when (gradientType) {
+                0 -> android.graphics.LinearGradient(cx, top, cx, bottom, colorsArr, posArr, android.graphics.Shader.TileMode.CLAMP)
+                1 -> android.graphics.LinearGradient(cx - textWidth / 2, cy, cx + textWidth / 2, cy, colorsArr, posArr, android.graphics.Shader.TileMode.CLAMP)
+                2 -> android.graphics.LinearGradient(cx - textWidth / 2, top, cx + textWidth / 2, bottom, colorsArr, posArr, android.graphics.Shader.TileMode.CLAMP)
+                3 -> android.graphics.LinearGradient(cx + textWidth / 2, top, cx - textWidth / 2, bottom, colorsArr, posArr, android.graphics.Shader.TileMode.CLAMP)
+                else -> null
+            }
         }
 
         val strokePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
