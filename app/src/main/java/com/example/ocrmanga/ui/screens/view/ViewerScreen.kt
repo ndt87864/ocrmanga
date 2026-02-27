@@ -61,6 +61,7 @@ fun ViewerScreen(
     // Text removal mode state
     var isTextRemovalMode by remember { mutableStateOf(false) }
     var isRemovingText by remember { mutableStateOf(false) }
+    var removingTextLocalProgress by remember { mutableStateOf("") }
     var brushSize by remember { mutableStateOf(40f) }
     val uiState by viewModel.uiState.collectAsState()
     val allRoomIds by viewModel.allRoomIds.collectAsState()
@@ -782,12 +783,13 @@ fun ViewerScreen(
             onRemoveTextWithMask = { uri, maskBmp ->
                 coroutineScope.launch {
                     isRemovingText = true
+                    removingTextLocalProgress = "Lấy dữ liệu..."
                     try {
                         val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextWithMask(
                             context, uri, maskBmp
-                        )
+                        ) { progress -> removingTextLocalProgress = progress }
                         if (resultUri != null) {
-                            // Use rep   laceImageUri with persist=false to make this a temporary replacement
+                            // Use replaceImageUri with persist=false to make this a temporary replacement
                             viewModel.replaceImageUri(uri, resultUri, persist = false)
                             Toast.makeText(context, "Đã xóa text thành công!", Toast.LENGTH_SHORT).show()
                         } else {
@@ -798,6 +800,7 @@ fun ViewerScreen(
                         Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
                     } finally {
                         isRemovingText = false
+                        removingTextLocalProgress = ""
                     }
                 }
             },
@@ -918,6 +921,13 @@ fun ViewerScreen(
 
     // Text Removal Loading Popup - overlays on top of Column
     if (isRemovingText || uiState.isRemovingText) {
+        // Determine progress text: prefer ViewModel progress (auto mode), fallback to local (brush mode)
+        val progressText = when {
+            uiState.removingTextProgress.isNotEmpty() -> uiState.removingTextProgress
+            removingTextLocalProgress.isNotEmpty() -> removingTextLocalProgress
+            else -> "Đang xóa text..."
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -940,7 +950,7 @@ fun ViewerScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Đang xóa text...",
+                        text = progressText,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )

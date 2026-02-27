@@ -99,11 +99,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     return@launch
                 }
                 
-                // Gọi helper để xóa text
+                // Gọi helper để xóa text với progress callback
+                val onProgress: (String) -> Unit = { progress ->
+                    _uiState.update { it.copy(removingTextProgress = progress) }
+                }
                 val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextFromImage(
                     getApplication(),
                     uri,
-                    blocks
+                    blocks,
+                    onProgress
                 )
                 
                 if (resultUri != null) {
@@ -136,7 +140,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     ).show()
                 }
             } finally {
-                _uiState.update { it.copy(isRemovingText = false) }
+                _uiState.update { it.copy(isRemovingText = false, removingTextProgress = "") }
             }
         }
     }
@@ -2804,6 +2808,7 @@ data class ViewerUiState(
     val scrollToIndexAfterReload: Int? = null,
     val isTextRemovalMode: Boolean = false, // Chế độ xóa text thủ công (vẽ mask)
     val isRemovingText: Boolean = false, // Loading state for text removal
+    val removingTextProgress: String = "", // Progress text for text removal popup
     val recentlySavedUris: Set<android.net.Uri> = emptySet(), // URIs saved via editor but not yet applied in UI
     val reopenEditorUris: Set<android.net.Uri> = emptySet() // URIs for which editor should reopen after blocks are applied
 )

@@ -16,20 +16,20 @@ import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.FileUtil
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
  * LaMa-based inpainting engine using TensorFlow Lite.
+ * Single whole-image inference for speed, multiplicative per-channel
+ * color correction for quality, progress callbacks for UI feedback.
  */
 object LamaInpainter {
 
     private const val TAG = "LamaInpainter"
     private const val MODEL_PATH = "models/LaMa-Dilated_float.tflite"
     private const val ELEMENT_PADDING = 20
-    private const val CONTEXT_PADDING = 100
     private const val MASK_FEATHER_RADIUS = 10
 
     private var interpreter: Interpreter? = null
@@ -43,13 +43,24 @@ object LamaInpainter {
     private var hasMaskInput = false
     private var isDynamic = false
 
+    // Reusable buffers (allocated once, reused every inference)
+    private var imgBuf: ByteBuffer? = null
+    private var maskBuf: ByteBuffer? = null
+    private var outBuf: ByteBuffer? = null
+    private var combBuf: ByteBuffer? = null
+
     enum class ImageType { GRAYSCALE, COLOR }
+    private data class ColorScale(val r: Float, val g: Float, val b: Float)
 
     fun initialize(context: Context) {
         if (isInitialized) return
         try {
             val modelFile = FileUtil.loadMappedFile(context, MODEL_PATH)
-            val options = Interpreter.Options().apply { setNumThreads(4) }
+            val options = Interpreter.Options().apply {
+                setNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(2, 8))
+                // NNAPI disabled: produces corrupted output on some chipsets (e.g. SD865)
+                // CPU multi-threaded inference is reliable across all devices
+            }
             val interp = Interpreter(modelFile, options)
             interpreter = interp
 
@@ -78,8 +89,9 @@ object LamaInpainter {
             if (maskC <= 0) maskC = 1
             if (outputC <= 0) outputC = 3
 
-            Log.i(TAG, "Resolved: input=${inputW}x${inputH}x${inputC}, maskC=$maskC, outC=$outputC, dynamic=$isDynamic, hasMask=$hasMaskInput")
+            allocateBuffers()
 
+            Log.i(TAG, "Resolved: input=${inputW}x${inputH}x${inputC}, maskC=$maskC, outC=$outputC, dynamic=$isDynamic, hasMask=$hasMaskInput")
             isInitialized = true
             Log.i(TAG, "LamaInpainter initialized")
         } catch (e: Exception) {
@@ -88,116 +100,242 @@ object LamaInpainter {
         }
     }
 
+    private fun allocateBuffers() {
+        val imgSize = inputH * inputW * inputC * 4
+        imgBuf = ByteBuffer.allocateDirect(imgSize).order(ByteOrder.nativeOrder())
+        if (hasMaskInput) {
+            maskBuf = ByteBuffer.allocateDirect(inputH * inputW * maskC * 4).order(ByteOrder.nativeOrder())
+        } else {
+            combBuf = ByteBuffer.allocateDirect(inputH * inputW * (inputC + 1) * 4).order(ByteOrder.nativeOrder())
+        }
+        outBuf = ByteBuffer.allocateDirect(inputH * inputW * outputC * 4).order(ByteOrder.nativeOrder())
+    }
+
     fun isReady(): Boolean = isInitialized
 
-    suspend fun inpaintBlocks(image: Bitmap, blocks: List<Rect>): Bitmap? =
-        withContext(Dispatchers.Default) {
-            if (!isInitialized || blocks.isEmpty()) return@withContext null
-            try {
-                val mask = createMaskFromBlocks(image.width, image.height, blocks)
-                val result = inpaintInternal(image, mask)
-                mask.recycle()
-                result
-            } catch (e: Exception) { Log.e(TAG, "inpaintBlocks failed", e); null }
-        }
+    // ── Public API ────────────────────────────────────────────────────────
 
-    suspend fun inpaintWithMask(image: Bitmap, mask: Bitmap): Bitmap? =
-        withContext(Dispatchers.Default) {
-            if (!isInitialized) return@withContext null
-            try {
-                val normalizedMask = normalizeMask(mask, image.width, image.height)
-                val result = inpaintInternal(image, normalizedMask)
-                normalizedMask.recycle()
-                result
-            } catch (e: Exception) { Log.e(TAG, "inpaintWithMask failed", e); null }
-        }
+    suspend fun inpaintBlocks(
+        image: Bitmap, blocks: List<Rect>,
+        onProgress: ((String) -> Unit)? = null
+    ): Bitmap? = withContext(Dispatchers.Default) {
+        if (!isInitialized || blocks.isEmpty()) return@withContext null
+        try {
+            onProgress?.invoke("Lấy dữ liệu...")
+            val mask = createMaskFromBlocks(image.width, image.height, blocks)
+            val result = inpaintWholeImage(image, mask, onProgress)
+            mask.recycle()
+            result
+        } catch (e: Exception) { Log.e(TAG, "inpaintBlocks failed", e); null }
+    }
 
-    suspend fun inpaintPoints(image: Bitmap, points: List<Point>, radius: Int = 15): Bitmap? =
-        withContext(Dispatchers.Default) {
-            if (!isInitialized || points.isEmpty()) return@withContext null
-            try {
-                val mask = createMaskFromPoints(image.width, image.height, points, radius)
-                val result = inpaintInternal(image, mask)
-                mask.recycle()
-                result
-            } catch (e: Exception) { Log.e(TAG, "inpaintPoints failed", e); null }
-        }
+    suspend fun inpaintWithMask(
+        image: Bitmap, mask: Bitmap,
+        onProgress: ((String) -> Unit)? = null
+    ): Bitmap? = withContext(Dispatchers.Default) {
+        if (!isInitialized) return@withContext null
+        try {
+            onProgress?.invoke("Lấy dữ liệu...")
+            val normalizedMask = normalizeMask(mask, image.width, image.height)
+            val result = inpaintWholeImage(image, normalizedMask, onProgress)
+            normalizedMask.recycle()
+            result
+        } catch (e: Exception) { Log.e(TAG, "inpaintWithMask failed", e); null }
+    }
+
+    suspend fun inpaintPoints(
+        image: Bitmap, points: List<Point>, radius: Int = 15,
+        onProgress: ((String) -> Unit)? = null
+    ): Bitmap? = withContext(Dispatchers.Default) {
+        if (!isInitialized || points.isEmpty()) return@withContext null
+        try {
+            onProgress?.invoke("Lấy dữ liệu...")
+            val mask = createMaskFromPoints(image.width, image.height, points, radius)
+            val result = inpaintWholeImage(image, mask, onProgress)
+            mask.recycle()
+            result
+        } catch (e: Exception) { Log.e(TAG, "inpaintPoints failed", e); null }
+    }
 
     fun release() {
         try { interpreter?.close() } catch (_: Exception) {}
         interpreter = null; isInitialized = false
+        imgBuf = null; maskBuf = null; outBuf = null; combBuf = null
     }
 
-    // ── Core pipeline ────────────────────────────────────────────────────
+    // ── Single-pass whole-image inpainting ────────────────────────────────
 
-    private fun inpaintInternal(image: Bitmap, mask: Bitmap): Bitmap? {
+    private fun inpaintWholeImage(
+        image: Bitmap, mask: Bitmap,
+        onProgress: ((String) -> Unit)?
+    ): Bitmap? {
         val interp = interpreter ?: return null
+        val startTime = System.currentTimeMillis()
+
         val imageType = detectImageType(image)
-        Log.d(TAG, "Image type: $imageType, size: ${image.width}x${image.height}")
+        val origW = image.width; val origH = image.height
+        Log.d(TAG, "Whole-image inpaint: ${origW}x${origH}, type=$imageType")
 
         val workImage = if (imageType == ImageType.GRAYSCALE) toGrayscaleBitmap(image)
         else image.copy(Bitmap.Config.ARGB_8888, true)
 
-        val regions = findMaskedRegions(mask)
-        if (regions.isEmpty()) { workImage.recycle(); return image.copy(Bitmap.Config.ARGB_8888, true) }
+        // Resize entire image + mask to model input size (preserving aspect ratio)
+        val (resizedImg, padInfo) = resizeWithPadding(workImage, inputW, inputH)
+        val (resizedMask, _) = resizeWithPadding(mask, inputW, inputH)
 
-        Log.d(TAG, "Processing ${regions.size} masked region(s)")
-        val result = workImage.copy(Bitmap.Config.ARGB_8888, true)
+        onProgress?.invoke("Xóa điểm ảnh...")
+        Log.d(TAG, "Running inference ${inputW}x${inputH}...")
+        val inferenceStart = System.currentTimeMillis()
 
-        for ((idx, region) in regions.withIndex()) {
-            try { processRegion(interp, workImage, mask, region, result, idx) }
-            catch (e: Exception) { Log.w(TAG, "Region $idx failed: ${e.message}") }
-        }
-        workImage.recycle()
+        val outputBitmap = runInference(interp, resizedImg, resizedMask)
+        resizedImg.recycle(); resizedMask.recycle()
+
+        Log.d(TAG, "Inference took ${System.currentTimeMillis() - inferenceStart}ms")
+
+        if (outputBitmap == null) { workImage.recycle(); return null }
+
+        // Remove padding and resize back to original dimensions
+        val unpadded = removePadding(outputBitmap, padInfo)
+        outputBitmap.recycle()
+        val fullOutput = Bitmap.createScaledBitmap(unpadded, origW, origH, true)
+        unpadded.recycle()
+
+        // Multiplicative color correction + feathered blending
+        onProgress?.invoke("Bù điểm ảnh 0%...")
+        val result = blendWithColorCorrection(workImage, fullOutput, mask, onProgress)
+        fullOutput.recycle(); workImage.recycle()
 
         if (imageType == ImageType.GRAYSCALE) {
-            val g = toGrayscaleBitmap(result); result.recycle(); return g
+            val g = toGrayscaleBitmap(result); result.recycle()
+            Log.d(TAG, "Total time: ${System.currentTimeMillis() - startTime}ms")
+            return g
         }
+
+        Log.d(TAG, "Total time: ${System.currentTimeMillis() - startTime}ms")
         return result
     }
 
-    private fun processRegion(
-        interp: Interpreter, srcImage: Bitmap, fullMask: Bitmap,
-        region: Rect, resultBitmap: Bitmap, regionIdx: Int
-    ) {
-        val cropRect = Rect(
-            (region.left - CONTEXT_PADDING).coerceAtLeast(0),
-            (region.top - CONTEXT_PADDING).coerceAtLeast(0),
-            (region.right + CONTEXT_PADDING).coerceAtMost(srcImage.width),
-            (region.bottom + CONTEXT_PADDING).coerceAtMost(srcImage.height)
-        )
-        val cropW = cropRect.width(); val cropH = cropRect.height()
-        if (cropW <= 0 || cropH <= 0) return
+    // ── Blending with multiplicative color correction ─────────────────────
 
-        val imageCrop = Bitmap.createBitmap(srcImage, cropRect.left, cropRect.top, cropW, cropH)
-        val maskCrop = Bitmap.createBitmap(fullMask, cropRect.left, cropRect.top, cropW, cropH)
+    /**
+     * Blend inpainted output into original using multiplicative per-channel
+     * color correction. This correctly handles white areas:
+     * if model outputs 90% brightness (230), and border is 255,
+     * scale = 255/230 = 1.11 → 230 * 1.11 = 255.
+     */
+    private fun blendWithColorCorrection(
+        original: Bitmap, inpainted: Bitmap, mask: Bitmap,
+        onProgress: ((String) -> Unit)?
+    ): Bitmap {
+        val w = original.width; val h = original.height
+        val origPx = IntArray(w * h)
+        original.getPixels(origPx, 0, w, 0, 0, w, h)
+        val inpPx = IntArray(w * h)
+        inpainted.getPixels(inpPx, 0, w, 0, 0, w, h)
+        val maskPx = IntArray(w * h)
+        mask.getPixels(maskPx, 0, w, 0, 0, w, h)
 
-        // Resize preserving aspect ratio with padding
-        val (paddedImage, padInfo) = resizeWithPadding(imageCrop, inputW, inputH)
-        val (paddedMask, _) = resizeWithPadding(maskCrop, inputW, inputH)
-
-        val outputBitmap = runInference(interp, paddedImage, paddedMask)
-        paddedImage.recycle(); paddedMask.recycle()
-
-        if (outputBitmap == null) {
-            imageCrop.recycle(); maskCrop.recycle(); return
+        // Build binary mask
+        val binary = FloatArray(w * h) { i ->
+            if (Color.red(maskPx[i]) > 10 || Color.green(maskPx[i]) > 10 || Color.blue(maskPx[i]) > 10) 1.0f else 0.0f
         }
 
-        // Remove padding and resize back to crop dimensions
-        val unpadded = removePadding(outputBitmap, padInfo)
-        outputBitmap.recycle()
-        val outputResized = Bitmap.createScaledBitmap(unpadded, cropW, cropH, true)
-        unpadded.recycle()
+        onProgress?.invoke("Bù điểm ảnh 20%...")
 
-        // Post-process: match brightness of inpainted area to border pixels
-        val postProcessed = matchBorderBrightness(outputResized, imageCrop, maskCrop)
-        outputResized.recycle()
+        // Feathered mask for smooth blending
+        val feathered = fastBoxBlur(binary, w, h, MASK_FEATHER_RADIUS)
 
-        // Blend into result
-        blendIntoResult(resultBitmap, postProcessed, maskCrop, cropRect)
-        postProcessed.recycle(); imageCrop.recycle(); maskCrop.recycle()
+        onProgress?.invoke("Bù điểm ảnh 40%...")
 
-        Log.d(TAG, "Region $regionIdx done: ${cropW}x${cropH}")
+        // Compute multiplicative per-channel correction from border pixels
+        val scale = computeColorScale(origPx, inpPx, binary, w, h)
+        Log.d(TAG, "Color scale: R=${"%.3f".format(scale.r)}, G=${"%.3f".format(scale.g)}, B=${"%.3f".format(scale.b)}")
+
+        onProgress?.invoke("Bù điểm ảnh 60%...")
+
+        // Blend with correction
+        val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val resultPx = IntArray(w * h)
+        for (i in 0 until w * h) {
+            val alpha = feathered[i]
+            if (alpha > 0.001f) {
+                // Apply multiplicative correction to inpainted pixel
+                val ir = (Color.red(inpPx[i]) * scale.r).roundToInt().coerceIn(0, 255)
+                val ig = (Color.green(inpPx[i]) * scale.g).roundToInt().coerceIn(0, 255)
+                val ib = (Color.blue(inpPx[i]) * scale.b).roundToInt().coerceIn(0, 255)
+                // Feathered blend with original
+                val r = (Color.red(origPx[i]) * (1f - alpha) + ir * alpha).roundToInt().coerceIn(0, 255)
+                val g = (Color.green(origPx[i]) * (1f - alpha) + ig * alpha).roundToInt().coerceIn(0, 255)
+                val b = (Color.blue(origPx[i]) * (1f - alpha) + ib * alpha).roundToInt().coerceIn(0, 255)
+                resultPx[i] = Color.argb(255, r, g, b)
+            } else {
+                resultPx[i] = origPx[i]
+            }
+        }
+
+        onProgress?.invoke("Bù điểm ảnh 100%...")
+
+        result.setPixels(resultPx, 0, w, 0, 0, w, h)
+        return result
+    }
+
+    /**
+     * Compute per-channel multiplicative scale factors from border pixels.
+     * Border = non-masked pixels adjacent to masked ones (within 3px).
+     *
+     * Example: if border avg is 252 and inpainted avg is 230,
+     * scale = 252/230 = 1.096 → correctly maps 230 → 252.
+     */
+    private fun computeColorScale(
+        origPx: IntArray, inpPx: IntArray, mask: FloatArray, w: Int, h: Int
+    ): ColorScale {
+        var origR = 0.0; var origG = 0.0; var origB = 0.0
+        var inpR = 0.0; var inpG = 0.0; var inpB = 0.0
+        var count = 0
+
+        val step = if (w * h < 60000) 1 else 2
+
+        for (y in 3 until h - 3 step step) {
+            for (x in 3 until w - 3 step step) {
+                val i = y * w + x
+                if (mask[i] > 0.5f) continue
+
+                // Check if any pixel within 3px is masked
+                var hasNearbyMask = false
+                outer@ for (dy in -3..3) {
+                    for (dx in -3..3) {
+                        val ni = (y + dy) * w + (x + dx)
+                        if (ni in mask.indices && mask[ni] > 0.5f) {
+                            hasNearbyMask = true; break@outer
+                        }
+                    }
+                }
+                if (hasNearbyMask) {
+                    origR += Color.red(origPx[i])
+                    origG += Color.green(origPx[i])
+                    origB += Color.blue(origPx[i])
+                    inpR += Color.red(inpPx[i])
+                    inpG += Color.green(inpPx[i])
+                    inpB += Color.blue(inpPx[i])
+                    count++
+                }
+            }
+        }
+
+        if (count < 5) return ColorScale(1f, 1f, 1f)
+
+        val avgOrigR = origR / count
+        val avgOrigG = origG / count
+        val avgOrigB = origB / count
+        val avgInpR = inpR / count
+        val avgInpG = inpG / count
+        val avgInpB = inpB / count
+
+        return ColorScale(
+            r = if (avgInpR > 5) (avgOrigR / avgInpR).toFloat().coerceIn(0.7f, 1.5f) else 1f,
+            g = if (avgInpG > 5) (avgOrigG / avgInpG).toFloat().coerceIn(0.7f, 1.5f) else 1f,
+            b = if (avgInpB > 5) (avgOrigB / avgInpB).toFloat().coerceIn(0.7f, 1.5f) else 1f
+        )
     }
 
     // ── Aspect-ratio-preserving resize ───────────────────────────────────
@@ -214,22 +352,20 @@ object LamaInpainter {
         val scaled = Bitmap.createScaledBitmap(src, scaledW, scaledH, true)
         val padded = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(padded)
-        canvas.drawColor(Color.BLACK) // pad with black
+        canvas.drawColor(Color.BLACK)
         canvas.drawBitmap(scaled, offsetX.toFloat(), offsetY.toFloat(), null)
         scaled.recycle()
-
         return Pair(padded, PadInfo(offsetX, offsetY, scaledW, scaledH))
     }
 
-    private fun removePadding(src: Bitmap, padInfo: PadInfo): Bitmap {
-        val x = padInfo.offsetX.coerceAtLeast(0)
-        val y = padInfo.offsetY.coerceAtLeast(0)
-        val w = padInfo.scaledW.coerceAtMost(src.width - x)
-        val h = padInfo.scaledH.coerceAtMost(src.height - y)
-        return Bitmap.createBitmap(src, x, y, w, h)
+    private fun removePadding(src: Bitmap, info: PadInfo): Bitmap {
+        return Bitmap.createBitmap(src,
+            info.offsetX.coerceAtLeast(0), info.offsetY.coerceAtLeast(0),
+            info.scaledW.coerceAtMost(src.width - info.offsetX.coerceAtLeast(0)),
+            info.scaledH.coerceAtMost(src.height - info.offsetY.coerceAtLeast(0)))
     }
 
-    // ── Inference ────────────────────────────────────────────────────────
+    // ── Inference (with reusable buffers) ─────────────────────────────────
 
     private fun runInference(interp: Interpreter, image: Bitmap, mask: Bitmap): Bitmap? {
         try {
@@ -242,195 +378,102 @@ object LamaInpainter {
             val outShape = interp.getOutputTensor(0).shape()
             val outH = outShape[1]; val outW = outShape[2]; val outC = outShape[3]
 
-            // Build mask array
+            // Build mask float array
             val maskPixels = IntArray(inputW * inputH)
             mask.getPixels(maskPixels, 0, inputW, 0, 0, inputW, inputH)
             val maskFloat = FloatArray(inputW * inputH) { i ->
-                val p = maskPixels[i]
-                if (Color.red(p) > 10 || Color.green(p) > 10 || Color.blue(p) > 10) 1.0f else 0.0f
+                if (Color.red(maskPixels[i]) > 10 || Color.green(maskPixels[i]) > 10 || Color.blue(maskPixels[i]) > 10) 1.0f else 0.0f
             }
 
             // Image pixels
             val imgPixels = IntArray(inputW * inputH)
             image.getPixels(imgPixels, 0, inputW, 0, 0, inputW, inputH)
 
-            // Image buffer: masked pixels zeroed out
-            val imgBuf = ByteBuffer.allocateDirect(inputH * inputW * inputC * 4).order(ByteOrder.nativeOrder())
+            // Fill reusable image buffer (masked pixels zeroed per LaMa convention)
+            val ib = imgBuf!!; ib.rewind()
             for (i in imgPixels.indices) {
                 val keep = 1.0f - maskFloat[i]
-                imgBuf.putFloat(Color.red(imgPixels[i]) / 255.0f * keep)
-                imgBuf.putFloat(Color.green(imgPixels[i]) / 255.0f * keep)
-                imgBuf.putFloat(Color.blue(imgPixels[i]) / 255.0f * keep)
-                for (c in 3 until inputC) imgBuf.putFloat(0f)
+                ib.putFloat(Color.red(imgPixels[i]) / 255.0f * keep)
+                ib.putFloat(Color.green(imgPixels[i]) / 255.0f * keep)
+                ib.putFloat(Color.blue(imgPixels[i]) / 255.0f * keep)
+                for (c in 3 until inputC) ib.putFloat(0f)
             }
 
-            val outBuf = ByteBuffer.allocateDirect(outH * outW * outC * 4).order(ByteOrder.nativeOrder())
+            // Ensure output buffer matches actual output shape
+            val outBufNeeded = outH * outW * outC * 4
+            val ob = if (outBuf != null && outBuf!!.capacity() >= outBufNeeded) outBuf!!
+            else ByteBuffer.allocateDirect(outBufNeeded).order(ByteOrder.nativeOrder()).also { outBuf = it }
+            ob.rewind()
 
             if (hasMaskInput) {
-                val maskBuf = ByteBuffer.allocateDirect(inputH * inputW * maskC * 4).order(ByteOrder.nativeOrder())
-                for (v in maskFloat) { maskBuf.putFloat(v); for (c in 1 until maskC) maskBuf.putFloat(v) }
-                interp.runForMultipleInputsOutputs(arrayOf(imgBuf, maskBuf), mapOf(0 to outBuf))
+                val mb = maskBuf!!; mb.rewind()
+                for (v in maskFloat) { mb.putFloat(v); for (c in 1 until maskC) mb.putFloat(v) }
+                interp.runForMultipleInputsOutputs(arrayOf(ib, mb), mapOf(0 to ob))
             } else {
-                // Single input: concat RGB + mask as 4ch
-                val cC = inputC + 1
-                val combBuf = ByteBuffer.allocateDirect(inputH * inputW * cC * 4).order(ByteOrder.nativeOrder())
+                val cb = combBuf!!; cb.rewind()
                 for (i in imgPixels.indices) {
                     val keep = 1.0f - maskFloat[i]
-                    combBuf.putFloat(Color.red(imgPixels[i]) / 255.0f * keep)
-                    combBuf.putFloat(Color.green(imgPixels[i]) / 255.0f * keep)
-                    combBuf.putFloat(Color.blue(imgPixels[i]) / 255.0f * keep)
-                    combBuf.putFloat(maskFloat[i])
+                    cb.putFloat(Color.red(imgPixels[i]) / 255.0f * keep)
+                    cb.putFloat(Color.green(imgPixels[i]) / 255.0f * keep)
+                    cb.putFloat(Color.blue(imgPixels[i]) / 255.0f * keep)
+                    cb.putFloat(maskFloat[i])
                 }
-                interp.resizeInput(0, intArrayOf(1, inputH, inputW, cC))
+                interp.resizeInput(0, intArrayOf(1, inputH, inputW, inputC + 1))
                 interp.allocateTensors()
-                interp.runForMultipleInputsOutputs(arrayOf(combBuf), mapOf(0 to outBuf))
+                interp.runForMultipleInputsOutputs(arrayOf(cb), mapOf(0 to ob))
             }
 
-            return floatBufferToBitmap(outBuf, outW, outH, outC)
+            return floatBufferToBitmap(ob, outW, outH, outC)
         } catch (e: Exception) {
             Log.e(TAG, "Inference failed: ${e.message}", e)
             return null
         }
     }
 
-    // ── Post-processing: brightness matching ─────────────────────────────
+    // ── Fast box blur using prefix sums: O(n) instead of O(n*radius) ─────
 
-    /**
-     * Match the brightness of the inpainted area to the surrounding border pixels.
-     * This fixes the gray-on-white problem where the model output is darker/lighter
-     * than the actual background.
-     */
-    private fun matchBorderBrightness(
-        inpainted: Bitmap, original: Bitmap, mask: Bitmap
-    ): Bitmap {
-        val w = inpainted.width; val h = inpainted.height
-        val inpPixels = IntArray(w * h)
-        inpainted.getPixels(inpPixels, 0, w, 0, 0, w, h)
-        val origPixels = IntArray(w * h)
-        original.getPixels(origPixels, 0, w, 0, 0, w, h)
-        val maskPixels = IntArray(w * h)
-        mask.getPixels(maskPixels, 0, w, 0, 0, w, h)
-
-        // Find border pixels: non-masked pixels adjacent to masked pixels
-        var borderOrigSum = 0.0; var borderInpSum = 0.0; var borderCount = 0
-        val borderRadius = 5
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                val i = y * w + x
-                val isMasked = Color.red(maskPixels[i]) > 10 || Color.green(maskPixels[i]) > 10 || Color.blue(maskPixels[i]) > 10
-                if (isMasked) continue
-                // Check if adjacent to a masked pixel
-                var nearMask = false
-                for (dy in -borderRadius..borderRadius) {
-                    for (dx in -borderRadius..borderRadius) {
-                        val nx = x + dx; val ny = y + dy
-                        if (nx in 0 until w && ny in 0 until h) {
-                            val ni = ny * w + nx
-                            val mp = maskPixels[ni]
-                            if (Color.red(mp) > 10 || Color.green(mp) > 10 || Color.blue(mp) > 10) {
-                                nearMask = true; break
-                            }
-                        }
-                    }
-                    if (nearMask) break
-                }
-                if (nearMask) {
-                    val origBright = (Color.red(origPixels[i]) + Color.green(origPixels[i]) + Color.blue(origPixels[i])) / 3.0
-                    val inpBright = (Color.red(inpPixels[i]) + Color.green(inpPixels[i]) + Color.blue(inpPixels[i])) / 3.0
-                    borderOrigSum += origBright; borderInpSum += inpBright; borderCount++
-                }
-            }
-        }
-
-        if (borderCount < 5) {
-            // Not enough border pixels, return as-is
-            return inpainted.copy(Bitmap.Config.ARGB_8888, true)
-        }
-
-        val avgOrigBright = borderOrigSum / borderCount
-        val avgInpBright = borderInpSum / borderCount
-        val brightnessDiff = avgOrigBright - avgInpBright
-
-        Log.d(TAG, "Brightness match: orig=${"%.1f".format(avgOrigBright)}, inp=${"%.1f".format(avgInpBright)}, diff=${"%.1f".format(brightnessDiff)}")
-
-        if (abs(brightnessDiff) < 5.0) {
-            // Difference is negligible
-            return inpainted.copy(Bitmap.Config.ARGB_8888, true)
-        }
-
-        // Apply brightness correction to masked pixels only
-        val result = inpainted.copy(Bitmap.Config.ARGB_8888, true)
-        val resultPixels = IntArray(w * h)
-        result.getPixels(resultPixels, 0, w, 0, 0, w, h)
-
-        val shift = brightnessDiff.roundToInt()
-        for (i in 0 until w * h) {
-            val mp = maskPixels[i]
-            val isMasked = Color.red(mp) > 10 || Color.green(mp) > 10 || Color.blue(mp) > 10
-            if (isMasked) {
-                val r = (Color.red(resultPixels[i]) + shift).coerceIn(0, 255)
-                val g = (Color.green(resultPixels[i]) + shift).coerceIn(0, 255)
-                val b = (Color.blue(resultPixels[i]) + shift).coerceIn(0, 255)
-                resultPixels[i] = Color.argb(255, r, g, b)
-            }
-        }
-        result.setPixels(resultPixels, 0, w, 0, 0, w, h)
-        return result
-    }
-
-    // ── Blending ─────────────────────────────────────────────────────────
-
-    private fun blendIntoResult(
-        result: Bitmap, inpainted: Bitmap, maskCrop: Bitmap, cropRect: Rect
-    ) {
-        val w = inpainted.width; val h = inpainted.height
-        val feathered = buildFeatheredMask(maskCrop)
-
-        val inpPixels = IntArray(w * h)
-        inpainted.getPixels(inpPixels, 0, w, 0, 0, w, h)
-        val resultPixels = IntArray(w * h)
-        result.getPixels(resultPixels, 0, w, cropRect.left, cropRect.top, w, h)
-
-        for (i in 0 until w * h) {
-            val alpha = feathered[i]
-            if (alpha > 0.001f) {
-                val r = (Color.red(resultPixels[i]) * (1f - alpha) + Color.red(inpPixels[i]) * alpha).roundToInt().coerceIn(0, 255)
-                val g = (Color.green(resultPixels[i]) * (1f - alpha) + Color.green(inpPixels[i]) * alpha).roundToInt().coerceIn(0, 255)
-                val b = (Color.blue(resultPixels[i]) * (1f - alpha) + Color.blue(inpPixels[i]) * alpha).roundToInt().coerceIn(0, 255)
-                resultPixels[i] = Color.argb(255, r, g, b)
-            }
-        }
-        result.setPixels(resultPixels, 0, w, cropRect.left, cropRect.top, w, h)
-    }
-
-    private fun buildFeatheredMask(maskBitmap: Bitmap): FloatArray {
-        val w = maskBitmap.width; val h = maskBitmap.height
-        val pixels = IntArray(w * h)
-        maskBitmap.getPixels(pixels, 0, w, 0, 0, w, h)
-        val binary = FloatArray(w * h) { i ->
-            val p = pixels[i]
-            if (Color.red(p) > 10 || Color.green(p) > 10 || Color.blue(p) > 10) 1.0f else 0.0f
-        }
-        return boxBlur(binary, w, h, MASK_FEATHER_RADIUS)
-    }
-
-    private fun boxBlur(input: FloatArray, w: Int, h: Int, radius: Int): FloatArray {
-        var cur = input.copyOf(); var nxt = FloatArray(w * h)
-        repeat(3) {
-            for (y in 0 until h) for (x in 0 until w) {
-                var s = 0f; var c = 0
-                for (dx in -radius..radius) { val nx = x + dx; if (nx in 0 until w) { s += cur[y * w + nx]; c++ } }
-                nxt[y * w + x] = s / c
-            }
-            cur = nxt.copyOf()
-            for (y in 0 until h) for (x in 0 until w) {
-                var s = 0f; var c = 0
-                for (dy in -radius..radius) { val ny = y + dy; if (ny in 0 until h) { s += cur[ny * w + x]; c++ } }
-                nxt[y * w + x] = s / c
-            }
-            cur = nxt.copyOf()
+    private fun fastBoxBlur(input: FloatArray, w: Int, h: Int, radius: Int): FloatArray {
+        var cur = input.copyOf()
+        repeat(2) {
+            cur = horizontalBlur(cur, w, h, radius)
+            cur = verticalBlur(cur, w, h, radius)
         }
         return cur
+    }
+
+    private fun horizontalBlur(src: FloatArray, w: Int, h: Int, r: Int): FloatArray {
+        val dst = FloatArray(w * h)
+        for (y in 0 until h) {
+            var sum = 0f
+            val rowOff = y * w
+            for (dx in 0..min(r, w - 1)) sum += src[rowOff + dx]
+            for (x in 0 until w) {
+                val left = x - r - 1
+                val right = x + r
+                if (right < w) sum += src[rowOff + right]
+                if (left >= 0) sum -= src[rowOff + left]
+                val count = min(x + r, w - 1) - max(x - r, 0) + 1
+                dst[rowOff + x] = sum / count
+            }
+        }
+        return dst
+    }
+
+    private fun verticalBlur(src: FloatArray, w: Int, h: Int, r: Int): FloatArray {
+        val dst = FloatArray(w * h)
+        for (x in 0 until w) {
+            var sum = 0f
+            for (dy in 0..min(r, h - 1)) sum += src[dy * w + x]
+            for (y in 0 until h) {
+                val top = y - r - 1
+                val bot = y + r
+                if (bot < h) sum += src[bot * w + x]
+                if (top >= 0) sum -= src[top * w + x]
+                val count = min(y + r, h - 1) - max(y - r, 0) + 1
+                dst[y * w + x] = sum / count
+            }
+        }
+        return dst
     }
 
     // ── Buffer conversion ────────────────────────────────────────────────
@@ -484,39 +527,6 @@ object LamaInpainter {
         }
         scaled.setPixels(px, 0, scaled.width, 0, 0, scaled.width, scaled.height)
         return scaled
-    }
-
-    // ── Region finding ───────────────────────────────────────────────────
-
-    private fun findMaskedRegions(mask: Bitmap): List<Rect> {
-        val px = IntArray(mask.width * mask.height)
-        mask.getPixels(px, 0, mask.width, 0, 0, mask.width, mask.height)
-        var gMinX = mask.width; var gMaxX = 0; var gMinY = mask.height; var gMaxY = 0; var has = false
-        for (y in 0 until mask.height) for (x in 0 until mask.width) {
-            val p = px[y * mask.width + x]
-            if (Color.red(p) > 10 || Color.green(p) > 10 || Color.blue(p) > 10) {
-                gMinX = min(gMinX, x); gMaxX = max(gMaxX, x); gMinY = min(gMinY, y); gMaxY = max(gMaxY, y); has = true
-            }
-        }
-        if (!has) return emptyList()
-
-        val ts = min(inputW, inputH)
-        val rw = gMaxX - gMinX + 1; val rh = gMaxY - gMinY + 1
-        val tw = ts.coerceAtMost(rw); val th = ts.coerceAtMost(rh)
-        val nx = (rw + tw - 1) / tw; val ny = (rh + th - 1) / th
-
-        val result = mutableListOf<Rect>()
-        for (ty in 0 until ny) for (tx in 0 until nx) {
-            val l = gMinX + tx * tw; val t = gMinY + ty * th
-            val r = (l + tw).coerceAtMost(mask.width); val b = (t + th).coerceAtMost(mask.height)
-            var found = false
-            outer@ for (y in t until b) for (x in l until r) {
-                val p = px[y * mask.width + x]
-                if (Color.red(p) > 10 || Color.green(p) > 10 || Color.blue(p) > 10) { found = true; break@outer }
-            }
-            if (found) result.add(Rect(l, t, r, b))
-        }
-        return result
     }
 
     // ── Utils ────────────────────────────────────────────────────────────

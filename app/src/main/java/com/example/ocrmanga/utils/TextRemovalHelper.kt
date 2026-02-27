@@ -34,16 +34,19 @@ object TextRemovalHelper {
      * @param context App context
      * @param imageUri Uri of the source image
      * @param blocks List of TextBlockInfo with text region coordinates
+     * @param onProgress Optional callback for progress updates (e.g. "Xóa điểm ảnh...")
      * @return Uri of the inpainted image, or null on failure
      */
     suspend fun removeTextFromImage(
         context: Context,
         imageUri: Uri,
-        blocks: List<TextBlockInfo>
+        blocks: List<TextBlockInfo>,
+        onProgress: ((String) -> Unit)? = null
     ): Uri? = withContext(Dispatchers.IO) {
         try {
             LamaInpainter.initialize(context.applicationContext)
 
+            onProgress?.invoke("Lấy dữ liệu...")
             val bitmap = decodeBitmapFromUri(context, imageUri)
             if (bitmap == null) {
                 Log.e(TAG, "Cannot decode bitmap from Uri: $imageUri")
@@ -53,7 +56,7 @@ object TextRemovalHelper {
             val rects = blocks.map { it.bounds }
             Log.d(TAG, "Removing text: ${rects.size} blocks, image ${bitmap.width}x${bitmap.height}")
 
-            val resultBitmap = LamaInpainter.inpaintBlocks(bitmap, rects)
+            val resultBitmap = LamaInpainter.inpaintBlocks(bitmap, rects, onProgress)
             bitmap.recycle()
 
             if (resultBitmap == null) {
@@ -61,6 +64,7 @@ object TextRemovalHelper {
                 return@withContext null
             }
 
+            onProgress?.invoke("Lưu kết quả...")
             val outputFile = File(context.cacheDir, "inpainted_${System.currentTimeMillis()}.jpg")
             FileOutputStream(outputFile).use { out ->
                 resultBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
@@ -81,16 +85,19 @@ object TextRemovalHelper {
      * @param context App context
      * @param imageUri Uri of the source image
      * @param maskBitmap Mask bitmap (white/non-black pixels = areas to inpaint)
+     * @param onProgress Optional callback for progress updates
      * @return Uri of the inpainted image, or null on failure
      */
     suspend fun removeTextWithMask(
         context: Context,
         imageUri: Uri,
-        maskBitmap: Bitmap
+        maskBitmap: Bitmap,
+        onProgress: ((String) -> Unit)? = null
     ): Uri? = withContext(Dispatchers.IO) {
         try {
             LamaInpainter.initialize(context.applicationContext)
 
+            onProgress?.invoke("Lấy dữ liệu...")
             val bitmap = decodeBitmapFromUri(context, imageUri)
             if (bitmap == null) {
                 Log.e(TAG, "Cannot decode bitmap from Uri: $imageUri")
@@ -99,7 +106,7 @@ object TextRemovalHelper {
 
             Log.d(TAG, "Mask inpainting: image ${bitmap.width}x${bitmap.height}, mask ${maskBitmap.width}x${maskBitmap.height}")
 
-            val resultBitmap = LamaInpainter.inpaintWithMask(bitmap, maskBitmap)
+            val resultBitmap = LamaInpainter.inpaintWithMask(bitmap, maskBitmap, onProgress)
             bitmap.recycle()
 
             if (resultBitmap == null) {
@@ -107,6 +114,7 @@ object TextRemovalHelper {
                 return@withContext null
             }
 
+            onProgress?.invoke("Lưu kết quả...")
             val outputFile = File(context.cacheDir, "inpainted_mask_${System.currentTimeMillis()}.jpg")
             FileOutputStream(outputFile).use { out ->
                 resultBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
