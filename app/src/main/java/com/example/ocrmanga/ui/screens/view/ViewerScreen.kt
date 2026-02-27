@@ -343,6 +343,7 @@ fun ViewerScreen(
         pair.copy(second = pair.second.filter { !it.pendingDelete })
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -913,44 +914,47 @@ fun ViewerScreen(
             )
         }
 
-        // Text Removal Loading Popup
-        if (isRemovingText) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f)),
-                contentAlignment = Alignment.Center
+    } // end Column
+
+    // Text Removal Loading Popup - overlays on top of Column
+    if (isRemovingText || uiState.isRemovingText) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f)),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.material3.Surface(
+                modifier = Modifier.padding(32.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
             ) {
-                androidx.compose.material3.Surface(
-                    modifier = Modifier.padding(32.dp),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(48.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Đang xóa text...",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Vui lòng đợi trong giây lát",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(48.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Đang xóa text...",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Vui lòng đợi trong giây lát",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
     }
+
+    } // end Box
 }
 
 @Composable

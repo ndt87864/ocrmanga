@@ -51,6 +51,10 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"
     }
+    aaptOptions {
+        noCompress += "tflite"
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -122,6 +126,10 @@ dependencies {
     implementation ("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+
+    // TensorFlow Lite for LaMa inpainting model
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // Google Sign-In & Drive API
     implementation("com.google.android.gms:play-services-auth:21.1.0")

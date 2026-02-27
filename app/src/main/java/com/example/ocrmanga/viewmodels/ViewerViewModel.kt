@@ -78,10 +78,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         Log.i(TAG, "togglePendingDelete: Marked uri=$uri as dirty (pendingDelete=$setPending)")
     }
     
-    // Xóa text gốc trên ảnh sử dụng Python inpainting
+    // Xóa text gốc trên ảnh sử dụng LaMa inpainting
     fun removeOriginalText(uri: Uri) {
         viewModelScope.launch {
             try {
+                _uiState.update { it.copy(isRemovingText = true) }
+
                 // Lấy danh sách blocks của ảnh này
                 val blocks = _uiState.value.translatedTexts[uri]?.second ?: emptyList()
                 
@@ -93,6 +95,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             Toast.LENGTH_SHORT
                         ).show()
                     }
+                    _uiState.update { it.copy(isRemovingText = false) }
                     return@launch
                 }
                 
@@ -132,6 +135,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         Toast.LENGTH_SHORT
                     ).show()
                 }
+            } finally {
+                _uiState.update { it.copy(isRemovingText = false) }
             }
         }
     }
@@ -2798,6 +2803,7 @@ data class ViewerUiState(
     // Vị trí scroll cần nhảy đến sau khi reload (null = không nhảy)
     val scrollToIndexAfterReload: Int? = null,
     val isTextRemovalMode: Boolean = false, // Chế độ xóa text thủ công (vẽ mask)
+    val isRemovingText: Boolean = false, // Loading state for text removal
     val recentlySavedUris: Set<android.net.Uri> = emptySet(), // URIs saved via editor but not yet applied in UI
     val reopenEditorUris: Set<android.net.Uri> = emptySet() // URIs for which editor should reopen after blocks are applied
 )

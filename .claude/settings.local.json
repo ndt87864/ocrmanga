@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir \"c:\\\\Users\\\\admin\\\\AndroidStudioProjects\\\\ocrmanga\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\ocrmanga\\\\data\")"
+      "Bash(dir \"c:\\\\Users\\\\admin\\\\AndroidStudioProjects\\\\ocrmanga\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\ocrmanga\\\\data\")",
+      "Bash(dir \"C:\\\\Users\\\\admin\\\\AndroidStudioProjects\\\\ocrmanga\\\\app\\\\src\\\\main\\\\assets\\\\models\\\\LaMa-Dilated_float.tflite\")",
+      "Bash(powershell -Command \"\\(Get-Item ''C:\\\\Users\\\\admin\\\\AndroidStudioProjects\\\\ocrmanga\\\\app\\\\src\\\\main\\\\assets\\\\models\\\\LaMa-Dilated_float.tflite''\\).Length / 1MB\")",
+      "Bash(dir \"C:\\\\Users\\\\admin\\\\AndroidStudioProjects\\\\ocrmanga\\\\app\\\\src\\\\main\\\\assets\\\\models\")",
+      "Bash(.gradlew.bat assembleDebug)",
+      "Bash(dir \"C:\\\\Users\\\\admin\\\\OneDrive\\\\Hình ảnh\\\\Screenshots\" /b)",
+      "Bash(findstr \"164\")",
+      "Bash(cmd /c \"gradlew.bat assembleDebug 2>&1\")",
+      "Bash(cmd /c \"gradlew.bat assembleDebug --console=plain 2>&1 | findstr /i \"\"error\\\\|BUILD\\\\|FAIL\\\\|SUCCESS\"\"\")"
     ]
   }
 }
