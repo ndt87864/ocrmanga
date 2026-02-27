@@ -21,3 +21,4 @@ upload_certificate.pem
 app/release/*
 /.agent*
 /.claude*
+**/models/**
