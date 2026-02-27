@@ -373,40 +373,70 @@ object LamaInpainter {
     }
 
     /**
-     * Multiplicative per-channel correction from local border pixels.
-     * E.g. white border avg=252, model avg=230 → scale=1.096 → 230*1.096=252.
+     * Multiplicative per-channel correction from background-only border pixels.
+     * Uses IQR (interquartile range) filtering to exclude text pixels regardless
+     * of whether text is dark or light - text is always an outlier vs background.
+     * Samples pixels 8-20px from mask to avoid text residue at edges.
      */
     private fun computeColorScale(
         origPx: IntArray, inpPx: IntArray, mask: FloatArray, w: Int, h: Int
     ): ColorScale {
-        var origR = 0.0; var origG = 0.0; var origB = 0.0
-        var inpR = 0.0; var inpG = 0.0; var inpB = 0.0
-        var count = 0
+        val SAMPLE_NEAR = 8
+        val SAMPLE_FAR = 20
+
+        val origSamples = mutableListOf<IntArray>()  // [r, g, b]
+        val inpSamples = mutableListOf<IntArray>()
         val step = if (w * h < 60000) 1 else 2
 
-        for (y in 3 until h - 3 step step) {
-            for (x in 3 until w - 3 step step) {
+        for (y in SAMPLE_FAR until h - SAMPLE_FAR step step) {
+            for (x in SAMPLE_FAR until w - SAMPLE_FAR step step) {
                 val i = y * w + x
                 if (mask[i] > 0.5f) continue
-                var hasNearbyMask = false
-                outer@ for (dy in -3..3) { for (dx in -3..3) {
-                    val ni = (y + dy) * w + (x + dx)
-                    if (ni in mask.indices && mask[ni] > 0.5f) { hasNearbyMask = true; break@outer }
-                }}
-                if (hasNearbyMask) {
-                    origR += Color.red(origPx[i]); origG += Color.green(origPx[i]); origB += Color.blue(origPx[i])
-                    inpR += Color.red(inpPx[i]); inpG += Color.green(inpPx[i]); inpB += Color.blue(inpPx[i])
-                    count++
+
+                var nearMask = false
+                var tooClose = false
+                outer@ for (dy in -SAMPLE_FAR..SAMPLE_FAR step 3) {
+                    for (dx in -SAMPLE_FAR..SAMPLE_FAR step 3) {
+                        val ni = (y + dy) * w + (x + dx)
+                        if (ni in mask.indices && mask[ni] > 0.5f) {
+                            val dist = max(kotlin.math.abs(dx), kotlin.math.abs(dy))
+                            if (dist < SAMPLE_NEAR) { tooClose = true; break@outer }
+                            nearMask = true
+                        }
+                    }
+                }
+                if (nearMask && !tooClose) {
+                    origSamples.add(intArrayOf(Color.red(origPx[i]), Color.green(origPx[i]), Color.blue(origPx[i])))
+                    inpSamples.add(intArrayOf(Color.red(inpPx[i]), Color.green(inpPx[i]), Color.blue(inpPx[i])))
                 }
             }
         }
-        if (count < 5) return ColorScale(1f, 1f, 1f)
-        val aOR = origR / count; val aOG = origG / count; val aOB = origB / count
-        val aIR = inpR / count; val aIG = inpG / count; val aIB = inpB / count
+
+        if (origSamples.size < 5) return ColorScale(1f, 1f, 1f)
+
+        // IQR filter: sort by brightness, keep middle 50% (Q1-Q3)
+        // This removes text outliers whether text is dark or light
+        val brightnesses = origSamples.map { (it[0] * 0.299 + it[1] * 0.587 + it[2] * 0.114).toFloat() }
+        val indices = brightnesses.indices.sortedBy { brightnesses[it] }
+        val q1 = indices.size / 4
+        val q3 = indices.size * 3 / 4
+        val filteredIndices = indices.subList(q1, q3)
+
+        if (filteredIndices.size < 3) return ColorScale(1f, 1f, 1f)
+
+        var origR = 0.0; var origG = 0.0; var origB = 0.0
+        var inpR = 0.0; var inpG = 0.0; var inpB = 0.0
+        for (idx in filteredIndices) {
+            origR += origSamples[idx][0]; origG += origSamples[idx][1]; origB += origSamples[idx][2]
+            inpR += inpSamples[idx][0]; inpG += inpSamples[idx][1]; inpB += inpSamples[idx][2]
+        }
+        val n = filteredIndices.size
+        val aOR = origR / n; val aOG = origG / n; val aOB = origB / n
+        val aIR = inpR / n; val aIG = inpG / n; val aIB = inpB / n
         return ColorScale(
-            r = if (aIR > 5) (aOR / aIR).toFloat().coerceIn(0.7f, 1.5f) else 1f,
-            g = if (aIG > 5) (aOG / aIG).toFloat().coerceIn(0.7f, 1.5f) else 1f,
-            b = if (aIB > 5) (aOB / aIB).toFloat().coerceIn(0.7f, 1.5f) else 1f
+            r = if (aIR > 5) (aOR / aIR).toFloat().coerceIn(0.85f, 1.2f) else 1f,
+            g = if (aIG > 5) (aOG / aIG).toFloat().coerceIn(0.85f, 1.2f) else 1f,
+            b = if (aIB > 5) (aOB / aIB).toFloat().coerceIn(0.85f, 1.2f) else 1f
         )
     }
 
