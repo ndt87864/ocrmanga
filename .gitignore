@@ -20,5 +20,10 @@ my-release-key.jks
 upload_certificate.pem
 app/release/*
 /.agent*
-/.claude*
+
 **/models/**
+# Ignore local/editor/config folders
+/.claude/
+/.vscode/
+/.idea/
+
