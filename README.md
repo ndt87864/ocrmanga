@@ -19,7 +19,7 @@ OCR Manga là một ứng dụng Android để nhận dạng và dịch văn b�
 
 ### Sử dụng VS Code Tasks
 
-1. Mở Command Palette (`Ctrl+Shift+P`)
+1. Mở Command Palette (Ctrl+Shift+P)
 2. Chọn `Tasks: Run Task`
 3. Chọn một trong các task sau:
    - **Build OCR Manga Debug**: Build debug APK
@@ -28,7 +28,7 @@ OCR Manga là một ứng dụng Android để nhận dạng và dịch văn b�
 
 ### Sử dụng Terminal
 
-```bash
+```powershell
 # Build debug APK
 .\gradlew.bat assembleDebug
 
@@ -42,14 +42,6 @@ OCR Manga là một ứng dụng Android để nhận dạng và dịch văn b�
 .\gradlew.bat installDebug
 ```
 
-set JAVA_HOME=C:\Program Files\Java\jdk-22
-set PATH=%JAVA_HOME%\bin;%PATH%
-echo %JAVA_HOME%
-where java
-where javac
-java -version
-javac -version
-gradlew.bat assembleRelease
 ## Cấu trúc dự án
 
 ```
