@@ -2368,38 +2368,21 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 // Standardize the export layout calculation to a 360dp baseline width (like the design mockups)
                                                 // This ensures that 'screenScaleFactor' is effectively 1.0, removing layout variance caused by
                                                 // the user's specific screen width (Tablet vs Phone).
-                                                // We use the DEVICE density to ensure pixel/sp calculations match the Typeface metrics of the device.
                                                 val refScreenWidthPx = 360f * displayMetrics.density
                                                 val bitmapToViewScale = refScreenWidthPx / src.width.toFloat()
                                                 
                                                 // Scale bounds từ bitmap coordinate → view coordinate (Simulated 360dp View)
+                                                // We must pass the FULL bounds to adjustWhiteoutBounds, identical to drawTextOnCanvas in UI
                                                 val scaledWidth = boundsWidth * bitmapToViewScale
                                                 val scaledHeight = boundsHeight * bitmapToViewScale
                                                 
-                                                // Calculate text area with padding EXACTLY like view mode does
-                                                val isOval = block.shapeType == 1
-                                                val textPadding = if (isOval) 0.15f else 0f
-                                                val textWidth = scaledWidth * (1 - 2 * textPadding)
-                                                val textHeight = scaledHeight * (1 - 2 * textPadding)
-                                                
-                                                // Force screenScaleFactor to 1.0f because we are simulating the baseline 360dp width
-                                                // This prevents "Double Scaling" where wide screens would trigger a larger scale factor,
-                                                // inflating the font size unnecessarily in the export context.
-                                                val screenScaleFactor = 1.0f
-                                                
-                                                // fontSize = base * screenScale
-                                                val baseFontSize = block.fontSize
-                                                val scaledFontSize = baseFontSize * screenScaleFactor
-
-                                                // Áp dụng adjustWhiteoutBounds với scaled fontSize và scaled textArea
-                                                val effectiveWidth = if (block.isVertical) textHeight else textWidth
-                                                val effectiveHeight = if (block.isVertical) textWidth else textHeight
-                                                
+                                                // Áp dụng adjustWhiteoutBounds với full scaled bounds.
+                                                // adjustWhiteoutBounds will internally handle shapeType scaling and isVertical swaps.
                                                 val (wrappedText, optimalFontSize) = com.example.ocrmanga.ui.screens.view.adjustWhiteoutBounds(
                                                     text = block.text,
-                                                    initialWidth = effectiveWidth,
-                                                    initialHeight = effectiveHeight,
-                                                    fontSize = scaledFontSize,
+                                                    initialWidth = scaledWidth,
+                                                    initialHeight = scaledHeight,
+                                                    fontSize = block.fontSize,
                                                     isVertical = block.isVertical,
                                                     context = app,
                                                     fontFamilyName = block.fontFamily,
@@ -2495,19 +2478,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 val rotation = block.rotation ?: 0f
                                                 if (rotation != 0f) canvas.rotate(rotation, cx, cy)
 
-                                                // Draw text line by line with proper positioning
+                                                // Draw text line by line with proper positioning (matching UI drawTextOnCanvas exactly)
                                                 val lines = wrappedText.split("\n")
                                                 val fontMetrics = tp.fontMetrics
                                                 // Use actual lineSpacing value (may be < 1f) to match what adjustWhiteoutBounds calculated
                                                 val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * block.lineSpacing
-
-                                                // Calculate text drawing area with padding (exactly like view mode)
-                                                // textPadding is already calculated as ratio (0.15 for oval, 0 for rect)
-                                                val textPaddingPx = boundsWidth * textPadding
-                                                val textLeft = adjBoundsLeft + textPaddingPx
-                                                val textTop = adjBoundsTop + textPaddingPx
-                                                val textDrawWidth = boundsWidth - 2 * textPaddingPx
-                                                val textDrawHeight = boundsHeight - 2 * textPaddingPx
+                                                
+                                                // Use full box bounds for coordinate calculations on bitmap (bitmap coordinates)
+                                                val textLeft = adjBoundsLeft
+                                                val textTop = adjBoundsTop
+                                                val textDrawWidth = adjBoundsWidth
+                                                val textDrawHeight = adjBoundsHeight
 
                                                 if (block.isVertical) {
                                                     // Vertical text rendering with padding
