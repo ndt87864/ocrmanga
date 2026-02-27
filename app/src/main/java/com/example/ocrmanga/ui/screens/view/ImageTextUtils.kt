@@ -711,7 +711,7 @@ fun drawTextOnCanvas(drawScope: DrawScope,
     }
 }
 
-private fun drawTextPerCharacter(
+fun drawTextPerCharacter(
     canvas: android.graphics.Canvas,
     text: String,
     tx: Float,

@@ -2409,6 +2409,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         alpha = (255 * block.textBoldness).toInt().coerceIn(50, 255)
                                                     }
                                                 }
+                                                
+                                                val gradientColorsArr = block.textGradientColors?.toIntArray()
+                                                val gradientPositionsArr = block.textGradientOffsets?.toFloatArray()
+                                                val gradientType = block.textGradientType
 
                                                 // Create border paint if needed
                                                 var borderPaint = if (block.customBorderColor != null && block.borderThickness > 0f) {
@@ -2479,7 +2483,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                             // Draw shadow, then border, then text
                                                             shadowPaint?.let { canvas.drawText(line, centeredY, -fontMetrics.ascent, it) }
                                                             borderPaint?.let { canvas.drawText(line, centeredY, -fontMetrics.ascent, it) }
-                                                            canvas.drawText(line, centeredY, -fontMetrics.ascent, tp)
+                                                             if (gradientColorsArr != null && gradientColorsArr.size >= 2) {
+                                                                 com.example.ocrmanga.ui.screens.view.drawTextPerCharacter(
+                                                                     canvas, line, centeredY, -fontMetrics.ascent, tp,
+                                                                     gradientColorsArr, gradientPositionsArr, gradientType, fontMetrics
+                                                                 )
+                                                             } else {
+                                                                 canvas.drawText(line, centeredY, -fontMetrics.ascent, tp)
+                                                             }
                                                             canvas.restore()
                                                             currentX -= lineHeight
                                                         }
@@ -2512,7 +2523,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                                     
                                                                     shadowPaint?.let { canvas.drawText(line, drawX, currentY, it) }
                                                                     borderPaint?.let { canvas.drawText(line, drawX, currentY, it) }
-                                                                    canvas.drawText(line, drawX, currentY, tp)
+                                                                     if (gradientColorsArr != null && gradientColorsArr.size >= 2) {
+                                                                         com.example.ocrmanga.ui.screens.view.drawTextPerCharacter(
+                                                                             canvas, line, drawX, currentY, tp,
+                                                                             gradientColorsArr, gradientPositionsArr, gradientType, fontMetrics
+                                                                         )
+                                                                     } else {
+                                                                         canvas.drawText(line, drawX, currentY, tp)
+                                                                     }
                                                                 }
                                                                 else -> { // CENTER or others
                                                                     // Ensure Paint is set to CENTER
@@ -2522,7 +2540,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                                     
                                                                     shadowPaint?.let { canvas.drawText(line, centerX, currentY, it) }
                                                                     borderPaint?.let { canvas.drawText(line, centerX, currentY, it) }
-                                                                    canvas.drawText(line, centerX, currentY, tp)
+                                                                     if (gradientColorsArr != null && gradientColorsArr.size >= 2) {
+                                                                         com.example.ocrmanga.ui.screens.view.drawTextPerCharacter(
+                                                                             canvas, line, centerX, currentY, tp,
+                                                                             gradientColorsArr, gradientPositionsArr, gradientType, fontMetrics
+                                                                         )
+                                                                     } else {
+                                                                         canvas.drawText(line, centerX, currentY, tp)
+                                                                     }
                                                                 }
                                                             }
                                                         }
