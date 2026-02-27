@@ -24,7 +24,7 @@ class PythonTextRemover(private val context: Context) {
 
     suspend fun inpaintFromBlocks(imageBitmap: Bitmap, textRects: List<Rect>): Bitmap? {
         Log.i(TAG, "inpaintFromBlocks: ${textRects.size} blocks, image ${imageBitmap.width}x${imageBitmap.height}")
-        return LamaInpainter.inpaintBlocks(imageBitmap, textRects)
+        return LamaInpainter.inpaintBlocks(imageBitmap, textRects.map { LamaInpainter.InpaintBlock(it) })
     }
 
     suspend fun inpaintWithMask(imageBitmap: Bitmap, maskBitmap: Bitmap): Bitmap? {
