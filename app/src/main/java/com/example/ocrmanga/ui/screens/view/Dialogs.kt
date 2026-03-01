@@ -219,7 +219,7 @@ fun Dialogs(
                     // ...không còn nút ON/OFF riêng biệt...
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.NVIDIA_GLM5).forEach { mode ->
+                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN).forEach { mode ->
                         if (mode == TranslationMode.OFF) {
                             // Kiểm tra xem tất cả block đã bị ẩn chưa để quyết định hiển thị ON hay OFF
                             val allBlocksHidden = blocks.isNotEmpty() && blocks.all { it.pendingDelete }
@@ -309,7 +309,7 @@ fun Dialogs(
                                     .padding(vertical = 4.dp)
                             ) {
                                 Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Text(mode.name, modifier = Modifier.padding(start = 8.dp))
+                                Text(mode.getDisplayName(), modifier = Modifier.padding(start = 8.dp))
                             }
                         }
                     }

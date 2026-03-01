@@ -195,7 +195,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 return@launch
             }
-            if (mode == TranslationMode.NVIDIA_GLM5 && !hasNvidiaApiKeys()) {
+            if ((mode == TranslationMode.NVIDIA_GLM5 || mode == TranslationMode.NVIDIA_QWEN) && !hasNvidiaApiKeys()) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Không có API key NVIDIA. Vui lòng thêm API key NVIDIA trong cài đặt (hoặc AppConfig).", Toast.LENGTH_LONG).show()
                 }
@@ -1264,7 +1264,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
             return
         }
-        if (mode == TranslationMode.NVIDIA_GLM5 && !hasNvidiaApiKeys()) {
+        if ((mode == TranslationMode.NVIDIA_GLM5 || mode == TranslationMode.NVIDIA_QWEN) && !hasNvidiaApiKeys()) {
             viewModelScope.launch(Dispatchers.Main) {
                 Toast.makeText(getApplication(), "Không có API key NVIDIA. Vui lòng thêm API key NVIDIA trong cài đặt (hoặc AppConfig).", Toast.LENGTH_LONG).show()
             }

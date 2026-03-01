@@ -661,6 +661,13 @@ fun ViewerScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("Dịch với NVIDIA Qwen 3.5") },
+                            onClick = {
+                                viewModel.setTranslationMode(TranslationMode.NVIDIA_QWEN)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Tắt") },
                             onClick = {
                                 viewModel.setTranslationMode(TranslationMode.OFF)
