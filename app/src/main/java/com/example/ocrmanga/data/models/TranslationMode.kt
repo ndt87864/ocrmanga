@@ -5,5 +5,6 @@ enum class TranslationMode {
     ONLINE,   // Dịch trực tuyến
     OFF,      // Tắt dịch
     GEMINI,   // Dịch bằng Gemini API
-    MISTRAL   // Dịch bằng Mistral API
+    MISTRAL,  // Dịch bằng Mistral API
+    NVIDIA_GLM5 // Dịch bằng NVIDIA NIM (GLM-5)
 }

@@ -195,6 +195,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 return@launch
             }
+            if (mode == TranslationMode.NVIDIA_GLM5 && !hasNvidiaApiKeys()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Không có API key NVIDIA. Vui lòng thêm API key NVIDIA trong cài đặt (hoặc AppConfig).", Toast.LENGTH_LONG).show()
+                }
+                return@launch
+            }
             
             // Đánh dấu bản dịch cũ là pending_delete trước khi dịch mới
             val imageId = uriToImageId[uri]
@@ -1255,6 +1261,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         if (mode == TranslationMode.MISTRAL && !hasMistralApiKeys()) {
             viewModelScope.launch(Dispatchers.Main) {
                 Toast.makeText(getApplication(), "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (mode == TranslationMode.NVIDIA_GLM5 && !hasNvidiaApiKeys()) {
+            viewModelScope.launch(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Không có API key NVIDIA. Vui lòng thêm API key NVIDIA trong cài đặt (hoặc AppConfig).", Toast.LENGTH_LONG).show()
             }
             return
         }
@@ -2732,6 +2744,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun hasMistralApiKeys(): Boolean {
         return translationRepository.hasMistralApiKeys()
+    }
+
+    fun hasNvidiaApiKeys(): Boolean {
+        return translationRepository.hasNvidiaApiKeys()
     }
 
     // Public accessor for UI to get imageId for a given uri if available

@@ -654,6 +654,13 @@ fun ViewerScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("Dịch với NVIDIA GLM-5") },
+                            onClick = {
+                                viewModel.setTranslationMode(TranslationMode.NVIDIA_GLM5)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Tắt") },
                             onClick = {
                                 viewModel.setTranslationMode(TranslationMode.OFF)

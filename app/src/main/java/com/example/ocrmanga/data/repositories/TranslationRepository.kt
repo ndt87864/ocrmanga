@@ -112,9 +112,9 @@ class TranslationRepository(private val application: Application) {
     private val translators = mutableMapOf<String, com.google.mlkit.nl.translate.Translator>()
     private val cache = mutableMapOf<String, Pair<String, List<TextBlockInfo>>>()
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .build()
     private val databaseHelper = DatabaseHelper(application)
 
@@ -149,6 +149,7 @@ class TranslationRepository(private val application: Application) {
         "mistral-medium-latest"
     )
     private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
+    private val nvidiaApiUrl = "${com.example.ocrmanga.data.constant.AppConfig.NVIDIA_BASE_URL}/chat/completions"
     // Toast spam prevention for Mistral errors
     @Volatile private var mistralErrorToastShown = false
 
@@ -619,6 +620,135 @@ class TranslationRepository(private val application: Application) {
             }
         }
         return null
+    }
+
+    suspend fun translateWithNvidiaGLM5MultiScale(
+        textBlocks: List<TextBlockInfo>,
+        ocrResults: List<Pair<Float, String>>,
+        sourceLang: String,
+        targetLang: String,
+        previousTranslation: List<TextBlockInfo>? = null,
+        isAncientMode: Boolean = false
+    ): List<String>? {
+        if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
+        
+        val nvidiaKey = com.example.ocrmanga.data.constant.AppConfig.NVIDIA_API_KEY
+        
+        // Tạo context từ bản dịch ảnh trước
+        val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
+            TranslationPrompts.getPreviousContextText(previousTranslation)
+        } else ""
+        
+        // Tạo prompt
+        val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
+            "Kết quả quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
+        }.joinToString("\n\n")
+        
+        val numberedBlocks = textBlocks.mapIndexed { index, block ->
+            "Block #${index + 1}: ${block.text}"
+        }.joinToString("\n")
+        
+        val prompt = TranslationPrompts.getMistralMultiScalePrompt(
+            ocrResultsText = ocrResultsText,
+            numberedBlocks = numberedBlocks,
+            blockCount = textBlocks.size,
+            previousContextText = previousContextText,
+            isAncientMode = isAncientMode
+        )
+
+        val gson = com.google.gson.Gson()
+        val systemPrompt = TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT.trimIndent() + "\n\nOutput format: STRICTLY 'Block #N: <translation>' per line. No notes, no intro."
+        val systemMessage = mapOf("role" to "system", "content" to systemPrompt)
+        val userMessage = mapOf("role" to "user", "content" to prompt)
+        
+        Log.i("TranslationRepository", "[NVIDIA-GLM5] Đang gửi yêu cầu dịch (${textBlocks.size} blocks)...")
+        
+        // Cấu trúc body đặc thù cho NVIDIA GLM-5
+        val bodyMap = mapOf(
+            "model" to "z-ai/glm5",
+            "messages" to listOf(systemMessage, userMessage),
+            "temperature" to 1.0,
+            "top_p" to 1.0,
+            "max_tokens" to 16384,
+            "extra_body" to mapOf(
+                "chat_template_kwargs" to mapOf(
+                    "enable_thinking" to false,
+                    "clear_thinking" to false
+                )
+            ),
+            "stream" to false
+        )
+        val requestBody = gson.toJson(bodyMap)
+
+        val request = okhttp3.Request.Builder()
+            .url(nvidiaApiUrl)
+            .addHeader("Authorization", "Bearer $nvidiaKey")
+            .addHeader("Content-Type", "application/json")
+            .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
+            .build()
+
+        try {
+            val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
+            val body = response.use { resp ->
+                if (!resp.isSuccessful) {
+                    val errBody = resp.body?.string()
+                    Log.e("TranslationRepository", "[NVIDIA-ERROR] Lỗi: ${resp.code} ${resp.message} | Body: $errBody")
+                    return@use null
+                }
+                resp.body?.string()
+            }
+            
+            if (body == null) return null
+            
+            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+            val choices = json["choices"]?.asJsonArray
+            val message = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")
+            
+            // Log reasoning nếu có (AI đang suy nghĩ)
+            val reasoning = message?.get("reasoning_content")?.let { if (it.isJsonNull) null else it.asString }
+            if (!reasoning.isNullOrBlank()) {
+                Log.i("TranslationRepository", "[NVIDIA-THINKING] AI đang suy nghĩ:\n$reasoning")
+            }
+            
+            val contentElement = message?.get("content")
+            val content = if (contentElement != null && !contentElement.isJsonNull) contentElement.asString else null
+            if (content.isNullOrBlank()) return null
+            
+            // Parse kết quả tương tự Mistral
+            val translatedBlocksMap = mutableMapOf<Int, String>()
+            val lines = content.trim().split("\n")
+            val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
+            
+            var i = 0
+            while (i < lines.size) {
+                val match = blockPattern.find(lines[i].trim())
+                if (match != null) {
+                    val blockNumber = match.groupValues[1].toInt()
+                    val blockIndex = blockNumber - 1
+                    var translation = match.groupValues[2].trim()
+                    
+                    var j = i + 1
+                    val blockLines = mutableListOf<String>()
+                    if (translation.isNotEmpty()) blockLines.add(translation)
+                    while (j < lines.size && !blockPattern.matches(lines[j].trim())) {
+                        if (lines[j].trim().isNotEmpty()) blockLines.add(lines[j].trim())
+                        j++
+                    }
+                    i = j - 1
+                    
+                    translation = blockLines.lastOrNull()?.replace("**", "")?.replace("*", "")?.trim() ?: ""
+                    if (blockIndex >= 0) translatedBlocksMap[blockIndex] = translation
+                }
+                i++
+            }
+
+            return List(textBlocks.size) { index ->
+                translatedBlocksMap[index] ?: textBlocks[index].text
+            }
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "[NVIDIA-EXCEPTION] Lỗi: ${e.message}", e)
+            return null
+        }
     }
 
     fun getNextGeminiApiKey(): String? {
@@ -1417,6 +1547,69 @@ class TranslationRepository(private val application: Application) {
                 return@withContext result
             }
 
+            // --- LOGIC CHO NVIDIA GLM-5 ---
+            if (mode == TranslationMode.NVIDIA_GLM5) {
+                val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
+                if (allOcrResults.isEmpty()) {
+                    lastTranslationSession.add(Pair(imageUri, Pair("", "")))
+                    return@withContext Triple("", emptyList(), "zh")
+                }
+                
+                val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
+                val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
+                
+                var translatedTexts = translateWithNvidiaGLM5MultiScale(
+                    mergedBlocks, allOcrResults, sourceLanguage, "vi", 
+                    previousTranslation, isAncientMode
+                )
+
+                if (translatedTexts.isNullOrEmpty()) {
+                    Log.w("TranslationRepository", "NVIDIA GLM-5 không trả về kết quả dịch")
+                    lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
+                    return@withContext Triple("", emptyList(), "zh")
+                }
+
+                withContext(Dispatchers.Main) {
+                    onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.DISTRIBUTING)
+                }
+                
+                val defaultSettings = getDefaultFontSettings()
+                val blocks = mutableListOf<TextBlockInfo>()
+                
+                mergedBlocks.forEachIndexed { index, block ->
+                    val naturalText = postProcessTranslation(translatedTexts.getOrNull(index) ?: block.text)
+                    val isVertical = block.isVertical
+                    val adjustedFontSize = calculateAdjustedFontSize(
+                        naturalText, block.text, block.bounds, block.fontSize, isVertical
+                    )
+                    
+                    val newBounds = adjustBoundsForTranslatedText(naturalText, block.bounds, adjustedFontSize, 1.0f)
+                    val newBlock = block.copy(
+                        text = naturalText,
+                        bounds = newBounds,
+                        fontSize = adjustedFontSize,
+                        fontFamily = defaultSettings["fontFamily"] as? String ?: "Default",
+                        lineSpacing = defaultSettings["lineSpacing"] as? Float ?: 1.0f,
+                        textBoldness = defaultSettings["textBoldness"] as? Float ?: 1.0f,
+                        overlayAlpha = defaultSettings["overlayAlpha"] as? Float ?: 0.8f,
+                        overlaySaturation = defaultSettings["overlayBrightness"] as? Float ?: 1.0f,
+                        customBorderColor = (defaultSettings["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        borderThickness = defaultSettings["borderThickness"] as? Float ?: 2.0f,
+                        customTextColor = block.originalTextColor,
+                        applyMerge = true
+                    )
+                    blocks.add(newBlock)
+                }
+                
+                resultText = blocks.joinToString("\n") { it.text }
+                translatedBlocks = blocks
+                
+                val result = Triple(resultText, translatedBlocks, sourceLanguage)
+                cache[cacheKey] = resultText to translatedBlocks
+                lastTranslationSession.add(Pair(imageUri, Pair(fullText, resultText)))
+                return@withContext result
+            }
+
             // Lấy tất cả cài đặt mặc định từ cài đặt cho các mode khác
             val defaultSettingsOther = getDefaultFontSettings()
             
@@ -1434,6 +1627,7 @@ class TranslationRepository(private val application: Application) {
                             TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                             TranslationMode.OFF -> block.text
                             TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: "" // Không nên xảy ra vì đã xử lý ở trên
+                            TranslationMode.NVIDIA_GLM5 -> block.text // Đã xử lý ở khối if riêng phía trên
                         }
                         // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
                         // Tối ưu: chỉ kiểm tra lần 2 nếu text quá ngắn (có thể bị dịch sai)
@@ -1528,6 +1722,7 @@ class TranslationRepository(private val application: Application) {
                         TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
                         TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                         TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
+                        TranslationMode.NVIDIA_GLM5 -> block.text
                         TranslationMode.OFF -> block.text
                     }
                     val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
@@ -3843,5 +4038,9 @@ class TranslationRepository(private val application: Application) {
         } else {
             merged
         }
+    }
+
+    fun hasNvidiaApiKeys(): Boolean {
+        return com.example.ocrmanga.data.constant.AppConfig.NVIDIA_API_KEY.isNotEmpty()
     }
 }

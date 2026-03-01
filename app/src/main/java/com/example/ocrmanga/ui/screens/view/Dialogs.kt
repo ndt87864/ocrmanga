@@ -219,7 +219,7 @@ fun Dialogs(
                     // ...không còn nút ON/OFF riêng biệt...
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL).forEach { mode ->
+                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.NVIDIA_GLM5).forEach { mode ->
                         if (mode == TranslationMode.OFF) {
                             // Kiểm tra xem tất cả block đã bị ẩn chưa để quyết định hiển thị ON hay OFF
                             val allBlocksHidden = blocks.isNotEmpty() && blocks.all { it.pendingDelete }
