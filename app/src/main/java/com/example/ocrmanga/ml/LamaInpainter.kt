@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.Point
 import android.graphics.Rect
 import android.graphics.RectF
+import com.google.android.gms.common.util.CollectionUtils.listOf
 import com.example.ocrmanga.utils.AppLogger as Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,6 +21,8 @@ import java.nio.ByteOrder
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * LaMa-based inpainting engine using TensorFlow Lite.
@@ -45,6 +48,7 @@ object LamaInpainter {
     private var outputC = 0
     private var hasMaskInput = false
     private var isDynamic = false
+    private val mutex = Mutex()
 
     private var imgBuf: ByteBuffer? = null
     private var maskBuf: ByteBuffer? = null
@@ -155,7 +159,9 @@ object LamaInpainter {
             val clusters = paddedBlocks.map { listOf(it) }
             Log.d(TAG, "inpaintBlocks: ${blocks.size} blocks -> ${clusters.size} clusters, type=$imageType")
 
-            val result = processRegionClusters(workImage, fullMask, clusters, onProgress)
+            val result = mutex.withLock {
+                processRegionClusters(workImage, fullMask, clusters, onProgress)
+            }
             fullMask.recycle(); workImage.recycle()
 
             val finalResult = if (imageType == ImageType.GRAYSCALE && result != null) {
@@ -200,7 +206,7 @@ object LamaInpainter {
 
     // ── Internal mask-based inpainting ────────────────────────────────────
 
-    private fun inpaintWithMaskInternal(
+    private suspend fun inpaintWithMaskInternal(
         image: Bitmap, mask: Bitmap,
         onProgress: ((String) -> Unit)?
     ): Bitmap? {
@@ -215,7 +221,9 @@ object LamaInpainter {
             normalizedMask.recycle(); workImage.recycle(); return null
         }
 
-        val result = processRegionClusters(workImage, normalizedMask, listOf(listOf(maskBounds)), onProgress)
+        val result = mutex.withLock {
+            processRegionClusters(workImage, normalizedMask, listOf(listOf(maskBounds)), onProgress)
+        }
         normalizedMask.recycle(); workImage.recycle()
 
         val finalResult = if (imageType == ImageType.GRAYSCALE && result != null) {
@@ -469,8 +477,12 @@ object LamaInpainter {
     private fun runInference(interp: Interpreter, image: Bitmap, mask: Bitmap): Bitmap? {
         try {
             if (isDynamic) {
+                // Ensure dynamic inputs don't exceed absolute limits if any, 
+                // but usually we stick to the resolved inputH/W
                 interp.resizeInput(0, intArrayOf(1, inputH, inputW, inputC))
-                if (hasMaskInput) interp.resizeInput(1, intArrayOf(1, inputH, inputW, maskC))
+                if (hasMaskInput) {
+                    interp.resizeInput(1, intArrayOf(1, inputH, inputW, maskC))
+                }
                 interp.allocateTensors()
             }
 
@@ -496,16 +508,45 @@ object LamaInpainter {
             }
 
             val outBufNeeded = outH * outW * outC * 4
-            val ob = if (outBuf != null && outBuf!!.capacity() >= outBufNeeded) outBuf!!
-            else ByteBuffer.allocateDirect(outBufNeeded).order(ByteOrder.nativeOrder()).also { outBuf = it }
+            val ob = if (outBuf != null && outBuf!!.capacity() >= outBufNeeded) {
+                outBuf!!
+            } else {
+                Log.d(TAG, "Allocating outBuf: ${outBufNeeded} bytes (old: ${outBuf?.capacity() ?: 0})")
+                ByteBuffer.allocateDirect(outBufNeeded).order(ByteOrder.nativeOrder()).also { outBuf = it }
+            }
             ob.rewind()
 
             if (hasMaskInput) {
-                val mb = maskBuf!!; mb.rewind()
-                for (v in maskFloat) { mb.putFloat(v); for (c in 1 until maskC) mb.putFloat(v) }
+                // Ensure maskBuf is large enough if shapes changed
+                val mbNeeded = inputH * inputW * maskC * 4
+                val mb = if (maskBuf != null && maskBuf!!.capacity() >= mbNeeded) {
+                    maskBuf!!
+                } else {
+                    Log.d(TAG, "Allocating maskBuf: ${mbNeeded} bytes")
+                    ByteBuffer.allocateDirect(mbNeeded).order(ByteOrder.nativeOrder()).also { maskBuf = it }
+                }
+                mb.rewind()
+
+                for (v in maskFloat) {
+                    mb.putFloat(v)
+                    for (c in 1 until maskC) mb.putFloat(v)
+                }
+                mb.rewind()
+
+                // Final check before run to avoid BufferOverflow inside TFLite
+                Log.d(TAG, "Running inference (2 inputs): imgCap=${ib.capacity()}, maskCap=${mb.capacity()}, outCap=${ob.capacity()}, neededOut=$outBufNeeded")
                 interp.runForMultipleInputsOutputs(arrayOf(ib, mb), mapOf(0 to ob))
             } else {
-                val cb = combBuf!!; cb.rewind()
+                // Ensure combBuf is large enough
+                val cbNeeded = inputH * inputW * (inputC + 1) * 4
+                val cb = if (combBuf != null && combBuf!!.capacity() >= cbNeeded) {
+                    combBuf!!
+                } else {
+                    Log.d(TAG, "Allocating combBuf: ${cbNeeded} bytes")
+                    ByteBuffer.allocateDirect(cbNeeded).order(ByteOrder.nativeOrder()).also { combBuf = it }
+                }
+                cb.rewind()
+
                 for (i in imgPixels.indices) {
                     val keep = 1f - maskFloat[i]
                     cb.putFloat(Color.red(imgPixels[i]) / 255f * keep)
@@ -513,8 +554,14 @@ object LamaInpainter {
                     cb.putFloat(Color.blue(imgPixels[i]) / 255f * keep)
                     cb.putFloat(maskFloat[i])
                 }
-                interp.resizeInput(0, intArrayOf(1, inputH, inputW, inputC + 1))
-                interp.allocateTensors()
+                cb.rewind()
+
+                if (isDynamic) {
+                    interp.resizeInput(0, intArrayOf(1, inputH, inputW, inputC + 1))
+                    interp.allocateTensors()
+                }
+                
+                Log.d(TAG, "Running inference (1 input): combCap=${cb.capacity()}, outCap=${ob.capacity()}, neededOut=$outBufNeeded")
                 interp.runForMultipleInputsOutputs(arrayOf(cb), mapOf(0 to ob))
             }
 
