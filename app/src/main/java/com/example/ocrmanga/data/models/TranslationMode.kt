@@ -8,7 +8,7 @@ enum class TranslationMode {
     MISTRAL,      // Dịch bằng Mistral API
     NVIDIA_GLM5,  // Dịch bằng NVIDIA NIM (GLM-5)
     NVIDIA_QWEN,  // Dịch bằng NVIDIA NIM (Qwen 3.5)
-    NVIDIA_KIMI,  // Dịch bằng NVIDIA NIM (Kimi 2.5)
+    NVIDIA_GPT_OSS_20B, // Dịch bằng NVIDIA NIM (GPT OSS 20B)
     NVIDIA_GPT_OSS; // Dịch bằng NVIDIA NIM (GPT OSS 120B)
 
     fun getDisplayName(): String = when (this) {
@@ -19,7 +19,7 @@ enum class TranslationMode {
         MISTRAL -> "Mistral AI"
         NVIDIA_GLM5 -> "NVIDIA GLM-5"
         NVIDIA_QWEN -> "NVIDIA Qwen 3.5"
-        NVIDIA_KIMI -> "NVIDIA Kimi 2.5"
+        NVIDIA_GPT_OSS_20B -> "GPT OSS 20B"
         NVIDIA_GPT_OSS -> "GPT OSS 120B"
     }
 }

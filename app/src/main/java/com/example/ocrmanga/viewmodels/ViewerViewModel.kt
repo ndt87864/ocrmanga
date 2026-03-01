@@ -197,7 +197,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
             val hasNvidiaKeys = when(mode) {
-                TranslationMode.NVIDIA_KIMI -> AppConfig.KIMI_API_KEY.isNotEmpty()
+                TranslationMode.NVIDIA_GPT_OSS_20B -> AppConfig.GPT_OSS_20B_API_KEY.isNotEmpty()
                 TranslationMode.NVIDIA_GPT_OSS -> AppConfig.GPT_OSS_API_KEY.isNotEmpty()
                 TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN -> AppConfig.NVIDIA_API_KEY.isNotEmpty()
                 else -> true
@@ -1272,7 +1272,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         val hasNvidiaKeys = when(mode) {
-            TranslationMode.NVIDIA_KIMI -> AppConfig.KIMI_API_KEY.isNotEmpty()
+            TranslationMode.NVIDIA_GPT_OSS_20B -> AppConfig.GPT_OSS_20B_API_KEY.isNotEmpty()
             TranslationMode.NVIDIA_GPT_OSS -> AppConfig.GPT_OSS_API_KEY.isNotEmpty()
             TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN -> AppConfig.NVIDIA_API_KEY.isNotEmpty()
             else -> true

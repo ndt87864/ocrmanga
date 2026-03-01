@@ -103,7 +103,7 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         return executeRequest(requestBody, "Qwen", textBlocks.size, AppConfig.NVIDIA_API_KEY)
     }
 
-    suspend fun translateWithKimi(
+    suspend fun translateWithGptOss20b(
         textBlocks: List<TextBlockInfo>,
         ocrResults: List<Pair<Float, String>>,
         previousTranslation: List<TextBlockInfo>? = null,
@@ -114,21 +114,19 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         val prompt = buildPrompt(textBlocks, ocrResults, previousTranslation, isAncientMode)
         val systemPrompt = TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT.trimIndent() + "\n\nOutput format: STRICTLY 'Block #N: <translation>' per line. No notes, no intro."
         
-        AppLogger.i(TAG, "[Kimi] Đang gửi yêu cầu dịch (${textBlocks.size} blocks)...")
+        AppLogger.i(TAG, "[GPT-OSS-20B] Đang gửi yêu cầu dịch (${textBlocks.size} blocks)...")
         
         val requestBody = getBaseRequestJson(
-            model = "moonshotai/kimi-k2.5",
+            model = "openai/gpt-oss-20b",
             systemPrompt = systemPrompt,
             userPrompt = prompt,
             temperature = 1.0,
             topP = 1.0,
-            maxTokens = 16384,
-            chatTemplateKwargs = mapOf(
-                "thinking" to false
-            )
+            maxTokens = 4096,
+            chatTemplateKwargs = emptyMap()
         )
         
-        return executeRequest(requestBody, "Kimi", textBlocks.size, AppConfig.KIMI_API_KEY)
+        return executeRequest(requestBody, "GPT-OSS-20B", textBlocks.size, AppConfig.GPT_OSS_20B_API_KEY)
     }
 
     suspend fun translateWithGptOss(

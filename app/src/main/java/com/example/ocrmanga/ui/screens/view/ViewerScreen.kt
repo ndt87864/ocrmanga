@@ -668,9 +668,9 @@ fun ViewerScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Dịch với NVIDIA Kimi 2.5") },
+                            text = { Text("Dịch với GPT OSS 20B") },
                             onClick = {
-                                viewModel.setTranslationMode(TranslationMode.NVIDIA_KIMI)
+                                viewModel.setTranslationMode(TranslationMode.NVIDIA_GPT_OSS_20B)
                                 showTranslationMenu = false
                             }
                         )

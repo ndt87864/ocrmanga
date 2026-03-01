@@ -1421,9 +1421,9 @@ class TranslationRepository(private val application: Application) {
                 return@withContext result
             }
 
-            // --- LOGIC CHO CÁC MODEL NVIDIA NIM (GLM-5, QWEN, KIMI, GPT-OSS) ---
+            // --- LOGIC CHO CÁC MODEL NVIDIA NIM (GLM-5, QWEN, GPT-OSS 20B, GPT-OSS 120B) ---
             if (mode == TranslationMode.NVIDIA_GLM5 || mode == TranslationMode.NVIDIA_QWEN || 
-                mode == TranslationMode.NVIDIA_KIMI || mode == TranslationMode.NVIDIA_GPT_OSS) {
+                mode == TranslationMode.NVIDIA_GPT_OSS_20B || mode == TranslationMode.NVIDIA_GPT_OSS) {
                 
                 val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
                 if (allOcrResults.isEmpty()) {
@@ -1437,7 +1437,7 @@ class TranslationRepository(private val application: Application) {
                 val translatedTexts = when(mode) {
                     TranslationMode.NVIDIA_GLM5 -> nvidiaService.translateWithGLM5(mergedBlocks, allOcrResults, previousTranslation, isAncientMode)
                     TranslationMode.NVIDIA_QWEN -> nvidiaService.translateWithQwen(mergedBlocks, allOcrResults, previousTranslation, isAncientMode)
-                    TranslationMode.NVIDIA_KIMI -> nvidiaService.translateWithKimi(mergedBlocks, allOcrResults, previousTranslation, isAncientMode)
+                    TranslationMode.NVIDIA_GPT_OSS_20B -> nvidiaService.translateWithGptOss20b(mergedBlocks, allOcrResults, previousTranslation, isAncientMode)
                     TranslationMode.NVIDIA_GPT_OSS -> nvidiaService.translateWithGptOss(mergedBlocks, allOcrResults, previousTranslation, isAncientMode)
                     else -> null
                 }
@@ -1507,7 +1507,7 @@ class TranslationRepository(private val application: Application) {
                             TranslationMode.OFF -> block.text
                             TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: "" // Không nên xảy ra vì đã xử lý ở trên
                             TranslationMode.NVIDIA_GLM5 -> block.text // Đã xử lý ở khối if riêng phía trên
-                            TranslationMode.NVIDIA_QWEN, TranslationMode.NVIDIA_KIMI, TranslationMode.NVIDIA_GPT_OSS -> block.text // Đã xử lý ở khối if riêng phía trên
+                            TranslationMode.NVIDIA_QWEN, TranslationMode.NVIDIA_GPT_OSS_20B, TranslationMode.NVIDIA_GPT_OSS -> block.text // Đã xử lý ở khối if riêng phía trên
                         }
                         // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
                         // Tối ưu: chỉ kiểm tra lần 2 nếu text quá ngắn (có thể bị dịch sai)
@@ -1603,7 +1603,7 @@ class TranslationRepository(private val application: Application) {
                         TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                         TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
                         TranslationMode.NVIDIA_GLM5 -> block.text
-                        TranslationMode.NVIDIA_QWEN, TranslationMode.NVIDIA_KIMI, TranslationMode.NVIDIA_GPT_OSS -> block.text
+                        TranslationMode.NVIDIA_QWEN, TranslationMode.NVIDIA_GPT_OSS_20B, TranslationMode.NVIDIA_GPT_OSS -> block.text
                         TranslationMode.OFF -> block.text
                     }
                     val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
