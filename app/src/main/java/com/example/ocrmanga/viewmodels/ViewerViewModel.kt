@@ -183,28 +183,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     // IMPORTANT: This will DELETE all existing translations for this image before creating new ones
     fun retranslateImage(uri: Uri, mode: TranslationMode) {
         viewModelScope.launch {
-            // Early validation: if user requests Gemini or Mistral but there are no API keys, notify and skip
-            if (mode == TranslationMode.GEMINI && !hasGeminiApiKeys()) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Không có API key Gemini. Vui lòng thêm ít nhất một API key Gemini trong cài đặt để dùng tính năng dịch Gemini.", Toast.LENGTH_LONG).show()
-                }
-                return@launch
-            }
-            if (mode == TranslationMode.MISTRAL && !hasMistralApiKeys()) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.", Toast.LENGTH_LONG).show()
-                }
-                return@launch
-            }
-            val hasNvidiaKeys = when(mode) {
-                TranslationMode.NVIDIA_GPT_OSS_20B -> AppConfig.GPT_OSS_20B_API_KEY.isNotEmpty()
-                TranslationMode.NVIDIA_GPT_OSS -> AppConfig.GPT_OSS_API_KEY.isNotEmpty()
-                TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN -> AppConfig.NVIDIA_API_KEY.isNotEmpty()
+            val hasApiKeys = when(mode) {
+                TranslationMode.GEMINI -> hasGeminiApiKeys()
+                TranslationMode.MISTRAL -> hasMistralApiKeys()
+                TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN,
+                TranslationMode.NVIDIA_GPT_OSS_20B, TranslationMode.NVIDIA_GPT_OSS -> hasNvidiaApiKeys()
                 else -> true
             }
-            if (!hasNvidiaKeys) {
+
+            if (!hasApiKeys) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Không có API key cho ${mode.getDisplayName()}. Vui lòng kiểm tra cấu hình.", Toast.LENGTH_LONG).show()
+                    val msg = when(mode) {
+                        TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
+                        TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
+                        else -> "Không có API key NVIDIA NIM. Vui lòng thêm trong cài đặt."
+                    }
+                    Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
                 }
                 return@launch
             }
@@ -1259,27 +1253,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val currentMode = uiState.value.translationMode
 
         // Prevent switching to Gemini or Mistral if API keys are missing
-        if (mode == TranslationMode.GEMINI && !hasGeminiApiKeys()) {
-            viewModelScope.launch(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Không có API key Gemini. Vui lòng thêm ít nhất một API key Gemini trong cài đặt để dùng tính năng dịch Gemini.", Toast.LENGTH_LONG).show()
-            }
-            return
-        }
-        if (mode == TranslationMode.MISTRAL && !hasMistralApiKeys()) {
-            viewModelScope.launch(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.", Toast.LENGTH_LONG).show()
-            }
-            return
-        }
-        val hasNvidiaKeys = when(mode) {
-            TranslationMode.NVIDIA_GPT_OSS_20B -> AppConfig.GPT_OSS_20B_API_KEY.isNotEmpty()
-            TranslationMode.NVIDIA_GPT_OSS -> AppConfig.GPT_OSS_API_KEY.isNotEmpty()
-            TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN -> AppConfig.NVIDIA_API_KEY.isNotEmpty()
+        val hasApiKeys = when(mode) {
+            TranslationMode.GEMINI -> hasGeminiApiKeys()
+            TranslationMode.MISTRAL -> hasMistralApiKeys()
+            TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN,
+            TranslationMode.NVIDIA_GPT_OSS_20B, TranslationMode.NVIDIA_GPT_OSS -> hasNvidiaApiKeys()
             else -> true
         }
-        if (!hasNvidiaKeys) {
+
+        if (!hasApiKeys) {
             viewModelScope.launch(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Không có API key cho ${mode.getDisplayName()}. Vui lòng kiểm tra cấu hình.", Toast.LENGTH_LONG).show()
+                val msg = when(mode) {
+                    TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
+                    TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
+                    else -> "Không có API key NVIDIA NIM. Vui lòng thêm trong cài đặt."
+                }
+                Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
             }
             return
         }
@@ -1929,7 +1918,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                     val left = maxOf(a.left, b.left)
                                     val top = maxOf(a.top, b.top)
                                     val right = minOf(a.right, b.right)
-                                    val bottom = minOf(a.bottom, b.bottom)
+                                    val bottom = maxOf(a.bottom, b.bottom)
                                     if (right <= left || bottom <= top) return 0f
                                     val inter = (right - left).toFloat() * (bottom - top).toFloat()
                                     val minArea = minOf((a.width()).toFloat() * (a.height()).toFloat(), (b.width()).toFloat() * (b.height()).toFloat())
@@ -2101,7 +2090,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Error while cancelling activeJobs", e)
+                Log.w(TAG, "Error while cancelling activeJobs", e)
         }
 
         // Cancel primary translation job as well

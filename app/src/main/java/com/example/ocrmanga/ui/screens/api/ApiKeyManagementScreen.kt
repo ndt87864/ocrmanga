@@ -267,7 +267,7 @@ fun ApiKeyManagementScreen(
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        "Loại: ${if (apiKey.type == "gemini") "Gemini" else if (apiKey.type == "mistral") "Mistral" else apiKey.type}",
+                                        "Loại: ${if (apiKey.type == "gemini") "Gemini" else if (apiKey.type == "mistral") "Mistral" else if (apiKey.type == "nvidia") "NVIDIA NIM" else apiKey.type}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -508,6 +508,7 @@ fun DropdownMenuType(selectedType: String, onTypeSelected: (String) -> Unit) {
                 when (selectedType) {
                     "gemini" -> "Gemini"
                     "mistral" -> "Mistral"
+                    "nvidia" -> "NVIDIA NIM"
                     else -> selectedType
                 }
             )
@@ -524,6 +525,13 @@ fun DropdownMenuType(selectedType: String, onTypeSelected: (String) -> Unit) {
                 text = { Text("Mistral") },
                 onClick = {
                     onTypeSelected("mistral")
+                    expanded = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("NVIDIA NIM") },
+                onClick = {
+                    onTypeSelected("nvidia")
                     expanded = false
                 }
             )

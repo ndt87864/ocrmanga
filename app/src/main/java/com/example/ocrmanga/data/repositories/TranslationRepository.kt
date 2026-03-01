@@ -94,6 +94,10 @@ class TranslationRepository(private val application: Application) {
         return mistralApiKeys.isNotEmpty()
     }
 
+    fun hasNvidiaApiKeys(): Boolean {
+        return nvidiaApiKeys.isNotEmpty()
+    }
+
     // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
     suspend fun translateImage(
         imageUri: Uri, 
@@ -146,6 +150,11 @@ class TranslationRepository(private val application: Application) {
     private var mistralApiKeys: List<String> = emptyList()
     private var mistralKeyUsageQueue: MutableList<String> = mutableListOf()
     private var currentMistralModelIndex = 0
+
+    // NVIDIA API keys
+    private var nvidiaApiKeys: List<String> = emptyList()
+    private var nvidiaKeyUsageQueue: MutableList<String> = mutableListOf()
+    
     // Restrict to a single stable model to avoid inconsistent outputs
     private val mistralModels = listOf(
         "mistral-medium-latest"
@@ -171,6 +180,7 @@ class TranslationRepository(private val application: Application) {
         preloadRecognitionModels()
         loadGeminiApiKeys()
         loadMistralApiKeys()
+        loadNvidiaApiKeys()
     }
 
     private fun loadGeminiApiKeys() {
@@ -197,19 +207,29 @@ class TranslationRepository(private val application: Application) {
     }
     // Hàm lấy API key Mistral tiếp theo: mỗi key chỉ dùng 1 lần/lượt, hết danh sách mới quay lại đầu
     fun getNextMistralApiKey(): String? {
-        if (mistralApiKeys.isEmpty()) {
-            Log.e("TranslationRepository", "Không có API key Mistral nào được cấu hình. Không thể dịch.")
-            return null
-        }
+        if (mistralApiKeys.isEmpty()) return null
         if (mistralKeyUsageQueue.isEmpty()) {
-            // Khi queue rỗng, reload lại danh sách key từ database
-            loadMistralApiKeys()
+            mistralKeyUsageQueue = mistralApiKeys.toMutableList()
         }
-        if (mistralKeyUsageQueue.isEmpty()) {
-            Log.e("TranslationRepository", "Hàng đợi API key Mistral rỗng sau khi reload. Không thể dịch.")
-            return null
+        return if (mistralKeyUsageQueue.isNotEmpty()) mistralKeyUsageQueue.removeAt(0) else null
+    }
+
+    private fun loadNvidiaApiKeys() {
+        nvidiaApiKeys = databaseHelper.getAllApiKeys()
+            .filter { it.second == "nvidia" && it.first.isNotBlank() }
+            .map { it.first }
+        nvidiaKeyUsageQueue = nvidiaApiKeys.toMutableList()
+        if (nvidiaApiKeys.isEmpty()) {
+            Log.w("TranslationRepository", "Không tìm thấy API key NVIDIA nào trong cơ sở dữ liệu.")
         }
-        return mistralKeyUsageQueue.removeAt(0)
+    }
+
+    fun getNextNvidiaApiKey(): String? {
+        if (nvidiaApiKeys.isEmpty()) return null
+        if (nvidiaKeyUsageQueue.isEmpty()) {
+            nvidiaKeyUsageQueue = nvidiaApiKeys.toMutableList()
+        }
+        return if (nvidiaKeyUsageQueue.isNotEmpty()) nvidiaKeyUsageQueue.removeAt(0) else null
     }
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
         var lastError: Exception? = null
@@ -1434,11 +1454,18 @@ class TranslationRepository(private val application: Application) {
                 val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
                 val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
                 
+                val nvidiaApiKey = getNextNvidiaApiKey()
+                if (nvidiaApiKey == null) {
+                    Log.w("TranslationRepository", "Không có API key NVIDIA khả dụng")
+                    lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
+                    return@withContext Triple("", emptyList(), "zh")
+                }
+
                 val translatedTexts = when(mode) {
-                    TranslationMode.NVIDIA_GLM5 -> nvidiaService.translateWithGLM5(mergedBlocks, allOcrResults, previousTranslation, isAncientMode)
-                    TranslationMode.NVIDIA_QWEN -> nvidiaService.translateWithQwen(mergedBlocks, allOcrResults, previousTranslation, isAncientMode)
-                    TranslationMode.NVIDIA_GPT_OSS_20B -> nvidiaService.translateWithGptOss20b(mergedBlocks, allOcrResults, previousTranslation, isAncientMode)
-                    TranslationMode.NVIDIA_GPT_OSS -> nvidiaService.translateWithGptOss(mergedBlocks, allOcrResults, previousTranslation, isAncientMode)
+                    TranslationMode.NVIDIA_GLM5 -> nvidiaService.translateWithGLM5(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
+                    TranslationMode.NVIDIA_QWEN -> nvidiaService.translateWithQwen(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
+                    TranslationMode.NVIDIA_GPT_OSS_20B -> nvidiaService.translateWithGptOss20b(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
+                    TranslationMode.NVIDIA_GPT_OSS -> nvidiaService.translateWithGptOss(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
                     else -> null
                 }
 
@@ -3921,7 +3948,4 @@ class TranslationRepository(private val application: Application) {
         }
     }
 
-    fun hasNvidiaApiKeys(): Boolean {
-        return com.example.ocrmanga.data.constant.AppConfig.NVIDIA_API_KEY.isNotEmpty()
-    }
 }

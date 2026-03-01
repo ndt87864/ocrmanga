@@ -48,6 +48,7 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
     suspend fun translateWithGLM5(
         textBlocks: List<TextBlockInfo>,
         ocrResults: List<Pair<Float, String>>,
+        apiKey: String,
         previousTranslation: List<TextBlockInfo>? = null,
         isAncientMode: Boolean = false
     ): List<String?>? {
@@ -71,12 +72,13 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
             )
         )
 
-        return executeRequest(requestBody, "GLM5", textBlocks.size, AppConfig.NVIDIA_API_KEY)
+        return executeRequest(requestBody, "GLM5", textBlocks.size, apiKey)
     }
 
     suspend fun translateWithQwen(
         textBlocks: List<TextBlockInfo>,
         ocrResults: List<Pair<Float, String>>,
+        apiKey: String,
         previousTranslation: List<TextBlockInfo>? = null,
         isAncientMode: Boolean = false
     ): List<String?>? {
@@ -100,12 +102,13 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         )
         
         // Cập nhật lại executeRequest để hỗ trợ modelLabel Qwen
-        return executeRequest(requestBody, "Qwen", textBlocks.size, AppConfig.NVIDIA_API_KEY)
+        return executeRequest(requestBody, "Qwen", textBlocks.size, apiKey)
     }
 
     suspend fun translateWithGptOss20b(
         textBlocks: List<TextBlockInfo>,
         ocrResults: List<Pair<Float, String>>,
+        apiKey: String,
         previousTranslation: List<TextBlockInfo>? = null,
         isAncientMode: Boolean = false
     ): List<String?>? {
@@ -126,12 +129,13 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
             chatTemplateKwargs = emptyMap()
         )
         
-        return executeRequest(requestBody, "GPT-OSS-20B", textBlocks.size, AppConfig.GPT_OSS_20B_API_KEY)
+        return executeRequest(requestBody, "GPT-OSS-20B", textBlocks.size, apiKey)
     }
 
     suspend fun translateWithGptOss(
         textBlocks: List<TextBlockInfo>,
         ocrResults: List<Pair<Float, String>>,
+        apiKey: String,
         previousTranslation: List<TextBlockInfo>? = null,
         isAncientMode: Boolean = false
     ): List<String?>? {
@@ -152,7 +156,7 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
             chatTemplateKwargs = emptyMap()
         )
         
-        return executeRequest(requestBody, "GPT-OSS", textBlocks.size, AppConfig.GPT_OSS_API_KEY)
+        return executeRequest(requestBody, "GPT-OSS", textBlocks.size, apiKey)
     }
 
     private fun buildPrompt(
@@ -182,11 +186,10 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         )
     }
 
-    private suspend fun executeRequest(requestBody: String, modelLabel: String, blocksSize: Int, apiKey: String? = null): List<String?>? {
-        val finalKey = apiKey ?: AppConfig.NVIDIA_API_KEY
+    private suspend fun executeRequest(requestBody: String, modelLabel: String, blocksSize: Int, apiKey: String): List<String?>? {
         val request = Request.Builder()
             .url(nvidiaApiUrl)
-            .addHeader("Authorization", "Bearer $finalKey")
+            .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
             .addHeader("Accept", "application/json")
             .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
