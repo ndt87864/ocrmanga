@@ -48,6 +48,7 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import android.os.Build
 import android.os.Environment
+import com.example.ocrmanga.data.constant.AppConfig
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -195,9 +196,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 return@launch
             }
-            if ((mode == TranslationMode.NVIDIA_GLM5 || mode == TranslationMode.NVIDIA_QWEN) && !hasNvidiaApiKeys()) {
+            val hasNvidiaKeys = when(mode) {
+                TranslationMode.NVIDIA_KIMI -> AppConfig.KIMI_API_KEY.isNotEmpty()
+                TranslationMode.NVIDIA_GPT_OSS -> AppConfig.GPT_OSS_API_KEY.isNotEmpty()
+                TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN -> AppConfig.NVIDIA_API_KEY.isNotEmpty()
+                else -> true
+            }
+            if (!hasNvidiaKeys) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Không có API key NVIDIA. Vui lòng thêm API key NVIDIA trong cài đặt (hoặc AppConfig).", Toast.LENGTH_LONG).show()
+                    Toast.makeText(getApplication(), "Không có API key cho ${mode.getDisplayName()}. Vui lòng kiểm tra cấu hình.", Toast.LENGTH_LONG).show()
                 }
                 return@launch
             }
@@ -1264,9 +1271,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
             return
         }
-        if ((mode == TranslationMode.NVIDIA_GLM5 || mode == TranslationMode.NVIDIA_QWEN) && !hasNvidiaApiKeys()) {
+        val hasNvidiaKeys = when(mode) {
+            TranslationMode.NVIDIA_KIMI -> AppConfig.KIMI_API_KEY.isNotEmpty()
+            TranslationMode.NVIDIA_GPT_OSS -> AppConfig.GPT_OSS_API_KEY.isNotEmpty()
+            TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN -> AppConfig.NVIDIA_API_KEY.isNotEmpty()
+            else -> true
+        }
+        if (!hasNvidiaKeys) {
             viewModelScope.launch(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Không có API key NVIDIA. Vui lòng thêm API key NVIDIA trong cài đặt (hoặc AppConfig).", Toast.LENGTH_LONG).show()
+                Toast.makeText(getApplication(), "Không có API key cho ${mode.getDisplayName()}. Vui lòng kiểm tra cấu hình.", Toast.LENGTH_LONG).show()
             }
             return
         }

@@ -668,6 +668,20 @@ fun ViewerScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("Dịch với NVIDIA Kimi 2.5") },
+                            onClick = {
+                                viewModel.setTranslationMode(TranslationMode.NVIDIA_KIMI)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Dịch với GPT OSS 120B") },
+                            onClick = {
+                                viewModel.setTranslationMode(TranslationMode.NVIDIA_GPT_OSS)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Tắt") },
                             onClick = {
                                 viewModel.setTranslationMode(TranslationMode.OFF)

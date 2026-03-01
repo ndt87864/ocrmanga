@@ -71,7 +71,7 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
             )
         )
 
-        return executeRequest(requestBody, "GLM5", textBlocks.size)
+        return executeRequest(requestBody, "GLM5", textBlocks.size, AppConfig.NVIDIA_API_KEY)
     }
 
     suspend fun translateWithQwen(
@@ -100,7 +100,61 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         )
         
         // Cập nhật lại executeRequest để hỗ trợ modelLabel Qwen
-        return executeRequest(requestBody, "Qwen", textBlocks.size)
+        return executeRequest(requestBody, "Qwen", textBlocks.size, AppConfig.NVIDIA_API_KEY)
+    }
+
+    suspend fun translateWithKimi(
+        textBlocks: List<TextBlockInfo>,
+        ocrResults: List<Pair<Float, String>>,
+        previousTranslation: List<TextBlockInfo>? = null,
+        isAncientMode: Boolean = false
+    ): List<String?>? {
+        if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
+        
+        val prompt = buildPrompt(textBlocks, ocrResults, previousTranslation, isAncientMode)
+        val systemPrompt = TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT.trimIndent() + "\n\nOutput format: STRICTLY 'Block #N: <translation>' per line. No notes, no intro."
+        
+        AppLogger.i(TAG, "[Kimi] Đang gửi yêu cầu dịch (${textBlocks.size} blocks)...")
+        
+        val requestBody = getBaseRequestJson(
+            model = "moonshotai/kimi-k2.5",
+            systemPrompt = systemPrompt,
+            userPrompt = prompt,
+            temperature = 1.0,
+            topP = 1.0,
+            maxTokens = 16384,
+            chatTemplateKwargs = mapOf(
+                "thinking" to false
+            )
+        )
+        
+        return executeRequest(requestBody, "Kimi", textBlocks.size, AppConfig.KIMI_API_KEY)
+    }
+
+    suspend fun translateWithGptOss(
+        textBlocks: List<TextBlockInfo>,
+        ocrResults: List<Pair<Float, String>>,
+        previousTranslation: List<TextBlockInfo>? = null,
+        isAncientMode: Boolean = false
+    ): List<String?>? {
+        if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
+        
+        val prompt = buildPrompt(textBlocks, ocrResults, previousTranslation, isAncientMode)
+        val systemPrompt = TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT.trimIndent() + "\n\nOutput format: STRICTLY 'Block #N: <translation>' per line. No notes, no intro."
+        
+        AppLogger.i(TAG, "[GPT-OSS] Đang gửi yêu cầu dịch (${textBlocks.size} blocks)...")
+        
+        val requestBody = getBaseRequestJson(
+            model = "openai/gpt-oss-120b",
+            systemPrompt = systemPrompt,
+            userPrompt = prompt,
+            temperature = 1.0,
+            topP = 1.0,
+            maxTokens = 4096,
+            chatTemplateKwargs = emptyMap()
+        )
+        
+        return executeRequest(requestBody, "GPT-OSS", textBlocks.size, AppConfig.GPT_OSS_API_KEY)
     }
 
     private fun buildPrompt(
@@ -130,10 +184,11 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         )
     }
 
-    private suspend fun executeRequest(requestBody: String, modelLabel: String, blocksSize: Int): List<String?>? {
+    private suspend fun executeRequest(requestBody: String, modelLabel: String, blocksSize: Int, apiKey: String? = null): List<String?>? {
+        val finalKey = apiKey ?: AppConfig.NVIDIA_API_KEY
         val request = Request.Builder()
             .url(nvidiaApiUrl)
-            .addHeader("Authorization", "Bearer ${AppConfig.NVIDIA_API_KEY}")
+            .addHeader("Authorization", "Bearer $finalKey")
             .addHeader("Content-Type", "application/json")
             .addHeader("Accept", "application/json")
             .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
