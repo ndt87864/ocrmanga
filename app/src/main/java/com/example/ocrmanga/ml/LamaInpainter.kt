@@ -36,6 +36,7 @@ object LamaInpainter {
 
     private const val TAG = "LamaInpainter"
     private const val MODEL_PATH = "models/LaMa-Dilated_float.tflite"
+    // Keep original 10px padding - 5px was too tight and caused edge artifacts
     private const val MASK_PADDING = 10
     private const val CONTEXT_PADDING = 128
 
@@ -235,6 +236,91 @@ object LamaInpainter {
         )
     }
 
+    /**
+     * Analyze background complexity to decide between patch-based vs neural network inpainting.
+     * Returns complexity score: 0.0 (uniform) to 1.0 (very complex)
+     */
+    private fun analyzeBackgroundComplexity(image: Bitmap, region: Rect, mask: Bitmap): Float {
+        val w = region.width()
+        val h = region.height()
+        val pixels = IntArray(w * h)
+        image.getPixels(pixels, 0, w, region.left, region.top, w, h)
+
+        val maskPixels = IntArray(w * h)
+        mask.getPixels(maskPixels, 0, w, region.left, region.top, w, h)
+
+        // Extract unmasked (context) pixels only
+        val contextPixels = mutableListOf<Int>()
+        for (i in pixels.indices) {
+            if (Color.red(maskPixels[i]) < 10 && Color.green(maskPixels[i]) < 10 && Color.blue(maskPixels[i]) < 10) {
+                contextPixels.add(pixels[i])
+            }
+        }
+
+        if (contextPixels.size < 100) return 1.0f // Too few context pixels, use neural network
+
+        // 1. Color variance (low variance = uniform background)
+        val rValues = contextPixels.map { Color.red(it) }
+        val gValues = contextPixels.map { Color.green(it) }
+        val bValues = contextPixels.map { Color.blue(it) }
+
+        val rVariance = computeVariance(rValues)
+        val gVariance = computeVariance(gValues)
+        val bVariance = computeVariance(bValues)
+        val avgVariance = (rVariance + gVariance + bVariance) / 3.0
+
+        // Normalize variance to 0-1 range (variance > 1000 = complex)
+        val varianceScore = (avgVariance / 1000.0).coerceIn(0.0, 1.0)
+
+        // 2. Edge density (few edges = simple background)
+        val edgeCount = countEdges(pixels, w, h, maskPixels)
+        val edgeDensity = edgeCount.toDouble() / contextPixels.size
+        val edgeScore = (edgeDensity * 10.0).coerceIn(0.0, 1.0)
+
+        // 3. Screentone detection: high edge density + low variance = screentone pattern
+        // Screentone should ALWAYS use neural network (not patch-based)
+        val isScreentone = edgeScore > 0.4 && varianceScore < 0.3
+        if (isScreentone) {
+            Log.d(TAG, "Screentone detected: variance=$avgVariance, edges=$edgeCount → forcing neural network")
+            return 1.0f // Force neural network for screentone
+        }
+
+        // Combined complexity score (weighted average)
+        // Increased edge weight from 0.4 to 0.7 - edges are more important indicator
+        val complexityScore = (varianceScore * 0.3 + edgeScore * 0.7).toFloat()
+
+        Log.d(TAG, "Complexity analysis: variance=$avgVariance, edges=$edgeCount, score=$complexityScore")
+        return complexityScore
+    }
+
+    private fun computeVariance(values: List<Int>): Double {
+        if (values.size < 2) return 0.0
+        val mean = values.average()
+        return values.map { (it - mean) * (it - mean) }.average()
+    }
+
+    private fun countEdges(pixels: IntArray, w: Int, h: Int, mask: IntArray): Int {
+        var edgeCount = 0
+        val threshold = 30 // Intensity difference threshold
+
+        for (y in 1 until h - 1) {
+            for (x in 1 until w - 1) {
+                val i = y * w + x
+                // Skip masked pixels
+                if (Color.red(mask[i]) > 10) continue
+
+                val gray = (Color.red(pixels[i]) + Color.green(pixels[i]) + Color.blue(pixels[i])) / 3
+                val grayRight = (Color.red(pixels[i + 1]) + Color.green(pixels[i + 1]) + Color.blue(pixels[i + 1])) / 3
+                val grayDown = (Color.red(pixels[i + w]) + Color.green(pixels[i + w]) + Color.blue(pixels[i + w])) / 3
+
+                if (kotlin.math.abs(gray - grayRight) > threshold || kotlin.math.abs(gray - grayDown) > threshold) {
+                    edgeCount++
+                }
+            }
+        }
+        return edgeCount
+    }
+
     private fun processRegionClusters(
         image: Bitmap, mask: Bitmap, clusters: List<List<Rect>>,
         onProgress: ((String) -> Unit)?
@@ -242,6 +328,7 @@ object LamaInpainter {
         val interp = interpreter ?: return null
         val w = image.width; val h = image.height
         val result = image.copy(Bitmap.Config.ARGB_8888, true)
+
         for ((idx, cluster) in clusters.withIndex()) {
             onProgress?.invoke("Xóa điểm ảnh (${idx + 1}/${clusters.size})...")
             val cb = unionBounds(cluster)
@@ -251,11 +338,14 @@ object LamaInpainter {
                 (cb.left - pX).coerceAtLeast(0), (cb.top - pY).coerceAtLeast(0),
                 (cb.right + pX).coerceAtMost(w), (cb.bottom + pY).coerceAtMost(h)
             )
+
             Log.d(TAG, "Cluster $idx crop=${crop.width()}x${crop.height()}")
+
+            // Always use neural network - hybrid approach disabled due to quality issues
             val ci = Bitmap.createBitmap(result, crop.left, crop.top, crop.width(), crop.height())
-            val cm = Bitmap.createBitmap(mask,   crop.left, crop.top, crop.width(), crop.height())
+            val cm = Bitmap.createBitmap(mask, crop.left, crop.top, crop.width(), crop.height())
             val (ri, pi) = resizeWithPadding(ci, inputW, inputH)
-            val (rm, _)  = resizeWithPadding(cm, inputW, inputH)
+            val (rm, _) = resizeWithPadding(cm, inputW, inputH)
             ci.recycle(); cm.recycle()
             val out = runInference(interp, ri, rm)
             ri.recycle(); rm.recycle()
