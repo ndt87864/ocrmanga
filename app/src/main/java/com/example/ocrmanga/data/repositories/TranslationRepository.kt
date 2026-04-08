@@ -55,9 +55,29 @@ import kotlinx.coroutines.flow.first
 import kotlin.math.max
 
 class TranslationRepository(private val application: Application) {
-    
+
     private val themePreferences = ThemePreferences(application)
     private val teamManager by lazy { TranslationTeamManager(application) }
+
+    // Phase 1: Text Region Detection
+    private val textRegionDetector by lazy {
+        com.example.ocrmanga.data.ocr.TextRegionDetector()
+    }
+
+    // Phase 2: Mask Generation
+    private val maskGenerator by lazy {
+        com.example.ocrmanga.data.ocr.TextMaskGenerator()
+    }
+
+    // Phase 3: Advanced Preprocessing
+    private val preprocessor by lazy {
+        com.example.ocrmanga.data.ocr.AdvancedPreprocessor()
+    }
+
+    // Phase 4: Improved Block Merging
+    private val blockMerger by lazy {
+        com.example.ocrmanga.data.ocr.RegionBasedMerger()
+    }
     
     /**
      * Lấy tất cả cài đặt font và style mặc định từ cài đặt người dùng

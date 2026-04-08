@@ -1,8 +1,8 @@
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.jetbrainsKotlinAndroid)
-    // Sử dụng KSP version tương thích với Kotlin 1.9.10
-    id("com.google.devtools.ksp") version "1.9.10-1.0.13"
+    // Sử dụng KSP version tương thích với Kotlin 1.9.22
+    id("com.google.devtools.ksp") version "1.9.22-1.0.17"
     // Chaquopy plugin removed
 }
 
@@ -15,7 +15,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 3
-        versionName = "1.3"
+        versionName = "1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -126,6 +126,9 @@ dependencies {
     implementation ("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+
+    // OpenCV for advanced image processing (Phase 1: Text Region Detection)
+    implementation(project(":opencv"))
 
     // TensorFlow Lite for LaMa inpainting model
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
