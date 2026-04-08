@@ -3562,9 +3562,9 @@ class TranslationRepository(private val application: Application) {
      */
     private fun postProcessOCRText(text: String, detectedScript: String?): String {
         if (text.isBlank()) return text
-        
+
         var result = text
-        
+
         // Loại bỏ các ký tự nhiễu phổ biến trong OCR manga
         // Các ký tự này thường bị nhận nhầm từ nét vẽ, mồ hôi, nếp gấp
         val noisePatterns = listOf(
@@ -3575,27 +3575,41 @@ class TranslationRepository(private val application: Application) {
             Regex("^[\\'\\.\\`]+$"),  // Chỉ chứa dấu chấm/nháy
             Regex("^[oO0○◯]+$"),  // Chỉ chứa hình tròn (thường là mồ hôi)
         )
-        
+
         if (noisePatterns.any { it.matches(result.trim()) }) {
             return ""
         }
-        
+
         // Loại bỏ các ký tự lẻ thường là nhiễu
         val singleNoiseChars = setOf('|', '/', '\\', '-', '_', '.', ',', '\'', '`', '"', '○', '◯', '・')
         if (result.length == 1 && result[0] in singleNoiseChars) {
             return ""
         }
-        
+
+        // Count Latin characters
+        val latinCount = result.count { it in 'A'..'Z' || it in 'a'..'z' }
+        val totalChars = result.filter { !it.isWhitespace() }.length
+
         // Nếu script được phát hiện là Latin (en, es) hoặc chứa nhiều chữ Latin
-        val isLatinScript = detectedScript == "en" || detectedScript == "es" || 
-            (result.count { it in 'A'..'z' || it in 'A'..'Z' } > result.length * 0.5)
-        
-        if (isLatinScript) {
+        val isLatinScript = detectedScript == "en" || detectedScript == "es" ||
+            (latinCount > totalChars * 0.5)
+
+        // FIX COMMON OCR ERRORS: Luôn fix khi có Latin characters (>30%)
+        // Ngay cả khi script detection sai, vẫn fix common errors
+        if (latinCount > totalChars * 0.3) {
             // Chuyển し (U+3057 - Hiragana Shi) và シ (U+30B7 - Katakana Shi) thành L
             result = result.replace('し', 'L').replace('シ', 'L')
-            
+
+            // Fix other common OCR errors for Latin text
+            result = result.replace('ｌ', 'l')  // Fullwidth l → normal l
+            result = result.replace('Ｌ', 'L')  // Fullwidth L → normal L
+            result = result.replace('０', '0')  // Fullwidth 0 → normal 0
+            result = result.replace('Ｏ', 'O')  // Fullwidth O → normal O
+        }
+
+        if (isLatinScript) {
             // Loại bỏ TẤT CẢ ký tự tượng hình (CJK) khỏi kết quả Latin
-            // Bao gồm: CJK Unified Ideographs, CJK Extension A/B, Hiragana, Katakana, Hangul, 
+            // Bao gồm: CJK Unified Ideographs, CJK Extension A/B, Hiragana, Katakana, Hangul,
             // CJK Compatibility Ideographs, CJK Symbols, Enclosed CJK, Fullwidth forms
             result = result.replace(Regex("[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF" +
                 "\u3040-\u309F\u30A0-\u30FF" + // Hiragana, Katakana (trừ đã convert ở trên)
@@ -3609,16 +3623,16 @@ class TranslationRepository(private val application: Application) {
                 "\uFE30-\uFE4F" + // CJK Compatibility Forms
                 "\uFF00-\uFF60" + // Fullwidth Latin -> giữ lại, chỉ bỏ CJK fullwidth
                 "]"), "")
-            
+
             // Nếu sau khi lọc CJK, text trống hoặc chỉ còn khoảng trắng/dấu câu -> trả về rỗng
             if (result.trim().isEmpty() || Regex("^[\\s\\-_\\.\\,\\:\\;\\!\\?]+$").matches(result.trim())) {
                 return ""
             }
         }
-        
+
         // Loại bỏ khoảng trắng thừa
         result = result.trim().replace(Regex("\\s+"), " ")
-        
+
         return result
     }
     
