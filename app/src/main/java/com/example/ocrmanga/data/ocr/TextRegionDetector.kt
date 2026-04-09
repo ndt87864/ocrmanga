@@ -25,6 +25,18 @@ class TextRegionDetector(
      * Detect all text regions in the given bitmap
      */
     fun detectRegions(bitmap: Bitmap): List<TextRegion> {
+        if (!OpenCvInitializer.ensureInitialized()) {
+            Log.w(TAG, "OpenCV unavailable, falling back to a single full-image region")
+            return listOf(
+                TextRegion(
+                    bounds = Rect(0, 0, bitmap.width, bitmap.height),
+                    confidence = 0.5f,
+                    mask = null,
+                    type = RegionType.UNKNOWN
+                )
+            )
+        }
+
         try {
             Log.d(TAG, "Starting region detection for ${bitmap.width}x${bitmap.height} image")
 
@@ -55,8 +67,8 @@ class TextRegionDetector(
 
             return merged
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Error detecting regions", e)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Error detecting regions", error)
             // Fallback: return full image as single region
             return listOf(
                 TextRegion(

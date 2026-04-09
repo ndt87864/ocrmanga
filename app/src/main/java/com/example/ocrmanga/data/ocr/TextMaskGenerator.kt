@@ -136,6 +136,10 @@ class TextMaskGenerator(
      */
     private fun expandMask(mask: Bitmap): Bitmap {
         if (!config.expandMask) return mask
+        if (!OpenCvInitializer.ensureInitialized()) {
+            Log.w(TAG, "OpenCV unavailable, skipping mask expansion")
+            return mask
+        }
 
         try {
             // Convert to Mat
@@ -171,8 +175,8 @@ class TextMaskGenerator(
             result.release()
 
             return expandedMask
-        } catch (e: Exception) {
-            Log.e(TAG, "Error expanding mask", e)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Error expanding mask", error)
             return mask
         }
     }

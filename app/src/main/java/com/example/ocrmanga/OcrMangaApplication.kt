@@ -2,7 +2,7 @@ package com.example.ocrmanga
 
 import android.app.Application
 import android.util.Log
-import org.opencv.android.OpenCVLoader
+import com.example.ocrmanga.data.ocr.OpenCvInitializer
 
 /**
  * Application class for OCR Manga
@@ -17,8 +17,7 @@ class OcrMangaApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Initialize OpenCV
-        if (!OpenCVLoader.initDebug()) {
+        if (!OpenCvInitializer.ensureInitialized()) {
             Log.e(TAG, "Unable to load OpenCV!")
         } else {
             Log.d(TAG, "OpenCV loaded successfully")

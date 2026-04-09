@@ -9,8 +9,8 @@ import org.opencv.android.Utils
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
-import kotlin.math.min
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Phân loại các loại container chứa text trong manga
@@ -38,7 +38,23 @@ class TextContainerClassifier {
         image: Bitmap,
         textBoundingBox: Rect
     ): TextContainerInfo {
+        if (!OpenCvInitializer.ensureInitialized()) {
+            Log.w(TAG, "[CLASSIFY] OpenCV not initialized, returning UNKNOWN")
+            return TextContainerInfo(
+                type = TextContainerType.UNKNOWN,
+                confidence = 0.0f,
+                hasStrongBorder = false,
+                borderThickness = 0f,
+                backgroundOpacity = 0.5f,
+                circularity = 0.0,
+                aspectRatio = 1.0,
+                cornerCount = 0
+            )
+        }
+
         try {
+            Log.d(TAG, "[CLASSIFY] Starting classification for bounds: $textBoundingBox")
+
             // Mở rộng vùng để bao gồm cả container (1.5x)
             val expandedRegion = expandBoundingBox(textBoundingBox, image.width, image.height, 1.5f)
 
@@ -66,10 +82,11 @@ class TextContainerClassifier {
             roi.release()
             contours.forEach { it.release() }
 
+            Log.d(TAG, "[CLASSIFY] Result: type=${result.type}, confidence=${result.confidence}, hasStrongBorder=${result.hasStrongBorder}")
             return result
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Error classifying container", e)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Error classifying container", error)
             return TextContainerInfo(
                 type = TextContainerType.UNKNOWN,
                 confidence = 0.3f,

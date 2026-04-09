@@ -27,6 +27,15 @@ class AdvancedPreprocessor(
      * Preprocess bitmap using configured pipeline
      */
     fun preprocess(bitmap: Bitmap): PreprocessedResult {
+        if (!OpenCvInitializer.ensureInitialized()) {
+            Log.w(TAG, "OpenCV unavailable, returning original bitmap")
+            return PreprocessedResult(
+                bitmap = bitmap,
+                method = PreprocessingMethod.STANDARD,
+                metrics = PreprocessingMetrics(0.5f, 0.5f, 0.5f)
+            )
+        }
+
         try {
             Log.d(TAG, "Starting preprocessing")
 
@@ -81,8 +90,8 @@ class AdvancedPreprocessor(
                 metrics = metrics
             )
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Error preprocessing", e)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Error preprocessing", error)
             // Fallback: return original
             return PreprocessedResult(
                 bitmap = bitmap,

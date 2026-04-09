@@ -10,6 +10,12 @@ android {
     namespace = "com.example.ocrmanga"
     compileSdk = 36
 
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDir(file("../opencv-4.12.0-android-sdk/OpenCV-android-sdk/sdk/native/libs"))
+        }
+    }
+
     defaultConfig {
         applicationId = "com.example.ocrmanga"
         minSdk = 28
@@ -56,6 +62,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            pickFirsts += setOf("**/libopencv_java4.so")
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += setOf("META-INF/DEPENDENCIES")

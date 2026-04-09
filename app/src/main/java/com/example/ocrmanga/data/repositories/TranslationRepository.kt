@@ -2056,13 +2056,14 @@ class TranslationRepository(private val application: Application) {
                             val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
                             // Phân tích màu nền và màu text
                             val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
-                            // Phân loại container type
-                            val containerInfo = try {
-                                containerClassifier.classifyContainer(bitmap, scaledBounds)
-                            } catch (e: Exception) {
-                                Log.e("TranslationRepository", "Error classifying container", e)
-                                null
-                            }
+                            // DISABLED: Container classification (OpenCV compatibility issue)
+                            // val containerInfo = try {
+                            //     containerClassifier.classifyContainer(bitmap, scaledBounds)
+                            // } catch (e: Exception) {
+                            //     Log.e("TranslationRepository", "[CONTAINER] Error classifying container", e)
+                            //     null
+                            // }
+                            val containerInfo = null  // Disabled due to OpenCV native library compatibility issue
                             TextBlockInfo(
                                 text = processedText,
                                 bounds = scaledBounds,
@@ -2185,13 +2186,8 @@ class TranslationRepository(private val application: Application) {
                     val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
                     // Phân tích màu nền và màu text
                     val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
-                    // Phân loại container type
-                    val containerInfo = try {
-                        containerClassifier.classifyContainer(bitmap, scaledBounds)
-                    } catch (e: Exception) {
-                        Log.e("TranslationRepository", "Error classifying container", e)
-                        null
-                    }
+                    // DISABLED: Container classification
+                    val containerInfo = null
                     TextBlockInfo(
                         text = processedText,
                         bounds = scaledBounds,
@@ -2378,13 +2374,8 @@ class TranslationRepository(private val application: Application) {
                             if (!rawHasOverlap) {
                                 val rawWordCount = rawProcessedText.split(Regex("\\s+")).filter { w -> w.isNotEmpty() }.size
                                 val (rawBgType, rawAvgColor, rawTextColor) = analyzeBackgroundAndTextColor(bitmap, rawBounds)
-                                // Phân loại container type
-                                val rawContainerInfo = try {
-                                    containerClassifier.classifyContainer(bitmap, rawBounds)
-                                } catch (e: Exception) {
-                                    Log.e("TranslationRepository", "Error classifying container for raw block", e)
-                                    null
-                                }
+                                // DISABLED: Container classification
+                                val rawContainerInfo = null
                                 mergedTextBlocks.add(TextBlockInfo(
                                     text = rawProcessedText,
                                     bounds = rawBounds,
@@ -2717,17 +2708,8 @@ class TranslationRepository(private val application: Application) {
 
             // Phân tích màu nền và màu text cho merged block
             val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
-            // Phân loại container type cho merged block
-            val containerInfo = if (bitmap != null) {
-                try {
-                    containerClassifier.classifyContainer(bitmap, mergedBounds)
-                } catch (e: Exception) {
-                    Log.e("TranslationRepository", "Error classifying container for merged block", e)
-                    null
-                }
-            } else {
-                null
-            }
+            // DISABLED: Container classification
+            val containerInfo = null
             val mergedBlock = TextBlockInfo(
                 text = mergedText.toString(),
                 bounds = Rect(mergedBounds),
@@ -2927,17 +2909,8 @@ class TranslationRepository(private val application: Application) {
 
                     // Phân tích màu nền và màu text cho merged block
                     val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
-                    // Phân loại container type
-                    val containerInfo = if (bitmap != null) {
-                        try {
-                            containerClassifier.classifyContainer(bitmap, mergedBounds)
-                        } catch (e: Exception) {
-                            Log.e("TranslationRepository", "Error classifying container for vertical subgroup", e)
-                            null
-                        }
-                    } else {
-                        null
-                    }
+                    // DISABLED: Container classification
+                    val containerInfo = null
                     val mergedBlock = TextBlockInfo(
                         text = mergedText.toString(),
                         bounds = mergedBounds,
@@ -3989,17 +3962,8 @@ class TranslationRepository(private val application: Application) {
                     } else {
                         Triple(firstBlock.backgroundType, firstBlock.averageBackgroundColor, firstBlock.originalTextColor)
                     }
-                    // Phân loại container type
-                    val containerInfo = if (bitmap != null) {
-                        try {
-                            containerClassifier.classifyContainer(bitmap, mergedBounds)
-                        } catch (e: Exception) {
-                            Log.e("TranslationRepository", "Error classifying container for bubble group", e)
-                            firstBlock.containerInfo
-                        }
-                    } else {
-                        firstBlock.containerInfo
-                    }
+                    // DISABLED: Container classification
+                    val containerInfo = firstBlock.containerInfo
                     merged.add(
                         TextBlockInfo(
                             text = mergedText,
