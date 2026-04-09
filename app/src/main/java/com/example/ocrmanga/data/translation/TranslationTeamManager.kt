@@ -12,8 +12,9 @@ import com.google.ai.client.generativeai.type.BlockThreshold
 import com.google.ai.client.generativeai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import com.example.ocrmanga.data.models.ReviewResult
 import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import com.example.ocrmanga.data.constant.TranslationPrompts
 import com.google.gson.Gson
 import com.google.gson.JsonParser
@@ -74,15 +75,6 @@ class TranslationTeamManager(private val application: Application) {
         currentMistralKeyIndex++
         return key
     }
-
-    // ========================
-    // DATA CLASS
-    // ========================
-
-    data class ReviewResult(
-        val allApproved: Boolean,
-        val rejections: Map<Int, String> // blockIndex -> lý do cần sửa
-    )
 
     // ========================
     // ENTRY POINT
