@@ -62,14 +62,12 @@ android {
     }
 
     packaging {
-        jniLibs {
-            pickFirsts += setOf("**/libopencv_java4.so")
-        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += setOf("META-INF/DEPENDENCIES")
-
-    // Google Drive API dependencies
+        }
+        jniLibs {
+            pickFirsts += setOf("**/libopencv_java4.so", "lib/**/libc++_shared.so")
         }
     }
 }
