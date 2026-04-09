@@ -444,10 +444,10 @@ fun ImageViewer(
                                     val overlayRotationAngle = region.overlayRotation ?: 0f
 
                                     // --- Tính windowed overlay bounds ---
-                                    val (outerBounds, innerBounds, _) = calculateWindowedOverlayBounds(
+                                    val windowedResult = calculateWindowedOverlayBounds(
                                         originalBounds = rect,
                                         text = block.text,
-                                        fontSize = region.fontSize,
+                                        baseFontSize = region.fontSize,
                                         isVertical = block.isVertical,
                                         context = context,
                                         fontFamilyName = block.fontFamily,
@@ -456,6 +456,9 @@ fun ImageViewer(
                                         overlayInsetHorizontal = region.overlayInsetHorizontal,
                                         overlayInsetVertical = region.overlayInsetVertical
                                     )
+                                    val outerBounds = windowedResult.outerBounds
+                                    val innerBounds = windowedResult.innerBounds
+                                    val optimalFontSize = windowedResult.optimalFontSize
 
                                     // Clamp outer bounds vào canvas
                                     val canvasW = size.width
@@ -508,7 +511,7 @@ fun ImageViewer(
                                             width = tW,
                                             height = tH,
                                             color = region.textColor ?: Color.Black,
-                                            fontSize = region.fontSize,
+                                            fontSize = optimalFontSize,
                                             isVertical = block.isVertical,
                                             boldness = region.textBoldness,
                                             context = context,

@@ -2363,10 +2363,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 val insetH = (if (block.overlayInsetHorizontal != 0f) block.overlayInsetHorizontal else block.overlayInset) * srcScaleX
                                                 val insetV = (if (block.overlayInsetVertical != 0f) block.overlayInsetVertical else block.overlayInset) * srcScaleX
 
-                                                val (outerBounds, innerBounds, _) = com.example.ocrmanga.ui.screens.view.calculateWindowedOverlayBounds(
+                                                val windowedResult = com.example.ocrmanga.ui.screens.view.calculateWindowedOverlayBounds(
                                                     originalBounds = bitmapRect,
                                                     text = block.text,
-                                                    fontSize = block.fontSize * srcScaleX,
+                                                    baseFontSize = block.fontSize * srcScaleX,
                                                     isVertical = block.isVertical,
                                                     context = app,
                                                     fontFamilyName = block.fontFamily,
@@ -2375,6 +2375,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     overlayInsetHorizontal = insetH,
                                                     overlayInsetVertical = insetV
                                                 )
+                                                val outerBounds = windowedResult.outerBounds
+                                                val innerBounds = windowedResult.innerBounds
+                                                val optimalFontSizeBitmap = windowedResult.optimalFontSize
 
                                                 // Vẽ overlay chỉ trên INNER bounds
                                                 val overlayRectF = RectF(
@@ -2411,32 +2414,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 val textRenderWidth = outerBounds.width * (if (block.shapeType == 1) 0.7f else 1f)
                                                 val textRenderHeight = outerBounds.height * (if (block.shapeType == 1) 0.7f else 1f)
 
-                                                // Standardize the export layout calculation to a 360dp baseline width (like the design mockups)
-                                                // This ensures that 'screenScaleFactor' is effectively 1.0, removing layout variance caused by
-                                                // the user's specific screen width (Tablet vs Phone).
+                                                // Calculate bitmapToViewScale for scaling stroke/border/shadow properties
                                                 val refScreenWidthPx = 360f * displayMetrics.density
                                                 val bitmapToViewScale = refScreenWidthPx / src.width.toFloat()
 
-                                                // Scale bounds từ bitmap coordinate → view coordinate (Simulated 360dp View)
-                                                // We must pass the FULL bounds to adjustWhiteoutBounds, identical to drawTextOnCanvas in UI
-                                                val scaledWidth = textRenderWidth * bitmapToViewScale
-                                                val scaledHeight = textRenderHeight * bitmapToViewScale
-
-                                                // Áp dụng adjustWhiteoutBounds với full scaled bounds.
-                                                // adjustWhiteoutBounds will internally handle shapeType scaling and isVertical swaps.
-                                                val (wrappedText, optimalFontSize) = com.example.ocrmanga.ui.screens.view.adjustWhiteoutBounds(
+                                                // Wrap text với optimal font size
+                                                val wrappedTextLines = com.example.ocrmanga.ui.screens.view.wrapText(
                                                     text = block.text,
-                                                    initialWidth = scaledWidth,
-                                                    initialHeight = scaledHeight,
-                                                    fontSize = block.fontSize,
-                                                    isVertical = block.isVertical,
+                                                    width = textRenderWidth,
+                                                    fontSize = optimalFontSizeBitmap,
                                                     context = app,
-                                                    fontFamilyName = block.fontFamily,
-                                                    shapeType = block.shapeType
+                                                    fontFamilyName = block.fontFamily
                                                 )
+                                                val wrappedText = wrappedTextLines.joinToString("\n")
 
-                                                // Dùng optimalFontSize trực tiếp, nhưng scale lên cho bitmap coordinates
-                                                val finalFontSizeForBitmap = optimalFontSize / bitmapToViewScale
+                                                // Dùng optimalFontSize từ calculateWindowedOverlayBounds
+                                                val finalFontSizeForBitmap = optimalFontSizeBitmap
 
                                                 // Draw text with all properties (font, boldness, border, shadow, line spacing)
                                                 val rawTextColor = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(overlayColor or 0xFF000000.toInt(), block.averageBackgroundColor)
