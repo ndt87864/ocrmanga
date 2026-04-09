@@ -2,6 +2,8 @@ package com.example.ocrmanga.data.models
 
 import android.graphics.Path
 import android.graphics.Rect
+import com.example.ocrmanga.data.ocr.models.TextContainerInfo
+import com.example.ocrmanga.data.ocr.models.TextContainerType
 
 // Thêm bubbleId để phân biệt các block thuộc các khung thoại khác nhau
 
@@ -59,7 +61,9 @@ data class TextBlockInfo(
     // Gradient text properties
     val textGradientColors: List<Int>? = null, // List of colors for gradient
     val textGradientOffsets: List<Float>? = null, // Ratios for each color (0.0 - 1.0)
-    val textGradientType: Int = 0 // 0=Top-Down, 1=Left-Right, 2=Diagonal
+    val textGradientType: Int = 0, // 0=Top-Down, 1=Left-Right, 2=Diagonal
+    // Container classification info
+    val containerInfo: TextContainerInfo? = null // Thông tin phân loại container (oval, rect, transparent, etc.)
 ) {
     fun copyAndScale(scaleX: Float, scaleY: Float, newWidth: Int, newHeight: Int): TextBlockInfo {
         return this.copy(
