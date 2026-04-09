@@ -249,6 +249,11 @@ class TextContainerClassifier {
         Imgproc.approxPolyDP(contour2f, approx, epsilon, true)
         val cornerCount = approx.rows()
 
+        // Tính diện tích của bounding box
+        val boundingArea = boundingRect.width.toDouble() * boundingRect.height.toDouble()
+        // Tỷ lệ lấp đầy bounding box (extent)
+        val extent = if (boundingArea > 0) area / boundingArea else 0.0
+
         // Tính edge density để xác định độ rõ của viền
         val edgeDensity = calculateEdgeDensity(boundingRect, image)
         val hasStrongBorder = edgeDensity > STRONG_BORDER_EDGE_DENSITY
@@ -256,21 +261,22 @@ class TextContainerClassifier {
         // Ước tính độ dày viền
         val borderThickness = estimateBorderThickness(contour, image)
 
-        // Phân loại dựa trên đặc điểm
+        // Phân loại dựa trên đặc điểm hình học & border
         val (type, confidence) = when {
-            // Oval bubble: circularity cao, nhiều góc
-            circularity > OVAL_CIRCULARITY_THRESHOLD && cornerCount >= CORNER_COUNT_OVAL_MIN -> {
-                TextContainerType.OVAL_BUBBLE to circularity.toFloat()
+            // Hộp thoại (Speech Frame) thường có dạng hình chữ nhật: lấp đầy phần lớn bounding box (> 0.85)
+            // hoặc có từ 4 đến khoảng 6-8 góc (do bo tròn)
+            (extent > 0.85 || cornerCount in 4..8) && hasStrongBorder && circularity < 0.85 -> {
+                TextContainerType.SPEECH_FRAME to (extent.toFloat().coerceIn(0.6f, 1.0f))
             }
 
-            // Rectangular box: 4 góc, circularity thấp
-            cornerCount == CORNER_COUNT_RECT && circularity < RECTANGULAR_CIRCULARITY_THRESHOLD -> {
-                TextContainerType.RECTANGULAR_BOX to (1.0 - abs(aspectRatio - 1.5) / 1.5).toFloat().coerceIn(0.6f, 1.0f)
+            // Bong bóng chat (Speech Bubble) có viền rõ, thường lấp đầy từ 60%-85% bounding box hoặc có độ tròn tương đối
+            hasStrongBorder -> {
+                TextContainerType.SPEECH_BUBBLE to (if (circularity > 0.5) circularity.toFloat() else 0.6f)
             }
 
-            // Viền yếu -> có thể transparent
+            // Viền yếu -> bán trong suốt hoặc text nổi thẳng lên nền
             !hasStrongBorder -> {
-                TextContainerType.TRANSPARENT to 0.7f
+                TextContainerType.SEMI_TRANSPARENT to 0.7f
             }
 
             else -> {
@@ -306,11 +312,11 @@ class TextContainerClassifier {
         val lowContrast = contrast < TRANSPARENCY_CONTRAST_THRESHOLD
 
         val type = when {
-            hasGradient || lowContrast -> TextContainerType.TRANSPARENT
-            else -> TextContainerType.NO_CONTAINER
+            hasGradient || lowContrast -> TextContainerType.SEMI_TRANSPARENT
+            else -> TextContainerType.FREE_TEXT
         }
 
-        val backgroundOpacity = if (lowContrast) 0.3f else 0.0f
+        val backgroundOpacity = if (lowContrast || hasGradient) 0.3f else 0.0f
 
         return TextContainerInfo(
             type = type,

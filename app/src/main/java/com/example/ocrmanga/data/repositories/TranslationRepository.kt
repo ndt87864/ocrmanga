@@ -1164,7 +1164,9 @@ class TranslationRepository(private val application: Application) {
             textBlocks.forEachIndexed { index, block ->
                 val textColorHex = block.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
                 val overlayColorHex = block.averageBackgroundColor?.let { String.format("#%08X", it) } ?: "null"
+                val containerTypeStr = block.containerInfo?.type?.name ?: "UNKNOWN"
                 Log.i("TranslationRepository", "[OCR-BLOCK] #$index: Text='${block.text}'")
+                Log.i("TranslationRepository", "    + Container: $containerTypeStr")
                 Log.i("TranslationRepository", "    + Color: Text=$textColorHex, Overlay=$overlayColorHex")
                 Log.i("TranslationRepository", "    + Bounds: ${block.bounds}")
             }
