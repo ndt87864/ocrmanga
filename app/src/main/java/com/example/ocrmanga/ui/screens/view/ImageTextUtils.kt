@@ -1582,3 +1582,116 @@ fun computeDefaultTextColor(overlayColor: Int?, averageBackgroundColor: Int? = n
     val lum = androidx.core.graphics.ColorUtils.calculateLuminance(opaque)
     return if (lum <= 0.5) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
 }
+
+/**
+ * Đo kích thước thực tế của text block (width x height) tại fontSize cho trước.
+ * Trả về Pair(measuredWidth, measuredHeight) tính bằng pixel.
+ * Dùng để xác định kích thước overlay theo text thay vì theo bounds gốc.
+ */
+fun measureTextActualSize(
+    text: String,
+    fontSize: Float,
+    maxWidth: Float,
+    isVertical: Boolean,
+    context: Context? = null,
+    fontFamilyName: String? = null,
+    lineSpacing: Float = 1.0f,
+    shapeType: Int = 0
+): Pair<Float, Float> {
+    if (text.isBlank() || fontSize <= 0f) return Pair(0f, 0f)
+
+    val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
+        this.textSize = fontSize
+        this.textAlign = android.graphics.Paint.Align.LEFT
+        context?.let { ctx -> getCachedTypeface(ctx, fontFamilyName)?.let { this.typeface = it } }
+    }
+
+    // Với oval, thu hẹp vùng wrap như khi vẽ (70% width)
+    val wrapWidth = if (shapeType == 1) maxWidth * 0.7f else maxWidth
+    val lines = wrapText(text, wrapWidth, fontSize, context, fontFamilyName)
+    val fontMetrics = paint.fontMetrics
+    val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
+
+    val measuredWidth = lines.maxOfOrNull { line ->
+        val bounds = android.graphics.Rect()
+        paint.getTextBounds(line, 0, line.length, bounds)
+        bounds.width().toFloat()
+    } ?: 0f
+
+    val measuredHeight = lines.size * lineHeight
+
+    return if (isVertical) {
+        // Vertical: width/height swap
+        Pair(measuredHeight, measuredWidth)
+    } else {
+        Pair(measuredWidth, measuredHeight)
+    }
+}
+
+/**
+ * Tính toán outer và inner bounds cho windowed overlay approach.
+ *
+ * @param originalBounds Bounds gốc từ OCR (đã scale về canvas coordinates)
+ * @param text Text cần render
+ * @param fontSize Font size
+ * @param isVertical Text có vertical không
+ * @param context Android context
+ * @param fontFamilyName Font family name
+ * @param lineSpacing Line spacing multiplier
+ * @param shapeType 0=rectangle, 1=oval
+ * @param overlayInsetHorizontal User inset horizontal
+ * @param overlayInsetVertical User inset vertical
+ * @return Triple(outerBounds, innerBounds, textMeasuredSize)
+ */
+fun calculateWindowedOverlayBounds(
+    originalBounds: androidx.compose.ui.geometry.Rect,
+    text: String,
+    fontSize: Float,
+    isVertical: Boolean,
+    context: Context,
+    fontFamilyName: String,
+    lineSpacing: Float,
+    shapeType: Int,
+    overlayInsetHorizontal: Float,
+    overlayInsetVertical: Float
+): Triple<androidx.compose.ui.geometry.Rect, androidx.compose.ui.geometry.Rect, Pair<Float, Float>> {
+    // 1. Outer bounds = original bounds với user insets
+    val outerBounds = androidx.compose.ui.geometry.Rect(
+        originalBounds.left + overlayInsetHorizontal,
+        originalBounds.top + overlayInsetVertical,
+        originalBounds.right - overlayInsetHorizontal,
+        originalBounds.bottom - overlayInsetVertical
+    ).takeIf { it.width > 0 && it.height > 0 } ?: originalBounds
+
+    // 2. Measure text size trong outer bounds
+    val maxWrapW = outerBounds.width * (if (shapeType == 1) 0.7f else 1f)
+    val (textMeasuredW, textMeasuredH) = measureTextActualSize(
+        text = text,
+        fontSize = fontSize,
+        maxWidth = maxWrapW,
+        isVertical = isVertical,
+        context = context,
+        fontFamilyName = fontFamilyName,
+        lineSpacing = lineSpacing,
+        shapeType = shapeType
+    )
+
+    // 3. Inner bounds = text size + padding, centered trong outer bounds
+    val textPadH = (fontSize * 0.3f).coerceAtLeast(4f)
+    val textPadV = (fontSize * 0.2f).coerceAtLeast(2f)
+
+    val innerW = (textMeasuredW + textPadH * 2f).coerceAtMost(outerBounds.width)
+    val innerH = (textMeasuredH + textPadV * 2f).coerceAtMost(outerBounds.height)
+
+    val centerX = outerBounds.left + outerBounds.width / 2f
+    val centerY = outerBounds.top + outerBounds.height / 2f
+
+    val innerBounds = androidx.compose.ui.geometry.Rect(
+        centerX - innerW / 2f,
+        centerY - innerH / 2f,
+        centerX + innerW / 2f,
+        centerY + innerH / 2f
+    )
+
+    return Triple(outerBounds, innerBounds, Pair(textMeasuredW, textMeasuredH))
+}

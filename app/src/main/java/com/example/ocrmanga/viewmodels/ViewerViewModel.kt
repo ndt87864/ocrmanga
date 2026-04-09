@@ -2352,53 +2352,76 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     alpha = (block.overlayAlpha * 255).toInt().coerceIn(0, 255)
                                                 }
                                                 
-                                                // Apply overlay inset (inset values are stored in original image coordinates, need to scale to current bitmap coordinates)
+                                                // Tính windowed overlay bounds (trong bitmap coordinates)
+                                                val bitmapRect = androidx.compose.ui.geometry.Rect(
+                                                    adjBoundsLeft,
+                                                    adjBoundsTop,
+                                                    adjBoundsLeft + adjBoundsWidth,
+                                                    adjBoundsTop + adjBoundsHeight
+                                                )
+
                                                 val insetH = (if (block.overlayInsetHorizontal != 0f) block.overlayInsetHorizontal else block.overlayInset) * srcScaleX
                                                 val insetV = (if (block.overlayInsetVertical != 0f) block.overlayInsetVertical else block.overlayInset) * srcScaleX
-                                                val overlayRectF = if (insetH > 0f || insetV > 0f) {
-                                                    RectF(
-                                                        adjBoundsLeft + insetH,
-                                                        adjBoundsTop + insetV,
-                                                        adjBoundsLeft + adjBoundsWidth - insetH,
-                                                        adjBoundsTop + adjBoundsHeight - insetV
-                                                    ).takeIf { it.width() > 0 && it.height() > 0 } 
-                                                        ?: RectF(adjBoundsLeft, adjBoundsTop, adjBoundsLeft + adjBoundsWidth, adjBoundsTop + adjBoundsHeight)
-                                                } else {
-                                                    RectF(adjBoundsLeft, adjBoundsTop, adjBoundsLeft + adjBoundsWidth, adjBoundsTop + adjBoundsHeight)
-                                                }
-                                                
-                                                // Apply overlayRotation for overlay (different from text rotation)
+
+                                                val (outerBounds, innerBounds, _) = com.example.ocrmanga.ui.screens.view.calculateWindowedOverlayBounds(
+                                                    originalBounds = bitmapRect,
+                                                    text = block.text,
+                                                    fontSize = block.fontSize * srcScaleX,
+                                                    isVertical = block.isVertical,
+                                                    context = app,
+                                                    fontFamilyName = block.fontFamily,
+                                                    lineSpacing = block.lineSpacing,
+                                                    shapeType = block.shapeType,
+                                                    overlayInsetHorizontal = insetH,
+                                                    overlayInsetVertical = insetV
+                                                )
+
+                                                // Vẽ overlay chỉ trên INNER bounds
+                                                val overlayRectF = RectF(
+                                                    innerBounds.left,
+                                                    innerBounds.top,
+                                                    innerBounds.right,
+                                                    innerBounds.bottom
+                                                )
+
+                                                // Apply overlayRotation
                                                 val overlayRotationAngle = block.overlayRotation ?: 0f
-                                                val cx = adjBoundsLeft + adjBoundsWidth / 2f
-                                                val cy = adjBoundsTop + adjBoundsHeight / 2f
-                                                
+                                                val cx = outerBounds.center.x
+                                                val cy = outerBounds.center.y
+
                                                 if (overlayRotationAngle != 0f) {
                                                     canvas.save()
                                                     canvas.rotate(overlayRotationAngle, cx, cy)
                                                 }
-                                                
+
                                                 if (block.shapeType == 1) {
                                                     canvas.drawOval(overlayRectF, overlayPaint)
                                                 } else {
                                                     canvas.drawRect(overlayRectF, overlayPaint)
                                                 }
-                                                
+
                                                 if (overlayRotationAngle != 0f) {
                                                     canvas.restore()
                                                 }
                                                 val displayMetrics = app.resources.displayMetrics
-                                                
+
+                                                // Text rendering area = OUTER bounds (có nhiều không gian)
+                                                val textRenderLeft = outerBounds.left + outerBounds.width * (if (block.shapeType == 1) 0.15f else 0f)
+                                                val textRenderTop = outerBounds.top + outerBounds.height * (if (block.shapeType == 1) 0.15f else 0f)
+                                                val textRenderWidth = outerBounds.width * (if (block.shapeType == 1) 0.7f else 1f)
+                                                val textRenderHeight = outerBounds.height * (if (block.shapeType == 1) 0.7f else 1f)
+
                                                 // Standardize the export layout calculation to a 360dp baseline width (like the design mockups)
                                                 // This ensures that 'screenScaleFactor' is effectively 1.0, removing layout variance caused by
                                                 // the user's specific screen width (Tablet vs Phone).
                                                 val refScreenWidthPx = 360f * displayMetrics.density
                                                 val bitmapToViewScale = refScreenWidthPx / src.width.toFloat()
-                                                
+
                                                 // Scale bounds từ bitmap coordinate → view coordinate (Simulated 360dp View)
                                                 // We must pass the FULL bounds to adjustWhiteoutBounds, identical to drawTextOnCanvas in UI
-                                                val scaledWidth = boundsWidth * bitmapToViewScale
-                                                val scaledHeight = boundsHeight * bitmapToViewScale
-                                                
+                                                val scaledWidth = textRenderWidth * bitmapToViewScale
+                                                val scaledHeight = textRenderHeight * bitmapToViewScale
+
                                                 // Áp dụng adjustWhiteoutBounds với full scaled bounds.
                                                 // adjustWhiteoutBounds will internally handle shapeType scaling and isVertical swaps.
                                                 val (wrappedText, optimalFontSize) = com.example.ocrmanga.ui.screens.view.adjustWhiteoutBounds(
@@ -2411,7 +2434,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     fontFamilyName = block.fontFamily,
                                                     shapeType = block.shapeType
                                                 )
-                                                
+
                                                 // Dùng optimalFontSize trực tiếp, nhưng scale lên cho bitmap coordinates
                                                 val finalFontSizeForBitmap = optimalFontSize / bitmapToViewScale
 
@@ -2497,7 +2520,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 } else null
 
                                                 canvas.save()
-                                                // Rotate around center of the block if rotation specified (text rotation, different from overlay rotation)
+                                                // Rotate around center of the OUTER bounds (text rotation, different from overlay rotation)
                                                 val rotation = block.rotation ?: 0f
                                                 if (rotation != 0f) canvas.rotate(rotation, cx, cy)
 
@@ -2506,12 +2529,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 val fontMetrics = tp.fontMetrics
                                                 // Use actual lineSpacing value (may be < 1f) to match what adjustWhiteoutBounds calculated
                                                 val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * block.lineSpacing
-                                                
-                                                // Use full box bounds for coordinate calculations on bitmap (bitmap coordinates)
-                                                val textLeft = adjBoundsLeft
-                                                val textTop = adjBoundsTop
-                                                val textDrawWidth = adjBoundsWidth
-                                                val textDrawHeight = adjBoundsHeight
+
+                                                // Use OUTER bounds for text drawing (bitmap coordinates)
+                                                val textLeft = textRenderLeft
+                                                val textTop = textRenderTop
+                                                val textDrawWidth = textRenderWidth
+                                                val textDrawHeight = textRenderHeight
 
                                                 if (block.isVertical) {
                                                     // Vertical text rendering with padding

@@ -441,27 +441,64 @@ fun ImageViewer(
                             Canvas(modifier = Modifier.matchParentSize()) {
                                 precomputedRegionsState.value.forEach { region ->
                                     val block = region.block; val rect = region.rect; val isOval = block.shapeType == 1
-                                    val insetRect = Rect(rect.left + region.overlayInsetHorizontal, rect.top + region.overlayInsetVertical, rect.right - region.overlayInsetHorizontal, rect.bottom - region.overlayInsetVertical).takeIf { it.width > 0 && it.height > 0 } ?: rect
                                     val overlayRotationAngle = region.overlayRotation ?: 0f
+
+                                    // --- Tính windowed overlay bounds ---
+                                    val (outerBounds, innerBounds, _) = calculateWindowedOverlayBounds(
+                                        originalBounds = rect,
+                                        text = block.text,
+                                        fontSize = region.fontSize,
+                                        isVertical = block.isVertical,
+                                        context = context,
+                                        fontFamilyName = block.fontFamily,
+                                        lineSpacing = region.lineSpacing,
+                                        shapeType = block.shapeType,
+                                        overlayInsetHorizontal = region.overlayInsetHorizontal,
+                                        overlayInsetVertical = region.overlayInsetVertical
+                                    )
+
+                                    // Clamp outer bounds vào canvas
+                                    val canvasW = size.width
+                                    val canvasH = size.height
+                                    val clampedOuterBounds = Rect(
+                                        outerBounds.left.coerceIn(0f, canvasW),
+                                        outerBounds.top.coerceIn(0f, canvasH),
+                                        outerBounds.right.coerceIn(0f, canvasW),
+                                        outerBounds.bottom.coerceIn(0f, canvasH)
+                                    )
+
+                                    // Clamp inner bounds vào canvas
+                                    val clampedInnerBounds = Rect(
+                                        innerBounds.left.coerceIn(0f, canvasW),
+                                        innerBounds.top.coerceIn(0f, canvasH),
+                                        innerBounds.right.coerceIn(0f, canvasW),
+                                        innerBounds.bottom.coerceIn(0f, canvasH)
+                                    )
+
                                     fun drawOverlayContent() {
+                                        // Vẽ overlay chỉ trên INNER bounds (outer area = transparent)
                                         if (region.whiteoutColor != null) {
                                             val finalColor = region.whiteoutColor.copy(alpha = region.overlayAlpha)
-                                            if (isOval) drawOval(finalColor, Offset(insetRect.left, insetRect.top), Size(insetRect.width, insetRect.height))
-                                            else drawRect(finalColor, Offset(insetRect.left, insetRect.top), Size(insetRect.width, insetRect.height))
-                                        } else drawTranslucentOverlay(insetRect, block.backgroundType, block.averageBackgroundColor, block.originalTextColor, block.shapeType)
+                                            if (isOval) drawOval(finalColor, Offset(clampedInnerBounds.left, clampedInnerBounds.top), Size(clampedInnerBounds.width, clampedInnerBounds.height))
+                                            else drawRect(finalColor, Offset(clampedInnerBounds.left, clampedInnerBounds.top), Size(clampedInnerBounds.width, clampedInnerBounds.height))
+                                        } else drawTranslucentOverlay(clampedInnerBounds, block.backgroundType, block.averageBackgroundColor, block.originalTextColor, block.shapeType)
                                     }
-                                    if (overlayRotationAngle != 0f) withTransform({ rotate(overlayRotationAngle, rect.center) }) { drawOverlayContent() } else drawOverlayContent()
+                                    if (overlayRotationAngle != 0f) withTransform({ rotate(overlayRotationAngle, clampedOuterBounds.center) }) { drawOverlayContent() } else drawOverlayContent()
                                     if (editTranslationMode) {
                                         val isSelected = selectedIndex != null && selectedIndex!! < dragBlocks.size && dragBlocks[selectedIndex!!].block == block
                                         fun drawBorder() {
                                             val color = if (isSelected) Color.Red else Color.Blue
-                                            if (isOval) drawOval(color, Offset(rect.left, rect.top), Size(rect.width, rect.height), style = Stroke(2f))
-                                            else drawRect(color, Offset(rect.left, rect.top), Size(rect.width, rect.height), style = Stroke(2f))
+                                            // Border vẽ quanh OUTER bounds để show full area
+                                            if (isOval) drawOval(color, Offset(clampedOuterBounds.left, clampedOuterBounds.top), Size(clampedOuterBounds.width, clampedOuterBounds.height), style = Stroke(2f))
+                                            else drawRect(color, Offset(clampedOuterBounds.left, clampedOuterBounds.top), Size(clampedOuterBounds.width, clampedOuterBounds.height), style = Stroke(2f))
                                         }
-                                        if (overlayRotationAngle != 0f) withTransform({ rotate(overlayRotationAngle, rect.center) }) { drawBorder() } else drawBorder()
+                                        if (overlayRotationAngle != 0f) withTransform({ rotate(overlayRotationAngle, clampedOuterBounds.center) }) { drawBorder() } else drawBorder()
                                     }
-                                    val tL = rect.left + rect.width * (if (isOval) 0.15f else 0f); val tT = rect.top + rect.height * (if (isOval) 0.15f else 0f)
-                                    val tW = rect.width * (if (isOval) 0.7f else 1f); val tH = rect.height * (if (isOval) 0.7f else 1f)
+                                    // Text vẽ trong OUTER bounds (có nhiều không gian hơn)
+                                    val tL = clampedOuterBounds.left + clampedOuterBounds.width * (if (isOval) 0.15f else 0f)
+                                    val tT = clampedOuterBounds.top + clampedOuterBounds.height * (if (isOval) 0.15f else 0f)
+                                    val tW = clampedOuterBounds.width * (if (isOval) 0.7f else 1f)
+                                    val tH = clampedOuterBounds.height * (if (isOval) 0.7f else 1f)
                                     withTransform({ if (region.rotation != 0f) rotate(region.rotation, Offset(tL + tW / 2, tT + tH / 2)) }) {
                                         drawTextOnCanvas(
                                             drawScope = this,
