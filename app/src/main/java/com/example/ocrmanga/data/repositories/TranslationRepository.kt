@@ -2710,8 +2710,11 @@ class TranslationRepository(private val application: Application) {
 
             // Phân tích màu nền và màu text cho merged block
             val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
-            // DISABLED: Container classification
-            val containerInfo = null
+            // Re-enabled: Container classification after merging for better accuracy
+            val containerInfo = bitmap?.let { bmp ->
+                containerClassifier.classifyContainer(bmp, mergedBounds)
+            }
+
             val mergedBlock = TextBlockInfo(
                 text = mergedText.toString(),
                 bounds = Rect(mergedBounds),
@@ -2911,8 +2914,11 @@ class TranslationRepository(private val application: Application) {
 
                     // Phân tích màu nền và màu text cho merged block
                     val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
-                    // DISABLED: Container classification
-                    val containerInfo = null
+                    // Re-enabled: Container classification after merging for better accuracy
+                    val containerInfo = bitmap?.let { bmp ->
+                        containerClassifier.classifyContainer(bmp, mergedBounds)
+                    }
+
                     val mergedBlock = TextBlockInfo(
                         text = mergedText.toString(),
                         bounds = mergedBounds,
