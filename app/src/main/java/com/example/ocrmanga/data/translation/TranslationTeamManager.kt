@@ -350,39 +350,30 @@ class TranslationTeamManager(private val application: Application) {
     // ========================
 
     private fun isHallucinated(originalText: String, currentTranslation: String, revised: String): Boolean {
-        // Tìm tất cả từ Latin (tên riêng) trong bản sửa
-        val latinWordPattern = Regex("[A-Za-zÀ-ỹ]{3,}")
-        val revisedLatinWords = latinWordPattern.findAll(revised)
-            .map { it.value.lowercase() }
+        // CHỈ phát hiện tên riêng viết hoa (ví dụ: Jack, Elena, Xiao...)
+        // KHÔNG phát hiện từ tiếng Việt thông thường
+        val properNounPattern = Regex("\\b[A-Z][a-z]{2,}\\b")
+
+        val revisedProperNouns = properNounPattern.findAll(revised)
+            .map { it.value }
             .toSet()
 
-        if (revisedLatinWords.isEmpty()) return false
+        if (revisedProperNouns.isEmpty()) return false
 
-        // Từ Latin có trong bản dịch cũ hoặc gốc
-        val existingLatinWords = latinWordPattern.findAll(currentTranslation)
-            .map { it.value.lowercase() }
+        // Tên riêng có trong bản dịch cũ hoặc gốc
+        val existingProperNouns = properNounPattern.findAll(currentTranslation)
+            .map { it.value }
             .toSet()
 
-        val originalLatinWords = latinWordPattern.findAll(originalText)
-            .map { it.value.lowercase() }
+        val originalProperNouns = properNounPattern.findAll(originalText)
+            .map { it.value }
             .toSet()
 
-        // Danh sách từ tiếng Việt thông dụng (đã lọc bớt để tránh false positive)
-        val commonVietnameseWords = setOf(
-            "tao", "mày", "tôi", "cậu", "mình", "anh", "chị", "em", "nó", "hắn", "nàng",
-            "ngươi", "các", "hạ", "tại", "bổn", "lão", "bần", "đừng", "không", "hãy",
-            "đã", "đang", "sẽ", "được", "bị", "cho", "làm", "nói", "nào", "đến", "đi",
-            "lại", "cứu", "kêu", "gọi", "biết", "muốn", "thấy", "nghe", "nhìn", "cần",
-            "phải", "nên", "còn", "hết", "xong", "rồi", "nhưng", "mà", "thì", "với",
-            "của", "và", "hay", "hoặc", "nếu", "vì", "này", "đó", "kia", "ấy", "sao",
-            "gì", "nào", "đâu", "bao", "à", "nhé", "nhỉ", "hả", "chứ", "ạ", "ơi",
-            "vậy", "thế", "thôi"
-        )
+        // Tên riêng MỚI (không có trong gốc và bản cũ)
+        val newProperNouns = revisedProperNouns - existingProperNouns - originalProperNouns
 
-        val newLatinWords = revisedLatinWords - existingLatinWords - originalLatinWords - commonVietnameseWords
-
-        if (newLatinWords.isNotEmpty()) {
-            Log.w(TAG, "[HALLUCINATION] Từ Latin mới phát hiện: $newLatinWords")
+        if (newProperNouns.isNotEmpty()) {
+            Log.w(TAG, "[HALLUCINATION] Tên riêng mới phát hiện: $newProperNouns")
             return true
         }
 
