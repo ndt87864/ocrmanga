@@ -139,19 +139,17 @@ object TranslationPrompts {
         val pronounInstruction = if (mainPronounPair != null) {
             """
 
-            ⚠ QUY TẮC XƯNG HÔ BẮT BUỘC (ĐÃ XÁC LẬP): $mainPronounPair
-            - Toàn bộ hội thoại trong trang này PHẢI dùng cặp "$mainPronounPair".
-            - TUYỆT ĐỐI KHÔNG trộn lẫn (ví dụ: không dùng "Tôi-Cậu" chung với "Tao-Mày").
-            - Nếu nhân vật đang độc thoại: dùng "mình" hoặc lược bỏ chủ ngữ.
-            - Nếu nhân vật nói về người thứ ba: dùng "hắn/tên đó/cô ta", không dùng "cậu ấy" nếu đang xưng hô suồng sã.
+            ⚠ QUY TẮC NHẤT QUÁN (DỰA TRÊN NGỮ CẢNH): $mainPronounPair
+            - Ưu tiên sử dụng cặp "$mainPronounPair" nếu mối quan hệ nhân vật không thay đổi.
+            - Đảm bảo tính ĐỐI XỨNG và LOGIC xuyên suốt toàn bộ hội thoại.
 
             """
         } else {
             """
 
-            ⚠ LƯU Ý XƯNG HÔ:
-            - Nếu chưa rõ mối quan hệ, ưu tiên "TÔI - CẬU" (lịch sự) hoặc "TAO - MÀY" (nếu đang căng thẳng).
-            - Đảm bảo tính ĐỐI XỨNG: A gọi B là "mày" thì B phải gọi A là "tao" hoặc ngược lại.
+            ⚠ LƯU Ý VỀ XƯNG HÔ:
+            - Phân tích kỹ thái độ và vị thế của các nhân vật để chọn cặp xưng hô phù hợp (Tôi-Cậu, Tao-Mày, Anh-Em...).
+            - Giữ sự nhất quán tuyệt đối trong cùng một phân cảnh.
 
             """
         }
