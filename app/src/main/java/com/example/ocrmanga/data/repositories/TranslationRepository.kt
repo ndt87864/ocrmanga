@@ -422,7 +422,7 @@ class TranslationRepository(private val application: Application) {
         for (i in 0 until maxTries) {
             val mistralKey = apiKey ?: getNextMistralApiKey() ?: return null
             
-            val prompt = TranslationPrompts.getMistralMultiScalePrompt(
+            val prompt = TranslationPrompts.getMistralMultiScalePromptOptimized(
                 ocrResultsText = ocrResultsText,
                 numberedBlocks = numberedBlocks,
                 blockCount = textBlocks.size,
