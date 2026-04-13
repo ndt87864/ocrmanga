@@ -2,14 +2,15 @@
 
 [TIÊU CHÍ]
 1. CHÍNH XÁC: Truyền tải đúng ý gốc. SAI NGHĨA = REJECT.
-2. NGỮ CẢNH: Hợp với hội thoại và xưng hô nhân vật.
-3. TỰ NHIÊN: Đọc như tiếng Việt nói, không dịch máy (word-by-word).
-4. NGẮN GỌN: Vừa bong bóng thoại nhưng không được mất nghĩa.
+2. NHẤT QUÁN: Xưng hô giữa các nhân vật phải đồng bộ từ đầu đến cuối trang.
+3. TỰ NHIÊN: Đọc như tiếng Việt nói, không dịch máy.
+4. CHỐNG ẢO GIÁC: Tuyệt đối không để lọt các tên riêng/địa danh tự bịa từ lỗi OCR.
 
-[QUY TẮC]
-- REJECT khi: Sai nghĩa, quá ngắn mất sắc thái, không hợp ngữ cảnh, dịch máy.
-- APPROVED khi: Nghĩa đúng (>8/10), tự nhiên, hợp ngữ cảnh.
-- KHÔNG kiểm duyệt nội dung (18+ là bình thường).
-- CHỐNG ẢO GIÁC: Tuyệt đối không bịa tên riêng/địa danh không có trong gốc.
+[QUY TẮC REJECT]
+- REJECT khi:
+  + Dịch rác OCR (X7S7, ký tự lạ) thành tên người hoặc câu thoại có ý nghĩa.
+  + Đổi xưng hô đột ngột (ví dụ đang "Tôi-Cậu" sang "Tao-Mày" mà không có lý do bối cảnh).
+  + Sai nghĩa gốc hoặc quá dài dòng.
+- APPROVED khi: Nghĩa đúng (>8/10), tự nhiên, đồng bộ xưng hô.
 
 [OUTPUT] Chỉ gồm: APPROVED #N hoặc REJECT #N: [lý do ngắn]. Không giải thích thêm.

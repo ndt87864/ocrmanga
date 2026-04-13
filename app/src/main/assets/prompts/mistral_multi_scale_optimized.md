@@ -10,26 +10,19 @@
 {{numberedBlocks}}
 
 [QUY TRÌNH]
-1. Đọc {{blockCount}} blocks như MỘT hội thoại liền mạch. Xác định: ai nói, tình huống, mối quan hệ.
-2. Sửa lỗi OCR (từ dính, ký tự rác) dựa vào ngữ cảnh toàn bộ. Tái cấu trúc nếu thứ tự từ bị đảo.
-3. Dịch từng block với ngữ cảnh: câu trả lời phải hợp lý với câu hỏi trước. Xưng hô NHẤT QUÁN xuyên suốt.
-⚠️ Blocks KHÔNG độc lập - chúng là phần của cuộc hội thoại.
-{{ancientInstruction}}
+1. PHÂN TÍCH NHÂN VẬT: Dựa trên tất cả {{blockCount}} blocks, xác định có bao nhiêu người đang nói, mối quan hệ (bạn bè, kẻ thù, cấp trên...) để chọn xưng hô NHẤT QUÁN.
+2. LỌC NHIỄU OCR: Loại bỏ các ký tự rác, mã lỗi OCR (ví dụ: "X7S7", "々", ký tự lạ). ⚠️ TUYỆT ĐỐI KHÔNG biến rác OCR thành tên riêng.
+3. DỊCH LIÊN KẾT: Blocks không độc lập. Câu trả lời của Block B phải khớp với câu hỏi của Block A.
 
-[QUY TẮC DỊCH]
+[QUY TẮC CHỐNG ẢO GIÁC]
+★ KHÔNG bịa tên nhân vật/địa danh nếu bản gốc không ghi rõ.
+★ Nếu một block chứa toàn ký tự rác/không có nghĩa: Hãy trả về "..." hoặc giữ nguyên ký tự đó thay vì bịa ra một câu dịch.
 ★ Ưu tiên: CHÍNH XÁC > Ngắn gọn. Không dịch sai nghĩa để cho ngắn.
-★ Giữ đủ đại từ khi cần thiết. Nếu chọn giữa "ngắn sai" vs "dài đúng" → chọn ĐÚNG.
-★ Lỗi OCR: Suy luận từ ngữ cảnh (vd: "アりまくり" → "ヤりまくり"). Không dịch nghĩa đen nếu vô lý.
 
 [VĂN PHONG]
-• BẢN ĐỊA HÓA (quan trọng nhất): Dịch như biên kịch người Việt, KHÔNG word-by-word. Dùng thành ngữ/tiếng lóng/khẩu ngữ Việt Nam.
-• Giọng NÓI tự nhiên, không văn viết. Chống lặp đại từ: "I... I..." → lược bỏ 1 hoặc gộp câu.
+• BẢN ĐỊA HÓA: Dịch như biên kịch người Việt. Dùng thành ngữ/tiếng lóng phù hợp. KHÔNG dịch word-by-word.
+• Giọng NÓI tự nhiên. Chống lặp đại từ: "I... I..." -> lược bỏ 1 hoặc gộp câu.
 • Đại từ: Mặc định tôi/cậu/mình. Chỉ dùng tao/mày khi tức giận rõ. Độc thoại: "mình" hoặc lược chủ ngữ.
-• Tiểu từ (à, nhé, nhỉ, mà, chứ...) khi phù hợp. Cấm nối bằng "và" (dùng phẩy/rồi/xong).
-• Nội dung 18+: Dùng từ thô tục khi gốc rõ rệt.
+• Ancient Mode: {{ancientInstruction}}
 
-[VÍ DỤ]
-❌ Dở: "Tôi đang suy nghĩ về điều đó" (dịch máy, không liên kết câu hỏi)
-✅ Tốt: "Chưa nghĩ ra..." (tự nhiên, trả lời trực tiếp)
-
-[OUTPUT] Chỉ trả về bản dịch. Không giải thích. Không dấu ngoặc kép.
+[OUTPUT] Chỉ trả về bản dịch theo định dạng Block #N. Không giải thích. Không dấu ngoặc kép.
