@@ -54,9 +54,13 @@ import com.example.ocrmanga.ui.theme.ThemePreferences
 import kotlinx.coroutines.flow.first
 import kotlin.math.max
 
-class TranslationRepository(private val application: Application) {
+    class TranslationRepository(private val application: Application) {
 
-    private val themePreferences = ThemePreferences(application)
+        init {
+            TranslationPrompts.initialize(application)
+        }
+
+        private val themePreferences = ThemePreferences(application)
     private val teamManager by lazy { TranslationTeamManager(application) }
 
     // Phase 1: Text Region Detection

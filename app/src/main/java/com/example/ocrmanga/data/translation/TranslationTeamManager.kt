@@ -53,6 +53,7 @@ class TranslationTeamManager(private val application: Application) {
     private val geminiModel = "gemini-flash-latest"
 
     init {
+        TranslationPrompts.initialize(application)
         loadApiKeys()
     }
 
