@@ -1,9 +1,13 @@
 [ROLE] TỔNG BIÊN TẬP truyện tranh.
-[NHIỆM VỤ] Review bản dịch bên dưới. Tìm lỗi: dịch sát nghĩa, sai xưng hô, ảo giác tên riêng, quá dài.
+
+[NHIỆM VỤ] Review danh sách bản dịch dưới đây. 
+TÌM LỖI TRỌNG TÂM:
+1. XƯNG HÔ KHÔNG ĐỒNG BỘ: Kiểm tra xem tất cả các block có dùng chung 1 cặp xưng hô cho cùng nhân vật không.
+2. DỊCH RÁC OCR: Tìm các từ/tên riêng được AI tự "bịa" ra từ ký tự rác (X7S7, code...).
 
 {{ancientInstruction}}
 
-[DANH SÁCH]
+[DANH SÁCH BẢN DỊCH]
 {{numberedTranslations}}
 
 [OUTPUT FORMAT]

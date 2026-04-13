@@ -2,14 +2,16 @@
 
 [INPUT] {{text}}
 
-[TIỀN XỬ LÝ]
-1. LỌC NHIỄU: Bỏ qua mã lỗi OCR, ký tự rác (ví dụ: X7S7, @#$). ⚠️ KHÔNG biến rác thành tên người.
-2. CHỐNG ẢO GIÁC: Chỉ dịch những gì thấy. Nếu không hiểu, hãy giữ nguyên hoặc trả về "...". Tuyệt đối không tự bịa tình tiết/tên riêng.
+[LƯU Ý XƯNG HÔ]
+- Ưu tiên "Tôi/Cậu" (lịch sự) hoặc "Tao/Mày" (nếu hội thoại có vẻ căng thẳng).
+- TUYỆT ĐỐI KHÔNG trộn lẫn nhiều cặp xưng hô khác nhau.
 
-[QUY TẮC DỊCH]
-- BẢN ĐỊA HÓA: Dịch như người Việt nói, thoát ý, không word-by-word.
-- NGẮN GỌN: Ưu tiên câu cô đọng để vừa bong bóng thoại.
-- XƯNG HÔ: Theo ngữ cảnh phổ biến (Tôi/Cậu).
+[CHỐNG ẢO GIÁC]
+- LỌC NHIỄU: Bỏ qua mã lỗi OCR (X7S7, @#$). ⚠️ KHÔNG biến rác thành tên người.
+- Chỉ dịch những gì thấy. Nếu không hiểu, trả về "...".
+
+[VĂN PHONG]
+- BẢN ĐỊA HÓA: Dịch thoát ý, dùng khẩu ngữ đời thường.
 - Ancient Mode: {{ancientInstruction}}
 
-[OUTPUT] Chỉ trả về bản dịch. Không giải thích. Không dấu ngoặc kép.
+[OUTPUT] Chỉ trả về bản dịch. Không giải thích.

@@ -124,32 +124,37 @@ object TranslationPrompts {
         val hasAnhPattern = allText.contains(" ANH ") || allText.contains("ANH ")
         val hasEmPattern = allText.contains(" EM ") || allText.contains("EM ")
 
-        // Xác định CẶP ngôi xưng hô CHÍNH (cho hội thoại giữa 2 nhân vật)
+        // Xác định CẶP ngôi xưng hô CHÍNH (ưu tiên cặp hoàn chỉnh)
         val mainPronounPair = when {
+            hasTaoPattern || hasMayPattern -> "TAO - MÀY"
             hasToiPattern && hasCauPattern -> "TÔI - CẬU"
             hasMinhPattern && hasCauPattern -> "MÌNH - CẬU"
-            hasTaoPattern && hasMayPattern -> "TAO - MÀY"
-            hasToiPattern && hasAnhPattern -> "TÔI - ANH"
             hasEmPattern && hasAnhPattern -> "EM - ANH"
-            hasToiPattern -> "TÔI"
-            hasMinhPattern -> "MÌNH"
-            hasTaoPattern -> "TAO"
+            hasToiPattern && hasAnhPattern -> "TÔI - ANH"
+            hasTaoPattern -> "TAO - MÀY"
+            hasToiPattern -> "TÔI - CẬU"
             else -> null
         }
 
         val pronounInstruction = if (mainPronounPair != null) {
             """
 
-            ⚠ CẶP XƯNG HÔ ĐÃ XÁC LẬP: $mainPronounPair
-
-            QUY TẮC ĐỐI XỨNG & LINH HOẠT:
-            - Nếu đang dùng cặp "$mainPronounPair": Ưu tiên giữ nguyên để nhất quán.
-            - NGOẠI LỆ QUAN TRỌNG: Nếu cặp đang là "TAO-MÀY" nhưng nhân vật đã hết tức giận/tranh cãi và chuyển sang nói chuyện bình thường → BẮT BUỘC chuyển về xưng hô trung tính (tôi-cậu, mình-cậu, anh-em...).
-            - Độc thoại nội tâm: Dùng "mình" hoặc lược bỏ chủ ngữ.
-            - Lời dẫn truyện: KHÔNG dùng "mình".
+            ⚠ QUY TẮC XƯNG HÔ BẮT BUỘC (ĐÃ XÁC LẬP): $mainPronounPair
+            - Toàn bộ hội thoại trong trang này PHẢI dùng cặp "$mainPronounPair".
+            - TUYỆT ĐỐI KHÔNG trộn lẫn (ví dụ: không dùng "Tôi-Cậu" chung với "Tao-Mày").
+            - Nếu nhân vật đang độc thoại: dùng "mình" hoặc lược bỏ chủ ngữ.
+            - Nếu nhân vật nói về người thứ ba: dùng "hắn/tên đó/cô ta", không dùng "cậu ấy" nếu đang xưng hô suồng sã.
 
             """
-        } else ""
+        } else {
+            """
+
+            ⚠ LƯU Ý XƯNG HÔ:
+            - Nếu chưa rõ mối quan hệ, ưu tiên "TÔI - CẬU" (lịch sự) hoặc "TAO - MÀY" (nếu đang căng thẳng).
+            - Đảm bảo tính ĐỐI XỨNG: A gọi B là "mày" thì B phải gọi A là "tao" hoặc ngược lại.
+
+            """
+        }
 
         return """
 
