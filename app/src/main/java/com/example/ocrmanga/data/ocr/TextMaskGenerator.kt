@@ -123,7 +123,14 @@ class TextMaskGenerator(
         // Draw white rectangle for text region
         val paint = Paint().apply {
             color = Color.WHITE
-            style = Paint.Style.FILL
+            if (config.expandMask) {
+                style = Paint.Style.FILL_AND_STROKE
+                strokeWidth = config.expansionKernel.toFloat() * 2 // Simulate dilation
+                strokeJoin = Paint.Join.ROUND
+                strokeCap = Paint.Cap.ROUND
+            } else {
+                style = Paint.Style.FILL
+            }
         }
         canvas.drawRect(region.bounds, paint)
 
@@ -133,11 +140,15 @@ class TextMaskGenerator(
     /**
      * Expand mask to include text edges
      * Uses dilation and optional smoothing
+     * MOVED TO createBinaryMask using Canvas native drawing
      */
     private fun expandMask(mask: Bitmap): Bitmap {
-        if (!config.expandMask) return mask
+        // Optimization: Expansion is now handled during initial mask creation
+        // but we still support optional smoothing if requested
+        if (!config.smoothEdges) return mask
+
         if (!OpenCvInitializer.ensureInitialized()) {
-            Log.w(TAG, "OpenCV unavailable, skipping mask expansion")
+            Log.w(TAG, "OpenCV unavailable, skipping mask smoothing")
             return mask
         }
 
@@ -146,37 +157,22 @@ class TextMaskGenerator(
             val mat = Mat()
             Utils.bitmapToMat(mask, mat)
 
-            // Dilation: expand white areas
-            val dilated = Mat()
-            val kernel = Imgproc.getStructuringElement(
-                Imgproc.MORPH_RECT,
-                Size(config.expansionKernel.toDouble(), config.expansionKernel.toDouble())
-            )
-            Imgproc.dilate(mat, dilated, kernel, org.opencv.core.Point(-1.0, -1.0), config.expansionIterations)
-
-            // Optional: Gaussian blur for smooth edges
-            val result = if (config.smoothEdges) {
-                val smoothed = Mat()
-                val blurSize = Size(config.smoothKernel.toDouble(), config.smoothKernel.toDouble())
-                Imgproc.GaussianBlur(dilated, smoothed, blurSize, 0.0)
-                dilated.release()
-                smoothed
-            } else {
-                dilated
-            }
+            // Gaussian blur for smooth edges
+            val smoothed = Mat()
+            val blurSize = Size(config.smoothKernel.toDouble(), config.smoothKernel.toDouble())
+            Imgproc.GaussianBlur(mat, smoothed, blurSize, 0.0)
 
             // Convert back to Bitmap
-            val expandedMask = Bitmap.createBitmap(mask.width, mask.height, Bitmap.Config.ALPHA_8)
-            Utils.matToBitmap(result, expandedMask)
+            val resultBitmap = Bitmap.createBitmap(mask.width, mask.height, Bitmap.Config.ALPHA_8)
+            Utils.matToBitmap(smoothed, resultBitmap)
 
             // Release resources
             mat.release()
-            kernel.release()
-            result.release()
+            smoothed.release()
 
-            return expandedMask
+            return resultBitmap
         } catch (error: Throwable) {
-            Log.e(TAG, "Error expanding mask", error)
+            Log.e(TAG, "Error smoothing mask", error)
             return mask
         }
     }

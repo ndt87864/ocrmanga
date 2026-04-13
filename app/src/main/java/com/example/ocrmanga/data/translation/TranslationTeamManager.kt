@@ -99,41 +99,56 @@ class TranslationTeamManager(private val application: Application) {
         if (initialTranslations.isEmpty() || textBlocks.isEmpty()) return initialTranslations
 
         val maxReviewRounds = when (mode) {
-            TranslationMode.MISTRAL -> 3
-            else -> return initialTranslations // Chỉ MISTRAL mới cần review, các mode khác (bao gồm GEMINI) trả về luôn
+            TranslationMode.MISTRAL -> 2 // Optimized: Reduce from 3 to 2
+            else -> return initialTranslations
         }
 
         Log.i(TAG, "═══ BẮT ĐẦU REVIEW DỊCH THUẬT ═══")
-        Log.i(TAG, "Mode: $mode | Số vòng review tối đa: $maxReviewRounds | Số blocks: ${textBlocks.size}")
+        Log.i(TAG, "Mode: $mode | Max rounds: $maxReviewRounds | Blocks: ${textBlocks.size}")
 
         val current = initialTranslations.toMutableList()
-        val frozenBlocks = mutableSetOf<Int>() // Blocks đã sửa 1 lần → không cho reject lại
+        val frozenBlocks = mutableSetOf<Int>()
+        var prevRejectionCount = Int.MAX_VALUE
 
         for (round in 1..maxReviewRounds) {
             Log.i(TAG, "── Vòng review #$round/$maxReviewRounds ──")
 
-            // BƯỚC 1: Manager review tất cả bản dịch
+            // BƯỚC 1: Manager review
             val review = managerReview(textBlocks, current, mode, isAncientMode, frozenBlocks)
 
             if (review == null) {
-                Log.w(TAG, "Review thất bại ở vòng $round, giữ bản dịch hiện tại")
+                Log.w(TAG, "Review thất bại ở vòng $round")
                 break
             }
 
             if (review.allApproved) {
-                Log.i(TAG, "✓ Manager duyệt tất cả blocks ở vòng $round")
+                Log.i(TAG, "✓ Tất cả đã được duyệt ở vòng $round")
                 break
             }
 
-            Log.i(TAG, "✗ Manager yêu cầu sửa ${review.rejections.size} blocks: ${review.rejections.keys}")
+            val currentRejectionCount = review.rejections.size
+            val approvedRatio = (textBlocks.size - currentRejectionCount).toFloat() / textBlocks.size
 
-            // BƯỚC 2: Phiên dịch viên dịch lại các blocks bị reject
+            // Early stopping: High approval and no improvement
+            if (round > 1 && approvedRatio > 0.9f && currentRejectionCount >= prevRejectionCount) {
+                Log.i(TAG, "(!) Dừng sớm: Đạt >90% Approved và không cải thiện thêm.")
+                break
+            }
+            prevRejectionCount = currentRejectionCount
+
+            // Early stopping: All rejections are already frozen (revised once)
+            val allRejectionsFrozen = review.rejections.keys.all { it in frozenBlocks }
+            if (allRejectionsFrozen && review.rejections.isNotEmpty()) {
+                Log.i(TAG, "(!) Dừng sớm: Các block lỗi còn lại đã được sửa 1 lần.")
+                break
+            }
+
+            Log.i(TAG, "✗ Yêu cầu sửa ${review.rejections.size} blocks: ${review.rejections.keys}")
+
+            // BƯỚC 2: Translator revise
             for ((blockIndex, reason) in review.rejections) {
                 if (blockIndex < 0 || blockIndex >= textBlocks.size) continue
-                if (blockIndex in frozenBlocks) {
-                    Log.i(TAG, "[REVISION] Block #${blockIndex + 1}: ĐÃ FREEZE - bỏ qua")
-                    continue
-                }
+                if (blockIndex in frozenBlocks) continue
 
                 val originalText = textBlocks[blockIndex].text
                 val currentTranslation = current[blockIndex]
