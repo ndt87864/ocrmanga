@@ -1,65 +1,77 @@
-*.iml
-.gradle
+# Gradle
+.gradle/
+build/
+/*/build/
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+.externalNativeBuild/
+.cxx/
+
+# IntelliJ/Android Studio
+.idea/
+*.iml
+*.iws
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+
+# Python (nếu bạn có script hỗ trợ)
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
-app/build
-client_secret_131473745863-bg6vamm27gmgp6e8t5koqaibfoes5i62.apps.googleusercontent.com.json
-app/.gitignore
+Thumbs.db
+
+# Project Specific
+client_secret_*.json
 my-release-key.jks
 upload_certificate.pem
 app/release/*
-# Agent skills and OpenSpec tooling (all AI tool skill directories)
+
+# Claude/AI Tools (Giữ lại các quy tắc quan trọng của bạn)
+/.claude/
 /.agents/
 /.agent*
-/.adal/
-/.augment/
-/.codebuddy/
-/.commandcode/
-/.continue/
-/.crush/
-/.factory/
-/.goose/
-/.iflow/
-/.junie/
-/.kilocode/
-/.kiro/
-/.kode/
-/.mcpjam/
-/.mux/
-/.neovate/
-/.openhands/
-/.pi/
-/.pochi/
-/.qoder/
-/.qwen/
-/.roo/
-/.trae/
-/.windsurf/
-/.zencoder/
 /skills/
 /skills-lock.json
-/.vibe/
-**/models/**
-# Ignore local/editor/config folders
-/.claude/
-/.vscode/
-/.idea/
-# Ignore project subfolders that shouldn't be committed
-/ocrmanga/
-/openspec/
 
-/docs
-/opencv-4.12.0-android-sdk
-*.json
+# Đừng ignore toàn bộ .json và .md vì dự án cần chúng (như google-services.json)
+# /docs
+# /opencv-4.12.0-android-sdk (Nếu bạn muốn giữ bản SDK gốc ngoài git)
+/.adal
+/.augment
+/.codebuddy
+/.commandcode
+/.continue
+/.crush
+/.factory
+/.goose
+/.iflow
+/.junie
+/.kilocode
+/.kiro
+/.kode
+/.mcpjam
+/.mux
+/.neovate
+/.openhands
+/.pi
+/.pochi
+/.qoder
+/.qwen
+/.roo
+/.trae
+/.vibe
+/.windsurf
+/.zencoder
+/app/src/main/assets
 *.md
+/opencv-4.12.0-android-sdk
+app/local.properties
+.mcp.json
+/openspec
