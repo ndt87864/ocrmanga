@@ -114,9 +114,9 @@ class RegionBasedMerger(
      * Sort blocks within a region based on orientation
      */
     private fun sortBlocks(
-        blocks: List<Text.TextBlock>,
+        blocks: List<OcrBlock>,
         orientation: TextOrientation
-    ): List<Text.TextBlock> {
+    ): List<OcrBlock> {
         return when (orientation) {
             TextOrientation.VERTICAL -> sortVertical(blocks)
             TextOrientation.HORIZONTAL -> sortHorizontal(blocks)
@@ -127,20 +127,20 @@ class RegionBasedMerger(
      * Sort blocks for vertical text (manga)
      * Reading order: Right → Left, Top → Bottom
      */
-    private fun sortVertical(blocks: List<Text.TextBlock>): List<Text.TextBlock> {
+    private fun sortVertical(blocks: List<OcrBlock>): List<OcrBlock> {
         if (blocks.isEmpty()) return blocks
 
         // Group into columns (right to left)
-        val columns = mutableListOf<MutableList<Text.TextBlock>>()
-        val sorted = blocks.sortedByDescending { it.boundingBox?.right ?: 0 }
+        val columns = mutableListOf<MutableList<OcrBlock>>()
+        val sorted = blocks.sortedByDescending { it.bounds.right }
 
         for (block in sorted) {
-            val blockX = block.boundingBox?.centerX() ?: 0
-            val blockWidth = block.boundingBox?.width() ?: 0
+            val blockX = block.bounds.centerX()
+            val blockWidth = block.bounds.width()
 
             // Find column this block belongs to
             val column = columns.find { col ->
-                val avgX = col.mapNotNull { it.boundingBox?.centerX() }.average()
+                val avgX = col.map { it.bounds.centerX() }.average()
                 abs(avgX - blockX) < blockWidth * 0.5f
             }
 
@@ -153,7 +153,7 @@ class RegionBasedMerger(
 
         // Sort blocks within each column (top to bottom)
         return columns.flatMap { column ->
-            column.sortedBy { it.boundingBox?.top ?: 0 }
+            column.sortedBy { it.bounds.top }
         }
     }
 
@@ -161,20 +161,20 @@ class RegionBasedMerger(
      * Sort blocks for horizontal text
      * Reading order: Left → Right, Top → Bottom
      */
-    private fun sortHorizontal(blocks: List<Text.TextBlock>): List<Text.TextBlock> {
+    private fun sortHorizontal(blocks: List<OcrBlock>): List<OcrBlock> {
         if (blocks.isEmpty()) return blocks
 
         // Group into rows (top to bottom)
-        val rows = mutableListOf<MutableList<Text.TextBlock>>()
-        val sorted = blocks.sortedBy { it.boundingBox?.top ?: 0 }
+        val rows = mutableListOf<MutableList<OcrBlock>>()
+        val sorted = blocks.sortedBy { it.bounds.top }
 
         for (block in sorted) {
-            val blockY = block.boundingBox?.centerY() ?: 0
-            val blockHeight = block.boundingBox?.height() ?: 0
+            val blockY = block.bounds.centerY()
+            val blockHeight = block.bounds.height()
 
             // Find row this block belongs to
             val row = rows.find { r ->
-                val avgY = r.mapNotNull { it.boundingBox?.centerY() }.average()
+                val avgY = r.map { it.bounds.centerY() }.average()
                 abs(avgY - blockY) < blockHeight * 0.5f
             }
 
@@ -187,7 +187,7 @@ class RegionBasedMerger(
 
         // Sort blocks within each row (left to right)
         return rows.flatMap { row ->
-            row.sortedBy { it.boundingBox?.left ?: 0 }
+            row.sortedBy { it.bounds.left }
         }
     }
 
@@ -195,7 +195,7 @@ class RegionBasedMerger(
      * Merge adjacent blocks in the same region
      */
     private fun mergeAdjacentBlocks(
-        blocks: List<Text.TextBlock>,
+        blocks: List<OcrBlock>,
         regionId: Int,
         orientation: TextOrientation
     ): List<MergedTextBlock> {
@@ -214,8 +214,8 @@ class RegionBasedMerger(
                 // Merge blocks
                 current = MergedTextBlock(
                     text = current.text + "\n" + next.text,
-                    bounds = unionBounds(current.bounds, next.boundingBox!!),
-                    confidence = (current.confidence + calculateConfidence(next)) / 2,
+                    bounds = unionBounds(current.bounds, next.bounds),
+                    confidence = (current.confidence + next.confidence) / 2,
                     regionId = regionId,
                     lines = current.lines + next.lines
                 )
@@ -237,10 +237,10 @@ class RegionBasedMerger(
      */
     private fun areAdjacent(
         block1: MergedTextBlock,
-        block2: Text.TextBlock,
+        block2: OcrBlock,
         orientation: TextOrientation
     ): Boolean {
-        val bounds2 = block2.boundingBox ?: return false
+        val bounds2 = block2.bounds
 
         // Check for overlap (should NOT merge)
         if (block1.bounds.intersect(bounds2)) {
@@ -305,28 +305,16 @@ class RegionBasedMerger(
     }
 
     /**
-     * Convert ML Kit TextBlock to MergedTextBlock
+     * Convert OcrBlock to MergedTextBlock
      */
-    private fun Text.TextBlock.toMergedBlock(regionId: Int): MergedTextBlock {
+    private fun OcrBlock.toMergedBlock(regionId: Int): MergedTextBlock {
         return MergedTextBlock(
             text = this.text,
-            bounds = this.boundingBox ?: Rect(),
-            confidence = calculateConfidence(this),
+            bounds = this.bounds,
+            confidence = this.confidence,
             regionId = regionId,
             lines = this.lines
         )
-    }
-
-    /**
-     * Calculate confidence from ML Kit TextBlock
-     */
-    private fun calculateConfidence(block: Text.TextBlock): Float {
-        val confidences = block.lines.mapNotNull { it.confidence }
-        return if (confidences.isNotEmpty()) {
-            confidences.average().toFloat()
-        } else {
-            0.5f  // Default if no confidence available
-        }
     }
 
     /**
