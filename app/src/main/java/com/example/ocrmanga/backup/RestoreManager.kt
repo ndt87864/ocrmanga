@@ -62,34 +62,33 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
             val fileSize = fileMetadata.size?.toLong() ?: 0L
             
             val localZip = java.io.File(context.cacheDir, "ocrmanga_restore.zip")
-            
-            // 2. Tải file zip về máy với progress tracking dựa trên dung lượng thực tế
-            if (fileSize > 0) {
-                var downloadedBytes = 0L
-                val buffer = ByteArray(8192)
-                
-                driveService.files().get(backupFileId).executeMediaAsInputStream().use { inputStream: java.io.InputStream ->
-                    java.io.FileOutputStream(localZip.absolutePath).use { outputStream: java.io.OutputStream ->
-                        var bytesRead: Int
-                        while (inputStream.read(buffer).also { bytes -> bytesRead = bytes } != -1) {
-                            outputStream.write(buffer, 0, bytesRead)
-                            downloadedBytes += bytesRead
-                            
-                            // Progress = (bytes tải xuống / tổng dung lượng file) * 100
-                            // Download chiếm 90% của toàn bộ quá trình restore
-                            val downloadProgress = (downloadedBytes.toFloat() / fileSize.toFloat()) * 0.9f
+
+            // 2. Tải file zip về máy với MediaHttpDownloader để tối ưu bộ nhớ và progress
+            val request = driveService.files().get(backupFileId)
+            request.mediaHttpDownloader.apply {
+                isDirectDownloadEnabled = false // Sử dụng chunked download (mặc định 10MB/chunk)
+                setProgressListener { downloader ->
+                    when (downloader.downloadState) {
+                        com.google.api.client.googleapis.media.MediaHttpDownloader.DownloadState.MEDIA_IN_PROGRESS -> {
+                            // Progress = (tỉ lệ download) * 90% (vì download chiếm 90% quá trình)
+                            val downloadProgress = (downloader.progress.toDouble().toFloat()) * 0.9f
                             onProgress?.invoke(downloadProgress)
                         }
+                        com.google.api.client.googleapis.media.MediaHttpDownloader.DownloadState.MEDIA_COMPLETE -> {
+                            onProgress?.invoke(0.9f)
+                        }
+                        else -> {}
                     }
                 }
-            } else {
-                // Fallback if file size is unknown
-                java.io.FileOutputStream(localZip.absolutePath).use { outputStream: java.io.OutputStream ->
-                    driveService.files().get(backupFileId).executeMediaAndDownloadTo(outputStream)
-                }
-                onProgress?.invoke(0.9f)
             }
-            
+
+            java.io.FileOutputStream(localZip).use { outputStream ->
+                request.executeMediaAndDownloadTo(outputStream)
+            }
+
+            // Gọi GC để giải phóng bộ nhớ sau khi tải file lớn (đặc biệt hữu ích khi debug với Network Inspector)
+            System.gc()
+
             // 3. Giải nén vào app data (remaining 10% of progress)
             onProgress?.invoke(0.95f)
             unzipToAppData(localZip)
