@@ -61,3 +61,5 @@ app/release/*
 
 /docs
 /opencv-4.12.0-android-sdk
+*.json
+*.md
