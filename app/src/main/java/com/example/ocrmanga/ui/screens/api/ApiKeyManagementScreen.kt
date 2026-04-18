@@ -309,27 +309,46 @@ fun ApiKeyManagementScreen(
                                         Text(
                                             "Quota: ${(apiKey.remainingQuota * 100).toInt()}%",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = if (apiKey.remainingQuota < 0.1) Color.Red else MaterialTheme.colorScheme.primary
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                            color = if (apiKey.remainingQuota <= 0.0) Color.Red else if (apiKey.remainingQuota < 0.15) Color(0xFFFFA500) else MaterialTheme.colorScheme.primary
                                         )
                                     }
-                                    if (apiKey.consecutiveFailures > 0 || apiKey.rateLimitReset > System.currentTimeMillis()) {
+                                    if (apiKey.consecutiveFailures > 0 || apiKey.rateLimitReset > System.currentTimeMillis() || apiKey.remainingQuota <= 0.0) {
                                         Row(
                                             horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            modifier = Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             if (apiKey.consecutiveFailures > 0) {
                                                 Text(
-                                                    "Lỗi liên tiếp: ${apiKey.consecutiveFailures}",
+                                                    "Lỗi: ${apiKey.consecutiveFailures}",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = Color.Red
                                                 )
                                             }
                                             if (apiKey.rateLimitReset > System.currentTimeMillis()) {
                                                 val remainingSec = (apiKey.rateLimitReset - System.currentTimeMillis()) / 1000
+                                                val minutes = remainingSec / 60
+                                                val seconds = remainingSec % 60
+                                                val timeStr = if (minutes > 0) "${minutes}m ${seconds}s" else "${seconds}s"
+
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Rate Limited",
+                                                    tint = Color.Red,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
                                                 Text(
-                                                    "Rate limit: ${remainingSec}s",
+                                                    "Reset sau: $timeStr",
                                                     style = MaterialTheme.typography.bodySmall,
-                                                    color = Color(0xFFFFA500) // Orange
+                                                    color = Color.Red,
+                                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                                                )
+                                            } else if (apiKey.remainingQuota <= 0.0) {
+                                                Text(
+                                                    "Đã hết quota",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color.Red
                                                 )
                                             }
                                         }

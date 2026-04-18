@@ -98,10 +98,26 @@ class ApiKeyPoolManager(private val application: Application) {
     fun notifyRateLimit(apiKey: String, resetInMs: Long) {
         updateKeyState(apiKey) { current ->
             current.copy(
+                remainingQuota = 0.0, // Khi bị 429, đặt quota về 0%
                 rateLimitReset = System.currentTimeMillis() + resetInMs,
                 lastChecked = System.currentTimeMillis()
             )
         }
+    }
+
+    /**
+     * Lấy % quota trung bình của một loại model
+     */
+    fun getAverageQuota(type: String): Double {
+        val keys = apiKeysCache[type] ?: return 0.0
+        if (keys.isEmpty()) return 0.0
+
+        // Chỉ tính các key đang hoạt động (isActive)
+        val activeKeys = keys.filter { it.isActive }
+        if (activeKeys.isEmpty()) return 0.0
+
+        val sum = activeKeys.sumOf { it.remainingQuota }
+        return sum / activeKeys.size
     }
 
     fun notifyQuota(apiKey: String, remainingFraction: Double) {

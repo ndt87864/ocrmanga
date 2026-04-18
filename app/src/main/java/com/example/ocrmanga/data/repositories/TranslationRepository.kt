@@ -127,6 +127,22 @@ import kotlin.math.max
         return poolManager.selectBestKey("nvidia") != null
     }
 
+    /**
+     * Lấy % quota trung bình của một loại model dựa trên mode dịch
+     */
+    fun getAverageQuota(mode: TranslationMode): Double {
+        val type = when (mode) {
+            TranslationMode.GEMINI -> "gemini"
+            TranslationMode.MISTRAL -> "mistral"
+            TranslationMode.NVIDIA_GLM5,
+            TranslationMode.NVIDIA_QWEN,
+            TranslationMode.NVIDIA_GPT_OSS_20B,
+            TranslationMode.NVIDIA_GPT_OSS -> "nvidia"
+            else -> return 1.0
+        }
+        return poolManager.getAverageQuota(type)
+    }
+
     // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
     suspend fun translateImage(
         imageUri: Uri,

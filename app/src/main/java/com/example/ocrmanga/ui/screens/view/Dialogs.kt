@@ -2,6 +2,8 @@ package com.example.ocrmanga.ui.screens.view
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -309,7 +311,26 @@ fun Dialogs(
                                     .padding(vertical = 4.dp)
                             ) {
                                 Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Text(mode.getDisplayName(), modifier = Modifier.padding(start = 8.dp))
+                                Text(mode.getDisplayName(), modifier = Modifier.padding(start = 8.dp).weight(1f))
+
+                                // Hiển thị % quota trung bình cho mỗi model
+                                val avgQuota = viewModel.getAverageQuotaForMode(mode)
+                                if (mode != TranslationMode.OFF) {
+                                    Text(
+                                        text = "${(avgQuota * 100).toInt()}%",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (avgQuota < 0.2) Color.Red else MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(
+                                                color = if (avgQuota < 0.2) Color.Red else if (avgQuota < 0.5) Color(0xFFFFA500) else Color.Green,
+                                                shape = androidx.compose.foundation.shape.CircleShape
+                                            )
+                                    )
+                                }
                             }
                         }
                     }

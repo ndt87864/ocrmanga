@@ -396,6 +396,22 @@ fun ViewerScreen(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
+
+                        // Thêm chỉ số sức khỏe của pool key
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(
+                                    color = if (uiState.averageQuota < 0.2) Color.Red else if (uiState.averageQuota < 0.5) Color(0xFFFFA500) else Color.Green,
+                                    shape = androidx.compose.foundation.shape.CircleShape
+                                )
+                        )
+                        Text(
+                            text = "${(uiState.averageQuota * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (uiState.averageQuota < 0.2) Color.Red else MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     }
                 }
                 AutoScroll(
@@ -625,6 +641,35 @@ fun ViewerScreen(
                         expanded = showTranslationMenu,
                         onDismissRequest = { showTranslationMenu = false }
                     ) {
+                        // Hiển thị Quota trung bình của mode hiện tại nếu không phải OFF
+                        if (uiState.translationMode != TranslationMode.OFF) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            "Pool Health: ${(uiState.averageQuota * 100).toInt()}%",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = if (uiState.averageQuota < 0.2) Color.Red else MaterialTheme.colorScheme.primary,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        // Một chấm tròn nhỏ thể hiện trạng thái
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(
+                                                    color = if (uiState.averageQuota < 0.2) Color.Red else if (uiState.averageQuota < 0.5) Color(0xFFFFA500) else Color.Green,
+                                                    shape = androidx.compose.foundation.shape.CircleShape
+                                                )
+                                        )
+                                    }
+                                },
+                                onClick = { /* Chỉ hiển thị thông tin */ },
+                                enabled = false
+                            )
+                            Divider()
+                        }
+
                         DropdownMenuItem(
                             text = { Text("Dịch ngoại tuyến") },
                             onClick = {

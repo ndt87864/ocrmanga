@@ -1249,6 +1249,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * Lấy chỉ số quota trung bình cho một chế độ dịch cụ thể
+     */
+    fun getAverageQuotaForMode(mode: TranslationMode): Double {
+        return translationRepository.getAverageQuota(mode)
+    }
+
+    /**
+     * Làm mới chỉ số quota trung bình cho chế độ dịch hiện tại
+     */
+    fun refreshAverageQuota() {
+        val mode = uiState.value.translationMode
+        if (mode == TranslationMode.OFF) return
+
+        val avgQuota = translationRepository.getAverageQuota(mode)
+        _uiState.update { it.copy(averageQuota = avgQuota) }
+    }
+
     fun setTranslationMode(mode: TranslationMode) {
         val currentMode = uiState.value.translationMode
 
@@ -1279,6 +1297,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationEnabled = mode != TranslationMode.OFF
             )
         }
+        refreshAverageQuota()
         //log.i(TAG, "Chế độ dịch được đặt thành $mode")
 
         if (mode != TranslationMode.OFF) {
@@ -1953,6 +1972,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 translationVersion = it.translationVersion + 1
                             )
                         }
+                        refreshAverageQuota()
                         
                         // Mark as dirty để hệ thống nhận ra có thay đổi khi lưu
                         dirtyUris.add(uri)
@@ -2828,5 +2848,6 @@ data class ViewerUiState(
     val isRemovingText: Boolean = false, // Loading state for text removal
     val removingTextProgress: String = "", // Progress text for text removal popup
     val recentlySavedUris: Set<android.net.Uri> = emptySet(), // URIs saved via editor but not yet applied in UI
-    val reopenEditorUris: Set<android.net.Uri> = emptySet() // URIs for which editor should reopen after blocks are applied
+    val reopenEditorUris: Set<android.net.Uri> = emptySet(), // URIs for which editor should reopen after blocks are applied
+    val averageQuota: Double = 1.0 // % quota trung bình của model đang chọn
 )
