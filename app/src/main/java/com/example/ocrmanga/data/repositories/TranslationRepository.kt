@@ -17,7 +17,6 @@ import com.example.ocrmanga.data.models.RecognitionResult
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.constant.TranslationPrompts
-import com.example.ocrmanga.data.translation.TranslationTeamManager
 import com.example.ocrmanga.data.api.NvidiaTranslationService
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
@@ -61,7 +60,6 @@ import kotlin.math.max
         }
 
         private val themePreferences = ThemePreferences(application)
-    private val teamManager by lazy { TranslationTeamManager(application) }
 
     // Phase 1: Text Region Detection
     private val textRegionDetector by lazy {
@@ -862,11 +860,6 @@ import kotlin.math.max
             return@withContext Triple("", emptyList(), "zh")
         }
 
-        // Reset Toast flag at the start of each batch
-        if (mode == TranslationMode.MISTRAL) {
-            mistralErrorToastShown = false
-        }
-
         // Early check: if user selected Gemini or Mistral mode but there are no API keys in DB,
         // notify immediately and skip long-running OCR/translation work.
         if (mode == TranslationMode.GEMINI && !hasGeminiApiKeys()) {
@@ -1006,15 +999,7 @@ import kotlin.math.max
                     return@withContext Triple("", emptyList(), "zh")
                 }
 
-                // Team Manager: review & revision bản dịch (3 vòng cho Mistral)
-                translatedTexts = teamManager.orchestrateReview(
-                    initialTranslations = translatedTexts,
-                    textBlocks = mergedBlocks,
-                    mode = TranslationMode.MISTRAL,
-                    isAncientMode = isAncientMode
-                )
-
-                val finalTranslatedTexts = translatedTexts
+                val finalTranslatedTexts = translatedTexts ?: emptyList()
                 
                 //Log.i("TranslationRepository", "[MISTRAL] Số bản dịch nhận được: ${translatedTexts.size}")
                 
@@ -1140,15 +1125,7 @@ import kotlin.math.max
                     return@withContext Triple("", emptyList(), "zh")
                 }
 
-                // Team Manager: review & revision bản dịch (1 vòng cho Gemini)
-                translatedTexts = teamManager.orchestrateReview(
-                    initialTranslations = translatedTexts,
-                    textBlocks = mergedBlocks,
-                    mode = TranslationMode.GEMINI,
-                    isAncientMode = isAncientMode
-                )
-
-                val finalTranslatedTexts = translatedTexts
+                val finalTranslatedTexts = translatedTexts ?: emptyList()
                 
                 //Log.i("TranslationRepository", "[GEMINI] Số bản dịch nhận được: ${translatedTexts.size}")
                 
