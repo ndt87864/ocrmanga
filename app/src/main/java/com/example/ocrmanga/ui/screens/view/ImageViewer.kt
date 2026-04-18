@@ -586,7 +586,8 @@ fun ImageViewer(
                                             val idx = dragBlocks.indexOfLast { db ->
                                                 val b = db.block; val bw = b.originalImageWidth?.toFloat() ?: originalImageWidth; val s = if (bw > 0f) imageWidth / bw else 1f
                                                 val h = (b.originalImageHeight?.toFloat() ?: originalImageHeight) * s; val oY = if (imageHeight > h) (imageHeight - h) / 2 else 0f
-                                                Rect((b.bounds.left * s) + db.offset.x, (b.bounds.top * s) + oY + db.offset.y, (b.bounds.right * s) + db.offset.x, (b.bounds.bottom * s) + oY + db.offset.y).contains(pos)
+                                                val blockRect = Rect((b.bounds.left * s) + db.offset.x, (b.bounds.top * s) + oY + db.offset.y, (b.bounds.right * s) + db.offset.x, (b.bounds.bottom * s) + oY + db.offset.y)
+                                                isPointInBlock(blockRect, b.shapeType, pos)
                                             }
                                             if (idx != -1) { selectedIndex = idx; draggingIndex = idx; lastDragPos = pos } else selectedIndex = null
                                             dragEvent.consume()

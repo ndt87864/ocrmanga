@@ -1139,11 +1139,13 @@ fun DrawScope.advancedTextRemoval(rect: Rect, originalImageWidth: Float = 0f, or
 fun shrinkOverlappingBoxes(blocks: List<com.example.ocrmanga.data.models.TextBlockInfo>): List<com.example.ocrmanga.data.models.TextBlockInfo> {
     val result = blocks.map { it.copy() }.toMutableList()
     for (i in result.indices) {
-        val boxA = result[i].bounds
+        val blockA = result[i]
         for (j in result.indices) {
             if (i == j) continue
-            val boxB = result[j].bounds
-            if (android.graphics.Rect.intersects(boxA, boxB)) {
+            val blockB = result[j]
+            if (doBlocksIntersect(blockA, blockB)) {
+                val boxA = blockA.bounds
+                val boxB = blockB.bounds
                 val intersect = android.graphics.Rect(
                     maxOf(boxA.left, boxB.left),
                     maxOf(boxA.top, boxB.top),
@@ -1176,16 +1178,18 @@ fun splitNonOverlappingBoxes(blocks: List<TextBlockInfo>): List<TextBlockInfo> {
     val result = mutableListOf<TextBlockInfo>()
     val used = BooleanArray(blocks.size)
     for (i in blocks.indices) {
-        var boxA = blocks[i].bounds
+        val blockA = blocks[i]
+        var boxA = android.graphics.Rect(blockA.bounds)
         var keep = true
         for (j in blocks.indices) {
             if (i == j) continue
-            val boxB = blocks[j].bounds
-            if (android.graphics.Rect.intersects(boxA, boxB)) {
-                if (boxB.contains(boxA)) {
+            val blockB = blocks[j]
+            if (doBlocksIntersect(blockA, blockB)) {
+                if (doesBlockContain(blockB, blockA)) {
                     keep = false
                     break
                 }
+                val boxB = blockB.bounds
                 val intersect = android.graphics.Rect(
                     maxOf(boxA.left, boxB.left),
                     maxOf(boxA.top, boxB.top),
@@ -1705,4 +1709,95 @@ fun calculateWindowedOverlayBounds(
     ).takeIf { it.width > 0 && it.height > 0 } ?: outerBounds
 
     return WindowedOverlayResult(outerBounds, innerBounds, optimalFontSize, Pair(textMeasuredW, textMeasuredH))
+}
+
+/**
+ * Kiểm tra xem blockA có hoàn toàn chứa blockB hay không.
+ */
+fun doesBlockContain(blockA: TextBlockInfo, blockB: TextBlockInfo): Boolean {
+    val rectA = blockA.bounds
+    val rectB = blockB.bounds
+
+    // 1. Kiểm tra nhanh bằng hình chữ nhật
+    if (!rectA.contains(rectB)) return false
+
+    // 2. Nếu blockA là hình chữ nhật, nó đã chứa blockB
+    if (blockA.shapeType == 0) return true
+
+    // 3. Nếu blockA là oval, kiểm tra xem 4 góc của blockB có nằm trong oval của blockA không
+    val composeRectA = androidx.compose.ui.geometry.Rect(rectA.left.toFloat(), rectA.top.toFloat(), rectA.right.toFloat(), rectA.bottom.toFloat())
+    val cornersB = listOf(
+        androidx.compose.ui.geometry.Offset(rectB.left.toFloat(), rectB.top.toFloat()),
+        androidx.compose.ui.geometry.Offset(rectB.right.toFloat(), rectB.top.toFloat()),
+        androidx.compose.ui.geometry.Offset(rectB.left.toFloat(), rectB.bottom.toFloat()),
+        androidx.compose.ui.geometry.Offset(rectB.right.toFloat(), rectB.bottom.toFloat())
+    )
+
+    return cornersB.all { isPointInBlock(composeRectA, blockA.shapeType, it) }
+}
+
+/**
+ * Kiểm tra xem hai block có thực sự giao nhau hay không,
+ * tính đến cả hình dạng (chữ nhật hoặc oval).
+ */
+fun doBlocksIntersect(blockA: TextBlockInfo, blockB: TextBlockInfo): Boolean {
+    val rectA = blockA.bounds
+    val rectB = blockB.bounds
+
+    // 1. Kiểm tra nhanh bằng hình chữ nhật bao quanh
+    if (!android.graphics.Rect.intersects(rectA, rectB)) return false
+
+    // 2. Nếu cả hai là hình chữ nhật, chúng giao nhau
+    if (blockA.shapeType == 0 && blockB.shapeType == 0) return true
+
+    // 3. Nếu ít nhất một cái là hình oval, cần kiểm tra kỹ hơn.
+    // Sử dụng "hình thoi" nội tiếp (các trung điểm cạnh) để kiểm tra va chạm.
+    val composeRectA = androidx.compose.ui.geometry.Rect(rectA.left.toFloat(), rectA.top.toFloat(), rectA.right.toFloat(), rectA.bottom.toFloat())
+    val composeRectB = androidx.compose.ui.geometry.Rect(rectB.left.toFloat(), rectB.top.toFloat(), rectB.right.toFloat(), rectB.bottom.toFloat())
+
+    // Kiểm tra các điểm đặc trưng của blockA có nằm trong blockB không
+    val pointsA = listOf(
+        androidx.compose.ui.geometry.Offset(rectA.centerX().toFloat(), rectA.top.toFloat()),
+        androidx.compose.ui.geometry.Offset(rectA.centerX().toFloat(), rectA.bottom.toFloat()),
+        androidx.compose.ui.geometry.Offset(rectA.left.toFloat(), rectA.centerY().toFloat()),
+        androidx.compose.ui.geometry.Offset(rectA.right.toFloat(), rectA.centerY().toFloat()),
+        androidx.compose.ui.geometry.Offset(rectA.centerX().toFloat(), rectA.centerY().toFloat())
+    )
+    if (pointsA.any { isPointInBlock(composeRectB, blockB.shapeType, it) }) return true
+
+    // Kiểm tra các điểm đặc trưng của blockB có nằm trong blockA không
+    val pointsB = listOf(
+        androidx.compose.ui.geometry.Offset(rectB.centerX().toFloat(), rectB.top.toFloat()),
+        androidx.compose.ui.geometry.Offset(rectB.centerX().toFloat(), rectB.bottom.toFloat()),
+        androidx.compose.ui.geometry.Offset(rectB.left.toFloat(), rectB.centerY().toFloat()),
+        androidx.compose.ui.geometry.Offset(rectB.right.toFloat(), rectB.centerY().toFloat()),
+        androidx.compose.ui.geometry.Offset(rectB.centerX().toFloat(), rectB.centerY().toFloat())
+    )
+    if (pointsB.any { isPointInBlock(composeRectA, blockA.shapeType, it) }) return true
+
+    return false
+}
+
+/**
+ * Kiểm tra một điểm có nằm trong vùng của block hay không,
+ * hỗ trợ cả hình chữ nhật và hình oval.
+ */
+fun isPointInBlock(rect: Rect, shapeType: Int, pos: Offset): Boolean {
+    return if (shapeType == 1) { // Oval/Ellipse
+        val rx = rect.width / 2f
+        val ry = rect.height / 2f
+        if (rx <= 0f || ry <= 0f) return false
+
+        val centerX = rect.left + rx
+        val centerY = rect.top + ry
+
+        val dx = pos.x - centerX
+        val dy = pos.y - centerY
+
+        // Sử dụng công thức ellipse: (dx^2 / rx^2) + (dy^2 / ry^2) <= 1.0
+        (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1.0f
+    } else {
+        // Mặc định là hình chữ nhật
+        rect.contains(pos)
+    }
 }
