@@ -2402,8 +2402,8 @@ import kotlin.math.max
     private fun assignSpeechBubblesToBlocks(textBlocks: List<TextBlockInfo>): List<TextBlockInfo> {
         if (textBlocks.isEmpty()) return emptyList()
         val clusters = mutableListOf<MutableList<TextBlockInfo>>()
-        val threshold = 60 // px, tăng threshold để tránh merge nhầm cụm gần nhau
-        val iouThreshold = 0.25f // Tăng IoU tối thiểu để merge
+        // Tăng threshold và IoU để tách các bubble riêng biệt tốt hơn
+        val iouThreshold = 0.4f
         fun iou(a: Rect, b: Rect): Float {
             val left = maxOf(a.left, b.left)
             val top = maxOf(a.top, b.top)
@@ -2482,8 +2482,9 @@ import kotlin.math.max
 
     private fun groupBlocksIntoClusters(textBlocks: List<TextBlockInfo>): List<List<TextBlockInfo>> {
         val clusters = mutableListOf<MutableList<TextBlockInfo>>()
-        val verticalThreshold = 50
-        val horizontalThreshold = 100
+        // Giảm threshold để tránh merge nhầm các cụm xa nhau
+        val verticalThreshold = 35
+        val horizontalThreshold = 60
 
         textBlocks.forEach { block ->
             var assigned = false
@@ -2521,8 +2522,11 @@ import kotlin.math.max
         val topValues = sortedByTopThenLeft.map { it.bounds.top }
         val topGaps = topValues.zipWithNext { a, b -> b - a }.filter { it > 0 }
         val avgTopGap = if (topGaps.isNotEmpty()) topGaps.average().toInt() else 50
-        val verticalThreshold = (avgTopGap * 0.5).toInt().coerceAtLeast(20)
-        val verticalProximityThreshold = avgTopGap.coerceAtLeast(30)
+        val verticalThreshold = (avgTopGap * 0.4).toInt().coerceAtLeast(15)
+
+        // Thắt chặt ngưỡng proximity dọc: không quá 1.0x font size trung bình để tránh merge các bubble khác nhau
+        val avgFontSize = textBlocks.map { it.fontSize }.average().toFloat()
+        val verticalProximityThreshold = minOf(avgTopGap, (avgFontSize * 1.0f).toInt()).coerceAtLeast(25)
 
         val rows = mutableListOf<MutableList<TextBlockInfo>>()
         var currentRow = mutableListOf<TextBlockInfo>()
@@ -2614,10 +2618,14 @@ import kotlin.math.max
                     horizontalOverlap.toFloat() / min(clusterWidth, otherWidth)
                 } else 0f
 
-                // Merge nếu khoảng cách dọc nhỏ (dựa trên font size hoặc ngưỡng cố định)
+                // Merge nếu khoảng cách dọc nhỏ (dựa trên font size) và có overlap ngang
                 val avgFontSize = cluster.map { it.fontSize }.average().toFloat()
-                val maxVerticalGap = (avgFontSize * 5).coerceAtLeast(300f) // Tăng ngưỡng để merge nhiều blocks hơn
-                if (verticalGap <= maxVerticalGap) { // Bỏ điều kiện overlap để merge dễ hơn
+                val maxVerticalGap = (avgFontSize * 1.5f).coerceAtMost(60f) // Giới hạn khoảng cách dọc nghiêm ngặt hơn
+
+                // Yêu cầu overlap ngang hoặc khoảng cách ngang nhỏ để tránh merge các bubble chéo nhau xa
+                val isCloseEnough = verticalGap <= maxVerticalGap && overlapRatio > 0.3f
+
+                if (isCloseEnough) {
                     val clusterText = cluster.joinToString(" ") { it.text }
                     val otherText = otherCluster.joinToString(" ") { it.text }
                     val combinedText = "$clusterText $otherText"
@@ -3885,19 +3893,22 @@ import kotlin.math.max
                     } else {
                         val topDiff = kotlin.math.abs(block.bounds.top - ref.bounds.top)
                         val avgHeight = (block.bounds.height() + ref.bounds.height()) / 2f
-                        if (topDiff < avgHeight * threshold) {
-                            // Additional horizontal proximity check: avoid merging blocks that are
-                            // on the same row but separated by a large horizontal gap (e.g., different balloons).
-                            // Compute group's bounding rect to check overlap/gap.
+
+                        // Tính vertical gap từ block cuối cùng trong group
+                        val lastBlock = group.last()
+                        val verticalGap = block.bounds.top - lastBlock.bounds.bottom
+
+                        if (topDiff < avgHeight * threshold || (verticalGap > 0 && verticalGap < avgHeight * 1.0f)) {
                             val groupBounds = group.drop(1).fold(Rect(group.first().bounds)) { acc, b ->
                                 acc.union(b.bounds)
                                 acc
                             }
                             val xOverlap = block.bounds.left <= groupBounds.right && block.bounds.right >= groupBounds.left
                             val avgWidth = (block.bounds.width() + ref.bounds.width()) / 2f
-                            val gap = if (block.bounds.left > groupBounds.right) block.bounds.left - groupBounds.right else groupBounds.left - block.bounds.right
-                            // Allow grouping when there is horizontal overlap or the gap is reasonably small
-                            if (xOverlap || gap <= avgWidth * 4) {
+                            val hGap = if (block.bounds.left > groupBounds.right) block.bounds.left - groupBounds.right else 0
+
+                            // Thắt chặt khoảng cách ngang (giảm từ 4x xuống 1.5x)
+                            if (xOverlap || hGap <= avgWidth * 1.5f) {
                                 group.add(block)
                                 assigned = true
                                 break
