@@ -295,7 +295,7 @@ fun ThemeSettingsScreen(
                         subtitle = "Thiết lập viền cho chữ dịch"
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    
+
                     DefaultBorderSelector(
                         borderColor = themeState.defaultBorderColor,
                         borderThickness = themeState.defaultBorderThickness,
@@ -313,7 +313,29 @@ fun ThemeSettingsScreen(
                     )
                 }
             }
-            
+
+            // Mistral AI Settings Section
+            item {
+                ModernCard(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SectionHeader(
+                        title = "Cấu hình Mistral AI",
+                        subtitle = "Chọn mô hình AI để dịch thuật (Gói miễn phí)"
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    MistralModelSelector(
+                        selectedModel = themeState.mistralModel,
+                        onModelSelected = { model ->
+                            scope.launch {
+                                viewModel.setMistralModel(model)
+                            }
+                        }
+                    )
+                }
+            }
+
             // Preview Section
             item {
                 ModernCard(
@@ -1114,6 +1136,64 @@ private fun DefaultBorderSelector(
                     
                     // Draw fill text on top
                     native.drawText("Văn bản mẫu", cx, baseline, fillPaint)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MistralModelSelector(
+    selectedModel: String,
+    onModelSelected: (String) -> Unit
+) {
+    val models = listOf(
+        "mistral-large-latest" to "Large (Mạnh nhất)",
+        "mistral-medium-latest" to "Medium (Cân bằng)",
+        "mistral-small-latest" to "Small (Nhanh/Suy luận)",
+        "pixtral-large-latest" to "Pixtral (Hỗ trợ ảnh)",
+        "magistral-medium-latest" to "Magistral (Chuyên suy luận)",
+        "open-mistral-nemo" to "Nemo (Gọn nhẹ)"
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        models.forEach { (modelId, displayName) ->
+            Surface(
+                onClick = { onModelSelected(modelId) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(
+                    width = if (selectedModel == modelId) 2.dp else 1.dp,
+                    color = if (selectedModel == modelId) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                ),
+                color = if (selectedModel == modelId) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (selectedModel == modelId) FontWeight.Bold else FontWeight.Normal
+                        )
+                        Text(
+                            text = modelId,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (selectedModel == modelId) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Đã chọn",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }

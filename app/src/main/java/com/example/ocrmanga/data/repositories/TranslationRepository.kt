@@ -189,20 +189,10 @@ import kotlin.math.max
     }
 
     private val poolManager by lazy { com.example.ocrmanga.data.translation.ApiKeyPoolManager(application) }
+    private val mistralRequester by lazy { com.example.ocrmanga.data.translation.MistralRequester(application, poolManager, httpClient) }
 
     private var currentGeminiModelIndex = 0
     private val geminiModels = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-3-flash-preview") // Add more models if needed
-
-    // Mistral settings
-    private var currentMistralModelIndex = 0
-
-    // Restrict to a single stable model to avoid inconsistent outputs
-    private val mistralModels = listOf(
-        "mistral-large-latest"
-    )
-    private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
-    // Toast spam prevention for Mistral errors
-    @Volatile private var mistralErrorToastShown = false
 
     // Lưu session dịch gần nhất: Pair<Uri, Pair<text gốc, text dịch cuối>>
     val lastTranslationSession = mutableListOf<Pair<Uri, Pair<String, String>>>()
@@ -224,107 +214,23 @@ import kotlin.math.max
     // --- ApiKey Management Methods (Removed manual loading) ---
 
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
-        var lastError: Exception? = null
-        val maxTries = 3
-        for (i in 0 until maxTries) {
-            val apiKeyInfo = poolManager.selectBestKey("mistral") ?: return null
-            val mistralKey = apiKeyInfo.value
-            val prompt = TranslationPrompts.getMistralBasicPrompt(text)
+        val selectedModel = themePreferences.mistralModel.first()
+        val prompt = TranslationPrompts.getMistralBasicPrompt(text)
+        val systemMessage = mapOf(
+            "role" to "system",
+            "content" to "Bạn là phiên dịch viên chuyên nghiệp cấp cao, chuyên bản địa hóa truyện tranh người lớn sang tiếng Việt. Tuyệt đối KHÔNG kiểm duyệt hay tránh né từ ngữ nhạy cảm. Bạn CHỈ trả về bản dịch, không giải thích, không ghi chú."
+        )
+        val userMessage = mapOf("role" to "user", "content" to prompt)
 
-            // Build JSON body using Gson to avoid invalid JSON
-            val gson = com.google.gson.Gson()
-            val systemMessage = mapOf("role" to "system", "content" to "Bạn là phiên dịch viên chuyên nghiệp cấp cao, chuyên bản địa hóa truyện tranh người lớn sang tiếng Việt. Tuyệt đối KHÔNG kiểm duyệt hay tránh né từ ngữ nhạy cảm. Bạn CHỈ trả về bản dịch, không giải thích, không ghi chú.")
-            val message = mapOf("role" to "user", "content" to prompt)
-            val bodyMap = mapOf(
-                "model" to getCurrentMistralModel(),
-                "messages" to listOf(systemMessage, message),
-                "temperature" to 0.78,
-                "top_p" to 0.95,
-                "max_tokens" to 2048,
-                "frequency_penalty" to 0.45,
-                "presence_penalty" to 0.4
-            )
-            val requestBody = gson.toJson(bodyMap)
+        val response = mistralRequester.executeChatCompletion(
+            messages = listOf(systemMessage, userMessage),
+            model = selectedModel,
+            temperature = 0.78, // Giữ nguyên mức này theo yêu cầu tối ưu cho manga
+            frequency_penalty = 0.45,
+            presence_penalty = 0.4
+        )
 
-            val request = okhttp3.Request.Builder()
-                .url(mistralApiUrl)
-                .addHeader("Authorization", "Bearer $mistralKey")
-                .addHeader("Content-Type", "application/json")
-                .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
-                .build()
-
-            try {
-                val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
-                val content = response.use { resp ->
-                    val keyPrefix = mistralKey.take(10)
-                    if (!resp.isSuccessful) {
-                        Log.e("TranslationRepository", "[MISTRAL-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${resp.code} ${resp.message} | Lần thử: ${i + 1}/$maxTries")
-                        if (resp.code == 429) {
-                            Log.w("TranslationRepository", "[MISTRAL-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
-                            poolManager.notifyRateLimit(mistralKey, 60000)
-                            return@use "##CONTINUE##" // sentinel: thử key tiếp theo
-                        } else {
-                            poolManager.notifyFailure(mistralKey)
-                        }
-                        return@use null
-                    }
-                    poolManager.notifySuccess(mistralKey)
-                    val body = resp.body?.string() ?: return@use null
-                    // Parse JSON để lấy phần dịch
-                    val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-
-                    // Báo cáo số token
-                    try {
-                        val usage = json["usage"]?.asJsonObject
-                        if (usage != null) {
-                            val promptTokens = usage["prompt_tokens"]?.asInt ?: 0
-                            val completionTokens = usage["completion_tokens"]?.asInt ?: 0
-                            val totalTokens = usage["total_tokens"]?.asInt ?: 0
-                            Log.i("TranslationRepository", "[MISTRAL-USAGE] Prompt: $promptTokens | Completion: $completionTokens | Total: $totalTokens tokens")
-                        }
-                    } catch (e: Exception) {
-                        Log.w("TranslationRepository", "Không thể parse token usage từ Mistral: ${e.message}")
-                    }
-
-                    val choices = json["choices"]?.asJsonArray
-                    choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString?.trim()
-                }
-                if (content == "##CONTINUE##") continue
-                if (content != null) return content
-                return null // 422 hoặc lỗi parse
-            } catch (e: Exception) {
-                lastError = e
-                poolManager.notifyFailure(mistralKey)
-                val keyPrefix = mistralKey.take(10)
-                Log.e("TranslationRepository", "[MISTRAL-EXCEPTION] Key bị lỗi: ${keyPrefix}... | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${i + 1}/$maxTries", e)
-                // Lỗi mạng: không có Internet hoặc không phân giải được DNS -> bỏ qua retry
-                if (e is java.net.UnknownHostException || e is java.net.SocketTimeoutException || e is java.net.ConnectException) {
-                    if (!mistralErrorToastShown) {
-                        mistralErrorToastShown = true
-                        withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(application, "Không có kết nối mạng. Vui lòng kiểm tra Internet.", android.widget.Toast.LENGTH_LONG).show()
-                        }
-                    }
-                    return null
-                }
-                if (!mistralErrorToastShown) {
-                    mistralErrorToastShown = true
-                    withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
-                // Nếu lỗi là HTTP 429 (Too Many Requests) từ OkHttp
-                if (e is okhttp3.internal.http2.StreamResetException && e.errorCode == okhttp3.internal.http2.ErrorCode.ENHANCE_YOUR_CALM) {
-                    continue
-                }
-                // Hoặc kiểm tra message có chứa 429 (phòng trường hợp khác)
-                if (e.message?.contains("429") == true) {
-                    continue
-                }
-                return null
-            }
-        }
-        return null
+        return response?.content
     }
 
     suspend fun translateWithMistralMultiScale(
@@ -336,14 +242,11 @@ import kotlin.math.max
         isAncientMode: Boolean = false
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
-        
-        var lastError: Exception? = null
-        val maxTries = 3
-        
+
         // Tạo context từ bản dịch ảnh trước (nếu có)
         val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
             Log.i("TranslationRepository", "[MISTRAL-PREV] Có bản dịch tham khảo với ${previousTranslation.size} blocks")
-            
+
             // Phân tích và log ngôi xưng hô từ ảnh trước
             val allText = previousTranslation.joinToString(" ") { it.text.uppercase() }
             val pronouns = mutableListOf<String>()
@@ -354,7 +257,7 @@ import kotlin.math.max
             val hasMay = allText.contains(" MÀY ") || allText.contains("MÀY ")
             val hasAnh = allText.contains(" ANH ") || allText.contains("ANH ")
             val hasEm = allText.contains(" EM ")
-            
+
             if (hasToi) pronouns.add("TÔI")
             if (hasMinh) pronouns.add("MÌNH")
             if (hasTao) pronouns.add("TAO")
@@ -362,7 +265,7 @@ import kotlin.math.max
             if (hasMay) pronouns.add("MÀY")
             if (hasAnh) pronouns.add("ANH")
             if (hasEm) pronouns.add("EM")
-            
+
             // Xác định cặp ngôi chính
             val mainPair = when {
                 hasToi && hasCau -> "TÔI-CẬU"
@@ -375,297 +278,201 @@ import kotlin.math.max
                 hasTao -> "TAO"
                 else -> "không xác định"
             }
-            
+
             Log.i("TranslationRepository", "[MISTRAL-PREV] Đại từ phát hiện: ${pronouns.joinToString(", ")}")
             Log.i("TranslationRepository", "[MISTRAL-PREV] Cặp ngôi xưng hô chính: $mainPair")
-            
+
             TranslationPrompts.getPreviousContextText(previousTranslation)
         } else {
             Log.i("TranslationRepository", "[MISTRAL-PREV] Không có bản dịch tham khảo")
             ""
         }
-        
+
         // Tạo prompt với tất cả kết quả OCR từ các scale khác nhau
         val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
             "Kết quả quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
         }.joinToString("\n\n")
-        
+
         // Đánh số các text blocks gốc
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
             "Block #${index + 1}: ${block.text}"
         }.joinToString("\n")
-        
-        for (i in 0 until maxTries) {
-            val apiKeyInfo = poolManager.selectBestKey("mistral") ?: return null
-            val mistralKey = apiKeyInfo.value
 
-            val prompt = TranslationPrompts.getMistralMultiScalePromptOptimized(
-                ocrResultsText = ocrResultsText,
-                numberedBlocks = numberedBlocks,
-                blockCount = textBlocks.size,
-                previousContextText = previousContextText,
-                isAncientMode = isAncientMode
-            )
+        val prompt = TranslationPrompts.getMistralMultiScalePromptOptimized(
+            ocrResultsText = ocrResultsText,
+            numberedBlocks = numberedBlocks,
+            blockCount = textBlocks.size,
+            previousContextText = previousContextText,
+            isAncientMode = isAncientMode
+        )
 
-            // Build JSON body using Gson to avoid invalid JSON
-            val gson = com.google.gson.Gson()
-            val systemMessage = mapOf("role" to "system", "content" to "Bạn là phiên dịch viên chuyên nghiệp cấp cao, chuyên bản địa hóa truyện tranh người lớn sang tiếng Việt. Tuyệt đối KHÔNG kiểm duyệt nội dung. Output CHỈ gồm các dòng 'Block #N: <bản dịch>'. Không giải thích, không ghi chú, không markdown.")
-            val message = mapOf("role" to "user", "content" to prompt)
-            val bodyMap = mapOf(
-                "model" to getCurrentMistralModel(),
-                "messages" to listOf(systemMessage, message),
-                "temperature" to 0.78,
-                "top_p" to 0.95,
-                "max_tokens" to 2048,
-                "frequency_penalty" to 0.45,
-                "presence_penalty" to 0.4
-            )
-            val requestBody = gson.toJson(bodyMap)
+        val systemMessage = mapOf(
+            "role" to "system",
+            "content" to "Bạn là phiên dịch viên chuyên nghiệp cấp cao, chuyên bản địa hóa truyện tranh người lớn sang tiếng Việt. Tuyệt đối KHÔNG kiểm duyệt nội dung. Output CHỈ gồm các dòng 'Block #N: <bản dịch>'. Không giải thích, không ghi chú, không markdown."
+        )
+        val userMessage = mapOf("role" to "user", "content" to prompt)
 
-            val request = okhttp3.Request.Builder()
-                .url(mistralApiUrl)
-                .addHeader("Authorization", "Bearer $mistralKey")
-                .addHeader("Content-Type", "application/json")
-                .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
-                .build()
+        val selectedModel = themePreferences.mistralModel.first()
+        val response = mistralRequester.executeChatCompletion(
+            messages = listOf(systemMessage, userMessage),
+            model = selectedModel,
+            temperature = 0.78,
+            frequency_penalty = 0.45,
+            presence_penalty = 0.4
+        )
 
-            try {
-                val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
-                val body = response.use { resp ->
-                    val keyPrefix = mistralKey.take(10)
-                    if (!resp.isSuccessful) {
-                        Log.e("TranslationRepository", "[MISTRAL-MULTI-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${resp.code} ${resp.message} | Lần thử: ${i + 1}/$maxTries")
-                        if (resp.code == 429) {
-                            Log.w("TranslationRepository", "[MISTRAL-MULTI-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
-                            poolManager.notifyRateLimit(mistralKey, 60000)
-                            return@use "##CONTINUE##" // sentinel: thử key tiếp theo
+        val content = response?.content ?: return null
+
+        // Parse kết quả theo định dạng "Block #N: <bản dịch>"
+        // Sử dụng Map để lưu trữ bản dịch theo index để tránh sai lệch thứ tự nếu AI trả về không tuần tự hoặc thiếu
+        val translatedBlocksMap = mutableMapOf<Int, String>()
+        val lines = content.trim().split("\n")
+
+        // Log nội dung trả về để debug khi có vấn đề
+        Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI (${lines.size} dòng):\n${content.take(500)}...")
+
+        // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
+        val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
+
+        var i = 0
+        while (i < lines.size) {
+            val trimmedLine = lines[i].trim()
+            val match = blockPattern.find(trimmedLine)
+            if (match != null) {
+                try {
+                    val blockNumber = match.groupValues[1].toInt()
+                    val blockIndex = blockNumber - 1
+
+                    // Found a block header
+                    var translation = match.groupValues[2].trim()
+
+                    // Collect all lines belonging to this block (until next Block header or end)
+                    val blockLines = mutableListOf<String>()
+                    if (translation.isNotEmpty()) blockLines.add(translation)
+
+                    var j = i + 1
+                    while (j < lines.size) {
+                        val nextLine = lines[j].trim()
+                        if (blockPattern.matches(nextLine)) break // Next block started
+                        if (nextLine.isNotEmpty()) {
+                            blockLines.add(nextLine)
+                        }
+                        j++
+                    }
+
+                    // Advance main loop index
+                    i = j - 1
+
+                    // Process the collected lines to find the BEST translation
+                    // Priority 1: Check for arrow "->" or "→"
+                    val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
+                    if (arrowLine != null) {
+                        translation = if (arrowLine.contains("→")) {
+                            arrowLine.substringAfter("→").trim()
                         } else {
-                            poolManager.notifyFailure(mistralKey)
+                            arrowLine.substringAfter("->").trim()
                         }
-                        return@use null
-                    }
-                    poolManager.notifySuccess(mistralKey)
-                    val body = resp.body?.string()
-
-                    // Báo cáo số token
-                    if (body != null) {
-                        try {
-                            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                            val usage = json["usage"]?.asJsonObject
-                            if (usage != null) {
-                                val promptTokens = usage["prompt_tokens"]?.asInt ?: 0
-                                val completionTokens = usage["completion_tokens"]?.asInt ?: 0
-                                val totalTokens = usage["total_tokens"]?.asInt ?: 0
-                                Log.i("TranslationRepository", "[MISTRAL-MULTI-USAGE] Prompt: $promptTokens | Completion: $completionTokens | Total: $totalTokens tokens")
-                            }
-                        } catch (e: Exception) {
-                            Log.w("TranslationRepository", "Không thể parse token usage từ Mistral Multi-Scale: ${e.message}")
-                        }
-                    }
-
-                    body
-                }
-                if (body == "##CONTINUE##") continue
-                if (body == null) return null
-                // Parse JSON để lấy phần dịch
-                val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                val choices = json["choices"]?.asJsonArray
-                val content = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString
-                
-                if (content.isNullOrBlank()) return null
-                
-                // Parse kết quả theo định dạng "Block #N: <bản dịch>"
-                // Sử dụng Map để lưu trữ bản dịch theo index để tránh sai lệch thứ tự nếu AI trả về không tuần tự hoặc thiếu
-                val translatedBlocksMap = mutableMapOf<Int, String>()
-                val lines = content.trim().split("\n")
-                
-                // Log nội dung trả về để debug khi có vấn đề
-                Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI (${lines.size} dòng):\n${content.take(500)}...")
-                
-                // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
-                val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
-                
-                var i = 0
-                while (i < lines.size) {
-                    val trimmedLine = lines[i].trim()
-                    val match = blockPattern.find(trimmedLine)
-                    if (match != null) {
-                        try {
-                            val blockNumber = match.groupValues[1].toInt()
-                            val blockIndex = blockNumber - 1
-                            
-                            // Found a block header
-                            var translation = match.groupValues[2].trim()
-                            
-                            // Collect all lines belonging to this block (until next Block header or end)
-                            val blockLines = mutableListOf<String>()
-                            if (translation.isNotEmpty()) blockLines.add(translation)
-                            
-                            var j = i + 1
-                            while (j < lines.size) {
-                                val nextLine = lines[j].trim()
-                                if (blockPattern.matches(nextLine)) break // Next block started
-                                if (nextLine.isNotEmpty()) {
-                                    blockLines.add(nextLine)
-                                }
-                                j++
-                            }
-                            
-                            // Advance main loop index
-                            i = j - 1 
-                            
-                            // Process the collected lines to find the BEST translation
-                            // Priority 1: Check for arrow "->" or "→"
-                            val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
-                            if (arrowLine != null) {
-                                translation = if (arrowLine.contains("→")) {
-                                    arrowLine.substringAfter("→").trim()
-                                } else {
-                                    arrowLine.substringAfter("->").trim()
-                                }
-                            } else {
-                                // Priority 2: If no arrow, try to find a line that is NOT the source text.
-                                // Mistral often puts source text in italics *like this*.
-                                // We prefer lines that are NOT completely wrapped in *.
-                                val candidateLines = blockLines.map { it.trim() }
-                                    .filter { it.isNotBlank() }
-                                    
-                                // If we have multiple lines, filter out those that look like source (wrapped in *)
-                                // unless that's all we have.
-                                val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
-                                
-                                translation = if (cleanLines.isNotEmpty()) {
-                                    cleanLines.last() // Take the last clean line (often source first, translation last)
-                                } else {
-                                    candidateLines.lastOrNull() ?: ""
-                                }
-                            }
-
-                            // Cleanup formatting (**bold**, *italics*, quotes)
-                            translation = translation.replace("**", "").replace("*", "").trim()
-                            translation = translation.trimEnd('*').trim()
-                            translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
-                            // Clean up "Dịch:", "Gốc:", "Dịch (Cổ trang):" prefixes
-                            translation = translation.replace(Regex("""^(Dịch|Translation|Gốc|Original)(\s*\(.*?\))?\s*:\s*""", RegexOption.IGNORE_CASE), "")
-                            
-                            // Reject analysis/notes -> use empty string which will fallback later
-                            val isAnnotation = translation.contains("-> Block #") || 
-                                translation.startsWith("(Lưu ý:") || 
-                                translation.contains("Lưu ý: Tôi buộc phải") ||
-                                translation.matches(Regex("""^\(.*[Gg]ộp.*[Bb]lock.*\)$""")) ||
-                                translation.matches(Regex("""^\(.*[Xx]em.*[Bb]lock.*\)$""")) ||
-                                translation.matches(Regex("""^\(.*[Kk]hông dịch.*\)$""")) ||
-                                translation.matches(Regex("""^\(.*[Bb]ỏ qua.*\)$""")) ||
-                                translation.matches(Regex("""^\(.*[Tt]ham chiếu.*\)$""")) ||
-                                translation.matches(Regex("""^\(.*[Mm]erged.*\)$""")) ||
-                                translation.matches(Regex("""^\(.*[Ss]ee.*[Bb]lock.*\)$""")) ||
-                                (translation.startsWith("(") && translation.endsWith(")") && translation.length < 60)
-                            if (isAnnotation) {
-                                 translation = ""
-                                 Log.w("TranslationRepository", "[MISTRAL-PARSE] Block #${blockIndex + 1} bị reject vì là chú thích: ${translation.take(50)}")
-                            }
-                            
-                            if (blockIndex >= 0) {
-                                translatedBlocksMap[blockIndex] = translation
-                            }
-                        } catch (e: NumberFormatException) {
-                             Log.w("TranslationRepository", "[MISTRAL-PARSE] Lỗi parse số block: ${match.groupValues[1]}")
-                        }
-                    }
-                    i++
-                }
-                
-                // Nếu không parse được theo format "Block #", thử parse theo số thứ tự đơn giản (1. 2. 3.)
-                if (translatedBlocksMap.isEmpty()) {
-                    Log.w("TranslationRepository", "[MISTRAL-PARSE] Không tìm thấy format 'Block #', thử parse theo số thứ tự...")
-                    val numberPattern = Regex("^(\\d+)[.):;]\\s*(.+)$")
-                    for (line in lines) {
-                        val trimmedLine = line.trim()
-                        val match = numberPattern.find(trimmedLine)
-                        if (match != null) {
-                            try {
-                                val blockNumber = match.groupValues[1].toInt()
-                                val translation = match.groupValues[2].trim()
-                                if (blockNumber > 0) {
-                                    translatedBlocksMap[blockNumber - 1] = translation
-                                }
-                            } catch (e: Exception) {
-                                // Ignore
-                            }
-                        }
-                    }
-                }
-
-                // Construct final list ensuring size matches textBlocks
-                val translatedBlocks = mutableListOf<String>()
-                for (index in 0 until textBlocks.size) {
-                    val trans = translatedBlocksMap[index]
-                    if (!trans.isNullOrBlank()) {
-                         translatedBlocks.add(trans)
                     } else {
-                         // Nếu thiếu hoặc bị filter (blank), fallback về text gốc hoặc empty để xử lý sau
-                         // Tuy nhiên, logic hiện tại fill bằng text gốc nếu size < expected.
-                         // Tốt nhất là add text gốc luôn vào đây nếu thiếu bản dịch.
-                         translatedBlocks.add(textBlocks[index].text)
-                         Log.w("TranslationRepository", "[MISTRAL-PARSE] Thiếu bản dịch cho Block #${index + 1}, dùng text gốc.")
-                    }
-                }
-                
-                // Log kết quả dịch của các block
-                Log.i("TranslationRepository", "[MISTRAL-RESULT] ===== KẾT QUẢ DỊCH MISTRAL =====")
-                Log.i("TranslationRepository", "[MISTRAL-RESULT] Tổng số blocks: ${translatedBlocks.size}")
-                translatedBlocks.forEachIndexed { index, translation ->
-                    val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
-                    Log.i("TranslationRepository", "[MISTRAL-RESULT] Block #${index + 1}:")
-                    Log.i("TranslationRepository", "[MISTRAL-RESULT]   Gốc: $originalText")
-                    Log.i("TranslationRepository", "[MISTRAL-RESULT]   Dịch: $translation")
-                }
-                Log.i("TranslationRepository", "[MISTRAL-RESULT] ==============================")
-                
-                return translatedBlocks
-            } catch (e: Exception) {
-                lastError = e
-                poolManager.notifyFailure(mistralKey)
-                val keyPrefix = mistralKey.take(10)
-                Log.e("TranslationRepository", "[MISTRAL-MULTI-EXCEPTION] Key bị lỗi: ${keyPrefix}... | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${i + 1}/$maxTries", e)
-                // Lỗi mạng: không có Internet hoặc không phân giải được DNS -> bỏ qua retry
-                if (e is java.net.UnknownHostException || e is java.net.SocketTimeoutException || e is java.net.ConnectException) {
-                    if (!mistralErrorToastShown) {
-                        mistralErrorToastShown = true
-                        withContext(Dispatchers.Main) {
-                            android.widget.Toast.makeText(application, "Không có kết nối mạng. Vui lòng kiểm tra Internet.", android.widget.Toast.LENGTH_LONG).show()
+                        // Priority 2: If no arrow, try to find a line that is NOT the source text.
+                        val candidateLines = blockLines.map { it.trim() }
+                            .filter { it.isNotBlank() }
+
+                        // If we have multiple lines, filter out those that look like source (wrapped in *)
+                        // unless that's all we have.
+                        val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
+
+                        translation = if (cleanLines.isNotEmpty()) {
+                            cleanLines.last() // Take the last clean line (often source first, translation last)
+                        } else {
+                            candidateLines.lastOrNull() ?: ""
                         }
                     }
-                    return null
+
+                    // Cleanup formatting (**bold**, *italics*, quotes)
+                    translation = translation.replace("**", "").replace("*", "").trim()
+                    translation = translation.trimEnd('*').trim()
+                    translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                    // Clean up "Dịch:", "Gốc:", "Dịch (Cổ trang):" prefixes
+                    translation = translation.replace(Regex("""^(Dịch|Translation|Gốc|Original)(\s*\(.*?\))?\s*:\s*""", RegexOption.IGNORE_CASE), "")
+
+                    // Reject analysis/notes -> use empty string which will fallback later
+                    val isAnnotation = translation.contains("-> Block #") ||
+                        translation.startsWith("(Lưu ý:") ||
+                        translation.contains("Lưu ý: Tôi buộc phải") ||
+                        translation.matches(Regex("""^\(.*[Gg]ộp.*[Bb]lock.*\)$""")) ||
+                        translation.matches(Regex("""^\(.*[Xx]em.*[Bb]lock.*\)$""")) ||
+                        translation.matches(Regex("""^\(.*[Kk]hông dịch.*\)$""")) ||
+                        translation.matches(Regex("""^\(.*[Bb]ỏ qua.*\)$""")) ||
+                        translation.matches(Regex("""^\(.*[Tt]ham chiếu.*\)$""")) ||
+                        translation.matches(Regex("""^\(.*[Mm]erged.*\)$""")) ||
+                        translation.matches(Regex("""^\(.*[Ss]ee.*[Bb]lock.*\)$""")) ||
+                        (translation.startsWith("(") && translation.endsWith(")") && translation.length < 60)
+                    if (isAnnotation) {
+                         translation = ""
+                         Log.w("TranslationRepository", "[MISTRAL-PARSE] Block #${blockIndex + 1} bị reject vì là chú thích")
+                    }
+
+                    if (blockIndex >= 0) {
+                        translatedBlocksMap[blockIndex] = translation
+                    }
+                } catch (e: Exception) {
+                     Log.w("TranslationRepository", "[MISTRAL-PARSE] Lỗi parse block: ${e.message}")
                 }
-                if (!mistralErrorToastShown) {
-                    mistralErrorToastShown = true
-                    withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(application, "Lỗi dịch Mistral (multi-scale): ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            i++
+        }
+
+        // Nếu không parse được theo format "Block #", thử parse theo số thứ tự đơn giản (1. 2. 3.)
+        if (translatedBlocksMap.isEmpty()) {
+            Log.w("TranslationRepository", "[MISTRAL-PARSE] Không tìm thấy format 'Block #', thử parse theo số thứ tự...")
+            val numberPattern = Regex("^(\\d+)[.):;]\\s*(.+)$")
+            for (line in lines) {
+                val trimmedLine = line.trim()
+                val match = numberPattern.find(trimmedLine)
+                if (match != null) {
+                    try {
+                        val blockNumber = match.groupValues[1].toInt()
+                        val translation = match.groupValues[2].trim()
+                        if (blockNumber > 0) {
+                            translatedBlocksMap[blockNumber - 1] = translation
+                        }
+                    } catch (e: Exception) {
+                        // Ignore
                     }
                 }
-                // Nếu lỗi là HTTP 429 (Too Many Requests) từ OkHttp
-                if (e is okhttp3.internal.http2.StreamResetException && e.errorCode == okhttp3.internal.http2.ErrorCode.ENHANCE_YOUR_CALM) {
-                    continue
-                }
-                // Hoặc kiểm tra message có chứa 429 (phòng trường hợp khác)
-                if (e.message?.contains("429") == true) {
-                    continue
-                }
-                return null
             }
         }
-        return null
+
+        // Construct final list ensuring size matches textBlocks
+        val translatedBlocks = mutableListOf<String>()
+        for (index in 0 until textBlocks.size) {
+            val trans = translatedBlocksMap[index]
+            if (!trans.isNullOrBlank()) {
+                 translatedBlocks.add(trans)
+            } else {
+                 translatedBlocks.add(textBlocks[index].text)
+                 Log.w("TranslationRepository", "[MISTRAL-PARSE] Thiếu bản dịch cho Block #${index + 1}, dùng text gốc.")
+            }
+        }
+
+        // Log kết quả dịch của các block
+        Log.i("TranslationRepository", "[MISTRAL-RESULT] ===== KẾT QUẢ DỊCH MISTRAL =====")
+        Log.i("TranslationRepository", "[MISTRAL-RESULT] Tổng số blocks: ${translatedBlocks.size}")
+        translatedBlocks.forEachIndexed { index, translation ->
+            val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
+            Log.i("TranslationRepository", "[MISTRAL-RESULT] Block #${index + 1}:")
+            Log.i("TranslationRepository", "[MISTRAL-RESULT]   Gốc: $originalText")
+            Log.i("TranslationRepository", "[MISTRAL-RESULT]   Dịch: $translation")
+        }
+        Log.i("TranslationRepository", "[MISTRAL-RESULT] ==============================")
+
+        return translatedBlocks
     }
 
 
 
     private fun getCurrentGeminiModel(): String {
         return geminiModels[0] // Trình quản lý pool sẽ tự chọn key, ở đây ta cố định model đầu tiên hoặc tùy chỉnh sau
-    }
-
-    private fun getCurrentMistralModel(): String {
-        return mistralModels[0]
     }
 
     private fun preloadRecognitionModels() {

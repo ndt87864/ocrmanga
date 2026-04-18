@@ -35,16 +35,16 @@ class TranslationTeamManager(private val application: Application) {
     }
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
     private val databaseHelper = DatabaseHelper(application)
     private val poolManager = ApiKeyPoolManager(application)
+    private val themePreferences = com.example.ocrmanga.ui.theme.ThemePreferences(application)
+    private val mistralRequester by lazy { MistralRequester(application, poolManager, httpClient) }
 
-    private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
-    private val mistralModel = "mistral-large-latest"
     private val geminiModel = "gemini-flash-latest"
 
     init {
@@ -194,10 +194,20 @@ class TranslationTeamManager(private val application: Application) {
         val reviewPrompt = TranslationPrompts.getReviewPrompt(textBlocks, translations, isAncientMode)
 
         val response = when (mode) {
-            TranslationMode.MISTRAL -> callMistral(
-                systemPrompt = TranslationPrompts.MANAGER_SYSTEM_PROMPT,
-                userPrompt = reviewPrompt
-            )
+            TranslationMode.MISTRAL -> {
+                val selectedModel = themePreferences.mistralModel.kotlinx.coroutines.flow.first()
+                val messages = listOf(
+                    mapOf("role" to "system", "content" to TranslationPrompts.MANAGER_SYSTEM_PROMPT),
+                    mapOf("role" to "user", "content" to reviewPrompt)
+                )
+                val resp = mistralRequester.executeChatCompletion(
+                    messages = messages,
+                    model = selectedModel,
+                    temperature = 0.5,
+                    top_p = 0.9
+                )
+                resp?.content
+            }
             TranslationMode.GEMINI -> callGemini(
                 prompt = "${TranslationPrompts.MANAGER_SYSTEM_PROMPT}\n\n$reviewPrompt"
             )
@@ -246,10 +256,20 @@ class TranslationTeamManager(private val application: Application) {
         val revisionPrompt = TranslationPrompts.getRevisePrompt(originalText, currentTranslation, managerFeedback, isAncientMode)
 
         val response = when (mode) {
-            TranslationMode.MISTRAL -> callMistral(
-                systemPrompt = TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT,
-                userPrompt = revisionPrompt
-            )
+            TranslationMode.MISTRAL -> {
+                val selectedModel = themePreferences.mistralModel.kotlinx.coroutines.flow.first()
+                val messages = listOf(
+                    mapOf("role" to "system", "content" to TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT),
+                    mapOf("role" to "user", "content" to revisionPrompt)
+                )
+                val resp = mistralRequester.executeChatCompletion(
+                    messages = messages,
+                    model = selectedModel,
+                    temperature = 0.5,
+                    top_p = 0.9
+                )
+                resp?.content
+            }
             TranslationMode.GEMINI -> callGemini(
                 prompt = "${TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT}\n\n$revisionPrompt"
             )
@@ -267,76 +287,6 @@ class TranslationTeamManager(private val application: Application) {
     // ========================
     // API CALL HELPERS
     // ========================
-
-    private suspend fun callMistral(systemPrompt: String, userPrompt: String): String? {
-        val apiKeyInfo = poolManager.selectBestKey("mistral") ?: run {
-            Log.w(TAG, "Không có API key Mistral khả dụng")
-            return null
-        }
-        val apiKey = apiKeyInfo.value
-
-        val gson = Gson()
-        val bodyMap = mapOf(
-            "model" to mistralModel,
-            "messages" to listOf(
-                mapOf("role" to "system", "content" to systemPrompt),
-                mapOf("role" to "user", "content" to userPrompt)
-            ),
-            "temperature" to 0.5,
-            "top_p" to 0.9,
-            "max_tokens" to 2048
-        )
-        val requestBody = gson.toJson(bodyMap)
-
-        val request = okhttp3.Request.Builder()
-            .url(mistralApiUrl)
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
-            .build()
-
-        return try {
-            val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
-            response.use { resp ->
-                if (!resp.isSuccessful) {
-                    Log.e(TAG, "[MISTRAL] API error: ${resp.code} ${resp.message}")
-                    if (resp.code == 429) {
-                        poolManager.notifyRateLimit(apiKey, 60000) // Mặc định 1 phút nếu bị 429
-                    } else {
-                        poolManager.notifyFailure(apiKey)
-                    }
-                    return null
-                }
-
-                poolManager.notifySuccess(apiKey)
-                val body = resp.body?.string() ?: return null
-                val json = JsonParser.parseString(body).asJsonObject
-
-                // Báo cáo số token
-                try {
-                    val usage = json["usage"]?.asJsonObject
-                    if (usage != null) {
-                        val promptTokens = usage["prompt_tokens"]?.asInt ?: 0
-                        val completionTokens = usage["completion_tokens"]?.asInt ?: 0
-                        val totalTokens = usage["total_tokens"]?.asInt ?: 0
-                        Log.i(TAG, "[MISTRAL-USAGE] Prompt: $promptTokens | Completion: $completionTokens | Total: $totalTokens tokens")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Không thể parse token usage từ Mistral: ${e.message}")
-                }
-
-                val content = json["choices"]?.asJsonArray
-                    ?.get(0)?.asJsonObject
-                    ?.getAsJsonObject("message")
-                    ?.get("content")?.asString
-                content
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "[MISTRAL] Exception: ${e.message}", e)
-            poolManager.notifyFailure(apiKey)
-            null
-        }
-    }
 
     private suspend fun callGemini(prompt: String): String? {
         val apiKeyInfo = poolManager.selectBestKey("gemini") ?: run {

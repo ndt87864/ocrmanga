@@ -23,16 +23,17 @@ data class ThemeState(
     val defaultOverlayBrightness: Float = 1.0f,
     val defaultBorderColor: String? = null,
     val defaultBorderThickness: Float = 0.0f,
-    val defaultTextColor: String? = null
+    val defaultTextColor: String? = null,
+    val mistralModel: String = "mistral-large-latest"
 )
 
 class ThemeSettingsViewModel(application: Application) : AndroidViewModel(application) {
-    
+
     private val themePreferences = ThemePreferences(application)
-    
+
     private val _themeState = MutableStateFlow(ThemeState())
     val themeState = _themeState.asStateFlow()
-    
+
     init {
         viewModelScope.launch {
             combine(
@@ -48,7 +49,8 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
                 themePreferences.defaultOverlayBrightness,
                 themePreferences.defaultBorderColor,
                 themePreferences.defaultBorderThickness,
-                themePreferences.defaultTextColor
+                themePreferences.defaultTextColor,
+                themePreferences.mistralModel
             ) { values ->
                 ThemeState(
                     themeVariant = values[0] as ThemeVariant,
@@ -63,63 +65,68 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
                     defaultOverlayBrightness = values[9] as Float,
                     defaultBorderColor = values[10] as String?,
                     defaultBorderThickness = values[11] as Float,
-                    defaultTextColor = values[12] as String?
+                    defaultTextColor = values[12] as String?,
+                    mistralModel = values[13] as String
                 )
             }.collect { newState ->
                 _themeState.value = newState
             }
         }
     }
-    
+
     suspend fun setThemeVariant(variant: ThemeVariant) {
         themePreferences.setThemeVariant(variant)
     }
-    
+
     suspend fun setDarkMode(enabled: Boolean) {
         themePreferences.setDarkMode(enabled)
     }
-    
+
     suspend fun setDynamicColorEnabled(enabled: Boolean) {
         themePreferences.setDynamicColorEnabled(enabled)
     }
-    
+
     suspend fun setCustomPrimaryColor(colorHex: String?) {
         themePreferences.setCustomPrimaryColor(colorHex)
     }
-    
+
     suspend fun setUseCustomColor(enabled: Boolean) {
         themePreferences.setUseCustomColor(enabled)
     }
-    
+
     suspend fun setDefaultTranslationFont(fontFamily: String) {
         themePreferences.setDefaultTranslationFont(fontFamily)
     }
-    
+
     suspend fun setDefaultLineSpacing(lineSpacing: Float) {
         themePreferences.setDefaultLineSpacing(lineSpacing)
     }
-    
+
     suspend fun setDefaultTextBoldness(textBoldness: Float) {
         themePreferences.setDefaultTextBoldness(textBoldness)
     }
-    
+
     suspend fun setDefaultOverlayAlpha(overlayAlpha: Float) {
         themePreferences.setDefaultOverlayAlpha(overlayAlpha)
     }
-    
+
     suspend fun setDefaultOverlayBrightness(overlayBrightness: Float) {
         themePreferences.setDefaultOverlayBrightness(overlayBrightness)
     }
-    
+
     suspend fun setDefaultBorderColor(borderColor: String?) {
         themePreferences.setDefaultBorderColor(borderColor)
     }
-    
+
     suspend fun setDefaultBorderThickness(borderThickness: Float) {
         themePreferences.setDefaultBorderThickness(borderThickness)
     }
-    
+
     suspend fun setDefaultTextColor(textColor: String?) {
         themePreferences.setDefaultTextColor(textColor)
+    }
+
+    suspend fun setMistralModel(model: String) {
+        themePreferences.setMistralModel(model)
     }
 }
