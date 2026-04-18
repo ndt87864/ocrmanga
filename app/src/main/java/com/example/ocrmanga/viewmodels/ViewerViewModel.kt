@@ -1832,20 +1832,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.SCANNING)
             }
 
-            // Lấy key cho từng ảnh trong batch (nếu là Mistral/Gemini)
-            val keysForBatch: List<String?> = if (isParallelKeyMode) {
-                val repo = translationRepository
-                if (uiState.value.translationMode == TranslationMode.MISTRAL) {
-                    (0 until batch.size).map { repo.getNextMistralApiKey() }
-                } else if (uiState.value.translationMode == TranslationMode.GEMINI) {
-                    (0 until batch.size).map { repo.getNextGeminiApiKey() }
-                } else {
-                    List(batch.size) { null }
-                }
-            } else {
-                List(batch.size) { null }
-            }
-            
             // Lấy bản dịch ảnh trước cho tất cả ảnh trong batch
             // Khi dịch 2 ảnh cùng lúc (parallel): cả 2 đều tham khảo từ ảnh đã dịch trước đó (ngoài batch)
             // Để đảm bảo đồng nhất xưng hô giữa các ảnh trong cùng batch
@@ -1877,10 +1863,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             // Tất cả ảnh trong batch dùng chung previousTranslation để đảm bảo đồng nhất xưng hô
             val previousTranslationsForBatch: List<List<TextBlockInfo>?> = batch.map { sharedPreviousTranslation }
 
-            // Dịch song song, truyền key và bản dịch ảnh trước tương ứng cho từng ảnh
+            // Dịch song song, truyền bản dịch ảnh trước tương ứng cho từng ảnh
             val results = kotlinx.coroutines.coroutineScope {
                 batch.mapIndexed { idx, uri ->
-                    val key = keysForBatch.getOrNull(idx)
                     val prevTranslation = previousTranslationsForBatch.getOrNull(idx)
                     // Callback để cập nhật trạng thái từ repository
                     val statusCallback: (com.example.ocrmanga.data.models.TranslationStatus) -> Unit = { status ->
@@ -1891,7 +1876,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             val (original, translatedBlocks, sourceLang) = translationRepository.recognizeAndTranslateText(
                                 uri,
                                 uiState.value.translationMode,
-                                key,
                                 statusCallback,
                                 prevTranslation, // Truyền bản dịch ảnh trước để tham khảo
                                 isAncientMode = uiState.value.isAncientTranslationMode

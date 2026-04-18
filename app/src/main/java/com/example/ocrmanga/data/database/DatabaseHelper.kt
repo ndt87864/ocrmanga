@@ -280,7 +280,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 22
+    private const val DATABASE_VERSION = 23
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -317,6 +317,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         private const val COLUMN_UPDATED_DATE = "updated_date"
         private const val COLUMN_IS_ACTIVE = "is_active"
         private const val COLUMN_API_KEY_TYPE = "type" // Thêm trường type
+        private const val COLUMN_API_KEY_REMAINING_QUOTA = "remaining_quota" // 0.0 to 1.0
+        private const val COLUMN_API_KEY_LAST_CHECKED = "last_checked"
+        private const val COLUMN_API_KEY_CONSECUTIVE_FAILURES = "consecutive_failures"
+        private const val COLUMN_API_KEY_RATE_LIMIT_RESET = "rate_limit_reset"
 
     // Room settings table
     const val TABLE_ROOM_SETTINGS = "room_settings"
@@ -432,7 +436,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_API_KEY_TYPE TEXT NOT NULL DEFAULT 'default',
                 created_date TEXT NOT NULL,
                 updated_date TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1
+                is_active INTEGER NOT NULL DEFAULT 1,
+                $COLUMN_API_KEY_REMAINING_QUOTA REAL DEFAULT 1.0,
+                $COLUMN_API_KEY_LAST_CHECKED INTEGER DEFAULT 0,
+                $COLUMN_API_KEY_CONSECUTIVE_FAILURES INTEGER DEFAULT 0,
+                $COLUMN_API_KEY_RATE_LIMIT_RESET INTEGER DEFAULT 0
             )
             """
         )
@@ -879,6 +887,19 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.i(TAG, "Đã thêm các cột gradient vào bảng $TABLE_IMAGE_BLOCKS")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm các cột gradient vào $TABLE_IMAGE_BLOCKS", e)
+            }
+        }
+
+        // Version 23: Thêm các cột quản lý quota và rate limit cho api_keys
+        if (oldVersion < 23) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_API_KEYS ADD COLUMN $COLUMN_API_KEY_REMAINING_QUOTA REAL DEFAULT 1.0")
+                db.execSQL("ALTER TABLE $TABLE_API_KEYS ADD COLUMN $COLUMN_API_KEY_LAST_CHECKED INTEGER DEFAULT 0")
+                db.execSQL("ALTER TABLE $TABLE_API_KEYS ADD COLUMN $COLUMN_API_KEY_CONSECUTIVE_FAILURES INTEGER DEFAULT 0")
+                db.execSQL("ALTER TABLE $TABLE_API_KEYS ADD COLUMN $COLUMN_API_KEY_RATE_LIMIT_RESET INTEGER DEFAULT 0")
+                Log.i(TAG, "Đã thêm các cột quản lý quota vào bảng $TABLE_API_KEYS")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm các cột quota vào $TABLE_API_KEYS", e)
             }
         }
     }
@@ -3294,6 +3315,37 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     // Lấy tất cả API key cùng type
+    fun getAllApiKeysWithStats(): List<com.example.ocrmanga.data.models.ApiKeyInfo> {
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT $COLUMN_API_KEY_ID, $COLUMN_API_KEY_VALUE, $COLUMN_API_KEY_TYPE, $COLUMN_IS_ACTIVE, $COLUMN_API_KEY_REMAINING_QUOTA, $COLUMN_API_KEY_LAST_CHECKED, $COLUMN_API_KEY_CONSECUTIVE_FAILURES, $COLUMN_API_KEY_RATE_LIMIT_RESET FROM $TABLE_API_KEYS", null)
+        val apiKeys = mutableListOf<com.example.ocrmanga.data.models.ApiKeyInfo>()
+        while (cursor.moveToNext()) {
+            apiKeys.add(com.example.ocrmanga.data.models.ApiKeyInfo(
+                id = cursor.getInt(0),
+                value = cursor.getString(1),
+                type = cursor.getString(2),
+                isActive = cursor.getInt(3) == 1,
+                remainingQuota = cursor.getDouble(4),
+                lastChecked = cursor.getLong(5),
+                consecutiveFailures = cursor.getInt(6),
+                rateLimitReset = cursor.getLong(7)
+            ))
+        }
+        cursor.close()
+        return apiKeys
+    }
+
+    fun updateApiKeyStats(apiKey: String, remainingQuota: Double, consecutiveFailures: Int, rateLimitReset: Long) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COLUMN_API_KEY_REMAINING_QUOTA, remainingQuota)
+            put(COLUMN_API_KEY_CONSECUTIVE_FAILURES, consecutiveFailures)
+            put(COLUMN_API_KEY_RATE_LIMIT_RESET, rateLimitReset)
+            put(COLUMN_API_KEY_LAST_CHECKED, System.currentTimeMillis())
+        }
+        db.update(TABLE_API_KEYS, values, "$COLUMN_API_KEY_VALUE = ?", arrayOf(apiKey))
+    }
+
     fun getAllApiKeys(): List<Pair<String, String>> {
         val db = readableDatabase
         val cursor = db.rawQuery("SELECT $COLUMN_API_KEY_VALUE, $COLUMN_API_KEY_TYPE FROM $TABLE_API_KEYS", null)

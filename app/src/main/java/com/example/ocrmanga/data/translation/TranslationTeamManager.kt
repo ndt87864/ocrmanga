@@ -41,12 +41,7 @@ class TranslationTeamManager(private val application: Application) {
         .build()
 
     private val databaseHelper = DatabaseHelper(application)
-
-    // API keys
-    private var geminiApiKeys: List<String> = emptyList()
-    private var mistralApiKeys: List<String> = emptyList()
-    private var currentGeminiKeyIndex = 0
-    private var currentMistralKeyIndex = 0
+    private val poolManager = ApiKeyPoolManager(application)
 
     private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
     private val mistralModel = "mistral-medium-latest"
@@ -54,27 +49,6 @@ class TranslationTeamManager(private val application: Application) {
 
     init {
         TranslationPrompts.initialize(application)
-        loadApiKeys()
-    }
-
-    private fun loadApiKeys() {
-        val allKeys = databaseHelper.getAllApiKeys()
-        geminiApiKeys = allKeys.filter { it.second == "gemini" && it.first.isNotBlank() }.map { it.first }
-        mistralApiKeys = allKeys.filter { it.second == "mistral" && it.first.isNotBlank() }.map { it.first }
-    }
-
-    private fun getNextGeminiKey(): String? {
-        if (geminiApiKeys.isEmpty()) return null
-        val key = geminiApiKeys[currentGeminiKeyIndex % geminiApiKeys.size]
-        currentGeminiKeyIndex++
-        return key
-    }
-
-    private fun getNextMistralKey(): String? {
-        if (mistralApiKeys.isEmpty()) return null
-        val key = mistralApiKeys[currentMistralKeyIndex % mistralApiKeys.size]
-        currentMistralKeyIndex++
-        return key
     }
 
     // ========================
@@ -280,10 +254,11 @@ class TranslationTeamManager(private val application: Application) {
     // ========================
 
     private suspend fun callMistral(systemPrompt: String, userPrompt: String): String? {
-        val apiKey = getNextMistralKey() ?: run {
-            Log.w(TAG, "Không có API key Mistral")
+        val apiKeyInfo = poolManager.selectBestKey("mistral") ?: run {
+            Log.w(TAG, "Không có API key Mistral khả dụng")
             return null
         }
+        val apiKey = apiKeyInfo.value
 
         val gson = Gson()
         val bodyMap = mapOf(
@@ -310,8 +285,15 @@ class TranslationTeamManager(private val application: Application) {
             response.use { resp ->
                 if (!resp.isSuccessful) {
                     Log.e(TAG, "[MISTRAL] API error: ${resp.code} ${resp.message}")
+                    if (resp.code == 429) {
+                        poolManager.notifyRateLimit(apiKey, 60000) // Mặc định 1 phút nếu bị 429
+                    } else {
+                        poolManager.notifyFailure(apiKey)
+                    }
                     return null
                 }
+
+                poolManager.notifySuccess(apiKey)
                 val body = resp.body?.string() ?: return null
                 val json = JsonParser.parseString(body).asJsonObject
                 val content = json["choices"]?.asJsonArray
@@ -322,15 +304,17 @@ class TranslationTeamManager(private val application: Application) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "[MISTRAL] Exception: ${e.message}", e)
+            poolManager.notifyFailure(apiKey)
             null
         }
     }
 
     private suspend fun callGemini(prompt: String): String? {
-        val apiKey = getNextGeminiKey() ?: run {
-            Log.w(TAG, "Không có API key Gemini")
+        val apiKeyInfo = poolManager.selectBestKey("gemini") ?: run {
+            Log.w(TAG, "Không có API key Gemini khả dụng")
             return null
         }
+        val apiKey = apiKeyInfo.value
 
         return try {
             val safetySettings = listOf(
@@ -354,9 +338,20 @@ class TranslationTeamManager(private val application: Application) {
             )
 
             val response = model.generateContent(prompt)
-            response.text?.trim()
+            val result = response.text?.trim()
+            if (result != null) {
+                poolManager.notifySuccess(apiKey)
+            } else {
+                poolManager.notifyFailure(apiKey)
+            }
+            result
         } catch (e: Exception) {
             Log.e(TAG, "[GEMINI] Exception: ${e.message}", e)
+            if (e.message?.contains("429") == true || e.message?.contains("quota") == true) {
+                poolManager.notifyRateLimit(apiKey, 60000)
+            } else {
+                poolManager.notifyFailure(apiKey)
+            }
             null
         }
     }

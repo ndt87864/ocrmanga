@@ -116,26 +116,26 @@ import kotlin.math.max
 
     // Public helpers so UI/ViewModel can check availability of API keys
     fun hasGeminiApiKeys(): Boolean {
-        return geminiApiKeys.isNotEmpty()
+        return poolManager.selectBestKey("gemini") != null
     }
 
     fun hasMistralApiKeys(): Boolean {
-        return mistralApiKeys.isNotEmpty()
+        return poolManager.selectBestKey("mistral") != null
     }
 
     fun hasNvidiaApiKeys(): Boolean {
-        return nvidiaApiKeys.isNotEmpty()
+        return poolManager.selectBestKey("nvidia") != null
     }
 
     // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
     suspend fun translateImage(
-        imageUri: Uri, 
+        imageUri: Uri,
         mode: TranslationMode,
         onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null,
         previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
         isAncientMode: Boolean = false
     ): Pair<String, List<TextBlockInfo>> {
-        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode, null, onStatusUpdate, previousTranslation, isAncientMode)
+        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode, onStatusUpdate, previousTranslation, isAncientMode)
         return Pair(translatedText, translatedBlocks)
     }
 
@@ -172,20 +172,14 @@ import kotlin.math.max
         // Note: translators (MLKit) do not expose a cancel; we don't close them here.
     }
 
-    private var geminiApiKeys: List<String> = emptyList()
-    private var currentGeminiKeyIndex = 0
+    private val poolManager by lazy { com.example.ocrmanga.data.translation.ApiKeyPoolManager(application) }
+
     private var currentGeminiModelIndex = 0
     private val geminiModels = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-3-flash-preview") // Add more models if needed
 
-    // Mistral API keys
-    private var mistralApiKeys: List<String> = emptyList()
-    private var mistralKeyUsageQueue: MutableList<String> = mutableListOf()
+    // Mistral settings
     private var currentMistralModelIndex = 0
 
-    // NVIDIA API keys
-    private var nvidiaApiKeys: List<String> = emptyList()
-    private var nvidiaKeyUsageQueue: MutableList<String> = mutableListOf()
-    
     // Restrict to a single stable model to avoid inconsistent outputs
     private val mistralModels = listOf(
         "mistral-medium-latest"
@@ -209,65 +203,17 @@ import kotlin.math.max
 
     init {
         preloadRecognitionModels()
-        loadGeminiApiKeys()
-        loadMistralApiKeys()
-        loadNvidiaApiKeys()
     }
 
-    private fun loadGeminiApiKeys() {
-        geminiApiKeys = databaseHelper.getAllApiKeys()
-            .filter { it.second == "gemini" && it.first.isNotBlank() }
-            .map { it.first }
-        if (geminiApiKeys.isEmpty()) {
-            Log.w("TranslationRepository", "Không tìm thấy API key Gemini nào trong cơ sở dữ liệu.")
-        } else {
-            //Log.i("TranslationRepository", "Đã tải ${geminiApiKeys.size} API key Gemini.")
-        }
-    }
+    // --- ApiKey Management Methods (Removed manual loading) ---
 
-    private fun loadMistralApiKeys() {
-        mistralApiKeys = databaseHelper.getAllApiKeys()
-            .filter { it.second == "mistral" && it.first.isNotBlank() }
-            .map { it.first }
-        mistralKeyUsageQueue = mistralApiKeys.toMutableList()
-        if (mistralApiKeys.isEmpty()) {
-            Log.w("TranslationRepository", "Không tìm thấy API key Mistral nào trong cơ sở dữ liệu.")
-        } else {
-            //log.i("TranslationRepository", "Đã tải ${mistralApiKeys.size} API key Mistral.")
-        }
-    }
-    // Hàm lấy API key Mistral tiếp theo: mỗi key chỉ dùng 1 lần/lượt, hết danh sách mới quay lại đầu
-    fun getNextMistralApiKey(): String? {
-        if (mistralApiKeys.isEmpty()) return null
-        if (mistralKeyUsageQueue.isEmpty()) {
-            mistralKeyUsageQueue = mistralApiKeys.toMutableList()
-        }
-        return if (mistralKeyUsageQueue.isNotEmpty()) mistralKeyUsageQueue.removeAt(0) else null
-    }
-
-    private fun loadNvidiaApiKeys() {
-        nvidiaApiKeys = databaseHelper.getAllApiKeys()
-            .filter { it.second == "nvidia" && it.first.isNotBlank() }
-            .map { it.first }
-        nvidiaKeyUsageQueue = nvidiaApiKeys.toMutableList()
-        if (nvidiaApiKeys.isEmpty()) {
-            Log.w("TranslationRepository", "Không tìm thấy API key NVIDIA nào trong cơ sở dữ liệu.")
-        }
-    }
-
-    fun getNextNvidiaApiKey(): String? {
-        if (nvidiaApiKeys.isEmpty()) return null
-        if (nvidiaKeyUsageQueue.isEmpty()) {
-            nvidiaKeyUsageQueue = nvidiaApiKeys.toMutableList()
-        }
-        return if (nvidiaKeyUsageQueue.isNotEmpty()) nvidiaKeyUsageQueue.removeAt(0) else null
-    }
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
         var lastError: Exception? = null
-        val maxTries = mistralApiKeys.size.coerceAtLeast(1)
+        val maxTries = 3
         for (i in 0 until maxTries) {
-            val mistralKey = getNextMistralApiKey() ?: return null
-        val prompt = TranslationPrompts.getMistralBasicPrompt(text)
+            val apiKeyInfo = poolManager.selectBestKey("mistral") ?: return null
+            val mistralKey = apiKeyInfo.value
+            val prompt = TranslationPrompts.getMistralBasicPrompt(text)
 
             // Build JSON body using Gson to avoid invalid JSON
             val gson = com.google.gson.Gson()
@@ -299,20 +245,14 @@ import kotlin.math.max
                         Log.e("TranslationRepository", "[MISTRAL-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${resp.code} ${resp.message} | Lần thử: ${i + 1}/$maxTries")
                         if (resp.code == 429) {
                             Log.w("TranslationRepository", "[MISTRAL-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
+                            poolManager.notifyRateLimit(mistralKey, 60000)
                             return@use "##CONTINUE##" // sentinel: thử key tiếp theo
-                        } else if (resp.code == 422) {
-                            if (!mistralErrorToastShown) {
-                                mistralErrorToastShown = true
-                                Log.w("TranslationRepository", "Mistral API error 422: ${resp.message}")
-                            }
-                        } else if (!mistralErrorToastShown) {
-                            mistralErrorToastShown = true
-                            withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(application, "Lỗi dịch Mistral: ${resp.code} ${resp.message}", android.widget.Toast.LENGTH_SHORT).show()
-                            }
+                        } else {
+                            poolManager.notifyFailure(mistralKey)
                         }
                         return@use null
                     }
+                    poolManager.notifySuccess(mistralKey)
                     val body = resp.body?.string() ?: return@use null
                     // Parse JSON để lấy phần dịch
                     val json = com.google.gson.JsonParser.parseString(body).asJsonObject
@@ -324,6 +264,7 @@ import kotlin.math.max
                 return null // 422 hoặc lỗi parse
             } catch (e: Exception) {
                 lastError = e
+                poolManager.notifyFailure(mistralKey)
                 val keyPrefix = mistralKey.take(10)
                 Log.e("TranslationRepository", "[MISTRAL-EXCEPTION] Key bị lỗi: ${keyPrefix}... | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${i + 1}/$maxTries", e)
                 // Lỗi mạng: không có Internet hoặc không phân giải được DNS -> bỏ qua retry
@@ -361,14 +302,13 @@ import kotlin.math.max
         ocrResults: List<Pair<Float, String>>,
         sourceLang: String,
         targetLang: String,
-        apiKey: String? = null,
         previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
         isAncientMode: Boolean = false
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
         
         var lastError: Exception? = null
-        val maxTries = mistralApiKeys.size.coerceAtLeast(1)
+        val maxTries = 3
         
         // Tạo context từ bản dịch ảnh trước (nếu có)
         val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
@@ -426,8 +366,9 @@ import kotlin.math.max
         }.joinToString("\n")
         
         for (i in 0 until maxTries) {
-            val mistralKey = apiKey ?: getNextMistralApiKey() ?: return null
-            
+            val apiKeyInfo = poolManager.selectBestKey("mistral") ?: return null
+            val mistralKey = apiKeyInfo.value
+
             val prompt = TranslationPrompts.getMistralMultiScalePromptOptimized(
                 ocrResultsText = ocrResultsText,
                 numberedBlocks = numberedBlocks,
@@ -466,20 +407,14 @@ import kotlin.math.max
                         Log.e("TranslationRepository", "[MISTRAL-MULTI-ERROR] API key bị lỗi: ${keyPrefix}... | Lỗi: ${resp.code} ${resp.message} | Lần thử: ${i + 1}/$maxTries")
                         if (resp.code == 429) {
                             Log.w("TranslationRepository", "[MISTRAL-MULTI-429] Key bị giới hạn tốc độ (429): ${keyPrefix}... - Chuyển sang key tiếp theo")
+                            poolManager.notifyRateLimit(mistralKey, 60000)
                             return@use "##CONTINUE##" // sentinel: thử key tiếp theo
-                        } else if (resp.code == 422) {
-                            if (!mistralErrorToastShown) {
-                                mistralErrorToastShown = true
-                                Log.w("TranslationRepository", "Mistral API (multi-scale) error 422: ${resp.message}")
-                            }
-                        } else if (!mistralErrorToastShown) {
-                            mistralErrorToastShown = true
-                            withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(application, "Lỗi dịch Mistral (multi-scale): ${resp.code} ${resp.message}", android.widget.Toast.LENGTH_SHORT).show()
-                            }
+                        } else {
+                            poolManager.notifyFailure(mistralKey)
                         }
                         return@use null
                     }
+                    poolManager.notifySuccess(mistralKey)
                     resp.body?.string()
                 }
                 if (body == "##CONTINUE##") continue
@@ -642,6 +577,7 @@ import kotlin.math.max
                 return translatedBlocks
             } catch (e: Exception) {
                 lastError = e
+                poolManager.notifyFailure(mistralKey)
                 val keyPrefix = mistralKey.take(10)
                 Log.e("TranslationRepository", "[MISTRAL-MULTI-EXCEPTION] Key bị lỗi: ${keyPrefix}... | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${i + 1}/$maxTries", e)
                 // Lỗi mạng: không có Internet hoặc không phân giải được DNS -> bỏ qua retry
@@ -676,31 +612,12 @@ import kotlin.math.max
 
 
 
-    fun getNextGeminiApiKey(): String? {
-        if (geminiApiKeys.isEmpty()) {
-            Log.e("TranslationRepository", "Không có API key Gemini nào được cấu hình.")
-            return null
-        }
-        val key = geminiApiKeys[currentGeminiKeyIndex]
-        currentGeminiKeyIndex = (currentGeminiKeyIndex + 1) % geminiApiKeys.size
-        if (currentGeminiKeyIndex == 0) {
-            // Cycle through models when all keys have been used once
-            currentGeminiModelIndex = (currentGeminiModelIndex + 1) % geminiModels.size
-            //log.i("TranslationRepository", "Đã sử dụng hết các API key, chuyển sang model: ${geminiModels[currentGeminiModelIndex]}")
-        }
-        return key
-    }
-
     private fun getCurrentGeminiModel(): String {
-        return geminiModels[currentGeminiModelIndex]
+        return geminiModels[0] // Trình quản lý pool sẽ tự chọn key, ở đây ta cố định model đầu tiên hoặc tùy chỉnh sau
     }
 
     private fun getCurrentMistralModel(): String {
-        val model = mistralModels[currentMistralModelIndex]
-        // Rotate to next model for next call
-        currentMistralModelIndex = (currentMistralModelIndex + 1) % mistralModels.size
-        Log.i("TranslationRepository", "[MISTRAL] Sử dụng model: $model (index: ${(currentMistralModelIndex - 1 + mistralModels.size) % mistralModels.size})")
-        return model
+        return mistralModels[0]
     }
 
     private fun preloadRecognitionModels() {
@@ -1079,9 +996,8 @@ import kotlin.math.max
     }
 
     suspend fun recognizeAndTranslateText(
-        imageUri: Uri, 
-        mode: TranslationMode, 
-        apiKey: String? = null,
+        imageUri: Uri,
+        mode: TranslationMode,
         onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null,
         previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
         isAncientMode: Boolean = false
@@ -1098,7 +1014,7 @@ import kotlin.math.max
 
         // Early check: if user selected Gemini or Mistral mode but there are no API keys in DB,
         // notify immediately and skip long-running OCR/translation work.
-        if (mode == TranslationMode.GEMINI && geminiApiKeys.isEmpty()) {
+        if (mode == TranslationMode.GEMINI && !hasGeminiApiKeys()) {
             withContext(Dispatchers.Main) {
                 android.widget.Toast.makeText(
                     application,
@@ -1109,7 +1025,7 @@ import kotlin.math.max
             return@withContext Triple("", emptyList(), "zh")
         }
 
-        if (mode == TranslationMode.MISTRAL && mistralApiKeys.isEmpty()) {
+        if (mode == TranslationMode.MISTRAL && !hasMistralApiKeys()) {
             withContext(Dispatchers.Main) {
                 android.widget.Toast.makeText(
                     application,
@@ -1227,7 +1143,7 @@ import kotlin.math.max
                 }*/
                 
                 // Gửi tất cả kết quả cho Mistral AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
-                var translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation, isAncientMode)
+                var translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", previousTranslation, isAncientMode)
 
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Mistral không trả về kết quả dịch")
@@ -1361,7 +1277,7 @@ import kotlin.math.max
                 }
                 */
                 // Gửi tất cả kết quả cho Gemini AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
-                var translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", apiKey, previousTranslation, isAncientMode)
+                var translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", previousTranslation, isAncientMode)
 
                 if (translatedTexts.isNullOrEmpty()) {
                     Log.w("TranslationRepository", "Gemini không trả về kết quả dịch")
@@ -1486,20 +1402,37 @@ import kotlin.math.max
                 
                 val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
                 val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
-                
-                val nvidiaApiKey = getNextNvidiaApiKey()
-                if (nvidiaApiKey == null) {
-                    Log.w("TranslationRepository", "Không có API key NVIDIA khả dụng")
+
+                val apiKeyInfo = poolManager.selectBestKey("nvidia")
+                if (apiKeyInfo == null) {
+                    Log.w("TranslationRepository", "Không có API key NVIDIA khả dụng trong pool")
                     lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
                     return@withContext Triple("", emptyList(), "zh")
                 }
+                val nvidiaApiKey = apiKeyInfo.value
 
-                val translatedTexts = when(mode) {
-                    TranslationMode.NVIDIA_GLM5 -> nvidiaService.translateWithGLM5(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
-                    TranslationMode.NVIDIA_QWEN -> nvidiaService.translateWithQwen(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
-                    TranslationMode.NVIDIA_GPT_OSS_20B -> nvidiaService.translateWithGptOss20b(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
-                    TranslationMode.NVIDIA_GPT_OSS -> nvidiaService.translateWithGptOss(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
-                    else -> null
+                val translatedTexts = try {
+                    val result = when(mode) {
+                        TranslationMode.NVIDIA_GLM5 -> nvidiaService.translateWithGLM5(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
+                        TranslationMode.NVIDIA_QWEN -> nvidiaService.translateWithQwen(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
+                        TranslationMode.NVIDIA_GPT_OSS_20B -> nvidiaService.translateWithGptOss20b(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
+                        TranslationMode.NVIDIA_GPT_OSS -> nvidiaService.translateWithGptOss(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
+                        else -> null
+                    }
+                    if (result != null) {
+                        poolManager.notifySuccess(nvidiaApiKey)
+                    } else {
+                        poolManager.notifyFailure(nvidiaApiKey)
+                    }
+                    result
+                } catch (e: Exception) {
+                    Log.e("TranslationRepository", "Nvidia translation error: ${e.message}")
+                    if (e.message?.contains("429") == true) {
+                        poolManager.notifyRateLimit(nvidiaApiKey, 60000)
+                    } else {
+                        poolManager.notifyFailure(nvidiaApiKey)
+                    }
+                    null
                 }
 
                 if (translatedTexts.isNullOrEmpty()) {
@@ -3209,19 +3142,16 @@ import kotlin.math.max
         if (originalText.isEmpty()) return@withContext ""
         if (sourceLanguage == "vi") return@withContext originalText
 
-        val triedKeys = mutableSetOf<Int>()
-        val triedModels = mutableSetOf<Int>()
+        val triedKeys = mutableSetOf<String>()
         var lastError: Exception? = null
+        val maxTries = 6
 
-        repeat(geminiApiKeys.size * geminiModels.size) {
-            val apiKeyIndex = currentGeminiKeyIndex
-            val modelIndex = currentGeminiModelIndex
-            val apiKey = getNextGeminiApiKey()
+        for (i in 0 until maxTries) {
+            val apiKeyInfo = poolManager.selectBestKey("gemini") ?: break
+            val apiKey = apiKeyInfo.value
             val modelName = getCurrentGeminiModel()
-            if (apiKey == null) return@withContext originalText
 
-            triedKeys.add(apiKeyIndex)
-            triedModels.add(modelIndex)
+            triedKeys.add(apiKey)
 
             try {
                 val safetySettings = listOf(
@@ -3255,22 +3185,27 @@ import kotlin.math.max
 
                 // Nếu dịch thành công và khác với gốc thì trả về luôn
                 if (!translatedText.equals(originalText, ignoreCase = true)) {
-                    //Log.i("TranslationRepository", "Gemini translated: $originalText -> $translatedText (model=$modelName, key=${apiKey.take(5)}...)")
+                    poolManager.notifySuccess(apiKey)
                     return@withContext translatedText
                 }
+                poolManager.notifyFailure(apiKey)
             } catch (e: Exception) {
                 lastError = e
-                val keyPrefix = apiKey?.take(10) ?: "unknown"
-                Log.e("TranslationRepository", "[GEMINI-ERROR] API key bị lỗi: ${keyPrefix}... | Model: $modelName | KeyIndex: $apiKeyIndex | Exception: ${e.javaClass.simpleName} - ${e.message}")
+                val keyPrefix = apiKey.take(10)
+                Log.e("TranslationRepository", "[GEMINI-ERROR] API key bị lỗi: ${keyPrefix}... | Model: $modelName | Exception: ${e.javaClass.simpleName} - ${e.message}")
+                if (e.message?.contains("429") == true || e.message?.contains("quota") == true) {
+                    poolManager.notifyRateLimit(apiKey, 60000)
+                } else {
+                    poolManager.notifyFailure(apiKey)
+                }
             }
-            // Nếu chưa thử hết key/model thì tiếp tục, còn không thì break
         }
 
         // Nếu thử hết vẫn không dịch được, trả về văn bản gốc
         if (lastError != null) {
             val errorMessage = lastError!!.message
-            Log.e("TranslationRepository", "[GEMINI-SUMMARY] Tất cả ${geminiApiKeys.size} key Gemini và ${geminiModels.size} model đều thất bại | Lỗi cuối: $errorMessage")
-            Log.e("TranslationRepository", "[GEMINI-SUMMARY] Keys đã thử: ${triedKeys.size}/${geminiApiKeys.size} | Models đã thử: ${triedModels.size}/${geminiModels.size}")
+            Log.e("TranslationRepository", "[GEMINI-SUMMARY] Thử các key Gemini thất bại | Lỗi cuối: $errorMessage")
+            Log.e("TranslationRepository", "[GEMINI-SUMMARY] Số keys đã thử: ${triedKeys.size}")
         }
         return@withContext originalText
     }
@@ -3284,15 +3219,13 @@ import kotlin.math.max
         ocrResults: List<Pair<Float, String>>,
         sourceLang: String,
         targetLang: String,
-        apiKey: String? = null,
         previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
         isAncientMode: Boolean = false
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
-        if (geminiApiKeys.isEmpty()) return null
-        
+
         var lastError: Exception? = null
-        val maxTries = geminiApiKeys.size * geminiModels.size
+        val maxTries = 6 // Thử tối đa 6 lượt (kết hợp key và model)
         
         // Tạo context từ bản dịch ảnh trước (nếu có)
         val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
@@ -3352,11 +3285,10 @@ import kotlin.math.max
         var attempt = 0
         var skipped429 = 0
         while (attempt < maxTries) {
-            val apiKeyIndex = currentGeminiKeyIndex
-            val modelIndex = currentGeminiModelIndex
-            val useKey = apiKey ?: getNextGeminiApiKey()
+            val apiKeyInfo = poolManager.selectBestKey("gemini") ?: return null
+            val useKey = apiKeyInfo.value
             val modelName = getCurrentGeminiModel()
-            if (useKey == null) return null
+
             try {
                 val safetySettings = listOf(
                     SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.NONE),
@@ -3389,11 +3321,14 @@ import kotlin.math.max
                 
                 val response = generativeModel.generateContent(prompt)
                 val content = response.text?.trim()
-                
+
                 if (content.isNullOrBlank()) {
-                    Log.w("TranslationRepository", "[GEMINI] Response rỗng từ key #$apiKeyIndex, model $modelName")
+                    Log.w("TranslationRepository", "[GEMINI] Response rỗng từ key, model $modelName")
+                    poolManager.notifyFailure(useKey)
                     continue
                 }
+
+                poolManager.notifySuccess(useKey)
                 
                 // Sử dụng Map để lưu trữ bản dịch theo index
                 val translatedBlocksMap = mutableMapOf<Int, String>()
@@ -3551,36 +3486,40 @@ import kotlin.math.max
                 return translatedBlocks
             } catch (e: Exception) {
                 val msg = e.message?.lowercase() ?: ""
-                val keyPrefix = useKey?.take(10) ?: "unknown"
+                val keyPrefix = useKey.take(10)
                 // Nếu là lỗi 429 hoặc quota/throttling thì bỏ qua key này, không tăng attempt
                 if (msg.contains("429") || msg.contains("too many requests") || msg.contains("quota") || msg.contains("throttl")) {
-                    Log.w("TranslationRepository", "[GEMINI-MULTI-429] Key bị giới hạn: ${keyPrefix}... | Model: $modelName | KeyIndex: $apiKeyIndex | Lỗi: ${e.message} | Đã bỏ qua: ${skipped429 + 1}")
+                    Log.w("TranslationRepository", "[GEMINI-MULTI-429] Key bị giới hạn: ${keyPrefix}... | Model: $modelName | Lỗi: ${e.message} | Đã bỏ qua: ${skipped429 + 1}")
+                    poolManager.notifyRateLimit(useKey, 60000)
                     skipped429++
                     continue // thử key tiếp theo, không tăng attempt
                 }
                 lastError = e
-                Log.e("TranslationRepository", "[GEMINI-MULTI-ERROR] Key bị lỗi: ${keyPrefix}... | Model: $modelName | KeyIndex: $apiKeyIndex | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${attempt + 1}/$maxTries", e)
+                poolManager.notifyFailure(useKey)
+                Log.e("TranslationRepository", "[GEMINI-MULTI-ERROR] Key bị lỗi: ${keyPrefix}... | Model: $modelName | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${attempt + 1}/$maxTries", e)
                 attempt++ // chỉ tăng attempt nếu không phải lỗi 429/quota
             }
         }
-        
+
         if (lastError != null) {
             val errorMessage = lastError.message
-            Log.e("TranslationRepository", "[GEMINI-MULTI-SUMMARY] Tất cả ${geminiApiKeys.size} key Gemini và ${geminiModels.size} model đều thất bại (multi-scale)")
+            Log.e("TranslationRepository", "[GEMINI-MULTI-SUMMARY] Tất cả key Gemini và ${geminiModels.size} model đều thất bại (multi-scale)")
             Log.e("TranslationRepository", "[GEMINI-MULTI-SUMMARY] Tổng lần thử: $attempt/$maxTries | Keys bị 429/quota: $skipped429 | Lỗi cuối: $errorMessage")
         }
         return null
     }
     
     private suspend fun translateWithGemini(inputText: String): String? {
-        if (geminiApiKeys.isEmpty()) {
-            Log.e("TranslationRepository", "No API keys available.")
+        val apiKeyInfo = poolManager.selectBestKey("gemini") ?: run {
+            Log.e("TranslationRepository", "No Gemini API keys available in pool.")
             return null
         }
 
-        val apiKey = geminiApiKeys[currentGeminiKeyIndex]
+        val apiKey = apiKeyInfo.value
+        val modelName = getCurrentGeminiModel()
+
         val client = GenerativeModel(
-            modelName = currentGeminiModelIndex.toString(),
+            modelName = modelName,
             apiKey = apiKey
         )
 
@@ -3589,16 +3528,19 @@ import kotlin.math.max
         return try {
             val response = client.generateContent(prompt)
             val translatedText = response.text
-
-            // Cycle to the next API key
-            currentGeminiKeyIndex = (currentGeminiKeyIndex + 1) % geminiApiKeys.size
-            if (currentGeminiKeyIndex == 0) {
-                currentGeminiModelIndex = if (currentGeminiModelIndex == 0) 1 else 0
+            if (translatedText != null) {
+                poolManager.notifySuccess(apiKey)
+            } else {
+                poolManager.notifyFailure(apiKey)
             }
-
             translatedText
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             Log.e("TranslationRepository", "Error during translation: ${e.message}")
+            if (e.message?.contains("429") == true || e.message?.contains("quota") == true) {
+                poolManager.notifyRateLimit(apiKey, 60000)
+            } else {
+                poolManager.notifyFailure(apiKey)
+            }
             null
         }
     }

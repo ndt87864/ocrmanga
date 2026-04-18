@@ -298,7 +298,8 @@ fun ApiKeyManagementScreen(
                                     }
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
                                             "Ngày thêm: ${apiKey.createdDate}",
@@ -306,10 +307,32 @@ fun ApiKeyManagementScreen(
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
-                                            "Ngày cập nhật: ${apiKey.updatedDate}",
+                                            "Quota: ${(apiKey.remainingQuota * 100).toInt()}%",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            color = if (apiKey.remainingQuota < 0.1) Color.Red else MaterialTheme.colorScheme.primary
                                         )
+                                    }
+                                    if (apiKey.consecutiveFailures > 0 || apiKey.rateLimitReset > System.currentTimeMillis()) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            if (apiKey.consecutiveFailures > 0) {
+                                                Text(
+                                                    "Lỗi liên tiếp: ${apiKey.consecutiveFailures}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color.Red
+                                                )
+                                            }
+                                            if (apiKey.rateLimitReset > System.currentTimeMillis()) {
+                                                val remainingSec = (apiKey.rateLimitReset - System.currentTimeMillis()) / 1000
+                                                Text(
+                                                    "Rate limit: ${remainingSec}s",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color(0xFFFFA500) // Orange
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

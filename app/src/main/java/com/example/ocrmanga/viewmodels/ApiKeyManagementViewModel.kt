@@ -8,13 +8,17 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.example.ocrmanga.data.database.DatabaseHelper
 
 import android.content.SharedPreferences
-// Data class to represent an API key
+// Data class to represent an API key with quota info
 data class ApiKey(
     val key: String,
     val type: String = "default",
     val createdDate: String,
     val updatedDate: String,
-    var isActive: Boolean
+    var isActive: Boolean,
+    val remainingQuota: Double = 1.0,
+    val consecutiveFailures: Int = 0,
+    val rateLimitReset: Long = 0,
+    val lastChecked: Long = 0
 )
 
 
@@ -51,11 +55,20 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
 
     // Function to load API keys from the database
     private fun loadApiKeysFromDatabase() {
-        val keys = databaseHelper.getAllApiKeys()
+        val keys = databaseHelper.getAllApiKeysWithStats()
         apiKeys.clear()
-        apiKeys.addAll(keys.map { (key, type) ->
-            val isActive = databaseHelper.getApiKeyStatus(key) // Fetch isActive status from DB
-            ApiKey(key, type = type, createdDate = "2025-07-15", updatedDate = "2025-07-15", isActive = isActive)
+        apiKeys.addAll(keys.map { info ->
+            ApiKey(
+                key = info.value,
+                type = info.type,
+                createdDate = "2025-07-15",
+                updatedDate = "2025-07-15",
+                isActive = info.isActive,
+                remainingQuota = info.remainingQuota,
+                consecutiveFailures = info.consecutiveFailures,
+                rateLimitReset = info.rateLimitReset,
+                lastChecked = info.lastChecked
+            )
         })
     }
 
@@ -80,11 +93,20 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
 
     // Hàm load danh sách apiKeys theo type
     fun loadApiKeysByType(type: String) {
-        val keys = databaseHelper.getAllApiKeys().filter { it.second == type }
+        val keys = databaseHelper.getAllApiKeysWithStats().filter { it.type == type }
         apiKeys.clear()
-        apiKeys.addAll(keys.map { (key, type) ->
-            val isActive = databaseHelper.getApiKeyStatus(key)
-            ApiKey(key, type = type, createdDate = "2025-07-15", updatedDate = "2025-07-15", isActive = isActive)
+        apiKeys.addAll(keys.map { info ->
+            ApiKey(
+                key = info.value,
+                type = info.type,
+                createdDate = "2025-07-15",
+                updatedDate = "2025-07-15",
+                isActive = info.isActive,
+                remainingQuota = info.remainingQuota,
+                consecutiveFailures = info.consecutiveFailures,
+                rateLimitReset = info.rateLimitReset,
+                lastChecked = info.lastChecked
+            )
         })
     }
 
