@@ -95,14 +95,17 @@ class TranslationTeamManager(private val application: Application) {
                 break
             }
 
+            // Tạo bản sao có thể thay đổi của danh sách rejections từ Manager
+            val finalRejections = review.rejections.toMutableMap()
+
             // Bổ sung: Kiểm tra mâu thuẫn xưng hô toàn trang (Global Pronoun Check)
             val globalPronounRejections = checkGlobalPronounInconsistency(current)
             if (globalPronounRejections.isNotEmpty()) {
                 Log.w(TAG, "[GLOBAL-PRONOUN] Phát hiện mâu thuẫn xưng hô toàn trang giữa các block.")
                 // Gộp các block bị mâu thuẫn xưng hô vào danh sách rejections nếu chưa có
                 for ((idx, reason) in globalPronounRejections) {
-                    if (!review.rejections.containsKey(idx)) {
-                        review.rejections[idx] = reason
+                    if (!finalRejections.containsKey(idx)) {
+                        finalRejections[idx] = reason
                     }
                 }
             }
@@ -112,7 +115,7 @@ class TranslationTeamManager(private val application: Application) {
                 break
             }
 
-            val currentRejectionCount = review.rejections.size
+            val currentRejectionCount = finalRejections.size
             val approvedRatio = (textBlocks.size - currentRejectionCount).toFloat() / textBlocks.size
 
             // Early stopping: High approval and no improvement
@@ -123,16 +126,16 @@ class TranslationTeamManager(private val application: Application) {
             prevRejectionCount = currentRejectionCount
 
             // Early stopping: All rejections are already frozen (revised once)
-            val allRejectionsFrozen = review.rejections.keys.all { it in frozenBlocks }
-            if (allRejectionsFrozen && review.rejections.isNotEmpty()) {
+            val allRejectionsFrozen = finalRejections.keys.all { it in frozenBlocks }
+            if (allRejectionsFrozen && finalRejections.isNotEmpty()) {
                 Log.i(TAG, "(!) Dừng sớm: Các block lỗi còn lại đã được sửa 1 lần.")
                 break
             }
 
-            Log.i(TAG, "✗ Yêu cầu sửa ${review.rejections.size} blocks: ${review.rejections.keys}")
+            Log.i(TAG, "✗ Yêu cầu sửa ${finalRejections.size} blocks: ${finalRejections.keys}")
 
             // BƯỚC 2: Translator revise
-            for ((blockIndex, reason) in review.rejections) {
+            for ((blockIndex, reason) in finalRejections) {
                 if (blockIndex < 0 || blockIndex >= textBlocks.size) continue
                 if (blockIndex in frozenBlocks) continue
 
