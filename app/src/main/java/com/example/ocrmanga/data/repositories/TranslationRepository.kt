@@ -198,7 +198,7 @@ import kotlin.math.max
 
     // Restrict to a single stable model to avoid inconsistent outputs
     private val mistralModels = listOf(
-        "mistral-medium-latest"
+        "mistral-large-latest"
     )
     private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
     // Toast spam prevention for Mistral errors

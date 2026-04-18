@@ -44,7 +44,7 @@ class TranslationTeamManager(private val application: Application) {
     private val poolManager = ApiKeyPoolManager(application)
 
     private val mistralApiUrl = "https://api.mistral.ai/v1/chat/completions"
-    private val mistralModel = "mistral-medium-latest"
+    private val mistralModel = "mistral-large-latest"
     private val geminiModel = "gemini-flash-latest"
 
     init {
