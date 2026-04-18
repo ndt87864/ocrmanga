@@ -101,7 +101,7 @@ class MistralRequester(
             }
 
             poolManager.notifySuccess(apiKey)
-            parseSuccessfulResponse(responseBody)
+            parseSuccessfulResponse(apiKey, responseBody)
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi kết nối đến Mistral API", e)
             poolManager.notifyFailure(apiKey)
@@ -130,14 +130,22 @@ class MistralRequester(
         }
 
         if (code == 429) {
-            Log.w(TAG, "[MISTRAL-429] Key bị giới hạn tốc độ (Rate Limit)")
-            poolManager.notifyRateLimit(apiKey, 60000)
+            if (body?.contains("quota", ignoreCase = true) == true) {
+                Log.w(TAG, "[MISTRAL-QUOTA] Key đã hết sạch quota")
+                poolManager.notifyQuotaExhausted(apiKey)
+            } else {
+                Log.w(TAG, "[MISTRAL-429] Key bị giới hạn tốc độ (Rate Limit)")
+                poolManager.notifyRateLimit(apiKey, 60000)
+            }
+        } else if (code == 403) {
+            Log.w(TAG, "[MISTRAL-403] Lỗi 403 - Thường là do hết quota")
+            poolManager.notifyQuotaExhausted(apiKey)
         } else {
             poolManager.notifyFailure(apiKey)
         }
     }
 
-    private fun parseSuccessfulResponse(body: String?): MistralResponse? {
+    private fun parseSuccessfulResponse(apiKey: String, body: String?): MistralResponse? {
         if (body == null) return null
 
         return try {
@@ -150,6 +158,9 @@ class MistralRequester(
                 val completionTokens = usage["completion_tokens"]?.asInt ?: 0
                 val totalTokens = usage["total_tokens"]?.asInt ?: 0
                 Log.i(TAG, "[MISTRAL-USAGE] P: $promptTokens | C: $completionTokens | T: $totalTokens")
+
+                // Trừ dần quota theo thực trạng sử dụng
+                poolManager.notifyUsage(apiKey, "mistral", totalTokens)
             }
 
             val choices = json["choices"]?.asJsonArray

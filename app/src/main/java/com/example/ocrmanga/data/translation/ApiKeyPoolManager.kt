@@ -97,9 +97,24 @@ class ApiKeyPoolManager(private val application: Application) {
 
     fun notifyRateLimit(apiKey: String, resetInMs: Long) {
         updateKeyState(apiKey) { current ->
+            // Khi bị 429, chỉ cập nhật thời gian reset, không reset quota về 0
+            // trừ khi có thông tin chắc chắn là hết quota hoàn toàn.
+            // Việc trừ quota dần đã được thực hiện ở notifyUsage.
             current.copy(
-                remainingQuota = 0.0, // Khi bị 429, đặt quota về 0%
                 rateLimitReset = System.currentTimeMillis() + resetInMs,
+                lastChecked = System.currentTimeMillis()
+            )
+        }
+    }
+
+    /**
+     * Thông báo key đã hết sạch quota (ví dụ: lỗi 403 hoặc thông báo cạn kiệt)
+     */
+    fun notifyQuotaExhausted(apiKey: String) {
+        updateKeyState(apiKey) { current ->
+            Log.w(TAG, "Key ${apiKey.take(10)}... đã hết sạch quota (0%)")
+            current.copy(
+                remainingQuota = 0.0,
                 lastChecked = System.currentTimeMillis()
             )
         }
@@ -124,6 +139,29 @@ class ApiKeyPoolManager(private val application: Application) {
         updateKeyState(apiKey) { current ->
             current.copy(
                 remainingQuota = remainingFraction,
+                lastChecked = System.currentTimeMillis()
+            )
+        }
+    }
+
+    /**
+     * Thông báo số token đã sử dụng để trừ dần quota
+     * @param apiKey Key đã sử dụng
+     * @param tokens Số token đã tiêu thụ
+     * @param type Loại key (gemini, mistral, nvidia)
+     */
+    fun notifyUsage(apiKey: String, type: String, tokens: Int) {
+        if (tokens <= 0) return
+
+        // Quy đổi token sang tỷ lệ quota (giả định 1,000,000 tokens = 100%)
+        // Tùy theo type có thể cấu hình khác nhau trong tương lai
+        val quotaToSubtract = tokens.toDouble() / 1_000_000.0
+
+        updateKeyState(apiKey) { current ->
+            val newQuota = (current.remainingQuota - quotaToSubtract).coerceAtLeast(0.0)
+            Log.i(TAG, "Key ${apiKey.take(10)}... tiêu thụ $tokens tokens. Quota: ${(current.remainingQuota * 100).toInt()}% -> ${(newQuota * 100).toInt()}%")
+            current.copy(
+                remainingQuota = newQuota,
                 lastChecked = System.currentTimeMillis()
             )
         }

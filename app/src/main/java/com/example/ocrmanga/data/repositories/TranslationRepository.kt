@@ -166,7 +166,6 @@ import kotlin.math.max
         .pingInterval(30, java.util.concurrent.TimeUnit.SECONDS)
         .protocols(listOf(okhttp3.Protocol.HTTP_1_1)) // Ép sử dụng HTTP/1.1 để ổn định hơn với các request lâu
         .build()
-    private val nvidiaService = NvidiaTranslationService(httpClient)
     private val databaseHelper = DatabaseHelper(application)
 
     /**
@@ -187,6 +186,7 @@ import kotlin.math.max
     }
 
     private val poolManager by lazy { com.example.ocrmanga.data.translation.ApiKeyPoolManager(application) }
+    private val nvidiaService by lazy { com.example.ocrmanga.data.api.NvidiaTranslationService(httpClient, poolManager) }
     private val mistralRequester by lazy { com.example.ocrmanga.data.translation.MistralRequester(application, poolManager, httpClient) }
 
     private var currentGeminiModelIndex = 0
@@ -3035,6 +3035,17 @@ import kotlin.math.max
                 // Nếu dịch thành công và khác với gốc thì trả về luôn
                 if (!translatedText.equals(originalText, ignoreCase = true)) {
                     poolManager.notifySuccess(apiKey)
+                    // Báo cáo số token
+                    try {
+                        val usage = response.usageMetadata
+                        if (usage != null) {
+                            Log.i("TranslationRepository", "[GEMINI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
+                            // Trừ dần quota theo thực trạng sử dụng
+                            poolManager.notifyUsage(apiKey, "gemini", usage.totalTokenCount)
+                        }
+                    } catch (e: Exception) {
+                        Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini: ${e.message}")
+                    }
                     return@withContext translatedText
                 }
                 poolManager.notifyFailure(apiKey)
@@ -3042,7 +3053,9 @@ import kotlin.math.max
                 lastError = e
                 val keyPrefix = apiKey.take(10)
                 Log.e("TranslationRepository", "[GEMINI-ERROR] API key bị lỗi: ${keyPrefix}... | Model: $modelName | Exception: ${e.javaClass.simpleName} - ${e.message}")
-                if (e.message?.contains("429") == true || e.message?.contains("quota") == true) {
+                if (e.message?.contains("quota", ignoreCase = true) == true) {
+                    poolManager.notifyQuotaExhausted(apiKey)
+                } else if (e.message?.contains("429") == true) {
                     poolManager.notifyRateLimit(apiKey, 60000)
                 } else {
                     poolManager.notifyFailure(apiKey)
@@ -3184,6 +3197,9 @@ import kotlin.math.max
                     val usage = response.usageMetadata
                     if (usage != null) {
                         Log.i("TranslationRepository", "[GEMINI-MULTI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
+
+                        // Trừ dần quota theo thực trạng sử dụng
+                        poolManager.notifyUsage(useKey, "gemini", usage.totalTokenCount)
                     }
                 } catch (e: Exception) {
                     Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini Multi-Scale: ${e.message}")
@@ -3347,8 +3363,13 @@ import kotlin.math.max
                 val msg = e.message?.lowercase() ?: ""
                 val keyPrefix = useKey.take(10)
                 // Nếu là lỗi 429 hoặc quota/throttling thì bỏ qua key này, không tăng attempt
-                if (msg.contains("429") || msg.contains("too many requests") || msg.contains("quota") || msg.contains("throttl")) {
-                    Log.w("TranslationRepository", "[GEMINI-MULTI-429] Key bị giới hạn: ${keyPrefix}... | Model: $modelName | Lỗi: ${e.message} | Đã bỏ qua: ${skipped429 + 1}")
+                if (msg.contains("quota", ignoreCase = true)) {
+                    Log.w("TranslationRepository", "[GEMINI-MULTI-QUOTA] Key đã hết quota: ${keyPrefix}... | Model: $modelName")
+                    poolManager.notifyQuotaExhausted(useKey)
+                    skipped429++
+                    continue
+                } else if (msg.contains("429") || msg.contains("too many requests") || msg.contains("throttl")) {
+                    Log.w("TranslationRepository", "[GEMINI-MULTI-429] Key bị giới hạn tốc độ: ${keyPrefix}... | Model: $modelName | Lỗi: ${e.message} | Đã bỏ qua: ${skipped429 + 1}")
                     poolManager.notifyRateLimit(useKey, 60000)
                     skipped429++
                     continue // thử key tiếp theo, không tăng attempt
@@ -3394,6 +3415,9 @@ import kotlin.math.max
                     val usage = response.usageMetadata
                     if (usage != null) {
                         Log.i("TranslationRepository", "[GEMINI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
+
+                        // Trừ dần quota theo thực trạng sử dụng
+                        poolManager.notifyUsage(apiKey, "gemini", usage.totalTokenCount)
                     }
                 } catch (e: Exception) {
                     Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini: ${e.message}")
@@ -3404,7 +3428,9 @@ import kotlin.math.max
             translatedText
         } catch (e: Exception) {
             Log.e("TranslationRepository", "Error during translation: ${e.message}")
-            if (e.message?.contains("429") == true || e.message?.contains("quota") == true) {
+            if (e.message?.contains("quota", ignoreCase = true) == true) {
+                poolManager.notifyQuotaExhausted(apiKey)
+            } else if (e.message?.contains("429") == true) {
                 poolManager.notifyRateLimit(apiKey, 60000)
             } else {
                 poolManager.notifyFailure(apiKey)
