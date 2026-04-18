@@ -147,8 +147,10 @@ import kotlin.math.max
     private val cache = mutableMapOf<String, Pair<String, List<TextBlockInfo>>>()
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(300, java.util.concurrent.TimeUnit.SECONDS)
         .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .pingInterval(30, java.util.concurrent.TimeUnit.SECONDS)
+        .protocols(listOf(okhttp3.Protocol.HTTP_1_1)) // Ép sử dụng HTTP/1.1 để ổn định hơn với các request lâu
         .build()
     private val nvidiaService = NvidiaTranslationService(httpClient)
     private val databaseHelper = DatabaseHelper(application)

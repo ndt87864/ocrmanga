@@ -21,25 +21,19 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
 
     private fun getBaseRequestJson(
         model: String,
-        systemPrompt: String,
         userPrompt: String,
         temperature: Double,
         topP: Double,
-        maxTokens: Int,
-        chatTemplateKwargs: Map<String, Any>
+        maxTokens: Int
     ): String {
-        val systemMessage = mapOf("role" to "system", "content" to systemPrompt)
         val userMessage = mapOf("role" to "user", "content" to userPrompt)
-        
+
         val bodyMap = mapOf(
             "model" to model,
-            "messages" to listOf(systemMessage, userMessage),
+            "messages" to listOf(userMessage),
             "temperature" to temperature,
             "top_p" to topP,
             "max_tokens" to maxTokens,
-            "extra_body" to mapOf(
-                "chat_template_kwargs" to chatTemplateKwargs
-            ),
             "stream" to false
         )
         return gson.toJson(bodyMap)
@@ -53,23 +47,18 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         isAncientMode: Boolean = false
     ): List<String?>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
-        
+
         val prompt = buildPrompt(textBlocks, ocrResults, previousTranslation, isAncientMode)
         val systemPrompt = TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT.trimIndent() + "\n\nOutput format: STRICTLY 'Block #N: <translation>' per line. No notes, no intro."
-        
+
         AppLogger.i(TAG, "[GLM5] Đang gửi yêu cầu dịch (${textBlocks.size} blocks)...")
-        
+
         val requestBody = getBaseRequestJson(
             model = "z-ai/glm5",
-            systemPrompt = systemPrompt,
-            userPrompt = prompt,
+            userPrompt = "$systemPrompt\n\n$prompt",
             temperature = 1.0,
             topP = 1.0,
-            maxTokens = 16384,
-            chatTemplateKwargs = mapOf(
-                "enable_thinking" to false,
-                "clear_thinking" to false
-            )
+            maxTokens = 16384
         )
 
         return executeRequest(requestBody, "GLM5", textBlocks.size, apiKey)
@@ -83,24 +72,20 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         isAncientMode: Boolean = false
     ): List<String?>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
-        
+
         val prompt = buildPrompt(textBlocks, ocrResults, previousTranslation, isAncientMode)
         val systemPrompt = TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT.trimIndent() + "\n\nOutput format: STRICTLY 'Block #N: <translation>' per line. No notes, no intro."
-        
+
         AppLogger.i(TAG, "[Qwen] Đang gửi yêu cầu dịch (${textBlocks.size} blocks)...")
-        
+
         val requestBody = getBaseRequestJson(
             model = "qwen/qwen3.5-397b-a17b",
-            systemPrompt = systemPrompt,
-            userPrompt = prompt,
+            userPrompt = "$systemPrompt\n\n$prompt",
             temperature = 0.60,
             topP = 0.95,
-            maxTokens = 16384,
-            chatTemplateKwargs = mapOf(
-                "enable_thinking" to true
-            )
+            maxTokens = 16384
         )
-        
+
         // Cập nhật lại executeRequest để hỗ trợ modelLabel Qwen
         return executeRequest(requestBody, "Qwen", textBlocks.size, apiKey)
     }
@@ -113,22 +98,20 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         isAncientMode: Boolean = false
     ): List<String?>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
-        
+
         val prompt = buildPrompt(textBlocks, ocrResults, previousTranslation, isAncientMode)
         val systemPrompt = TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT.trimIndent() + "\n\nOutput format: STRICTLY 'Block #N: <translation>' per line. No notes, no intro."
-        
+
         AppLogger.i(TAG, "[GPT-OSS-20B] Đang gửi yêu cầu dịch (${textBlocks.size} blocks)...")
-        
+
         val requestBody = getBaseRequestJson(
             model = "openai/gpt-oss-20b",
-            systemPrompt = systemPrompt,
-            userPrompt = prompt,
+            userPrompt = "$systemPrompt\n\n$prompt",
             temperature = 1.0,
             topP = 1.0,
-            maxTokens = 4096,
-            chatTemplateKwargs = emptyMap()
+            maxTokens = 4096
         )
-        
+
         return executeRequest(requestBody, "GPT-OSS-20B", textBlocks.size, apiKey)
     }
 
@@ -140,22 +123,20 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         isAncientMode: Boolean = false
     ): List<String?>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
-        
+
         val prompt = buildPrompt(textBlocks, ocrResults, previousTranslation, isAncientMode)
-        val systemPrompt = TranslationPrompts.TRANSLATOR_SYSTEM_PROMPT.trimIndent() + "\n\nOutput format: STRICTLY 'Block #N: <translation>' per line. No notes, no intro."
-        
+        val systemPrompt = "Dịch các đoạn log OCR manga này sang tiếng Việt, giữ nguyên ID của từng block:"
+
         AppLogger.i(TAG, "[GPT-OSS] Đang gửi yêu cầu dịch (${textBlocks.size} blocks)...")
-        
+
         val requestBody = getBaseRequestJson(
             model = "openai/gpt-oss-120b",
-            systemPrompt = systemPrompt,
-            userPrompt = prompt,
+            userPrompt = "$systemPrompt $prompt",
             temperature = 1.0,
-            topP = 1.0,
-            maxTokens = 4096,
-            chatTemplateKwargs = emptyMap()
+            topP = 0.95,
+            maxTokens = 8192
         )
-        
+
         return executeRequest(requestBody, "GPT-OSS", textBlocks.size, apiKey)
     }
 
@@ -165,25 +146,15 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
         previousTranslation: List<TextBlockInfo>? = null,
         isAncientMode: Boolean = false
     ): String {
-        val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
-            TranslationPrompts.getPreviousContextText(previousTranslation)
-        } else ""
-        
-        val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
-            "Kết quả quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
-        }.joinToString("\n\n")
-        
-        val numberedBlocks = textBlocks.mapIndexed { index, block ->
-            "Block #${index + 1}: ${block.text}"
-        }.joinToString("\n")
-        
-        return TranslationPrompts.getMistralMultiScalePrompt(
-            ocrResultsText = ocrResultsText,
-            numberedBlocks = numberedBlocks,
-            blockCount = textBlocks.size,
-            previousContextText = previousContextText,
-            isAncientMode = isAncientMode
-        )
+        // Đơn giản hóa prompt cho GPT-OSS để tránh mô hình suy nghĩ quá lâu gây timeout
+        val sb = StringBuilder()
+        sb.append("Dịch các đoạn văn bản OCR manga này sang tiếng Việt, giữ nguyên ID của từng block:\n")
+
+        textBlocks.forEachIndexed { index, block ->
+            sb.append("#$index: Text='${block.text}'\n")
+        }
+
+        return sb.toString()
     }
 
     private suspend fun executeRequest(requestBody: String, modelLabel: String, blocksSize: Int, apiKey: String): List<String?>? {
@@ -191,7 +162,6 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
             .url(nvidiaApiUrl)
             .addHeader("Authorization", "Bearer $apiKey")
             .addHeader("Content-Type", "application/json")
-            .addHeader("Accept", "application/json")
             .post(requestBody.toRequestBody("application/json".toMediaTypeOrNull()))
             .build()
 
@@ -205,23 +175,25 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
                 }
                 resp.body?.string()
             }
-            
+
             if (body == null) return null
-            
+
             val json = JsonParser.parseString(body).asJsonObject
             val choices = json["choices"]?.asJsonArray
             val message = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")
-            
+
             // Log reasoning nếu có (AI đang suy nghĩ)
             val reasoning = message?.get("reasoning_content")?.let { if (it.isJsonNull) null else it.asString }
+                ?: message?.get("reasoning")?.let { if (it.isJsonNull) null else it.asString }
+
             if (!reasoning.isNullOrBlank()) {
                 AppLogger.i(TAG, "[$modelLabel-THINKING] AI đang suy nghĩ:\n$reasoning")
             }
-            
+
             val contentElement = message?.get("content")
             val content = if (contentElement != null && !contentElement.isJsonNull) contentElement.asString else null
             if (content.isNullOrBlank()) return null
-            
+
             parseContent(content, blocksSize)
         } catch (e: Exception) {
             AppLogger.e(TAG, "[$modelLabel-EXCEPTION] Lỗi: ${e.message}", e)
