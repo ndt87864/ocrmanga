@@ -7,7 +7,7 @@
 
 [YÊU CẦU CỐT LÕI]
 1. SỬA ĐÚNG Ý QUẢN LÝ: Đặc biệt lưu ý nếu Quản lý yêu cầu thay đổi cấu trúc câu (Ví dụ: từ câu hỏi thành câu khẳng định) hoặc xưng hô.
-2. ĐỒNG BỘ XƯNG HÔ: Bắt buộc giữ đúng đại từ đang dùng trong bối cảnh chung.
+2. NHẤT QUÁN XƯNG HÔ (CRITICAL): Bắt buộc giữ đúng cặp đại từ nhân xưng đang dùng trong bối cảnh chung của toàn trang. Tuyệt đối không tự ý đổi "mày/tao" sang "cậu/tớ" (hoặc ngược lại) nếu Manager không yêu cầu.
 3. CHỐNG ẢO GIÁC: Không sửa rác OCR thành nội dung bịa đặt.
 
 [OUTPUT] Chỉ trả về bản dịch mới nhất. Không giải thích.

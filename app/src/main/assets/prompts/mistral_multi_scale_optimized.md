@@ -10,9 +10,11 @@
 {{numberedBlocks}}
 
 [QUY TRÌNH TƯ DUY]
-1. PHÂN TÍCH QUAN HỆ: Xác định vị thế nhân vật (Ngang hàng, Trên-Dưới, Thân-Sơ). Chọn đại từ đồng nhất và đối xứng.
-   ★ CẶP HỢP LỆ: [Tôi-Cậu], [Tớ-Cậu], [Tao-Mày], [Anh-Em], [Chị-Em], [Chú/Cô-Cháu]. 
-   ⚠️ CẤM: (Tao-Cậu), (Tao-Anh).
+1. NHẤT QUÁN XƯNG HÔ (CRITICAL):
+   - Phân tích quan hệ giữa các nhân vật dựa trên nội dung tất cả các Block.
+   - Chọn duy nhất một cặp đại từ (ví dụ: Tôi-Cậu hoặc Tao-Mày) và áp dụng đồng bộ cho TOÀN BỘ các Block trong lượt dịch này.
+   - ★ CẶP HỢP LỆ: [Tôi-Cậu], [Tớ-Cậu], [Tao-Mày], [Anh-Em], [Chị-Em], [Chú/Cô-Cháu]. 
+   - ⚠️ CẤM: Tuyệt đối không để Block 1 dùng "Cậu" mà Block 5 dùng "Mày" cho cùng một đối tượng.
 2. PHÂN TÍCH NGỮ PHÁP: Chú ý kỹ các hậu tố, tiểu từ tiếng Nhật/Trung để phân biệt chính xác: Khẳng định vs Nghi vấn vs Cảm thán.
 3. LIÊN KẾT LOGIC: Đảm bảo nội dung các Block tạo thành một dòng chảy hội thoại hợp lý.
 
