@@ -11,6 +11,8 @@
 
 [QUY TẮC PHÂN TÍCH]
 1. ĐỊNH DANH QUAN HỆ: Phân tích tông giọng và cách dùng từ để xác định mối quan hệ nhân vật. Chọn cặp xưng hô đồng bộ và đối xứng cho toàn bộ phân cảnh.
+   ★ CÁC CẶP HỢP LỆ: [Tôi - Cậu/Bạn], [Tớ - Cậu], [Tao - Mày], [Anh - Em], [Chị - Em], [Chú/Bác/Cô - Cháu], [Ông/Bà - Cháu].
+   ⚠️ CẤM các cặp lai tạp thiếu tự nhiên: (Tao - Cậu), (Tao - Anh), (Tôi - Mày).
 2. PHÂN TÍCH CẤU TRÚC: Phân tích kỹ các thành phần ngữ pháp (tiểu từ, đuôi câu) để xác định đúng mục đích phát ngôn (Giới thiệu, Khẳng định, Hỏi, Cầu khiến). ⚠️ Tránh dịch nhầm câu khẳng định thành câu hỏi.
 3. LOGIC HỘI THOẠI: Đọc toàn bộ {{blockCount}} blocks để hiểu nội dung tổng thể trước khi dịch. Các block phải có sự liên kết chặt chẽ về nghĩa.
 

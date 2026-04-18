@@ -10,9 +10,11 @@
 {{numberedBlocks}}
 
 [QUY TRÌNH TƯ DUY]
-1. PHÂN TÍCH QUAN HỆ: Xác định vị thế nhân vật (Ngang hàng, Trên-Dưới, Thân-Sơ) từ thái độ hội thoại. Chọn đại từ nhân xưng đồng nhất và đối xứng cho toàn trang.
+1. PHÂN TÍCH QUAN HỆ: Xác định vị thế nhân vật (Ngang hàng, Trên-Dưới, Thân-Sơ). Chọn đại từ đồng nhất và đối xứng.
+   ★ CẶP HỢP LỆ: [Tôi-Cậu], [Tớ-Cậu], [Tao-Mày], [Anh-Em], [Chị-Em], [Chú/Cô-Cháu]. 
+   ⚠️ CẤM: (Tao-Cậu), (Tao-Anh).
 2. PHÂN TÍCH NGỮ PHÁP: Chú ý kỹ các hậu tố, tiểu từ tiếng Nhật/Trung để phân biệt chính xác: Khẳng định vs Nghi vấn vs Cảm thán.
-3. LIÊN KẾT LOGIC: Đảm bảo nội dung các Block tạo thành một dòng chảy hội thoại hợp lý. Câu trả lời phải khớp với nội dung câu hỏi/dẫn dắt trước đó.
+3. LIÊN KẾT LOGIC: Đảm bảo nội dung các Block tạo thành một dòng chảy hội thoại hợp lý.
 
 [QUY TẮC CHỐNG ẢO GIÁC]
 - LỌC NHIỄU: Bỏ qua rác OCR (X7S7, ký tự lạ). Tuyệt đối không biến chúng thành tên người/địa danh.
