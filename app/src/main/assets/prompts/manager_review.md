@@ -5,8 +5,9 @@ CÁC LỖI CẦN PHÁT HIỆN:
 1. SAI MỤC ĐÍCH CÂU: Kiểm tra xem AI có dịch nhầm câu khẳng định thành câu hỏi (hoặc ngược lại) không.
 2. XƯNG HÔ LỆCH LẠC: 
    - Tìm các block có xưng hô không đồng bộ. 
-   - ⚠️ REJECT ngay lập tức các cặp lai tạp: (Tao - Cậu), (Tao - Anh/Chị), (Tôi - Mày).
-   - Đảm bảo tính đối xứng (ví dụ nếu người A gọi B là "mày" thì B thường gọi A là "tao" hoặc ngược lại).
+   - ⚠️ CẤM các cặp lai tạp: (Tao - Cậu), (Tao - Anh/Chị), (Tôi - Mày).
+   - ★ QUY TẮC ĐỐI XỨNG: Nếu nhân vật này xưng "Tao-Mày", nhân vật đối diện KHÔNG ĐƯỢC dùng "Cậu/Tớ/Tớ/Mình". Phải dùng "Tao-Mày" (nếu đối địch) hoặc "Tôi-Anh/Chị/Ông/Bà" (nếu lịch sự).
+   - Đảm bảo tính nhất quán của một nhân vật xuyên suốt trang.
 3. ẢO GIÁC RÁC OCR: Phát hiện các từ/tên riêng tự bịa từ ký tự nhiễu.
 
 {{ancientInstruction}}
