@@ -38,6 +38,18 @@ class TextContainerClassifier {
         image: Bitmap,
         textBoundingBox: Rect
     ): TextContainerInfo {
+        // Tạm thời vô hiệu hóa logic classification để tăng tốc
+        return TextContainerInfo(
+            type = TextContainerType.UNKNOWN,
+            confidence = 0.0f,
+            hasStrongBorder = false,
+            borderThickness = 0f,
+            backgroundOpacity = 1.0f,
+            circularity = 0.0,
+            aspectRatio = 1.0,
+            cornerCount = 0
+        )
+/*
         if (!OpenCvInitializer.ensureInitialized()) {
             Log.w(TAG, "[CLASSIFY] OpenCV not initialized, returning UNKNOWN")
             return TextContainerInfo(
@@ -98,6 +110,7 @@ class TextContainerClassifier {
                 cornerCount = 0
             )
         }
+*/
     }
 
     /**

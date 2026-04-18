@@ -2258,13 +2258,16 @@ import kotlin.math.max
                     else {
                         val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
                         val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
-                        // Phân loại container type
+                        // Phân loại container type (TẠM THỜI TẮT)
+                        val containerInfo = null
+                        /*
                         val containerInfo = try {
                             containerClassifier.classifyContainer(bitmap, scaledBounds)
                         } catch (e: Exception) {
                             Log.e("TranslationRepository", "Error classifying container", e)
                             null
                         }
+                        */
                         TextBlockInfo(
                             text = processedText,
                             bounds = scaledBounds,
@@ -2705,10 +2708,13 @@ import kotlin.math.max
 
             // Phân tích màu nền và màu text cho merged block
             val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
-            // Re-enabled: Container classification after merging for better accuracy
+            // Re-enabled: Container classification after merging for better accuracy (TẠM THỜI TẮT)
+            val containerInfo = null
+            /*
             val containerInfo = bitmap?.let { bmp ->
                 containerClassifier.classifyContainer(bmp, mergedBounds)
             }
+            */
 
             val mergedBlock = TextBlockInfo(
                 text = mergedText.toString(),
@@ -2909,10 +2915,13 @@ import kotlin.math.max
 
                     // Phân tích màu nền và màu text cho merged block
                     val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
-                    // Re-enabled: Container classification after merging for better accuracy
+                    // Re-enabled: Container classification after merging for better accuracy (TẠM THỜI TẮT)
+                    val containerInfo = null
+                    /*
                     val containerInfo = bitmap?.let { bmp ->
                         containerClassifier.classifyContainer(bmp, mergedBounds)
                     }
+                    */
 
                     val mergedBlock = TextBlockInfo(
                         text = mergedText.toString(),
