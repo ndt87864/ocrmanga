@@ -29,7 +29,6 @@ class ThemePreferences(private val context: Context) {
         private val DEFAULT_BORDER_COLOR_KEY = stringPreferencesKey("default_border_color")
         private val DEFAULT_BORDER_THICKNESS_KEY = floatPreferencesKey("default_border_thickness")
         private val DEFAULT_TEXT_COLOR_KEY = stringPreferencesKey("default_text_color")
-        private val MISTRAL_MODEL_KEY = stringPreferencesKey("mistral_model")
     }
 
     val themeVariant: Flow<ThemeVariant> = context.dataStore.data.map { preferences ->
@@ -87,10 +86,6 @@ class ThemePreferences(private val context: Context) {
 
     val defaultTextColor: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[DEFAULT_TEXT_COLOR_KEY]
-    }
-
-    val mistralModel: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[MISTRAL_MODEL_KEY] ?: "mistral-large-latest"
     }
 
     suspend fun setThemeVariant(variant: ThemeVariant) {
@@ -180,12 +175,6 @@ class ThemePreferences(private val context: Context) {
             } else {
                 preferences.remove(DEFAULT_TEXT_COLOR_KEY)
             }
-        }
-    }
-
-    suspend fun setMistralModel(model: String) {
-        context.dataStore.edit { preferences ->
-            preferences[MISTRAL_MODEL_KEY] = model
         }
     }
 }

@@ -23,8 +23,7 @@ data class ThemeState(
     val defaultOverlayBrightness: Float = 1.0f,
     val defaultBorderColor: String? = null,
     val defaultBorderThickness: Float = 0.0f,
-    val defaultTextColor: String? = null,
-    val mistralModel: String = "mistral-large-latest"
+    val defaultTextColor: String? = null
 )
 
 class ThemeSettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -49,8 +48,7 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
                 themePreferences.defaultOverlayBrightness,
                 themePreferences.defaultBorderColor,
                 themePreferences.defaultBorderThickness,
-                themePreferences.defaultTextColor,
-                themePreferences.mistralModel
+                themePreferences.defaultTextColor
             ) { values ->
                 ThemeState(
                     themeVariant = values[0] as ThemeVariant,
@@ -65,8 +63,7 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
                     defaultOverlayBrightness = values[9] as Float,
                     defaultBorderColor = values[10] as String?,
                     defaultBorderThickness = values[11] as Float,
-                    defaultTextColor = values[12] as String?,
-                    mistralModel = values[13] as String
+                    defaultTextColor = values[12] as String?
                 )
             }.collect { newState ->
                 _themeState.value = newState
@@ -124,9 +121,5 @@ class ThemeSettingsViewModel(application: Application) : AndroidViewModel(applic
 
     suspend fun setDefaultTextColor(textColor: String?) {
         themePreferences.setDefaultTextColor(textColor)
-    }
-
-    suspend fun setMistralModel(model: String) {
-        themePreferences.setMistralModel(model)
     }
 }

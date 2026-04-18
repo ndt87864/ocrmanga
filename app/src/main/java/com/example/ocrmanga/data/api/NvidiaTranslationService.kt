@@ -12,12 +12,10 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import com.example.ocrmanga.data.translation.ApiKeyPoolManager
 import com.example.ocrmanga.utils.AppLogger
 
 class NvidiaTranslationService(
-    private val httpClient: OkHttpClient,
-    private val poolManager: ApiKeyPoolManager? = null
+    private val httpClient: OkHttpClient
 ) {
     private val nvidiaApiUrl = "${AppConfig.NVIDIA_BASE_URL}/chat/completions"
     private val gson = Gson()
@@ -192,9 +190,6 @@ class NvidiaTranslationService(
                     val completionTokens = usage["completion_tokens"]?.asInt ?: 0
                     val totalTokens = usage["total_tokens"]?.asInt ?: 0
                     AppLogger.i(TAG, "[$modelLabel-USAGE] Prompt: $promptTokens | Completion: $completionTokens | Total: $totalTokens tokens")
-
-                    // Trừ dần quota theo thực trạng sử dụng
-                    poolManager?.notifyUsage(apiKey, "nvidia", totalTokens)
                 }
             } catch (e: Exception) {
                 AppLogger.w(TAG, "Không thể parse token usage từ $modelLabel: ${e.message}")

@@ -28,6 +28,7 @@ import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
 import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.google.gson.JsonParser
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -50,7 +51,6 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.io.StringReader
 import com.example.ocrmanga.ui.screens.view.analyzeBackgroundAndTextColor
 import com.example.ocrmanga.ui.theme.ThemePreferences
-import kotlinx.coroutines.flow.first
 import kotlin.math.max
 
     class TranslationRepository(private val application: Application) {
@@ -125,22 +125,6 @@ import kotlin.math.max
         return poolManager.selectBestKey("nvidia") != null
     }
 
-    /**
-     * Lấy % quota trung bình của một loại model dựa trên mode dịch
-     */
-    fun getAverageQuota(mode: TranslationMode): Double {
-        val type = when (mode) {
-            TranslationMode.GEMINI -> "gemini"
-            TranslationMode.MISTRAL -> "mistral"
-            TranslationMode.NVIDIA_GLM5,
-            TranslationMode.NVIDIA_QWEN,
-            TranslationMode.NVIDIA_GPT_OSS_20B,
-            TranslationMode.NVIDIA_GPT_OSS -> "nvidia"
-            else -> return 1.0
-        }
-        return poolManager.getAverageQuota(type)
-    }
-
     // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
     suspend fun translateImage(
         imageUri: Uri,
@@ -186,7 +170,7 @@ import kotlin.math.max
     }
 
     private val poolManager by lazy { com.example.ocrmanga.data.translation.ApiKeyPoolManager(application) }
-    private val nvidiaService by lazy { com.example.ocrmanga.data.api.NvidiaTranslationService(httpClient, poolManager) }
+    private val nvidiaService by lazy { com.example.ocrmanga.data.api.NvidiaTranslationService(httpClient) }
     private val mistralRequester by lazy { com.example.ocrmanga.data.translation.MistralRequester(application, poolManager, httpClient) }
 
     private var currentGeminiModelIndex = 0
@@ -212,7 +196,6 @@ import kotlin.math.max
     // --- ApiKey Management Methods (Removed manual loading) ---
 
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
-        val selectedModel = themePreferences.mistralModel.first()
         val prompt = TranslationPrompts.getMistralBasicPrompt(text)
         val systemMessage = mapOf(
             "role" to "system",
@@ -222,7 +205,6 @@ import kotlin.math.max
 
         val response = mistralRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
-            model = selectedModel,
             temperature = 0.78, // Giữ nguyên mức này theo yêu cầu tối ưu cho manga
             frequency_penalty = 0.45,
             presence_penalty = 0.4
@@ -310,10 +292,8 @@ import kotlin.math.max
         )
         val userMessage = mapOf("role" to "user", "content" to prompt)
 
-        val selectedModel = themePreferences.mistralModel.first()
         val response = mistralRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
-            model = selectedModel,
             temperature = 0.78,
             frequency_penalty = 0.45,
             presence_penalty = 0.4
@@ -1251,19 +1231,9 @@ import kotlin.math.max
                         TranslationMode.NVIDIA_GPT_OSS -> nvidiaService.translateWithGptOss(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
                         else -> null
                     }
-                    if (result != null) {
-                        poolManager.notifySuccess(nvidiaApiKey)
-                    } else {
-                        poolManager.notifyFailure(nvidiaApiKey)
-                    }
                     result
                 } catch (e: Exception) {
                     Log.e("TranslationRepository", "Nvidia translation error: ${e.message}")
-                    if (e.message?.contains("429") == true) {
-                        poolManager.notifyRateLimit(nvidiaApiKey, 60000)
-                    } else {
-                        poolManager.notifyFailure(nvidiaApiKey)
-                    }
                     null
                 }
 
@@ -3034,32 +3004,21 @@ import kotlin.math.max
 
                 // Nếu dịch thành công và khác với gốc thì trả về luôn
                 if (!translatedText.equals(originalText, ignoreCase = true)) {
-                    poolManager.notifySuccess(apiKey)
                     // Báo cáo số token
                     try {
                         val usage = response.usageMetadata
                         if (usage != null) {
                             Log.i("TranslationRepository", "[GEMINI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
-                            // Trừ dần quota theo thực trạng sử dụng
-                            poolManager.notifyUsage(apiKey, "gemini", usage.totalTokenCount)
                         }
                     } catch (e: Exception) {
                         Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini: ${e.message}")
                     }
                     return@withContext translatedText
                 }
-                poolManager.notifyFailure(apiKey)
             } catch (e: Exception) {
                 lastError = e
                 val keyPrefix = apiKey.take(10)
                 Log.e("TranslationRepository", "[GEMINI-ERROR] API key bị lỗi: ${keyPrefix}... | Model: $modelName | Exception: ${e.javaClass.simpleName} - ${e.message}")
-                if (e.message?.contains("quota", ignoreCase = true) == true) {
-                    poolManager.notifyQuotaExhausted(apiKey)
-                } else if (e.message?.contains("429") == true) {
-                    poolManager.notifyRateLimit(apiKey, 60000)
-                } else {
-                    poolManager.notifyFailure(apiKey)
-                }
             }
         }
 
@@ -3186,20 +3145,14 @@ import kotlin.math.max
 
                 if (content.isNullOrBlank()) {
                     Log.w("TranslationRepository", "[GEMINI] Response rỗng từ key, model $modelName")
-                    poolManager.notifyFailure(useKey)
                     continue
                 }
-
-                poolManager.notifySuccess(useKey)
 
                 // Báo cáo số token
                 try {
                     val usage = response.usageMetadata
                     if (usage != null) {
                         Log.i("TranslationRepository", "[GEMINI-MULTI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
-
-                        // Trừ dần quota theo thực trạng sử dụng
-                        poolManager.notifyUsage(useKey, "gemini", usage.totalTokenCount)
                     }
                 } catch (e: Exception) {
                     Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini Multi-Scale: ${e.message}")
@@ -3362,20 +3315,13 @@ import kotlin.math.max
             } catch (e: Exception) {
                 val msg = e.message?.lowercase() ?: ""
                 val keyPrefix = useKey.take(10)
-                // Nếu là lỗi 429 hoặc quota/throttling thì bỏ qua key này, không tăng attempt
-                if (msg.contains("quota", ignoreCase = true)) {
-                    Log.w("TranslationRepository", "[GEMINI-MULTI-QUOTA] Key đã hết quota: ${keyPrefix}... | Model: $modelName")
-                    poolManager.notifyQuotaExhausted(useKey)
-                    skipped429++
-                    continue
-                } else if (msg.contains("429") || msg.contains("too many requests") || msg.contains("throttl")) {
+                // Nếu là lỗi 429 hoặc throttling thì bỏ qua key này, không tăng attempt
+                if (msg.contains("429") || msg.contains("too many requests") || msg.contains("throttl")) {
                     Log.w("TranslationRepository", "[GEMINI-MULTI-429] Key bị giới hạn tốc độ: ${keyPrefix}... | Model: $modelName | Lỗi: ${e.message} | Đã bỏ qua: ${skipped429 + 1}")
-                    poolManager.notifyRateLimit(useKey, 60000)
                     skipped429++
                     continue // thử key tiếp theo, không tăng attempt
                 }
                 lastError = e
-                poolManager.notifyFailure(useKey)
                 Log.e("TranslationRepository", "[GEMINI-MULTI-ERROR] Key bị lỗi: ${keyPrefix}... | Model: $modelName | Exception: ${e.javaClass.simpleName} - ${e.message} | Lần thử: ${attempt + 1}/$maxTries", e)
                 attempt++ // chỉ tăng attempt nếu không phải lỗi 429/quota
             }
@@ -3409,32 +3355,19 @@ import kotlin.math.max
             val response = client.generateContent(prompt)
             val translatedText = response.text
             if (translatedText != null) {
-                poolManager.notifySuccess(apiKey)
                 // Báo cáo số token
                 try {
                     val usage = response.usageMetadata
                     if (usage != null) {
                         Log.i("TranslationRepository", "[GEMINI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
-
-                        // Trừ dần quota theo thực trạng sử dụng
-                        poolManager.notifyUsage(apiKey, "gemini", usage.totalTokenCount)
                     }
                 } catch (e: Exception) {
                     Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini: ${e.message}")
                 }
-            } else {
-                poolManager.notifyFailure(apiKey)
             }
             translatedText
         } catch (e: Exception) {
             Log.e("TranslationRepository", "Error during translation: ${e.message}")
-            if (e.message?.contains("quota", ignoreCase = true) == true) {
-                poolManager.notifyQuotaExhausted(apiKey)
-            } else if (e.message?.contains("429") == true) {
-                poolManager.notifyRateLimit(apiKey, 60000)
-            } else {
-                poolManager.notifyFailure(apiKey)
-            }
             null
         }
     }

@@ -312,25 +312,6 @@ fun Dialogs(
                             ) {
                                 Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
                                 Text(mode.getDisplayName(), modifier = Modifier.padding(start = 8.dp).weight(1f))
-
-                                // Hiển thị % quota trung bình cho mỗi model
-                                val avgQuota = viewModel.getAverageQuotaForMode(mode)
-                                if (mode != TranslationMode.OFF) {
-                                    Text(
-                                        text = "${(avgQuota * 100).toInt()}%",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (avgQuota < 0.2) Color.Red else MaterialTheme.colorScheme.secondary,
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .background(
-                                                color = if (avgQuota < 0.2) Color.Red else if (avgQuota < 0.5) Color(0xFFFFA500) else Color.Green,
-                                                shape = androidx.compose.foundation.shape.CircleShape
-                                            )
-                                    )
-                                }
                             }
                         }
                     }
