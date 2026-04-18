@@ -654,34 +654,6 @@ fun ViewerScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Dịch với NVIDIA GLM-5") },
-                            onClick = {
-                                viewModel.setTranslationMode(TranslationMode.NVIDIA_GLM5)
-                                showTranslationMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Dịch với NVIDIA Qwen 3.5") },
-                            onClick = {
-                                viewModel.setTranslationMode(TranslationMode.NVIDIA_QWEN)
-                                showTranslationMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Dịch với GPT OSS 20B") },
-                            onClick = {
-                                viewModel.setTranslationMode(TranslationMode.NVIDIA_GPT_OSS_20B)
-                                showTranslationMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Dịch với GPT OSS 120B") },
-                            onClick = {
-                                viewModel.setTranslationMode(TranslationMode.NVIDIA_GPT_OSS)
-                                showTranslationMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
                             text = { Text("Tắt") },
                             onClick = {
                                 viewModel.setTranslationMode(TranslationMode.OFF)

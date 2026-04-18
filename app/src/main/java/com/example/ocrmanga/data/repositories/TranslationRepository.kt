@@ -17,7 +17,6 @@ import com.example.ocrmanga.data.models.RecognitionResult
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.constant.TranslationPrompts
-import com.example.ocrmanga.data.api.NvidiaTranslationService
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
@@ -121,10 +120,6 @@ import kotlin.math.max
         return poolManager.selectBestKey("mistral") != null
     }
 
-    fun hasNvidiaApiKeys(): Boolean {
-        return poolManager.selectBestKey("nvidia") != null
-    }
-
     // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
     suspend fun translateImage(
         imageUri: Uri,
@@ -170,7 +165,6 @@ import kotlin.math.max
     }
 
     private val poolManager by lazy { com.example.ocrmanga.data.translation.ApiKeyPoolManager(application) }
-    private val nvidiaService by lazy { com.example.ocrmanga.data.api.NvidiaTranslationService(httpClient) }
     private val mistralRequester by lazy { com.example.ocrmanga.data.translation.MistralRequester(application, poolManager, httpClient) }
 
     private var currentGeminiModelIndex = 0
@@ -1202,88 +1196,6 @@ import kotlin.math.max
                 return@withContext result
             }
 
-            // --- LOGIC CHO CÁC MODEL NVIDIA NIM (GLM-5, QWEN, GPT-OSS 20B, GPT-OSS 120B) ---
-            if (mode == TranslationMode.NVIDIA_GLM5 || mode == TranslationMode.NVIDIA_QWEN || 
-                mode == TranslationMode.NVIDIA_GPT_OSS_20B || mode == TranslationMode.NVIDIA_GPT_OSS) {
-                
-                val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
-                if (allOcrResults.isEmpty()) {
-                    lastTranslationSession.add(Pair(imageUri, Pair("", "")))
-                    return@withContext Triple("", emptyList(), "zh")
-                }
-                
-                val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
-                val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
-
-                val apiKeyInfo = poolManager.selectBestKey("nvidia")
-                if (apiKeyInfo == null) {
-                    Log.w("TranslationRepository", "Không có API key NVIDIA khả dụng trong pool")
-                    lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
-                    return@withContext Triple("", emptyList(), "zh")
-                }
-                val nvidiaApiKey = apiKeyInfo.value
-
-                val translatedTexts = try {
-                    val result = when(mode) {
-                        TranslationMode.NVIDIA_GLM5 -> nvidiaService.translateWithGLM5(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
-                        TranslationMode.NVIDIA_QWEN -> nvidiaService.translateWithQwen(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
-                        TranslationMode.NVIDIA_GPT_OSS_20B -> nvidiaService.translateWithGptOss20b(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
-                        TranslationMode.NVIDIA_GPT_OSS -> nvidiaService.translateWithGptOss(mergedBlocks, allOcrResults, nvidiaApiKey, previousTranslation, isAncientMode)
-                        else -> null
-                    }
-                    result
-                } catch (e: Exception) {
-                    Log.e("TranslationRepository", "Nvidia translation error: ${e.message}")
-                    null
-                }
-
-                if (translatedTexts.isNullOrEmpty()) {
-                    Log.w("TranslationRepository", "NVIDIA ${mode.getDisplayName()} không trả về kết quả dịch")
-                    lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
-                    return@withContext Triple("", emptyList(), "zh")
-                }
-
-                withContext(Dispatchers.Main) {
-                    onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.DISTRIBUTING)
-                }
-                
-                val defaultSettings = getDefaultFontSettings()
-                val blocks = mutableListOf<TextBlockInfo>()
-                
-                mergedBlocks.forEachIndexed { index, block ->
-                    val naturalText = postProcessTranslation(translatedTexts.getOrNull(index) ?: block.text)
-                    val isVertical = block.isVertical
-                    val adjustedFontSize = calculateAdjustedFontSize(
-                        naturalText, block.text, block.bounds, block.fontSize, isVertical
-                    )
-                    
-                    val newBounds = adjustBoundsForTranslatedText(naturalText, block.bounds, adjustedFontSize, 1.0f)
-                    val newBlock = block.copy(
-                        text = naturalText,
-                        bounds = newBounds,
-                        fontSize = adjustedFontSize,
-                        fontFamily = defaultSettings["fontFamily"] as? String ?: "Default",
-                        lineSpacing = defaultSettings["lineSpacing"] as? Float ?: 1.0f,
-                        textBoldness = defaultSettings["textBoldness"] as? Float ?: 1.0f,
-                        overlayAlpha = defaultSettings["overlayAlpha"] as? Float ?: 0.8f,
-                        overlaySaturation = defaultSettings["overlayBrightness"] as? Float ?: 1.0f,
-                        customBorderColor = (defaultSettings["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
-                        borderThickness = defaultSettings["borderThickness"] as? Float ?: 2.0f,
-                        customTextColor = block.originalTextColor,
-                        applyMerge = true
-                    )
-                    blocks.add(newBlock)
-                }
-                
-                resultText = blocks.joinToString("\n") { it.text }
-                translatedBlocks = blocks
-                
-                val result = Triple(resultText, translatedBlocks, sourceLanguage)
-                cache[cacheKey] = resultText to translatedBlocks
-                lastTranslationSession.add(Pair(imageUri, Pair(fullText, resultText)))
-                return@withContext result
-            }
-
             // Lấy tất cả cài đặt mặc định từ cài đặt cho các mode khác
             val defaultSettingsOther = getDefaultFontSettings()
             
@@ -1301,8 +1213,6 @@ import kotlin.math.max
                             TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                             TranslationMode.OFF -> block.text
                             TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: "" // Không nên xảy ra vì đã xử lý ở trên
-                            TranslationMode.NVIDIA_GLM5 -> block.text // Đã xử lý ở khối if riêng phía trên
-                            TranslationMode.NVIDIA_QWEN, TranslationMode.NVIDIA_GPT_OSS_20B, TranslationMode.NVIDIA_GPT_OSS -> block.text // Đã xử lý ở khối if riêng phía trên
                         }
                         // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
                         // Tối ưu: chỉ kiểm tra lần 2 nếu text quá ngắn (có thể bị dịch sai)
@@ -1397,8 +1307,6 @@ import kotlin.math.max
                         TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
                         TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                         TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
-                        TranslationMode.NVIDIA_GLM5 -> block.text
-                        TranslationMode.NVIDIA_QWEN, TranslationMode.NVIDIA_GPT_OSS_20B, TranslationMode.NVIDIA_GPT_OSS -> block.text
                         TranslationMode.OFF -> block.text
                     }
                     val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"

@@ -121,6 +121,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         migrateRoomImageLinks()
         // Clean up any duplicate translations that might exist
         cleanupDuplicateTranslations()
+
+        // Loại bỏ hoàn toàn API key NVIDIA khỏi DB
+        try {
+            val db = writableDatabase
+            val deletedCount = db.delete(TABLE_API_KEYS, "$COLUMN_API_KEY_TYPE = ?", arrayOf("nvidia"))
+            if (deletedCount > 0) {
+                Log.i(TAG, "Đã dọn dẹp $deletedCount API key NVIDIA khỏi database")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi khi dọn dẹp API key NVIDIA", e)
+        }
+
         // Bảng translations giờ chỉ có: text_id, image_id, translated_text, pending_delete
         // Tất cả thông tin khác (rotation, shape_type, colors, v.v.) đã chuyển sang image_blocks
         try {

@@ -186,8 +186,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val hasApiKeys = when(mode) {
                 TranslationMode.GEMINI -> hasGeminiApiKeys()
                 TranslationMode.MISTRAL -> hasMistralApiKeys()
-                TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN,
-                TranslationMode.NVIDIA_GPT_OSS_20B, TranslationMode.NVIDIA_GPT_OSS -> hasNvidiaApiKeys()
                 else -> true
             }
 
@@ -196,7 +194,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val msg = when(mode) {
                         TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
                         TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
-                        else -> "Không có API key NVIDIA NIM. Vui lòng thêm trong cài đặt."
+                        else -> "Không có API key. Vui lòng thêm trong cài đặt."
                     }
                     Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
                 }
@@ -1256,8 +1254,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val hasApiKeys = when(mode) {
             TranslationMode.GEMINI -> hasGeminiApiKeys()
             TranslationMode.MISTRAL -> hasMistralApiKeys()
-            TranslationMode.NVIDIA_GLM5, TranslationMode.NVIDIA_QWEN,
-            TranslationMode.NVIDIA_GPT_OSS_20B, TranslationMode.NVIDIA_GPT_OSS -> hasNvidiaApiKeys()
             else -> true
         }
 
@@ -1266,7 +1262,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val msg = when(mode) {
                     TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
                     TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
-                    else -> "Không có API key NVIDIA NIM. Vui lòng thêm trong cài đặt."
+                    else -> "Không có API key. Vui lòng thêm trong cài đặt."
                 }
                 Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
             }
@@ -2745,10 +2741,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun hasMistralApiKeys(): Boolean {
         return translationRepository.hasMistralApiKeys()
-    }
-
-    fun hasNvidiaApiKeys(): Boolean {
-        return translationRepository.hasNvidiaApiKeys()
     }
 
     // Public accessor for UI to get imageId for a given uri if available

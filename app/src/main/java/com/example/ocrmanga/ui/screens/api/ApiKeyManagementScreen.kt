@@ -260,7 +260,7 @@ fun DropdownMenuType(selectedType: String, onTypeSelected: (String) -> Unit) {
     Box {
         Button(onClick = { expanded = true }) { Text(selectedType.uppercase()) }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            listOf("gemini", "mistral", "nvidia").forEach { type ->
+            listOf("gemini", "mistral").forEach { type ->
                 DropdownMenuItem(text = { Text(type.uppercase()) }, onClick = {
                     onTypeSelected(type)
                     expanded = false
