@@ -179,6 +179,20 @@ class NvidiaTranslationService(private val httpClient: OkHttpClient) {
             if (body == null) return null
 
             val json = JsonParser.parseString(body).asJsonObject
+
+            // Báo cáo số token
+            try {
+                val usage = json["usage"]?.asJsonObject
+                if (usage != null) {
+                    val promptTokens = usage["prompt_tokens"]?.asInt ?: 0
+                    val completionTokens = usage["completion_tokens"]?.asInt ?: 0
+                    val totalTokens = usage["total_tokens"]?.asInt ?: 0
+                    AppLogger.i(TAG, "[$modelLabel-USAGE] Prompt: $promptTokens | Completion: $completionTokens | Total: $totalTokens tokens")
+                }
+            } catch (e: Exception) {
+                AppLogger.w(TAG, "Không thể parse token usage từ $modelLabel: ${e.message}")
+            }
+
             val choices = json["choices"]?.asJsonArray
             val message = choices?.get(0)?.asJsonObject?.getAsJsonObject("message")
 

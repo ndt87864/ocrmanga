@@ -6,6 +6,7 @@ CÁC LỖI CẦN PHÁT HIỆN:
 2. XƯNG HÔ LỆCH LẠC (ƯU TIÊN): 
    - QUÉT TOÀN BỘ DANH SÁCH: Đảm bảo xưng hô đồng bộ giữa tất cả các block.
    - ⚠️ PHẢI REJECT: Nếu phát hiện sự bất nhất (ví dụ: cùng một người gọi đối phương là "cậu" ở block này nhưng lại gọi là "mày" ở block khác).
+   - ★ YÊU CẦU CỤ THỂ: Khi REJECT vì xưng hô, PHẢI ghi rõ cặp đại từ cần dùng trong lý do (ví dụ: "REJECT | Lý do: Xưng hô bất nhất, phải dùng Tao-Mày").
    - ★ QUY TẮC ĐỐI XỨNG: Nếu nhân vật này xưng "Tao-Mày", nhân vật đối diện KHÔNG ĐƯỢC dùng "Cậu/Tớ/Tớ/Mình". Phải dùng "Tao-Mày" (nếu đối địch) hoặc "Tôi-Anh/Chị/Ông/Bà" (nếu lịch sự).
    - ⚠️ CẤM các cặp lai tạp: (Tao - Cậu), (Tao - Anh/Chị), (Tôi - Mày).
    - Đảm bảo tính nhất quán của một nhân vật xuyên suốt trang.

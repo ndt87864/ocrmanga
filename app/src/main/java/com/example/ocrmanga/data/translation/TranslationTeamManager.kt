@@ -95,7 +95,19 @@ class TranslationTeamManager(private val application: Application) {
                 break
             }
 
-            if (review.allApproved) {
+            // Bổ sung: Kiểm tra mâu thuẫn xưng hô toàn trang (Global Pronoun Check)
+            val globalPronounRejections = checkGlobalPronounInconsistency(current)
+            if (globalPronounRejections.isNotEmpty()) {
+                Log.w(TAG, "[GLOBAL-PRONOUN] Phát hiện mâu thuẫn xưng hô toàn trang giữa các block.")
+                // Gộp các block bị mâu thuẫn xưng hô vào danh sách rejections nếu chưa có
+                for ((idx, reason) in globalPronounRejections) {
+                    if (!review.rejections.containsKey(idx)) {
+                        review.rejections[idx] = reason
+                    }
+                }
+            }
+
+            if (review.allApproved && globalPronounRejections.isEmpty()) {
                 Log.i(TAG, "✓ Tất cả đã được duyệt ở vòng $round")
                 break
             }
@@ -296,6 +308,20 @@ class TranslationTeamManager(private val application: Application) {
                 poolManager.notifySuccess(apiKey)
                 val body = resp.body?.string() ?: return null
                 val json = JsonParser.parseString(body).asJsonObject
+
+                // Báo cáo số token
+                try {
+                    val usage = json["usage"]?.asJsonObject
+                    if (usage != null) {
+                        val promptTokens = usage["prompt_tokens"]?.asInt ?: 0
+                        val completionTokens = usage["completion_tokens"]?.asInt ?: 0
+                        val totalTokens = usage["total_tokens"]?.asInt ?: 0
+                        Log.i(TAG, "[MISTRAL-USAGE] Prompt: $promptTokens | Completion: $completionTokens | Total: $totalTokens tokens")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Không thể parse token usage từ Mistral: ${e.message}")
+                }
+
                 val content = json["choices"]?.asJsonArray
                     ?.get(0)?.asJsonObject
                     ?.getAsJsonObject("message")
@@ -341,6 +367,15 @@ class TranslationTeamManager(private val application: Application) {
             val result = response.text?.trim()
             if (result != null) {
                 poolManager.notifySuccess(apiKey)
+                // Báo cáo số token
+                try {
+                    val usage = response.usageMetadata
+                    if (usage != null) {
+                        Log.i(TAG, "[GEMINI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Không thể lấy token usage từ Gemini: ${e.message}")
+                }
             } else {
                 poolManager.notifyFailure(apiKey)
             }
@@ -354,6 +389,49 @@ class TranslationTeamManager(private val application: Application) {
             }
             null
         }
+    }
+
+    // ========================
+    // GLOBAL PRONOUN CHECK
+    // ========================
+
+    /**
+     * Kiểm tra sự mâu thuẫn xưng hô trên toàn bộ danh sách block của một trang.
+     * Trả về Map chứa index block và lý do sửa nếu phát hiện bất nhất.
+     */
+    private fun checkGlobalPronounInconsistency(translations: List<String>): Map<Int, String> {
+        val rejections = mutableMapOf<Int, String>()
+        if (translations.isEmpty()) return rejections
+
+        val allText = translations.joinToString(" ").uppercase()
+
+        // Các dấu hiệu của cặp xưng hô suồng sã (Tao-Mày)
+        val hasTaoMay = allText.contains(Regex("\\b(TAO|MÀY|MI|TỚI|CHÚNG MÀY|CHÚNG TAO)\\b"))
+
+        // Các dấu hiệu của cặp xưng hô lịch sự/thân thiện (Tôi-Cậu-Tớ-Mình)
+        val hasToiCau = allText.contains(Regex("\\b(TÔI|CẬU|TỚ|MÌNH|BẠN|CHÚNG TỚ|CHÚNG MÌNH)\\b"))
+
+        // Nếu cả hai cặp xuất hiện trên cùng một trang -> Mâu thuẫn
+        if (hasTaoMay && hasToiCau) {
+            // Đếm số lần xuất hiện để quyết định cặp nào "thắng"
+            val taoMayCount = Regex("\\b(TAO|MÀY|MI|TỚI)\\b").findAll(allText).count()
+            val toiCauCount = Regex("\\b(TÔI|CẬU|TỚ|MÌNH|BẠN)\\b").findAll(allText).count()
+
+            val targetPair = if (taoMayCount >= toiCauCount) "Tao-Mày" else "Tôi-Cậu/Tớ"
+            val conflictingPattern = if (taoMayCount >= toiCauCount) {
+                Regex("\\b(TÔI|CẬU|TỚ|MÌNH|BẠN)\\b", RegexOption.IGNORE_CASE)
+            } else {
+                Regex("\\b(TAO|MÀY|MI|TỚI)\\b", RegexOption.IGNORE_CASE)
+            }
+
+            translations.forEachIndexed { index, text ->
+                if (conflictingPattern.containsMatchIn(text)) {
+                    rejections[index] = "Mâu thuẫn xưng hô toàn trang (Global Inconsistency). Phải dùng cặp $targetPair."
+                }
+            }
+        }
+
+        return rejections
     }
 
     // ========================

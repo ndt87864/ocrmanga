@@ -272,6 +272,20 @@ import kotlin.math.max
                     val body = resp.body?.string() ?: return@use null
                     // Parse JSON để lấy phần dịch
                     val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+
+                    // Báo cáo số token
+                    try {
+                        val usage = json["usage"]?.asJsonObject
+                        if (usage != null) {
+                            val promptTokens = usage["prompt_tokens"]?.asInt ?: 0
+                            val completionTokens = usage["completion_tokens"]?.asInt ?: 0
+                            val totalTokens = usage["total_tokens"]?.asInt ?: 0
+                            Log.i("TranslationRepository", "[MISTRAL-USAGE] Prompt: $promptTokens | Completion: $completionTokens | Total: $totalTokens tokens")
+                        }
+                    } catch (e: Exception) {
+                        Log.w("TranslationRepository", "Không thể parse token usage từ Mistral: ${e.message}")
+                    }
+
                     val choices = json["choices"]?.asJsonArray
                     choices?.get(0)?.asJsonObject?.getAsJsonObject("message")?.get("content")?.asString?.trim()
                 }
@@ -431,7 +445,25 @@ import kotlin.math.max
                         return@use null
                     }
                     poolManager.notifySuccess(mistralKey)
-                    resp.body?.string()
+                    val body = resp.body?.string()
+
+                    // Báo cáo số token
+                    if (body != null) {
+                        try {
+                            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                            val usage = json["usage"]?.asJsonObject
+                            if (usage != null) {
+                                val promptTokens = usage["prompt_tokens"]?.asInt ?: 0
+                                val completionTokens = usage["completion_tokens"]?.asInt ?: 0
+                                val totalTokens = usage["total_tokens"]?.asInt ?: 0
+                                Log.i("TranslationRepository", "[MISTRAL-MULTI-USAGE] Prompt: $promptTokens | Completion: $completionTokens | Total: $totalTokens tokens")
+                            }
+                        } catch (e: Exception) {
+                            Log.w("TranslationRepository", "Không thể parse token usage từ Mistral Multi-Scale: ${e.message}")
+                        }
+                    }
+
+                    body
                 }
                 if (body == "##CONTINUE##") continue
                 if (body == null) return null
@@ -3353,7 +3385,17 @@ import kotlin.math.max
                 }
 
                 poolManager.notifySuccess(useKey)
-                
+
+                // Báo cáo số token
+                try {
+                    val usage = response.usageMetadata
+                    if (usage != null) {
+                        Log.i("TranslationRepository", "[GEMINI-MULTI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
+                    }
+                } catch (e: Exception) {
+                    Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini Multi-Scale: ${e.message}")
+                }
+
                 // Sử dụng Map để lưu trữ bản dịch theo index
                 val translatedBlocksMap = mutableMapOf<Int, String>()
                 val lines = content.split("\n")
@@ -3554,6 +3596,15 @@ import kotlin.math.max
             val translatedText = response.text
             if (translatedText != null) {
                 poolManager.notifySuccess(apiKey)
+                // Báo cáo số token
+                try {
+                    val usage = response.usageMetadata
+                    if (usage != null) {
+                        Log.i("TranslationRepository", "[GEMINI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
+                    }
+                } catch (e: Exception) {
+                    Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini: ${e.message}")
+                }
             } else {
                 poolManager.notifyFailure(apiKey)
             }
