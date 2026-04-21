@@ -647,9 +647,37 @@ fun ViewerScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("Dịch tất cả (Gemini)") },
+                            onClick = {
+                                viewModel.translateAllImagesInRoom(TranslationMode.GEMINI)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Dịch với Mistral AI") },
                             onClick = {
                                 viewModel.setTranslationMode(TranslationMode.MISTRAL)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Dịch tất cả (Mistral)") },
+                            onClick = {
+                                viewModel.translateAllImagesInRoom(TranslationMode.MISTRAL)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Dịch với Z.AI (GLM-4)") },
+                            onClick = {
+                                viewModel.setTranslationMode(TranslationMode.ZAI)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Dịch tất cả (Z.AI)") },
+                            onClick = {
+                                viewModel.translateAllImagesInRoom(TranslationMode.ZAI)
                                 showTranslationMenu = false
                             }
                         )

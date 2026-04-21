@@ -186,6 +186,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val hasApiKeys = when(mode) {
                 TranslationMode.GEMINI -> hasGeminiApiKeys()
                 TranslationMode.MISTRAL -> hasMistralApiKeys()
+                TranslationMode.ZAI -> hasZAiApiKeys()
                 else -> true
             }
 
@@ -194,6 +195,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val msg = when(mode) {
                         TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
                         TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
+                        TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
                         else -> "Không có API key. Vui lòng thêm trong cài đặt."
                     }
                     Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
@@ -273,9 +275,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         updateTranslationStatus(uri, status)
                     }
                     
-                    // Lấy bản dịch của ảnh trước để tham khảo (nếu dịch bằng Gemini/Mistral)
+                    // Lấy bản dịch của ảnh trước để tham khảo (nếu dịch bằng Gemini/Mistral/ZAI)
                     // Tìm ảnh GẦN NHẤT đã được dịch trước ảnh hiện tại (không chỉ ảnh liền kề)
-                    val previousTranslation: List<TextBlockInfo>? = if (mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL) {
+                    val previousTranslation: List<TextBlockInfo>? = if (mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI) {
                         val imageUris = uiState.value.imageUris
                         val currentIndex = imageUris.indexOf(uri)
                         var foundTranslation: List<TextBlockInfo>? = null
@@ -2743,9 +2745,148 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         return translationRepository.hasMistralApiKeys()
     }
 
+    fun hasZAiApiKeys(): Boolean {
+        return translationRepository.hasZAiApiKeys()
+    }
+
     // Public accessor for UI to get imageId for a given uri if available
     fun getImageIdForUri(uri: Uri): Long? {
         return uriToImageId[uri]
+    }
+
+    fun translateAllImagesInRoom(mode: TranslationMode) {
+        viewModelScope.launch {
+            val hasApiKeys = when(mode) {
+                TranslationMode.GEMINI -> hasGeminiApiKeys()
+                TranslationMode.MISTRAL -> hasMistralApiKeys()
+                TranslationMode.ZAI -> hasZAiApiKeys()
+                else -> true
+            }
+
+            if (!hasApiKeys) {
+                withContext(Dispatchers.Main) {
+                    val msg = when(mode) {
+                        TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
+                        TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
+                        TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
+                        else -> "Không có API key. Vui lòng thêm trong cài đặt."
+                    }
+                    Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
+                }
+                return@launch
+            }
+
+            val imageUris = uiState.value.imageUris
+            if (imageUris.isEmpty()) return@launch
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Đang bắt đầu dịch tất cả ${imageUris.size} ảnh...", Toast.LENGTH_SHORT).show()
+            }
+
+            // Dịch tuần tự để giữ ngữ cảnh (previousTranslation)
+            for (uri in imageUris) {
+                // Chúng ta gọi logic dịch tương tự như retranslateImage nhưng không launch coroutine mới cho mỗi ảnh
+                // để đảm bảo tính tuần tự và tránh quá tải API
+
+                val imageId = uriToImageId[uri]
+                if (imageId != null) {
+                    try {
+                        databaseHelper.markTranslationsAsPendingDelete(imageId)
+                    } catch (e: Exception) { }
+                }
+
+                updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.SCANNING)
+                _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
+
+                try {
+                    val statusCallback: (com.example.ocrmanga.data.models.TranslationStatus) -> Unit = { status ->
+                        updateTranslationStatus(uri, status)
+                    }
+
+                    val previousTranslation: List<TextBlockInfo>? = if (mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI) {
+                        val currentIndex = imageUris.indexOf(uri)
+                        var foundTranslation: List<TextBlockInfo>? = null
+                        if (currentIndex > 0) {
+                            for (i in (currentIndex - 1) downTo 0) {
+                                val prevUri = imageUris[i]
+                                val translation = uiState.value.translatedTexts[prevUri]?.second
+                                if (translation != null && translation.isNotEmpty()) {
+                                    foundTranslation = translation
+                                    break
+                                }
+                            }
+                        }
+                        foundTranslation
+                    } else null
+
+                    val canonicalUri = try {
+                        val imgId = uriToImageId[uri]
+                        if (imgId != null) {
+                            val db = databaseHelper.readableDatabase
+                            val cur = db.rawQuery(
+                                "SELECT ${DatabaseHelper.COLUMN_IMAGE_URI} FROM ${DatabaseHelper.TABLE_IMAGES} WHERE ${DatabaseHelper.COLUMN_IMAGE_ID} = ?",
+                                arrayOf(imgId.toString())
+                            )
+                            val stored = if (cur.moveToFirst()) Uri.parse(cur.getString(0)) else null
+                            cur.close()
+                            stored ?: uri
+                        } else uri
+                    } catch (e: Exception) { uri }
+
+                    val result = translationRepository.translateImage(
+                        canonicalUri,
+                        mode,
+                        statusCallback,
+                        previousTranslation,
+                        isAncientMode = uiState.value.isAncientTranslationMode
+                    )
+
+                    val (originalText, blocks) = result
+                    val fixedBlocks = blocks.map { block ->
+                        val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
+                        val textColor = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
+                        block.copy(
+                            customOverlayColor = baseOverlay,
+                            customTextColor = textColor,
+                            applyMerge = true
+                        )
+                    }
+
+                    _uiState.update {
+                        it.copy(
+                            translatedTexts = it.translatedTexts + (uri to (originalText to fixedBlocks)),
+                            translatedStatus = it.translatedStatus + (uri to true),
+                            translationEnabled = true,
+                            translationVersion = it.translationVersion + 1
+                        )
+                    }
+
+                    updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
+                    delay(500)
+                    clearTranslationStatus(uri)
+
+                    dirtyUris.add(uri)
+                    val rid = _uiState.value.roomId
+                    if (rid != null && imageId != null) {
+                        try {
+                            databaseHelper.markImageChanged(imageId, rid)
+                        } catch (e: Exception) { }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Lỗi khi dịch ảnh $uri trong chế độ dịch tất cả", e)
+                    clearTranslationStatus(uri)
+                }
+            }
+
+            val rid = _uiState.value.roomId
+            if (rid != null) {
+                maybeAutoSaveChangedImages(rid)
+            }
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Đã hoàn thành dịch tất cả ảnh trong phòng.", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     // Per-image version counter used to force image reloads when the underlying file is replaced

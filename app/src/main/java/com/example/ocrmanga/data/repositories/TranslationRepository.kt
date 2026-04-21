@@ -120,6 +120,10 @@ import kotlin.math.max
         return poolManager.selectBestKey("mistral") != null
     }
 
+    fun hasZAiApiKeys(): Boolean {
+        return poolManager.selectBestKey("zai") != null
+    }
+
     // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
     suspend fun translateImage(
         imageUri: Uri,
@@ -166,6 +170,7 @@ import kotlin.math.max
 
     private val poolManager by lazy { com.example.ocrmanga.data.translation.ApiKeyPoolManager(application) }
     private val mistralRequester by lazy { com.example.ocrmanga.data.translation.MistralRequester(application, poolManager, httpClient) }
+    private val zaiRequester by lazy { com.example.ocrmanga.data.translation.ZAiRequester(application, poolManager, httpClient) }
 
     private var currentGeminiModelIndex = 0
     private val geminiModels = listOf("gemini-flash-latest", "gemini-2.5-flash", "gemini-3-flash-preview") // Add more models if needed
@@ -188,6 +193,112 @@ import kotlin.math.max
     }
 
     // --- ApiKey Management Methods (Removed manual loading) ---
+
+    suspend fun translateWithZAi(text: String, sourceLang: String, targetLang: String): String? {
+        val fullUserPrompt = "Dịch đoạn văn bản sau sang tiếng Việt một cách tự nhiên nhất. Chỉ trả về bản dịch:\n\n$text"
+        val userMessage = mapOf("role" to "user", "content" to fullUserPrompt)
+
+        val response = zaiRequester.executeChatCompletion(
+            messages = listOf(userMessage),
+            temperature = 1.0,
+            max_tokens = 4096
+        )
+
+        return response?.content
+    }
+
+    suspend fun translateWithZAiMultiScale(
+        textBlocks: List<TextBlockInfo>,
+        ocrResults: List<Pair<Float, String>>,
+        sourceLang: String,
+        targetLang: String,
+        previousTranslation: List<TextBlockInfo>? = null,
+        isAncientMode: Boolean = false
+    ): List<String>? {
+        if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
+
+        val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
+            TranslationPrompts.getPreviousContextText(previousTranslation)
+        } else ""
+
+        val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
+            "Kết quả quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
+        }.joinToString("\n\n")
+
+        val numberedBlocks = textBlocks.mapIndexed { index, block ->
+            "Block #${index + 1}: ${block.text}"
+        }.joinToString("\n")
+
+        val prompt = TranslationPrompts.getMistralMultiScalePromptOptimized(
+            ocrResultsText = ocrResultsText,
+            numberedBlocks = numberedBlocks,
+            blockCount = textBlocks.size,
+            previousContextText = previousContextText,
+            isAncientMode = isAncientMode
+        )
+
+        // Sử dụng Prompt tối ưu cho Z.AI
+        val instruction = "Bạn là một phiên dịch viên chuyên nghiệp. Hãy tổng hợp các kết quả quét OCR và dịch truyện tranh sang tiếng Việt. Output CHỈ gồm các dòng 'Block #N: <bản dịch>'. Không giải thích, không ghi chú."
+        val fullUserPrompt = "$instruction\n\n$prompt"
+        val userMessage = mapOf("role" to "user", "content" to fullUserPrompt)
+
+        val response = zaiRequester.executeChatCompletion(
+            messages = listOf(userMessage),
+            temperature = 1.0,
+            max_tokens = 4096
+        )
+
+        val content = response?.content ?: return null
+        return parseMultiBlockResponse(content, textBlocks)
+    }
+
+    private fun parseMultiBlockResponse(content: String, textBlocks: List<TextBlockInfo>): List<String> {
+        val translatedBlocksMap = mutableMapOf<Int, String>()
+        val lines = content.trim().split("\n")
+        val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
+
+        var i = 0
+        while (i < lines.size) {
+            val trimmedLine = lines[i].trim()
+            val match = blockPattern.find(trimmedLine)
+            if (match != null) {
+                try {
+                    val blockNumber = match.groupValues[1].toInt()
+                    val blockIndex = blockNumber - 1
+                    var translation = match.groupValues[2].trim()
+                    val blockLines = mutableListOf<String>()
+                    if (translation.isNotEmpty()) blockLines.add(translation)
+
+                    var j = i + 1
+                    while (j < lines.size) {
+                        val nextLine = lines[j].trim()
+                        if (blockPattern.matches(nextLine)) break
+                        if (nextLine.isNotEmpty()) blockLines.add(nextLine)
+                        j++
+                    }
+                    i = j - 1
+
+                    val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
+                    if (arrowLine != null) {
+                        translation = if (arrowLine.contains("→")) arrowLine.substringAfter("→").trim()
+                        else arrowLine.substringAfter("->").trim()
+                    } else {
+                        val candidateLines = blockLines.map { it.trim() }.filter { it.isNotBlank() }
+                        val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
+                        translation = if (cleanLines.isNotEmpty()) cleanLines.last() else candidateLines.lastOrNull() ?: ""
+                    }
+
+                    translation = translation.replace("**", "").replace("*", "").trim()
+                    if (blockIndex >= 0) translatedBlocksMap[blockIndex] = translation
+                } catch (e: Exception) { }
+            }
+            i++
+        }
+
+        return List(textBlocks.size) { index ->
+            translatedBlocksMap[index]?.takeIf { it.isNotBlank() } ?: textBlocks[index].text
+        }
+    }
 
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
         val prompt = TranslationPrompts.getMistralBasicPrompt(text)
@@ -858,6 +969,17 @@ import kotlin.math.max
             return@withContext Triple("", emptyList(), "zh")
         }
 
+        if (mode == TranslationMode.ZAI && !hasZAiApiKeys()) {
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    application,
+                    "Không có API key Z.AI. Vui lòng thêm ít nhất một API key Z.AI trong cài đặt để dùng tính năng dịch Z.AI.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+            return@withContext Triple("", emptyList(), "zh")
+        }
+
         val cacheKey = "$imageUri-$mode"
         cache[cacheKey]?.let {
             //log.i("TranslationRepository", "Tìm thấy kết quả trong cache cho $imageUri: ${it.first}")
@@ -934,72 +1056,52 @@ import kotlin.math.max
                 onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
             }
 
-            // --- LOGIC MỚI CHO MISTRAL: THU THẬP TẤT CẢ KẾT QUẢ OCR TỪ CÁC SCALE ---
-            if (mode == TranslationMode.MISTRAL) {
+            // --- LOGIC MỚI CHO MISTRAL VÀ Z.AI: THU THẬP TẤT CẢ KẾT QUẢ OCR TỪ CÁC SCALE ---
+            if (mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI) {
                 // Thu thập tất cả kết quả OCR từ các scale khác nhau
                 val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
-                
+
                 if (allOcrResults.isEmpty()) {
                     Log.w("TranslationRepository", "Không có kết quả OCR nào từ các scale")
                     lastTranslationSession.add(Pair(imageUri, Pair("", "")))
                     return@withContext Triple("", emptyList(), "zh")
                 }
-                
-                // Gộp và merge các text blocks giống các mode khác
-                //Log.i("TranslationRepository", "[MISTRAL] Số blocks từ sortVerticalTextBlocks: ${textBlocks.size}")
-                /*textBlocks.forEachIndexed { index, block ->
-                    Log.i("TranslationRepository", "[MISTRAL] Block từ sort #${index + 1}: '${block.text}', bubbleId=${block.bubbleId}")
-                }*/
 
                 val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
-                //Log.i("TranslationRepository", "[MISTRAL] Số blocks sau assignSpeechBubblesToBlocks: ${blocksWithBubble.size}")
-                /*blocksWithBubble.forEachIndexed { index, block ->
-                    Log.i("TranslationRepository", "[MISTRAL] Block sau assign #${index + 1}: '${block.text}', bubbleId=${block.bubbleId}")
-                }
-                */
                 val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
-                
-                //Log.i("TranslationRepository", "[MISTRAL] Số blocks cần dịch: ${mergedBlocks.size}")
-                /*mergedBlocks.forEachIndexed { index, block ->
-                    Log.i("TranslationRepository", "[MISTRAL] Block gốc #${index + 1}: ${block.text}")
-                }*/
-                
-                // Gửi tất cả kết quả cho Mistral AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
-                var translatedTexts = translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", previousTranslation, isAncientMode)
+
+                // Gửi tất cả kết quả cho AI để tổng hợp và dịch
+                val translatedTexts = if (mode == TranslationMode.MISTRAL) {
+                    translateWithMistralMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", previousTranslation, isAncientMode)
+                } else {
+                    translateWithZAiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", previousTranslation, isAncientMode)
+                }
 
                 if (translatedTexts.isNullOrEmpty()) {
-                    Log.w("TranslationRepository", "Mistral không trả về kết quả dịch")
+                    Log.w("TranslationRepository", "${mode.name} không trả về kết quả dịch")
                     lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
                     return@withContext Triple("", emptyList(), "zh")
                 }
 
                 val finalTranslatedTexts = translatedTexts ?: emptyList()
-                
-                //Log.i("TranslationRepository", "[MISTRAL] Số bản dịch nhận được: ${translatedTexts.size}")
-                
+
                 // Thông báo: đang phân phối bản dịch trở lại tọa độ
                 withContext(Dispatchers.Main) {
                     onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.DISTRIBUTING)
                 }
-                
+
                 // Lấy font mặc định từ cài đặt
-                val defaultSettingsMistral = getDefaultFontSettings()
-                
+                val defaultSettings = getDefaultFontSettings()
+
                 // Ánh xạ các bản dịch vào các text blocks tương ứng
                 val blocks = mutableListOf<TextBlockInfo>()
                 mergedBlocks.forEachIndexed { index, block ->
                     // Lấy văn bản dịch tương ứng với block này
                     val translatedTextForBlock = finalTranslatedTexts.getOrNull(index) ?: block.text
-                    
+
                     // Post-process bản dịch
                     val naturalText = postProcessTranslation(translatedTextForBlock)
-                    
-                    /*Log.i("TranslationRepository", "[MISTRAL] Block #${index + 1}:")
-                    Log.i("TranslationRepository", "  - Văn bản gốc: ${block.text}")
-                    Log.i("TranslationRepository", "  - Văn bản dịch: $naturalText")
-                    Log.i("TranslationRepository", "  - Tọa độ: left=${block.bounds.left}, top=${block.bounds.top}, right=${block.bounds.right}, bottom=${block.bounds.bottom}")
-                    Log.i("TranslationRepository", "  - FontSize gốc: ${block.fontSize}")
-                    */
+
                     val isVertical = block.isVertical
                     val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
                         val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -1039,13 +1141,13 @@ import kotlin.math.max
                         text = reformattedText,
                         bounds = newBounds,
                         fontSize = adjustedFontSize,
-                        fontFamily = defaultSettingsMistral["fontFamily"] as? String ?: "Default",
-                        lineSpacing = defaultSettingsMistral["lineSpacing"] as? Float ?: 1.0f,
-                        textBoldness = defaultSettingsMistral["textBoldness"] as? Float ?: 1.0f,
-                        overlayAlpha = defaultSettingsMistral["overlayAlpha"] as? Float ?: 0.8f,
-                        overlaySaturation = defaultSettingsMistral["overlayBrightness"] as? Float ?: 1.0f,
-                        customBorderColor = (defaultSettingsMistral["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
-                        borderThickness = defaultSettingsMistral["borderThickness"] as? Float ?: 2.0f,
+                        fontFamily = defaultSettings["fontFamily"] as? String ?: "Default",
+                        lineSpacing = defaultSettings["lineSpacing"] as? Float ?: 1.0f,
+                        textBoldness = defaultSettings["textBoldness"] as? Float ?: 1.0f,
+                        overlayAlpha = defaultSettings["overlayAlpha"] as? Float ?: 0.8f,
+                        overlaySaturation = defaultSettings["overlayBrightness"] as? Float ?: 1.0f,
+                        customBorderColor = (defaultSettings["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                        borderThickness = defaultSettings["borderThickness"] as? Float ?: 2.0f,
                         customTextColor = block.originalTextColor, // preserve OCR-detected text color
                         applyMerge = true
                     )
@@ -1213,6 +1315,7 @@ import kotlin.math.max
                             TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                             TranslationMode.OFF -> block.text
                             TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: "" // Không nên xảy ra vì đã xử lý ở trên
+                            TranslationMode.ZAI -> translateWithZAi(block.text, sourceLanguage, "vi") ?: "" // Không nên xảy ra vì đã xử lý ở trên
                         }
                         // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
                         // Tối ưu: chỉ kiểm tra lần 2 nếu text quá ngắn (có thể bị dịch sai)
@@ -1307,6 +1410,7 @@ import kotlin.math.max
                         TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
                         TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                         TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
+                        TranslationMode.ZAI -> translateWithZAi(block.text, sourceLanguage, "vi") ?: ""
                         TranslationMode.OFF -> block.text
                     }
                     val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
@@ -1392,6 +1496,7 @@ import kotlin.math.max
                         TranslationMode.ONLINE -> translateTextWithGemini(block.text, sourceLanguage)
                         TranslationMode.GEMINI -> translateTextOffline(block.text, sourceLanguage)
                         TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: block.text
+                        TranslationMode.ZAI -> translateWithZAi(block.text, sourceLanguage, "vi") ?: block.text
                         else -> block.text
                     }
                     val retryLang = detectLanguage(retryText) ?: ""

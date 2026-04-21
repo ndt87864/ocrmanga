@@ -221,7 +221,7 @@ fun Dialogs(
                     // ...không còn nút ON/OFF riêng biệt...
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
-                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL).forEach { mode ->
+                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI).forEach { mode ->
                         if (mode == TranslationMode.OFF) {
                             // Kiểm tra xem tất cả block đã bị ẩn chưa để quyết định hiển thị ON hay OFF
                             val allBlocksHidden = blocks.isNotEmpty() && blocks.all { it.pendingDelete }
@@ -278,6 +278,15 @@ fun Dialogs(
                                             Toast.makeText(
                                                 context,
                                                 "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            onImageMenuDismiss()
+                                            return@clickable
+                                        }
+                                        if (mode == TranslationMode.ZAI && !viewModel.hasZAiApiKeys()) {
+                                            Toast.makeText(
+                                                context,
+                                                "Không có API key Z.AI. Vui lòng thêm ít nhất một API key Z.AI trong cài đặt để dùng tính năng dịch Z.AI.",
                                                 Toast.LENGTH_LONG
                                             ).show()
                                             onImageMenuDismiss()

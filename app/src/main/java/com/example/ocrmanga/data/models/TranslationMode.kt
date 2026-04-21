@@ -5,7 +5,8 @@ enum class TranslationMode {
     ONLINE,       // Dịch trực tuyến
     OFF,          // Tắt dịch
     GEMINI,       // Dịch bằng Gemini API
-    MISTRAL;      // Dịch bằng Mistral API
+    MISTRAL,      // Dịch bằng Mistral API
+    ZAI;          // Dịch bằng Z.AI API (GLM-4.7-flash)
 
     fun getDisplayName(): String = when (this) {
         OFFLINE -> "Dịch ngoại tuyến"
@@ -13,5 +14,6 @@ enum class TranslationMode {
         OFF -> "Tắt"
         GEMINI -> "Gemini AI"
         MISTRAL -> "Mistral AI"
+        ZAI -> "Z.AI (GLM-4)"
     }
 }
