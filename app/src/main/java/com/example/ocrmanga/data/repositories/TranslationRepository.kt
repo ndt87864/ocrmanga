@@ -200,7 +200,7 @@ import kotlin.math.max
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(userMessage),
-            temperature = 0.78,
+            temperature = 0.8, // Tăng nhẹ để dịch tự nhiên hơn
             max_tokens = 4096
         )
 
@@ -221,9 +221,17 @@ import kotlin.math.max
             TranslationPrompts.getPreviousContextText(previousTranslation)
         } else ""
 
-        val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
-            "Kết quả quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
-        }.joinToString("\n\n")
+        // Lọc rác OCR trước khi gửi cho Z.AI để tránh làm AI bị nhiễu
+        val cleanedOcrResults = ocrResults.map { (scale, text) ->
+            val cleaned = text.split("\n")
+                .filter { it.length > 1 && !it.matches(Regex("""^[^\p{L}\p{N}]+$""")) }
+                .joinToString(" ")
+            scale to cleaned
+        }.filter { it.second.isNotBlank() }
+
+        val ocrResultsText = cleanedOcrResults.mapIndexed { index, (scale, text) ->
+            "- Lần quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
+        }.joinToString("\n")
 
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
             "Block #${index + 1}: ${block.text}"
@@ -242,7 +250,7 @@ import kotlin.math.max
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(userMessage),
-            temperature = 0.78,
+            temperature = 0.8, // Tăng nhẹ để dịch tự nhiên hơn
             max_tokens = 4096
         )
 
@@ -287,6 +295,11 @@ import kotlin.math.max
                     }
 
                     translation = translation.replace("**", "").replace("*", "").trim()
+                    // Loại bỏ ảo giác nếu AI lặp lại Block header trong phần nội dung
+                    if (translation.startsWith("Block #", ignoreCase = true) || translation.startsWith("Block ", ignoreCase = true)) {
+                        translation = translation.replace(Regex("""^[Bb]lock\s*#?\d+[:.)]\s*"""), "").trim()
+                    }
+
                     if (blockIndex >= 0) translatedBlocksMap[blockIndex] = translation
                 } catch (e: Exception) { }
             }
@@ -1379,10 +1392,17 @@ import kotlin.math.max
                         val input = b.originalText ?: "N/A"
                         val output = b.text
                         val bounds = b.bounds
-                        Log.i("TranslationRepository", "[TRANS-OTHER] Block #${ai + 1}:")
+                        val transLabel = when (mode) {
+                            TranslationMode.GEMINI -> "TRANS-GEMINI"
+                            TranslationMode.MISTRAL -> "TRANS-MISTRAL"
+                            TranslationMode.ZAI -> "TRANS-ZAI"
+                            TranslationMode.OFFLINE -> "TRANS-OFFLINE"
+                            TranslationMode.ONLINE -> "TRANS-ONLINE"
+                            else -> "TRANS-OTHER"
+                        }
+                        Log.i("TranslationRepository", "[$transLabel] Block #${ai + 1}:")
                         Log.i("TranslationRepository", "    + Input : '$input'")
                         Log.i("TranslationRepository", "    + Output: '$output'")
-                        Log.i("TranslationRepository", "    + Bounds: $bounds")
                     }
                 } catch (_: Exception) { }
             }
@@ -1467,10 +1487,15 @@ import kotlin.math.max
                         val input = b.originalText ?: "N/A"
                         val output = b.text
                         val bounds = b.bounds
-                        Log.i("TranslationRepository", "[TRANS-RETRY] Block #${bi + 1}:")
+                        val retryLabel = when (mode) {
+                            TranslationMode.GEMINI -> "TRANS-GEMINI-RETRY"
+                            TranslationMode.MISTRAL -> "TRANS-MISTRAL-RETRY"
+                            TranslationMode.ZAI -> "TRANS-ZAI-RETRY"
+                            else -> "TRANS-RETRY"
+                        }
+                        Log.i("TranslationRepository", "[$retryLabel] Block #${bi + 1}:")
                         Log.i("TranslationRepository", "    + Input : '$input'")
                         Log.i("TranslationRepository", "    + Output: '$output'")
-                        Log.i("TranslationRepository", "    + Bounds: $bounds")
                     }
                 } catch (_: Exception) { }
                 val detectedFinal2 = detectLanguage(resultText2) ?: ""
