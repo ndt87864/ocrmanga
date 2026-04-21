@@ -11,6 +11,8 @@ object TranslationPrompts {
     private var mistralMultiScalePrompt: String = ""
     private var mistralMultiScalePromptOptimized: String = ""
     private var geminiMultiScalePrompt: String = ""
+    private var zaiBasicPrompt: String = ""
+    private var zaiMultiScalePrompt: String = ""
     private var managerReviewPrompt: String = ""
     private var translatorRevisePrompt: String = ""
 
@@ -24,6 +26,8 @@ object TranslationPrompts {
         mistralMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "mistral_multi_scale.md")
         mistralMultiScalePromptOptimized = PromptUtils.loadPromptFromAssets(context, "mistral_multi_scale_optimized.md")
         geminiMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "gemini_multi_scale.md")
+        zaiBasicPrompt = PromptUtils.loadPromptFromAssets(context, "zai_basic.md")
+        zaiMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "zai_multi_scale.md")
         managerReviewPrompt = PromptUtils.loadPromptFromAssets(context, "manager_review.md")
         translatorRevisePrompt = PromptUtils.loadPromptFromAssets(context, "translator_revise.md")
     }
@@ -183,6 +187,41 @@ object TranslationPrompts {
         return geminiMultiScalePrompt
             .replace("{{basePrompt}}", basePrompt)
             .replace("{{blockCount}}", blockCount.toString())
+    }
+
+    /**
+     * Prompt cơ bản cho Z.AI - dịch đơn giản một đoạn văn bản
+     */
+    fun getZAiBasicPrompt(text: String, isAncientMode: Boolean = false): String {
+        val ancientInstruction = if (isAncientMode) {
+            "Văn phong: Hán Việt, cổ trang. Xưng hô: ta/ngươi, tại hạ/các hạ, huynh/đệ..."
+        } else ""
+
+        return zaiBasicPrompt
+            .replace("{{text}}", text)
+            .replace("{{ancientInstruction}}", ancientInstruction)
+    }
+
+    /**
+     * Prompt chuyên dụng cho Z.AI Multi-Scale
+     */
+    fun getZAiMultiScalePrompt(
+        ocrResultsText: String,
+        numberedBlocks: String,
+        blockCount: Int,
+        previousContextText: String = "",
+        isAncientMode: Boolean = false
+    ): String {
+        val ancientInstruction = if (isAncientMode) {
+            "[CHẾ ĐỘ CỔ TRANG] Văn phong Hán Việt, cổ trang. Xưng hô: ta/ngươi, tại hạ/các hạ, huynh/đệ. Cấm dùng từ hiện đại: anh/em/cậu/tớ."
+        } else ""
+
+        return zaiMultiScalePrompt
+            .replace("{{previousContextText}}", previousContextText)
+            .replace("{{ocrResultsText}}", ocrResultsText)
+            .replace("{{numberedBlocks}}", numberedBlocks)
+            .replace("{{blockCount}}", blockCount.toString())
+            .replace("{{ancientInstruction}}", ancientInstruction)
     }
 
     /**

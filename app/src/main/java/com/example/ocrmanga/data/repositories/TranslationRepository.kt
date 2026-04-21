@@ -195,12 +195,12 @@ import kotlin.math.max
     // --- ApiKey Management Methods (Removed manual loading) ---
 
     suspend fun translateWithZAi(text: String, sourceLang: String, targetLang: String): String? {
-        val fullUserPrompt = "Dịch đoạn văn bản sau sang tiếng Việt một cách tự nhiên nhất. Chỉ trả về bản dịch:\n\n$text"
-        val userMessage = mapOf("role" to "user", "content" to fullUserPrompt)
+        val prompt = TranslationPrompts.getZAiBasicPrompt(text, isAncientMode = false) // Mặc định false cho dịch đơn lẻ nếu không truyền
+        val userMessage = mapOf("role" to "user", "content" to prompt)
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(userMessage),
-            temperature = 1.0,
+            temperature = 0.78,
             max_tokens = 4096
         )
 
@@ -229,7 +229,7 @@ import kotlin.math.max
             "Block #${index + 1}: ${block.text}"
         }.joinToString("\n")
 
-        val prompt = TranslationPrompts.getMistralMultiScalePromptOptimized(
+        val prompt = TranslationPrompts.getZAiMultiScalePrompt(
             ocrResultsText = ocrResultsText,
             numberedBlocks = numberedBlocks,
             blockCount = textBlocks.size,
@@ -237,14 +237,12 @@ import kotlin.math.max
             isAncientMode = isAncientMode
         )
 
-        // Sử dụng Prompt tối ưu cho Z.AI
-        val instruction = "Bạn là một phiên dịch viên chuyên nghiệp. Hãy tổng hợp các kết quả quét OCR và dịch truyện tranh sang tiếng Việt. Output CHỈ gồm các dòng 'Block #N: <bản dịch>'. Không giải thích, không ghi chú."
-        val fullUserPrompt = "$instruction\n\n$prompt"
-        val userMessage = mapOf("role" to "user", "content" to fullUserPrompt)
+        // Đưa Z.AI vào form chuẩn với hướng dẫn từ file MD
+        val userMessage = mapOf("role" to "user", "content" to prompt)
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(userMessage),
-            temperature = 1.0,
+            temperature = 0.78,
             max_tokens = 4096
         )
 
@@ -1124,7 +1122,7 @@ import kotlin.math.max
                     } else {
                         naturalText
                     }
-                    
+
                     // Tính toán fontSize mới để vừa với overlay
                     val adjustedFontSize = calculateAdjustedFontSize(
                         reformattedText,
@@ -1133,9 +1131,7 @@ import kotlin.math.max
                         block.fontSize,
                         isVertical
                     )
-                    
-                    //Log.i("TranslationRepository", "  - FontSize đã điều chỉnh: $adjustedFontSize")
-                    
+
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
                     val newBlock = block.copy(
                         text = reformattedText,
@@ -1155,10 +1151,10 @@ import kotlin.math.max
                         val input = block.text
                         val output = newBlock.text
                         val bounds = newBlock.bounds
-                        Log.i("TranslationRepository", "[TRANS-MISTRAL] Block #${index + 1}:")
+                        val transLabel = if (mode == TranslationMode.MISTRAL) "TRANS-MISTRAL" else "TRANS-ZAI"
+                        Log.i("TranslationRepository", "[$transLabel] Block #${index + 1}:")
                         Log.i("TranslationRepository", "    + Input : '$input'")
                         Log.i("TranslationRepository", "    + Output: '$output'")
-                        Log.i("TranslationRepository", "    + Bounds: $bounds")
                     } catch (_: Exception) { }
                     blocks.add(newBlock)
                 }
@@ -1327,6 +1323,8 @@ import kotlin.math.max
                                     TranslationMode.OFFLINE -> translateTextOffline(translatedText, detectedAfterTranslation)
                                     TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
                                     TranslationMode.GEMINI -> translateTextWithGemini(translatedText, detectedAfterTranslation)
+                                    TranslationMode.MISTRAL -> translateWithMistral(translatedText, detectedAfterTranslation, "vi") ?: translatedText
+                                    TranslationMode.ZAI -> translateWithZAi(translatedText, detectedAfterTranslation, "vi") ?: translatedText
                                     else -> translatedText
                                 }
                             }
@@ -1420,6 +1418,7 @@ import kotlin.math.max
                             TranslationMode.ONLINE -> translateTextOnline(translatedText, detectedAfterTranslation)
                             TranslationMode.GEMINI -> translateTextWithGemini(translatedText, detectedAfterTranslation)
                             TranslationMode.MISTRAL -> translateWithMistral(translatedText, detectedAfterTranslation, "vi") ?: translatedText
+                            TranslationMode.ZAI -> translateWithZAi(translatedText, detectedAfterTranslation, "vi") ?: translatedText
                             else -> translatedText
                         }
                     }
