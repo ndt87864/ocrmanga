@@ -470,27 +470,17 @@ fun calculateOptimalFontSize(
         val heightFits = textHeight <= safeHeight * heightScale
         val widthFits = maxLineWidth <= safeWidth * widthScale
 
-// Cho phép text tràn nhiều hơn trong oval để tận dụng tối đa không gian (99% dọc, 93% ngang)
-// Mục tiêu: giảm vùng trống, tăng kích thước text
+        // MỤC TIÊU: Đảm bảo text KHÔNG bao giờ tràn ra ngoài vùng chứa
         if (heightFits && widthFits) {
             optimalFontSize = mid
-            low = mid + 0.2f
-        } else if (heightFits && !widthFits && maxLineWidth <= safeWidth * 1.25f) {
-            // Cho phép tràn 25% chiều ngang cho oval (thay vì 10%)
-            optimalFontSize = mid
-            low = mid + 0.2f
-        } else if (!heightFits && textHeight <= safeHeight * 1.15f && widthFits) {
-            // Cho phép tràn 15% chiều cao cho oval (thay vì 5%)
-            optimalFontSize = mid
-            low = mid + 0.2f
+            low = mid + 0.1f
         } else {
-            high = mid - 0.2f
+            high = mid - 0.1f
         }
-
     }
 
-    // Apply a small allowance so UI can present one or two more incremental steps to the user.
-    val allowed = (optimalFontSize + extraSizeAllowance).coerceIn(safeMinFontSize, safeMaxFontSize)
+    // Không cộng thêm sai số để đảm bảo text luôn nằm trong vùng chứa
+    val allowed = optimalFontSize.coerceIn(safeMinFontSize, safeMaxFontSize)
     return allowed
 }
 
@@ -1664,30 +1654,42 @@ fun calculateWindowedOverlayBounds(
     lineSpacing: Float,
     shapeType: Int,
     overlayInsetHorizontal: Float,
-    overlayInsetVertical: Float
+    overlayInsetVertical: Float,
+    horizontalPadding: Float = 0f,
+    verticalPadding: Float = 0f
 ): WindowedOverlayResult {
     // 1. Outer bounds = FULL original bounds (KHÔNG áp dụng user insets)
-    // Outer bounds dùng để text có FULL không gian layout
-    // User insets CHỈ ảnh hưởng đến inner bounds (overlay), KHÔNG ảnh hưởng text area
     val outerBounds = originalBounds
 
-    // 2. Tính optimal font size dựa trên FULL outer bounds
-    val textAreaWidth = outerBounds.width * (if (shapeType == 1) 0.7f else 1f)
-    val textAreaHeight = outerBounds.height * (if (shapeType == 1) 0.7f else 1f)
+    // 2. Inner bounds = outer bounds - user insets
+    // Đây là vùng bôi trắng thực tế sẽ được vẽ
+    val innerBounds = androidx.compose.ui.geometry.Rect(
+        outerBounds.left + overlayInsetHorizontal,
+        outerBounds.top + overlayInsetVertical,
+        outerBounds.right - overlayInsetHorizontal,
+        outerBounds.bottom - overlayInsetVertical
+    ).takeIf { it.width > 0 && it.height > 0 } ?: outerBounds
+
+    // 3. Tính toán vùng vẽ văn bản dựa trên INNER bounds thay vì outer bounds
+    // MỤC TIÊU: Đảm bảo văn bản luôn nằm gọn trong vùng bôi trắng (overlay)
+    val textAreaWidth = innerBounds.width * (if (shapeType == 1) 0.7f else 1f)
+    val textAreaHeight = innerBounds.height * (if (shapeType == 1) 0.7f else 1f)
 
     val optimalFontSize = calculateOptimalFontSize(
         text = text,
         width = textAreaWidth,
         height = textAreaHeight,
-        minFontSize = baseFontSize * 0.5f,
+        minFontSize = (baseFontSize * 0.1f).coerceAtLeast(4f), // Cho phép co nhỏ tối đa để vừa vùng chứa
         maxFontSize = baseFontSize * 3f,
         shapeType = shapeType,
         context = context,
         fontFamilyName = fontFamilyName,
-        lineSpacing = lineSpacing
+        lineSpacing = lineSpacing,
+        horizontalPadding = horizontalPadding,
+        verticalPadding = verticalPadding
     )
 
-    // 3. Measure text size với optimal font size
+    // 4. Measure text size với optimal font size
     val (textMeasuredW, textMeasuredH) = measureTextActualSize(
         text = text,
         fontSize = optimalFontSize,
@@ -1698,15 +1700,6 @@ fun calculateWindowedOverlayBounds(
         lineSpacing = lineSpacing,
         shapeType = shapeType
     )
-
-    // 4. Inner bounds = outer bounds - user insets
-    // User insets CHỈ thu nhỏ overlay (inner bounds), KHÔNG ảnh hưởng text area (outer bounds)
-    val innerBounds = androidx.compose.ui.geometry.Rect(
-        outerBounds.left + overlayInsetHorizontal,
-        outerBounds.top + overlayInsetVertical,
-        outerBounds.right - overlayInsetHorizontal,
-        outerBounds.bottom - overlayInsetVertical
-    ).takeIf { it.width > 0 && it.height > 0 } ?: outerBounds
 
     return WindowedOverlayResult(outerBounds, innerBounds, optimalFontSize, Pair(textMeasuredW, textMeasuredH))
 }

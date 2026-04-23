@@ -454,7 +454,9 @@ fun ImageViewer(
                                         lineSpacing = region.lineSpacing,
                                         shapeType = block.shapeType,
                                         overlayInsetHorizontal = region.overlayInsetHorizontal,
-                                        overlayInsetVertical = region.overlayInsetVertical
+                                        overlayInsetVertical = region.overlayInsetVertical,
+                                        horizontalPadding = 4f,
+                                        verticalPadding = 4f
                                     )
                                     val outerBounds = windowedResult.outerBounds
                                     val innerBounds = windowedResult.innerBounds
@@ -497,11 +499,11 @@ fun ImageViewer(
                                         }
                                         if (overlayRotationAngle != 0f) withTransform({ rotate(overlayRotationAngle, clampedOuterBounds.center) }) { drawBorder() } else drawBorder()
                                     }
-                                    // Text vẽ trong OUTER bounds (có nhiều không gian hơn)
-                                    val tL = clampedOuterBounds.left + clampedOuterBounds.width * (if (isOval) 0.15f else 0f)
-                                    val tT = clampedOuterBounds.top + clampedOuterBounds.height * (if (isOval) 0.15f else 0f)
-                                    val tW = clampedOuterBounds.width * (if (isOval) 0.7f else 1f)
-                                    val tH = clampedOuterBounds.height * (if (isOval) 0.7f else 1f)
+                                    // Text vẽ trong INNER bounds (vùng bôi trắng thực tế)
+                                    val tL = clampedInnerBounds.left + clampedInnerBounds.width * (if (isOval) 0.15f else 0f)
+                                    val tT = clampedInnerBounds.top + clampedInnerBounds.height * (if (isOval) 0.15f else 0f)
+                                    val tW = clampedInnerBounds.width * (if (isOval) 0.7f else 1f)
+                                    val tH = clampedInnerBounds.height * (if (isOval) 0.7f else 1f)
                                     withTransform({ if (region.rotation != 0f) rotate(region.rotation, Offset(tL + tW / 2, tT + tH / 2)) }) {
                                         drawTextOnCanvas(
                                             drawScope = this,

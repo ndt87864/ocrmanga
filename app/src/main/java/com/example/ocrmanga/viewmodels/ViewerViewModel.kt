@@ -2341,24 +2341,33 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     adjBoundsTop + adjBoundsHeight
                                                 )
 
-                                                val insetH = (if (block.overlayInsetHorizontal != 0f) block.overlayInsetHorizontal else block.overlayInset) * srcScaleX
-                                                val insetV = (if (block.overlayInsetVertical != 0f) block.overlayInsetVertical else block.overlayInset) * srcScaleX
+                                                val displayMetrics = app.resources.displayMetrics
+                                                // Tính toán exportFontScale để đồng nhất với hiển thị trên View
+                                                // View hiển thị dựa trên màn hình tham chiếu 360dp
+                                                val refScreenWidthPx = 360f * displayMetrics.density
+                                                val exportFontScale = src.width.toFloat() / refScreenWidthPx
+
+                                                // Inset nên được scale theo exportFontScale để đồng nhất với cảm quan trên View
+                                                val insetH = (if (block.overlayInsetHorizontal != 0f) block.overlayInsetHorizontal else block.overlayInset) * exportFontScale
+                                                val insetV = (if (block.overlayInsetVertical != 0f) block.overlayInsetVertical else block.overlayInset) * exportFontScale
 
                                                 val windowedResult = com.example.ocrmanga.ui.screens.view.calculateWindowedOverlayBounds(
                                                     originalBounds = bitmapRect,
                                                     text = block.text,
-                                                    baseFontSize = block.fontSize * srcScaleX,
+                                                    baseFontSize = block.fontSize * exportFontScale,
                                                     isVertical = block.isVertical,
                                                     context = app,
                                                     fontFamilyName = block.fontFamily,
                                                     lineSpacing = block.lineSpacing,
                                                     shapeType = block.shapeType,
                                                     overlayInsetHorizontal = insetH,
-                                                    overlayInsetVertical = insetV
+                                                    overlayInsetVertical = insetV,
+                                                    horizontalPadding = 4f * exportFontScale,
+                                                    verticalPadding = 4f * exportFontScale
                                                 )
                                                 val outerBounds = windowedResult.outerBounds
                                                 val innerBounds = windowedResult.innerBounds
-                                                val optimalFontSizeBitmap = windowedResult.optimalFontSize
+                                                val finalFontSizeForBitmap = windowedResult.optimalFontSize
 
                                                 // Vẽ overlay chỉ trên INNER bounds
                                                 val overlayRectF = RectF(
@@ -2387,30 +2396,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 if (overlayRotationAngle != 0f) {
                                                     canvas.restore()
                                                 }
-                                                val displayMetrics = app.resources.displayMetrics
 
-                                                // Text rendering area = OUTER bounds (có nhiều không gian)
-                                                val textRenderLeft = outerBounds.left + outerBounds.width * (if (block.shapeType == 1) 0.15f else 0f)
-                                                val textRenderTop = outerBounds.top + outerBounds.height * (if (block.shapeType == 1) 0.15f else 0f)
-                                                val textRenderWidth = outerBounds.width * (if (block.shapeType == 1) 0.7f else 1f)
-                                                val textRenderHeight = outerBounds.height * (if (block.shapeType == 1) 0.7f else 1f)
+                                                // Text rendering area = INNER bounds (vùng bôi trắng thực tế)
+                                                val textRenderLeft = innerBounds.left + innerBounds.width * (if (block.shapeType == 1) 0.15f else 0f)
+                                                val textRenderTop = innerBounds.top + innerBounds.height * (if (block.shapeType == 1) 0.15f else 0f)
+                                                val textRenderWidth = innerBounds.width * (if (block.shapeType == 1) 0.7f else 1f)
+                                                val textRenderHeight = innerBounds.height * (if (block.shapeType == 1) 0.7f else 1f)
 
-                                                // Calculate bitmapToViewScale for scaling stroke/border/shadow properties
-                                                val refScreenWidthPx = 360f * displayMetrics.density
-                                                val bitmapToViewScale = refScreenWidthPx / src.width.toFloat()
-
-                                                // Wrap text với optimal font size
+                                                // Wrap text với font size tối ưu đã được tính toán ở trên
+                                                // Sử dụng width đã trừ padding để đồng nhất với logic sizing
+                                                val safeTextRenderWidth = (textRenderWidth - 8f * exportFontScale).coerceAtLeast(1f)
                                                 val wrappedTextLines = com.example.ocrmanga.ui.screens.view.wrapText(
                                                     text = block.text,
-                                                    width = textRenderWidth,
-                                                    fontSize = optimalFontSizeBitmap,
+                                                    width = safeTextRenderWidth,
+                                                    fontSize = finalFontSizeForBitmap,
                                                     context = app,
                                                     fontFamilyName = block.fontFamily
                                                 )
                                                 val wrappedText = wrappedTextLines.joinToString("\n")
-
-                                                // Dùng optimalFontSize từ calculateWindowedOverlayBounds
-                                                val finalFontSizeForBitmap = optimalFontSizeBitmap
 
                                                 // Draw text with all properties (font, boldness, border, shadow, line spacing)
                                                 val rawTextColor = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(overlayColor or 0xFF000000.toInt(), block.averageBackgroundColor)
@@ -2422,7 +2425,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                 } else {
                                                     rawTextColor
                                                 }
-                                                
+
                                                 // Load custom font typeface
                                                 val typeface = try {
                                                     com.example.ocrmanga.ui.screens.view.getCachedTypefaceForExport(app, block.fontFamily)
@@ -2445,13 +2448,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     // Apply boldness
                                                     if (block.textBoldness > 1.0f) {
                                                         style = Paint.Style.FILL_AND_STROKE
-                                                        // Fix: Scale strokeWidth by bitmapToViewScale to ensure consistency with View
-                                                        strokeWidth = ((block.textBoldness - 1.0f) * 2.0f) / bitmapToViewScale
+                                                        // Sử dụng exportFontScale để đồng nhất với font size
+                                                        strokeWidth = ((block.textBoldness - 1.0f) * 2.0f) * exportFontScale
                                                     } else if (block.textBoldness < 1.0f) {
                                                         alpha = (255 * block.textBoldness).toInt().coerceIn(50, 255)
                                                     }
                                                 }
-                                                
+
                                                 val gradientColorsArr = block.textGradientColors?.toIntArray()
                                                 val gradientPositionsArr = block.textGradientOffsets?.toFloatArray()
                                                 val gradientType = block.textGradientType
@@ -2465,8 +2468,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         textSize = finalFontSizeForBitmap
                                                         textAlign = mapAlign(block.textAlign)
                                                         style = Paint.Style.STROKE
-                                                        // Scale borderThickness from view to bitmap coordinates
-                                                        strokeWidth = block.borderThickness / bitmapToViewScale
+                                                        // Sử dụng exportFontScale để đồng nhất với font size
+                                                        strokeWidth = block.borderThickness * exportFontScale
                                                         this.typeface = typeface ?: Typeface.DEFAULT
                                                     }
                                                 } else null
@@ -2481,9 +2484,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                         textAlign = mapAlign(block.textAlign)
                                                         style = Paint.Style.FILL
                                                         this.typeface = typeface ?: Typeface.DEFAULT
-                                                        // Scale shadow parameters from view to bitmap coordinates
+                                                        // Sử dụng exportFontScale cho shadow radius
                                                         val radius = if (block.shadowRadius > 0f) {
-                                                            block.shadowRadius / bitmapToViewScale
+                                                            block.shadowRadius * exportFontScale
                                                         } else {
                                                             (finalFontSizeForBitmap * 0.14f).coerceAtLeast(1f)
                                                         }
@@ -2543,7 +2546,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                     // Start Y position: top of text area + vertical margin - ascent to position baseline correctly
                                                     val startY = textTop + verticalMargin - fontMetrics.ascent
                                                     var currentY = startY
-                                                    
+
                                                     for (line in lines) {
                                                         if (line.isNotBlank()) {
                                                             val centerX = textLeft + textDrawWidth / 2f
@@ -2552,15 +2555,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                                             when (block.textAlign) {
                                                                 com.example.ocrmanga.data.models.TextAlignMode.LEFT -> {
                                                                     // Trong View (ImageTextUtils), có padding hardcode là 4f
-                                                                    // Cần scale 4f này về bitmap coordinate
-                                                                    val paddingLeft = 4f / bitmapToViewScale
+                                                                    // Cần scale 4f này về bitmap coordinate sử dụng exportFontScale để đồng nhất
+                                                                    val paddingLeft = 4f * exportFontScale
                                                                     val drawX = textLeft + paddingLeft
-                                                                    
+
                                                                     // Ensure Paint is set to LEFT
                                                                     tp.textAlign = Paint.Align.LEFT
                                                                     shadowPaint?.textAlign = Paint.Align.LEFT
                                                                     borderPaint?.textAlign = Paint.Align.LEFT
-                                                                    
+
                                                                     shadowPaint?.let { canvas.drawText(line, drawX, currentY, it) }
                                                                     borderPaint?.let { canvas.drawText(line, drawX, currentY, it) }
                                                                      if (gradientColorsArr != null && gradientColorsArr.size >= 2) {
