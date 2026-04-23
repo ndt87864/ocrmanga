@@ -195,12 +195,14 @@ import kotlin.math.max
     // --- ApiKey Management Methods (Removed manual loading) ---
 
     suspend fun translateWithZAi(text: String, sourceLang: String, targetLang: String): String? {
-        val prompt = TranslationPrompts.getZAiBasicPrompt(text, isAncientMode = false) // Mặc định false cho dịch đơn lẻ nếu không truyền
+        // Chuẩn hóa văn bản: gộp dòng để dịch mượt hơn
+        val normalizedText = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+        val prompt = TranslationPrompts.getZAiBasicPrompt(normalizedText, isAncientMode = false) // Mặc định false cho dịch đơn lẻ nếu không truyền
         val userMessage = mapOf("role" to "user", "content" to prompt)
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(userMessage),
-            temperature = 0.8, // Tăng nhẹ để dịch tự nhiên hơn
+            temperature = 1.0, // Đặt mức tối đa để AI dịch linh hoạt như curl
             max_tokens = 4096
         )
 
@@ -234,7 +236,9 @@ import kotlin.math.max
         }.joinToString("\n")
 
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
-            "Block #${index + 1}: ${block.text}"
+            // Chuẩn hóa text: gộp các dòng lẻ thành một câu duy nhất để AI dịch mượt hơn
+            val normalizedText = block.text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+            "Block #${index + 1}: $normalizedText"
         }.joinToString("\n")
 
         val prompt = TranslationPrompts.getZAiMultiScalePrompt(
@@ -250,7 +254,7 @@ import kotlin.math.max
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(userMessage),
-            temperature = 0.8, // Tăng nhẹ để dịch tự nhiên hơn
+            temperature = 1.0, // Đặt mức tối đa để AI dịch linh hoạt như curl
             max_tokens = 4096
         )
 
@@ -261,7 +265,8 @@ import kotlin.math.max
     private fun parseMultiBlockResponse(content: String, textBlocks: List<TextBlockInfo>): List<String> {
         val translatedBlocksMap = mutableMapOf<Int, String>()
         val lines = content.trim().split("\n")
-        val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
+        // Regex hỗ trợ cả dấu ":" và "->" của Z.AI
+        val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)\->\s]+\s*(.*)$""")
 
         var i = 0
         while (i < lines.size) {
@@ -272,6 +277,12 @@ import kotlin.math.max
                     val blockNumber = match.groupValues[1].toInt()
                     val blockIndex = blockNumber - 1
                     var translation = match.groupValues[2].trim()
+
+                    // Xóa ký tự mũi tên dư thừa nếu có ở đầu
+                    if (translation.startsWith("->")) {
+                        translation = translation.substring(2).trim()
+                    }
+
                     val blockLines = mutableListOf<String>()
                     if (translation.isNotEmpty()) blockLines.add(translation)
 
@@ -297,7 +308,7 @@ import kotlin.math.max
                     translation = translation.replace("**", "").replace("*", "").trim()
                     // Loại bỏ ảo giác nếu AI lặp lại Block header trong phần nội dung
                     if (translation.startsWith("Block #", ignoreCase = true) || translation.startsWith("Block ", ignoreCase = true)) {
-                        translation = translation.replace(Regex("""^[Bb]lock\s*#?\d+[:.)]\s*"""), "").trim()
+                        translation = translation.replace(Regex("""^[Bb]lock\s*#?\d+[:.)\->\s]+\s*"""), "").trim()
                     }
 
                     if (blockIndex >= 0) translatedBlocksMap[blockIndex] = translation
@@ -391,7 +402,9 @@ import kotlin.math.max
 
         // Đánh số các text blocks gốc
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
-            "Block #${index + 1}: ${block.text}"
+            // Chuẩn hóa text: gộp các dòng lẻ thành một câu duy nhất để AI dịch mượt hơn
+            val normalizedText = block.text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+            "Block #${index + 1}: $normalizedText"
         }.joinToString("\n")
 
         val prompt = TranslationPrompts.getMistralMultiScalePromptOptimized(
@@ -3137,7 +3150,9 @@ import kotlin.math.max
         
         // Đánh số các text blocks gốc
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
-            "Block #${index + 1}: ${block.text}"
+            // Chuẩn hóa text: gộp các dòng lẻ thành một câu duy nhất để AI dịch mượt hơn
+            val normalizedText = block.text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+            "Block #${index + 1}: $normalizedText"
         }.joinToString("\n")
         
         var attempt = 0
