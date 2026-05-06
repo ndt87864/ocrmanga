@@ -47,6 +47,8 @@ object LamaInpainter {
     // Keep original 10px padding - 5px was too tight and caused edge artifacts
     private const val MASK_PADDING = 10
     private const val CONTEXT_PADDING = 128
+    private const val MAX_CLUSTER_AREA = 900_000
+    private const val MAX_CLUSTER_SIDE = 1400
 
     /** Morphological dilation radius applied to the binary mask before LaMa inference.
      *  Removes residual ink pixels at character-silhouette boundaries. */
@@ -137,7 +139,7 @@ object LamaInpainter {
             val work = if (imageType == ImageType.GRAYSCALE) toGray(image) else image.copy(Bitmap.Config.ARGB_8888, true)
             val fullMask = createMaskFromBlocks(image.width, image.height, blocks)
             val paddedBlocks = blocks.map { padBlock(it, image.width, image.height) }
-            val clusters = paddedBlocks.map { listOf(it) }
+            val clusters = createSafeClusters(paddedBlocks, image.width, image.height)
             val result = mutex.withLock { processRegionClusters(work, fullMask, clusters, onProgress) }
             fullMask.recycle(); work.recycle()
             val final = if (imageType == ImageType.GRAYSCALE && result != null) { val g = toGray(result); result.recycle(); g } else result
@@ -250,6 +252,46 @@ object LamaInpainter {
             (eff.top - expandV).coerceAtLeast(0),
             (eff.right + expandH).coerceAtMost(imgW),
             (eff.bottom + expandV).coerceAtMost(imgH)
+        )
+    }
+
+    private fun createSafeClusters(blocks: List<Rect>, imgW: Int, imgH: Int): List<List<Rect>> {
+        if (blocks.isEmpty()) return emptyList()
+        val clusters = mutableListOf<MutableList<Rect>>()
+        val sortedBlocks = blocks.sortedWith(compareBy<Rect> { it.top }.thenBy { it.left })
+
+        for (block in sortedBlocks) {
+            var added = false
+            for (cluster in clusters) {
+                val candidateBounds = unionBounds(cluster + block)
+                val cropBounds = expandForContext(candidateBounds, imgW, imgH)
+                val safeSize = cropBounds.width() * cropBounds.height() <= MAX_CLUSTER_AREA &&
+                        cropBounds.width() <= MAX_CLUSTER_SIDE && cropBounds.height() <= MAX_CLUSTER_SIDE
+                val nearby = cluster.any { existing ->
+                    val dx = if (block.right < existing.left) existing.left - block.right else if (existing.right < block.left) block.left - existing.right else 0
+                    val dy = if (block.bottom < existing.top) existing.top - block.bottom else if (existing.bottom < block.top) block.top - existing.bottom else 0
+                    dx <= CONTEXT_PADDING * 2 && dy <= CONTEXT_PADDING * 2
+                }
+                if (safeSize && nearby) {
+                    cluster.add(block)
+                    added = true
+                    break
+                }
+            }
+            if (!added) clusters.add(mutableListOf(block))
+        }
+
+        return clusters
+    }
+
+    private fun expandForContext(bounds: Rect, imgW: Int, imgH: Int): Rect {
+        val pX = max(CONTEXT_PADDING, (bounds.width() * 0.4f).roundToInt())
+        val pY = max(CONTEXT_PADDING, (bounds.height() * 0.4f).roundToInt())
+        return Rect(
+            (bounds.left - pX).coerceAtLeast(0),
+            (bounds.top - pY).coerceAtLeast(0),
+            (bounds.right + pX).coerceAtMost(imgW),
+            (bounds.bottom + pY).coerceAtMost(imgH)
         )
     }
 
