@@ -957,6 +957,84 @@ import kotlin.math.max
         return asianScore + alphaScore + textLengthScore + blockScore + densityBonus - noisePenalty - invalidPenalty
     }
 
+    suspend fun recognizeTextRegionsForRemoval(imageUri: Uri): List<TextBlockInfo> = withContext(Dispatchers.IO) {
+        var bitmap: Bitmap? = null
+        try {
+            bitmap = MediaStore.Images.Media.getBitmap(application.contentResolver, imageUri)
+            val rotationDegrees = getRotationDegrees(imageUri)
+            val scaleFactors = listOf(1.0f, 1.3f)
+            val recognizers = listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer, latinRecognizer)
+            val detectedBlocks = mutableListOf<TextBlockInfo>()
+
+            for (scale in scaleFactors) {
+                for (recognizer in recognizers) {
+                    var preprocessedBitmap: Bitmap? = null
+                    try {
+                        val enhanceMode = if (scale > 1.0f) 1 else 0
+                        val (preBitmap, _) = preprocessImage(bitmap, scale, enhanceMode)
+                        preprocessedBitmap = preBitmap
+                        val inputImage = InputImage.fromBitmap(preprocessedBitmap, rotationDegrees)
+                        val result = recognizer.process(inputImage).await()
+
+                        for (block in result.textBlocks) {
+                            for (line in block.lines) {
+                                for (element in line.elements) {
+                                    val bounds = element.boundingBox ?: continue
+                                    val scaledBounds = Rect(
+                                        (bounds.left / scale).toInt().coerceIn(0, bitmap.width),
+                                        (bounds.top / scale).toInt().coerceIn(0, bitmap.height),
+                                        (bounds.right / scale).toInt().coerceIn(0, bitmap.width),
+                                        (bounds.bottom / scale).toInt().coerceIn(0, bitmap.height)
+                                    )
+                                    val text = element.text.trim()
+                                    if (text.isBlank() || scaledBounds.width() <= 1 || scaledBounds.height() <= 1) continue
+
+                                    detectedBlocks.add(
+                                        TextBlockInfo(
+                                            text = text,
+                                            originalText = text,
+                                            bounds = scaledBounds,
+                                            fontSize = scaledBounds.height().toFloat(),
+                                            wordCountsPerLine = listOf(1),
+                                            originalImageWidth = bitmap.width,
+                                            originalImageHeight = bitmap.height,
+                                            applyMerge = false
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("TranslationRepository", "[TEXT-REMOVAL-OCR] Element OCR failed scale=$scale", e)
+                    } finally {
+                        preprocessedBitmap?.recycle()
+                    }
+                }
+            }
+
+            val resultBlocks = detectedBlocks.sortedByDescending { it.bounds.width() * it.bounds.height() }
+                .fold(mutableListOf<TextBlockInfo>()) { kept, candidate ->
+                    val isDuplicate = kept.any { existing ->
+                        val overlapLeft = maxOf(existing.bounds.left, candidate.bounds.left)
+                        val overlapTop = maxOf(existing.bounds.top, candidate.bounds.top)
+                        val overlapRight = minOf(existing.bounds.right, candidate.bounds.right)
+                        val overlapBottom = minOf(existing.bounds.bottom, candidate.bounds.bottom)
+                        val overlapArea = maxOf(0, overlapRight - overlapLeft) * maxOf(0, overlapBottom - overlapTop)
+                        val candidateArea = (candidate.bounds.width() * candidate.bounds.height()).coerceAtLeast(1)
+                        overlapArea.toFloat() / candidateArea > 0.5f
+                    }
+                    if (!isDuplicate) kept.add(candidate)
+                    kept
+                }
+                .sortedWith(compareBy<TextBlockInfo> { it.bounds.top }.thenBy { it.bounds.left })
+
+            Log.i("TranslationRepository", "[TEXT-REMOVAL-OCR] Detected ${resultBlocks.size} element regions for $imageUri")
+            resultBlocks
+        } finally {
+            bitmap?.recycle()
+        }
+    }
+
     suspend fun recognizeAndTranslateText(
         imageUri: Uri,
         mode: TranslationMode,

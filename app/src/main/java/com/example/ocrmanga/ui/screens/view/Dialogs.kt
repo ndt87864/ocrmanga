@@ -206,12 +206,11 @@ fun Dialogs(
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Xóa ảnh khỏi trang") }
                     Spacer(Modifier.height(16.dp))
-                    // Nút xóa text gốc trên ảnh
+                    // Nút xóa text gốc trên ảnh (hiển thị preview trước)
                     Button(
                         onClick = {
                             imageMenuUri?.let { uri ->
                                 viewModel.removeOriginalText(uri)
-                                Toast.makeText(context, "Đang xóa text gốc trên ảnh...", Toast.LENGTH_SHORT).show()
                             }
                             onImageMenuDismiss()
                         },

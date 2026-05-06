@@ -239,18 +239,17 @@ object LamaInpainter {
     }
 
     private fun padBlock(b: InpaintBlock, imgW: Int, imgH: Int): Rect {
-        val ib = Rect(
-            (b.bounds.left + b.overlayInsetHorizontal.toInt()),
-            (b.bounds.top + b.overlayInsetVertical.toInt()),
-            (b.bounds.right - b.overlayInsetHorizontal.toInt()),
-            (b.bounds.bottom - b.overlayInsetVertical.toInt())
-        )
-        val eff = if (ib.width() > 0 && ib.height() > 0) ib else b.bounds
+        // Use full OCR bounds (NOT overlay-inset area) for inpainting region
+        val ob = b.bounds
+        val eff = if (ob.width() > 0 && ob.height() > 0) ob else b.bounds
+        // Expand by 4% to ensure complete text removal
+        val expandH = (eff.width() * 0.04f).toInt().coerceAtLeast(MASK_PADDING)
+        val expandV = (eff.height() * 0.04f).toInt().coerceAtLeast(MASK_PADDING)
         return Rect(
-            (eff.left - MASK_PADDING).coerceAtLeast(0),
-            (eff.top - MASK_PADDING).coerceAtLeast(0),
-            (eff.right + MASK_PADDING).coerceAtMost(imgW),
-            (eff.bottom + MASK_PADDING).coerceAtMost(imgH)
+            (eff.left - expandH).coerceAtLeast(0),
+            (eff.top - expandV).coerceAtLeast(0),
+            (eff.right + expandH).coerceAtMost(imgW),
+            (eff.bottom + expandV).coerceAtMost(imgH)
         )
     }
 
@@ -719,16 +718,15 @@ object LamaInpainter {
         val cv = Canvas(mask); cv.drawColor(Color.BLACK)
         val paint = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL; isAntiAlias = true }
         for (b in blocks) {
-            val ib = Rect(
-                (b.bounds.left + b.overlayInsetHorizontal.toInt()),
-                (b.bounds.top + b.overlayInsetVertical.toInt()),
-                (b.bounds.right - b.overlayInsetHorizontal.toInt()),
-                (b.bounds.bottom - b.overlayInsetVertical.toInt())
-            )
-            if (ib.width() <= 0 || ib.height() <= 0) continue
+            // Use full OCR bounds (NOT overlay-inset area) to mask original text region
+            val ob = b.bounds
+            if (ob.width() <= 0 || ob.height() <= 0) continue
+            // Expand by 4% to ensure complete text removal
+            val expandH = (ob.width() * 0.04f).toInt().coerceAtLeast(MASK_PADDING)
+            val expandV = (ob.height() * 0.04f).toInt().coerceAtLeast(MASK_PADDING)
             val pr = Rect(
-                (ib.left - MASK_PADDING).coerceAtLeast(0), (ib.top - MASK_PADDING).coerceAtLeast(0),
-                (ib.right + MASK_PADDING).coerceAtMost(w), (ib.bottom + MASK_PADDING).coerceAtMost(h)
+                (ob.left - expandH).coerceAtLeast(0), (ob.top - expandV).coerceAtLeast(0),
+                (ob.right + expandH).coerceAtMost(w), (ob.bottom + expandV).coerceAtMost(h)
             )
             if (b.shapeType == 1) cv.drawOval(RectF(pr), paint) else cv.drawRect(pr, paint)
         }

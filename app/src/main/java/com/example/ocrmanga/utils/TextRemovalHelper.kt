@@ -3,6 +3,11 @@ package com.example.ocrmanga.utils
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
 import android.net.Uri
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.ml.LamaInpainter
@@ -145,6 +150,82 @@ object TextRemovalHelper {
         } catch (e: Exception) {
             Log.e(TAG, "Error decoding bitmap from Uri", e)
             null
+        }
+    }
+
+    /**
+     * Create a preview bitmap showing the original image with mask overlay.
+     * Highlighted regions (text blocks) are drawn with a semi-transparent red overlay
+     * and a red border to clearly indicate which areas will be inpainted.
+     *
+     * @param context App context
+     * @param imageUri Uri of the source image
+     * @param blocks List of TextBlockInfo with text region coordinates
+     * @return Bitmap with mask overlay, or null on failure
+     */
+    suspend fun createMaskPreview(
+        context: Context,
+        imageUri: Uri,
+        blocks: List<TextBlockInfo>
+    ): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val bitmap = decodeBitmapFromUri(context, imageUri)
+            if (bitmap == null) {
+                Log.e(TAG, "Cannot decode bitmap for preview: $imageUri")
+                return@withContext null
+            }
+
+            val preview = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            bitmap.recycle()
+            val canvas = Canvas(preview)
+            val padding = 10 // Same as LamaInpainter.MASK_PADDING
+
+            // Semi-transparent red fill for masked regions
+            val fillPaint = Paint().apply {
+                color = Color.argb(80, 255, 60, 60)
+                style = Paint.Style.FILL
+                isAntiAlias = true
+            }
+
+            // Red border for masked regions
+            val strokePaint = Paint().apply {
+                color = Color.argb(200, 255, 40, 40)
+                style = Paint.Style.STROKE
+                strokeWidth = 3f
+                isAntiAlias = true
+            }
+
+            for (block in blocks) {
+                // Use full OCR bounds (NOT the overlay-inset area) to highlight original text
+                val ob = block.bounds
+                if (ob.width() <= 0 || ob.height() <= 0) continue
+
+                // Expand by 4% to ensure complete text coverage
+                val expandH = (ob.width() * 0.04f).toInt().coerceAtLeast(padding)
+                val expandV = (ob.height() * 0.04f).toInt().coerceAtLeast(padding)
+
+                val padded = Rect(
+                    (ob.left - expandH).coerceAtLeast(0),
+                    (ob.top - expandV).coerceAtLeast(0),
+                    (ob.right + expandH).coerceAtMost(preview.width),
+                    (ob.bottom + expandV).coerceAtMost(preview.height)
+                )
+
+                val rectF = RectF(padded)
+                if (block.shapeType == 1) {
+                    canvas.drawOval(rectF, fillPaint)
+                    canvas.drawOval(rectF, strokePaint)
+                } else {
+                    canvas.drawRect(rectF, fillPaint)
+                    canvas.drawRect(rectF, strokePaint)
+                }
+            }
+
+            Log.d(TAG, "Mask preview created: ${blocks.size} regions highlighted")
+            return@withContext preview
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating mask preview", e)
+            return@withContext null
         }
     }
 }

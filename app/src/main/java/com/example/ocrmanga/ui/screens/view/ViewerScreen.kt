@@ -11,6 +11,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,6 +22,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -946,6 +950,66 @@ fun ViewerScreen(
         }
 
     } // end Column
+
+    // Text Removal Preview Dialog - shows mask overlay before confirming removal
+    if (uiState.showTextRemovalPreview && uiState.textRemovalPreviewBitmap != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelTextRemovalPreview() },
+            title = {
+                Text(
+                    "Xác nhận vùng xóa text",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Các vùng bôi đỏ sẽ được xóa text:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Preview image with mask overlay - scrollable
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 400.dp)
+                            .verticalScroll(rememberScrollState()),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Image(
+                            bitmap = uiState.textRemovalPreviewBitmap!!.asImageBitmap(),
+                            contentDescription = "Preview vùng xóa text",
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    Text(
+                        "Ấn \"Xác nhận\" để bắt đầu xóa text gốc",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmTextRemoval() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Xác nhận xóa")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelTextRemovalPreview() }) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
 
     // Text Removal Loading Popup - overlays on top of Column
     if (isRemovingText || uiState.isRemovingText) {

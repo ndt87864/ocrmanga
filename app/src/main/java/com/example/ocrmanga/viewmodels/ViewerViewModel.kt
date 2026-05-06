@@ -80,27 +80,91 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
     
     // Xóa text gốc trên ảnh sử dụng LaMa inpainting
+    // Bước 1: Tạo preview mask overlay để user xác nhận trước khi xóa
     fun removeOriginalText(uri: Uri) {
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(isRemovingText = true) }
+                _uiState.update { it.copy(removingTextProgress = "Đang OCR vùng text...") }
+                val blocks = translationRepository.recognizeTextRegionsForRemoval(uri)
 
-                // Lấy danh sách blocks của ảnh này
-                val blocks = _uiState.value.translatedTexts[uri]?.second ?: emptyList()
-                
                 if (blocks.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             getApplication(),
-                            "Ảnh này chưa có vùng text được nhận dạng",
+                            "Không tìm thấy vùng text OCR trên ảnh",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
+                    _uiState.update { it.copy(removingTextProgress = "") }
+                    return@launch
+                }
+
+                // Tạo preview bitmap với mask overlay từ OCR bounds gốc
+                _uiState.update { it.copy(removingTextProgress = "Đang tạo preview...") }
+                val previewBitmap = com.example.ocrmanga.utils.TextRemovalHelper.createMaskPreview(
+                    getApplication(), uri, blocks
+                )
+
+                if (previewBitmap != null) {
+                    _uiState.update {
+                        it.copy(
+                            showTextRemovalPreview = true,
+                            textRemovalPreviewUri = uri,
+                            textRemovalPreviewBitmap = previewBitmap,
+                            textRemovalPreviewBlocks = blocks,
+                            removingTextProgress = ""
+                        )
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            getApplication(),
+                            "Lỗi khi tạo preview mask",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    _uiState.update { it.copy(removingTextProgress = "") }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error preparing text removal preview", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        getApplication(),
+                        "Lỗi: ${e.message}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                _uiState.update { it.copy(removingTextProgress = "") }
+            }
+        }
+    }
+
+    // Bước 2: User xác nhận xóa text sau khi xem preview
+    fun confirmTextRemoval() {
+        val state = _uiState.value
+        val uri = state.textRemovalPreviewUri ?: return
+        val previewBlocks = state.textRemovalPreviewBlocks
+        // Recycle preview bitmap
+        state.textRemovalPreviewBitmap?.recycle()
+        _uiState.update {
+            it.copy(
+                showTextRemovalPreview = false,
+                textRemovalPreviewUri = null,
+                textRemovalPreviewBitmap = null,
+                textRemovalPreviewBlocks = emptyList()
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                _uiState.update { it.copy(isRemovingText = true) }
+
+                val blocks = previewBlocks
+                if (blocks.isEmpty()) {
                     _uiState.update { it.copy(isRemovingText = false) }
                     return@launch
                 }
-                
-                // Gọi helper để xóa text với progress callback
+
                 val onProgress: (String) -> Unit = { progress ->
                     _uiState.update { it.copy(removingTextProgress = progress) }
                 }
@@ -110,11 +174,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     blocks,
                     onProgress
                 )
-                
+
                 if (resultUri != null) {
-                    // Thay thế ảnh gốc bằng ảnh đã xóa text (tạm thời, không lưu vào DB ngay)
                     replaceImageUri(uri, resultUri, persist = false)
-                    
+
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             getApplication(),
@@ -143,6 +206,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             } finally {
                 _uiState.update { it.copy(isRemovingText = false, removingTextProgress = "") }
             }
+        }
+    }
+
+    // Hủy preview xóa text
+    fun cancelTextRemovalPreview() {
+        _uiState.value.textRemovalPreviewBitmap?.recycle()
+        _uiState.update {
+            it.copy(
+                showTextRemovalPreview = false,
+                textRemovalPreviewUri = null,
+                textRemovalPreviewBitmap = null,
+                textRemovalPreviewBlocks = emptyList()
+            )
         }
     }
 
@@ -2962,6 +3038,10 @@ data class ViewerUiState(
     val isTextRemovalMode: Boolean = false, // Chế độ xóa text thủ công (vẽ mask)
     val isRemovingText: Boolean = false, // Loading state for text removal
     val removingTextProgress: String = "", // Progress text for text removal popup
+    val showTextRemovalPreview: Boolean = false, // Show mask preview dialog before removal
+    val textRemovalPreviewUri: Uri? = null, // Uri of image being previewed for removal
+    val textRemovalPreviewBitmap: android.graphics.Bitmap? = null, // Preview bitmap with mask overlay
+    val textRemovalPreviewBlocks: List<TextBlockInfo> = emptyList(), // OCR regions used for preview and removal
     val recentlySavedUris: Set<android.net.Uri> = emptySet(), // URIs saved via editor but not yet applied in UI
     val reopenEditorUris: Set<android.net.Uri> = emptySet() // URIs for which editor should reopen after blocks are applied
 )
