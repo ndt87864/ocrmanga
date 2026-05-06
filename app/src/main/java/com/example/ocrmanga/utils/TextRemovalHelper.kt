@@ -13,7 +13,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * Utility class to remove text from images using LaMa TFLite inpainting.
+ * Utility class to remove text from images using LaMa ONNX inpainting.
  */
 object TextRemovalHelper {
 

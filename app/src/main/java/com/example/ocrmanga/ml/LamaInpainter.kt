@@ -14,10 +14,13 @@ import com.google.android.gms.common.util.CollectionUtils.listOf
 import com.example.ocrmanga.utils.AppLogger as Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.support.common.FileUtil
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.FloatBuffer
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -25,7 +28,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * LaMa-based inpainting engine using TensorFlow Lite.
+ * LaMa-based inpainting engine using ONNX Runtime.
+ *
+ * Model: anime-manga-big-lama.onnx
+ *   Input "image": [1, 3, 512, 512] float32 (NCHW, values 0..1)
+ *   Input "mask":  [1, 1, 512, 512] float32 (NCHW, values 0 or 1)
+ *   Output "output": [1, 3, 512, 512] float32 (NCHW, values 0..1)
  *
  * Blending: Laplacian pyramid (Burt & Adelson 1983)
  * - Coarse levels fix large-scale colour/brightness mismatch
@@ -35,7 +43,7 @@ import kotlinx.coroutines.sync.withLock
 object LamaInpainter {
 
     private const val TAG = "LamaInpainter"
-    private const val MODEL_PATH = "models/LaMa-Dilated_float.tflite"
+    private const val MODEL_PATH = "models/anime-manga-big-lama.onnx"
     // Keep original 10px padding - 5px was too tight and caused edge artifacts
     private const val MASK_PADDING = 10
     private const val CONTEXT_PADDING = 128
@@ -49,14 +57,16 @@ object LamaInpainter {
     private const val SHARPEN_AMOUNT = 0.45f
     private const val SHARPEN_BLUR_RADIUS = 1
 
-    private var interpreter: Interpreter? = null
+    /** Fixed model dimensions (NCHW) */
+    private const val MODEL_H = 512
+    private const val MODEL_W = 512
+    private const val MODEL_C = 3
+
+    private var ortEnv: OrtEnvironment? = null
+    private var ortSession: OrtSession? = null
     private var isInitialized = false
-    private var inputH = 0; private var inputW = 0; private var inputC = 0
-    private var maskC = 0; private var outputC = 0
-    private var hasMaskInput = false; private var isDynamic = false
+    private var inputH = MODEL_H; private var inputW = MODEL_W; private var inputC = MODEL_C
     private val mutex = Mutex()
-    private var imgBuf: ByteBuffer? = null; private var maskBuf: ByteBuffer? = null
-    private var outBuf: ByteBuffer? = null; private var combBuf: ByteBuffer? = null
 
     enum class ImageType { GRAYSCALE, COLOR }
     data class InpaintBlock(
@@ -69,38 +79,46 @@ object LamaInpainter {
     fun initialize(context: Context) {
         if (isInitialized) return
         try {
-            val modelFile = FileUtil.loadMappedFile(context, MODEL_PATH)
-            val options = Interpreter.Options().apply {
-                setNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(2, 8))
-            }
-            val interp = Interpreter(modelFile, options)
-            interpreter = interp
-            val imgShape = interp.getInputTensor(0).shape()
-            Log.i(TAG, "Input[0] shape: ${imgShape.contentToString()}")
-            hasMaskInput = interp.inputTensorCount > 1
-            if (hasMaskInput) {
-                val ms = interp.getInputTensor(1).shape()
-                maskC = if (ms.size == 4) ms[3] else 1
-            }
-            val outShape = interp.getOutputTensor(0).shape()
-            if (imgShape.size == 4) { inputH = imgShape[1]; inputW = imgShape[2]; inputC = imgShape[3] }
-            if (outShape.size == 4) { outputC = outShape[3] }
-            isDynamic = inputH <= 0 || inputW <= 0
-            if (isDynamic) { inputH = 512; inputW = 512 }
-            if (inputC <= 0) inputC = 3; if (maskC <= 0) maskC = 1; if (outputC <= 0) outputC = 3
-            allocateBuffers()
-            isInitialized = true
-            Log.i(TAG, "LamaInpainter ready: ${inputW}x${inputH} hasMask=$hasMaskInput dynamic=$isDynamic")
-        } catch (e: Exception) { Log.e(TAG, "Init failed", e); isInitialized = false }
-    }
+            val env = OrtEnvironment.getEnvironment()
+            ortEnv = env
 
-    private fun allocateBuffers() {
-        imgBuf  = ByteBuffer.allocateDirect(inputH * inputW * inputC * 4).order(ByteOrder.nativeOrder())
-        if (hasMaskInput)
-            maskBuf = ByteBuffer.allocateDirect(inputH * inputW * maskC * 4).order(ByteOrder.nativeOrder())
-        else
-            combBuf = ByteBuffer.allocateDirect(inputH * inputW * (inputC + 1) * 4).order(ByteOrder.nativeOrder())
-        outBuf  = ByteBuffer.allocateDirect(inputH * inputW * outputC * 4).order(ByteOrder.nativeOrder())
+            // Copy model from assets to internal storage to avoid OOM from readBytes()
+            val modelFile = File(context.filesDir, "anime-manga-big-lama.onnx")
+            // Re-copy if file missing or size changed (model updated)
+            val assetSize = context.assets.open(MODEL_PATH).use { it.available().toLong() }
+            if (!modelFile.exists() || modelFile.length() != assetSize) {
+                Log.i(TAG, "Copying ONNX model to internal storage (asset=$assetSize, local=${modelFile.length()})...")
+                context.assets.open(MODEL_PATH).use { input ->
+                    modelFile.outputStream().use { output ->
+                        input.copyTo(output, bufferSize = 8192)
+                    }
+                }
+                Log.i(TAG, "Model copied: ${modelFile.length()} bytes")
+            }
+
+            val sessionOptions = OrtSession.SessionOptions().apply {
+                setIntraOpNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(2, 8))
+            }
+
+            val session = env.createSession(modelFile.absolutePath, sessionOptions)
+            ortSession = session
+
+            // Log input/output info
+            for ((name, info) in session.inputInfo) {
+                val tensorInfo = info.info as? ai.onnxruntime.TensorInfo
+                Log.i(TAG, "Input '$name' shape: ${tensorInfo?.shape?.contentToString()}")
+            }
+            for ((name, info) in session.outputInfo) {
+                val tensorInfo = info.info as? ai.onnxruntime.TensorInfo
+                Log.i(TAG, "Output '$name' shape: ${tensorInfo?.shape?.contentToString()}")
+            }
+
+            isInitialized = true
+            Log.i(TAG, "LamaInpainter ready (ONNX): ${inputW}x${inputH}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Init failed", e)
+            isInitialized = false
+        }
     }
 
     fun isReady() = isInitialized
@@ -197,9 +215,9 @@ object LamaInpainter {
     }
 
     fun release() {
-        try { interpreter?.close() } catch (_: Exception) {}
-        interpreter = null; isInitialized = false
-        imgBuf = null; maskBuf = null; outBuf = null; combBuf = null
+        try { ortSession?.close() } catch (_: Exception) {}
+        try { ortEnv?.close() } catch (_: Exception) {}
+        ortSession = null; ortEnv = null; isInitialized = false
     }
 
     // ── Internal ──────────────────────────────────────────────────────────
@@ -325,7 +343,8 @@ object LamaInpainter {
         image: Bitmap, mask: Bitmap, clusters: List<List<Rect>>,
         onProgress: ((String) -> Unit)?
     ): Bitmap? {
-        val interp = interpreter ?: return null
+        val session = ortSession ?: return null
+        val env = ortEnv ?: return null
         val w = image.width; val h = image.height
         val result = image.copy(Bitmap.Config.ARGB_8888, true)
 
@@ -341,13 +360,12 @@ object LamaInpainter {
 
             Log.d(TAG, "Cluster $idx crop=${crop.width()}x${crop.height()}")
 
-            // Always use neural network - hybrid approach disabled due to quality issues
             val ci = Bitmap.createBitmap(result, crop.left, crop.top, crop.width(), crop.height())
             val cm = Bitmap.createBitmap(mask, crop.left, crop.top, crop.width(), crop.height())
             val (ri, pi) = resizeWithPadding(ci, inputW, inputH)
             val (rm, _) = resizeWithPadding(cm, inputW, inputH)
             ci.recycle(); cm.recycle()
-            val out = runInference(interp, ri, rm)
+            val out = runInference(env, session, ri, rm)
             ri.recycle(); rm.recycle()
             if (out == null) continue
             val unpad = removePadding(out, pi); out.recycle()
@@ -398,7 +416,7 @@ object LamaInpainter {
     /**
      * Apply unsharp mask restricted to pixels where [mask] > 0.5.
      * Unsharp formula: sharp = original + SHARPEN_AMOUNT * (original - blurred)
-     * Restores manga line crispness that LaMa TFLite blurs during fill.
+     * Restores manga line crispness that LaMa blurs during fill.
      */
     private fun sharpenMaskedRegion(result: Bitmap, mask: FloatArray, cw: Int, ch: Int, cropRect: Rect) {
         if (SHARPEN_AMOUNT <= 0f) return
@@ -600,77 +618,94 @@ object LamaInpainter {
             info.scaledW.coerceAtMost(src.width  - info.offsetX.coerceAtLeast(0)),
             info.scaledH.coerceAtMost(src.height - info.offsetY.coerceAtLeast(0)))
 
-    // ── Inference ─────────────────────────────────────────────────────────
+    // ── Inference (ONNX Runtime) ──────────────────────────────────────────
 
-    private fun runInference(interp: Interpreter, image: Bitmap, mask: Bitmap): Bitmap? {
+    /**
+     * Run ONNX inference with the anime-manga-big-lama model.
+     *
+     * Model expects NCHW layout:
+     *   "image" → [1, 3, H, W] float32, pixel values 0..1, masked regions zeroed
+     *   "mask"  → [1, 1, H, W] float32, 1 = inpaint, 0 = keep
+     *
+     * Output "output" → [1, 3, H, W] float32, inpainted result 0..1
+     */
+    private fun runInference(env: OrtEnvironment, session: OrtSession, image: Bitmap, mask: Bitmap): Bitmap? {
         return try {
-            if (isDynamic) {
-                interp.resizeInput(0, intArrayOf(1, inputH, inputW, inputC))
-                if (hasMaskInput) interp.resizeInput(1, intArrayOf(1, inputH, inputW, maskC))
-                interp.allocateTensors()
-            }
-            val outShape = interp.getOutputTensor(0).shape()
-            val oH = outShape[1]; val oW = outShape[2]; val oC = outShape[3]
+            val pixelCount = inputW * inputH
 
-            val mPx = IntArray(inputW * inputH); mask.getPixels(mPx, 0, inputW, 0, 0, inputW, inputH)
-            val mF = FloatArray(inputW * inputH) { i ->
+            // Extract mask float values
+            val mPx = IntArray(pixelCount); mask.getPixels(mPx, 0, inputW, 0, 0, inputW, inputH)
+            val mF = FloatArray(pixelCount) { i ->
                 if (Color.red(mPx[i]) > 10 || Color.green(mPx[i]) > 10 || Color.blue(mPx[i]) > 10) 1f else 0f
             }
-            val iPx = IntArray(inputW * inputH); image.getPixels(iPx, 0, inputW, 0, 0, inputW, inputH)
 
-            val ib = imgBuf!!; ib.rewind()
-            for (i in iPx.indices) {
-                val k = 1f - mF[i]
-                ib.putFloat(Color.red(iPx[i]) / 255f * k)
-                ib.putFloat(Color.green(iPx[i]) / 255f * k)
-                ib.putFloat(Color.blue(iPx[i]) / 255f * k)
-                for (c in 3 until inputC) ib.putFloat(0f)
+            // Extract image pixels
+            val iPx = IntArray(pixelCount); image.getPixels(iPx, 0, inputW, 0, 0, inputW, inputH)
+
+            // Build image tensor in NCHW format: [1, 3, H, W]
+            // Channel-first: all R values, then all G values, then all B values
+            val imgData = FloatArray(1 * 3 * inputH * inputW)
+            for (i in 0 until pixelCount) {
+                val k = 1f - mF[i]  // zero out masked pixels
+                imgData[0 * pixelCount + i] = Color.red(iPx[i]) / 255f * k   // R channel
+                imgData[1 * pixelCount + i] = Color.green(iPx[i]) / 255f * k // G channel
+                imgData[2 * pixelCount + i] = Color.blue(iPx[i]) / 255f * k  // B channel
             }
 
-            val obN = oH * oW * oC * 4
-            val ob = if (outBuf != null && outBuf!!.capacity() >= obN) outBuf!!
-                     else ByteBuffer.allocateDirect(obN).order(ByteOrder.nativeOrder()).also { outBuf = it }
-            ob.rewind()
+            // Build mask tensor in NCHW format: [1, 1, H, W]
+            val maskData = FloatArray(1 * 1 * inputH * inputW)
+            System.arraycopy(mF, 0, maskData, 0, pixelCount)
 
-            if (hasMaskInput) {
-                val mbN = inputH * inputW * maskC * 4
-                val mb = if (maskBuf != null && maskBuf!!.capacity() >= mbN) maskBuf!!
-                         else ByteBuffer.allocateDirect(mbN).order(ByteOrder.nativeOrder()).also { maskBuf = it }
-                mb.rewind()
-                for (v in mF) { mb.putFloat(v); for (c in 1 until maskC) mb.putFloat(v) }
-                mb.rewind()
-                interp.runForMultipleInputsOutputs(arrayOf(ib, mb), mapOf(0 to ob))
-            } else {
-                val cbN = inputH * inputW * (inputC + 1) * 4
-                val cb = if (combBuf != null && combBuf!!.capacity() >= cbN) combBuf!!
-                         else ByteBuffer.allocateDirect(cbN).order(ByteOrder.nativeOrder()).also { combBuf = it }
-                cb.rewind()
-                for (i in iPx.indices) {
-                    val k = 1f - mF[i]
-                    cb.putFloat(Color.red(iPx[i]) / 255f * k)
-                    cb.putFloat(Color.green(iPx[i]) / 255f * k)
-                    cb.putFloat(Color.blue(iPx[i]) / 255f * k)
-                    cb.putFloat(mF[i])
-                }
-                cb.rewind()
-                if (isDynamic) { interp.resizeInput(0, intArrayOf(1, inputH, inputW, inputC + 1)); interp.allocateTensors() }
-                interp.runForMultipleInputsOutputs(arrayOf(cb), mapOf(0 to ob))
-            }
-            floatBufferToBitmap(ob, oW, oH, oC)
-        } catch (e: Exception) { Log.e(TAG, "Inference failed: ${e.message}", e); null }
+            // Create ONNX tensors
+            val imgTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(imgData), longArrayOf(1, 3, inputH.toLong(), inputW.toLong()))
+            val maskTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(maskData), longArrayOf(1, 1, inputH.toLong(), inputW.toLong()))
+
+            // Run inference with named inputs
+            val inputs = mapOf("image" to imgTensor, "mask" to maskTensor)
+            val results = session.run(inputs)
+
+            // Extract output: NCHW [1, 3, H, W]
+            val outputTensor = results[0] as OnnxTensor
+            val outputData = outputTensor.floatBuffer
+            val oShape = outputTensor.info.shape  // [1, 3, H, W]
+            val oC = oShape[1].toInt()
+            val oH = oShape[2].toInt()
+            val oW = oShape[3].toInt()
+            val oPixelCount = oH * oW
+
+            val bitmap = nchwFloatBufferToBitmap(outputData, oW, oH, oC)
+
+            // Cleanup
+            imgTensor.close()
+            maskTensor.close()
+            results.close()
+
+            bitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Inference failed: ${e.message}", e)
+            null
+        }
     }
 
-    // ── Buffer → Bitmap ──────────────────────────────────────────────────
+    // ── NCHW Buffer → Bitmap ──────────────────────────────────────────────
 
-    private fun floatBufferToBitmap(buf: ByteBuffer, w: Int, h: Int, ch: Int): Bitmap {
+    /**
+     * Convert NCHW float buffer to ARGB Bitmap.
+     * Layout: [C, H, W] — all R values first, then G, then B.
+     */
+    private fun nchwFloatBufferToBitmap(buf: FloatBuffer, w: Int, h: Int, ch: Int): Bitmap {
         buf.rewind()
+        val pixelCount = w * h
+        val totalFloats = ch * pixelCount
+        val data = FloatArray(totalFloats)
+        buf.get(data)
+
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val px = IntArray(w * h)
-        for (i in px.indices) {
-            val r = (buf.float.coerceIn(0f, 1f) * 255).roundToInt()
-            val g = if (ch >= 2) (buf.float.coerceIn(0f, 1f) * 255).roundToInt() else r
-            val b = if (ch >= 3) (buf.float.coerceIn(0f, 1f) * 255).roundToInt() else r
-            for (c in 3 until ch) buf.float
+        val px = IntArray(pixelCount)
+        for (i in 0 until pixelCount) {
+            val r = (data[0 * pixelCount + i].coerceIn(0f, 1f) * 255).roundToInt()
+            val g = if (ch >= 2) (data[1 * pixelCount + i].coerceIn(0f, 1f) * 255).roundToInt() else r
+            val b = if (ch >= 3) (data[2 * pixelCount + i].coerceIn(0f, 1f) * 255).roundToInt() else r
             px[i] = Color.argb(255, r, g, b)
         }
         bmp.setPixels(px, 0, w, 0, 0, w, h)

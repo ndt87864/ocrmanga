@@ -43,5 +43,5 @@
 -dontwarn okio.**
 -dontwarn coil.**
 -dontwarn org.json.**
--dontwarn org.tensorflow.**
--keep class org.tensorflow.lite.** { *; }
+-dontwarn ai.onnxruntime.**
+-keep class ai.onnxruntime.** { *; }

@@ -20,7 +20,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 3
-        versionName = "1.4"
+        versionName = "1.45"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -55,7 +55,7 @@ android {
         kotlinCompilerExtensionVersion = "1.5.8"
     }
     aaptOptions {
-        noCompress += "tflite"
+        noCompress += "onnx"
     }
 
     packaging {
@@ -115,8 +115,7 @@ dependencies {
 
     // OpenCV & ML Libraries
     implementation(project(":opencv"))
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
 
     // Google Drive & Auth
     implementation("com.google.android.gms:play-services-auth:21.1.0")
