@@ -8,18 +8,30 @@ import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -40,6 +52,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
@@ -145,7 +158,8 @@ fun ImageViewer(
     isTextRemovalMode: Boolean = false,
     onToggleTextRemovalMode: () -> Unit = {},
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> },
-    brushSize: Float = 40f
+    brushSize: Float = 40f,
+    onBrushSizeChange: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
     val readPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -154,11 +168,17 @@ fun ImageViewer(
         Manifest.permission.READ_EXTERNAL_STORAGE
     }
     var permissionGranted by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, readPermission) == PackageManager.PERMISSION_GRANTED)
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                readPermission
+            ) == PackageManager.PERMISSION_GRANTED
+        )
     }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        permissionGranted = granted
-    }
+    val permissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            permissionGranted = granted
+        }
     var translationVersion by remember { mutableStateOf(0) }
     val newlyTranslated = remember { mutableStateMapOf<Uri, Boolean>() }
     val visibleRange = remember { mutableStateOf(IntRange(0, -1)) }
@@ -166,10 +186,25 @@ fun ImageViewer(
     val imageLoader = ImageLoader(context)
     val suppressDiskCachePref = remember {
         try {
-            val prefs = context.getSharedPreferences("ocrmanga_prefs", android.content.Context.MODE_PRIVATE)
+            val prefs =
+                context.getSharedPreferences("ocrmanga_prefs", android.content.Context.MODE_PRIVATE)
             prefs.getBoolean("suppress_coil_disk_cache", false)
-        } catch (e: Exception) { false }
+        } catch (e: Exception) {
+            false
+        }
     }
+
+    // Text removal state - shared across all images
+    val textRemovalPathsMap = remember { mutableStateMapOf<Uri, MutableList<Pair<Path, Float>>>() }
+    val textRemovalRedoStackMap =
+        remember { mutableStateMapOf<Uri, MutableList<Pair<Path, Float>>>() }
+    val currentPaintingPathMap = remember { mutableStateMapOf<Uri, Path?>() }
+    val imageDimensionsMap =
+        remember { mutableStateMapOf<Uri, Pair<Float, Float>>() } // originalWidth, originalHeight
+    val imageDisplayDimensionsMap =
+        remember { mutableStateMapOf<Uri, Pair<Float, Float>>() } // displayWidth, displayHeight
+    var drawTrigger by remember { mutableStateOf(0) }
+    var showBrushSizeDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(lazyListState, imageUris) {
         snapshotFlow { lazyListState.layoutInfo.visibleItemsInfo.map { it.index } }
@@ -182,7 +217,11 @@ fun ImageViewer(
                     visibleRange.value = IntRange(start, end)
                     for (i in start..end) {
                         try {
-                            val reloadToken = try { getReloadTokenForUri(imageUris[i]) ?: 0L } catch (e: Exception) { 0L }
+                            val reloadToken = try {
+                                getReloadTokenForUri(imageUris[i]) ?: 0L
+                            } catch (e: Exception) {
+                                0L
+                            }
                             val prefetchReq = ImageRequest.Builder(context)
                                 .data(imageUris[i])
                                 .memoryCacheKey("image-index-$i:${imageUris[i].toString()}:rt$reloadToken")
@@ -191,7 +230,8 @@ fun ImageViewer(
                                 .diskCachePolicy(if (suppressDiskCachePref) coil.request.CachePolicy.DISABLED else coil.request.CachePolicy.ENABLED)
                                 .build()
                             imageLoader.enqueue(prefetchReq)
-                        } catch (e: Exception) {}
+                        } catch (e: Exception) {
+                        }
                     }
                 } else {
                     visibleRange.value = IntRange(0, -1)
@@ -199,457 +239,950 @@ fun ImageViewer(
             }
     }
 
-    LazyColumn(
-        state = lazyListState,
-        modifier = Modifier.fillMaxSize().then(
-            if (editTranslationMode) Modifier.pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        if (event.changes.any { it.pressed }) event.changes.forEach { it.consume() }
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = lazyListState,
+            modifier = Modifier.fillMaxSize().then(
+                if (editTranslationMode) Modifier.pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.changes.any { it.pressed }) event.changes.forEach { it.consume() }
+                        }
                     }
-                }
-            } else Modifier
-        ),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
-    ) {
-        itemsIndexed(items = imageUris, key = { index, uri ->
-            val id = getImageIdForUri(uri)
-            if (id != null) id.toString() else "$index:${uri.toString()}"
-        }) { index, uri ->
-            val isInWindow = index in visibleRange.value
-            
-            // Initialization Logic
-            val currentTranslatedBlocks = if (isInWindow) translatedTexts[uri]?.second
-                ?.filter { !it.pendingDelete }
-                ?.map { block ->
-                    val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
-                    val textInt = (block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(overlayInt, block.averageBackgroundColor)) or 0xFF000000.toInt()
-                    DragBlockState(
-                        block = block.copy(customOverlayColor = overlayInt, customTextColor = textInt, fontSize = block.fontSize),
-                        fontSize = null,
-                        rotation = block.rotation ?: 0f,
-                        whiteoutColor = Color(overlayInt),
-                        textColor = Color(textInt),
-                        overlayAlpha = block.overlayAlpha,
-                        textBoldness = block.textBoldness,
-                        overlaySaturation = block.overlaySaturation,
-                        textSaturation = block.textSaturation,
-                        lineSpacing = block.lineSpacing,
-                        textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
-                        textBorderThickness = block.borderThickness,
-                        textBorderAlpha = block.borderAlpha,
-                        textShadowColor = block.customShadowColor?.let { Color(it or 0xFF000000.toInt()) },
-                        textShadowAlpha = block.shadowAlpha ?: 1.0f,
-                        textShadowRadius = block.shadowRadius ?: 0f,
-                        overlayInset = block.overlayInset,
-                        overlayInsetHorizontal = block.overlayInsetHorizontal,
-                        overlayInsetVertical = block.overlayInsetVertical,
-                        textAlign = block.textAlign,
-                        textGradientColors = block.textGradientColors,
-                        textGradientOffsets = block.textGradientOffsets,
-                        textGradientType = block.textGradientType
-                    )
-                } else null
+                } else Modifier
+            ),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            itemsIndexed(items = imageUris, key = { index, uri ->
+                val id = getImageIdForUri(uri)
+                if (id != null) id.toString() else "$index:${uri.toString()}"
+            }) { index, uri ->
+                val isInWindow = index in visibleRange.value
 
-            var dragBlocks by remember(uri, translationVersion, translatedTexts[uri], isInWindow) {
-                mutableStateOf(if (isInWindow) (currentTranslatedBlocks ?: emptyList()) else (dragBlocksMap[uri] ?: emptyList()))
-            }
-
-            LaunchedEffect(uri, isInWindow, translationVersion, translatedTexts[uri], editTranslationMode) {
-                if (isInWindow && !editTranslationMode) {
-                    val rawNewBlocks = translatedTexts[uri]?.second?.map { it ->
+                // Initialization Logic
+                val currentTranslatedBlocks = if (isInWindow) translatedTexts[uri]?.second
+                    ?.filter { !it.pendingDelete }
+                    ?.map { block ->
+                        val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor
+                        ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
+                        val textInt = (block.customTextColor ?: block.originalTextColor
+                        ?: computeDefaultTextColor(
+                            overlayInt,
+                            block.averageBackgroundColor
+                        )) or 0xFF000000.toInt()
                         DragBlockState(
-                            block = it,
+                            block = block.copy(
+                                customOverlayColor = overlayInt,
+                                customTextColor = textInt,
+                                fontSize = block.fontSize
+                            ),
                             fontSize = null,
-                            rotation = it.rotation ?: 0f,
-                            overlayRotation = it.overlayRotation,
-                            whiteoutColor = it.customOverlayColor?.let { c -> Color(c) },
-                            textColor = (it.customTextColor ?: it.originalTextColor)?.let { c -> Color(c) },
-                            overlayAlpha = it.overlayAlpha,
-                            textBoldness = it.textBoldness,
-                            overlaySaturation = it.overlaySaturation,
-                            textAlign = it.textAlign,
-                            textSaturation = it.textSaturation,
-                            lineSpacing = it.lineSpacing,
-                            textBorderColor = it.customBorderColor?.let { c -> Color(c) },
-                            textBorderThickness = it.borderThickness,
-                            textBorderAlpha = it.borderAlpha,
-                            textShadowColor = it.customShadowColor?.let { c -> Color(c or 0xFF000000.toInt()) },
-                            textShadowAlpha = it.shadowAlpha ?: 1.0f,
-                            textShadowRadius = it.shadowRadius ?: 0f,
-                            overlayInset = it.overlayInset,
-                            overlayInsetHorizontal = it.overlayInsetHorizontal,
-                            overlayInsetVertical = it.overlayInsetVertical,
-                            textGradientColors = it.textGradientColors,
-                            textGradientOffsets = it.textGradientOffsets,
-                            textGradientType = it.textGradientType
+                            rotation = block.rotation ?: 0f,
+                            whiteoutColor = Color(overlayInt),
+                            textColor = Color(textInt),
+                            overlayAlpha = block.overlayAlpha,
+                            textBoldness = block.textBoldness,
+                            overlaySaturation = block.overlaySaturation,
+                            textSaturation = block.textSaturation,
+                            lineSpacing = block.lineSpacing,
+                            textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
+                            textBorderThickness = block.borderThickness,
+                            textBorderAlpha = block.borderAlpha,
+                            textShadowColor = block.customShadowColor?.let { Color(it or 0xFF000000.toInt()) },
+                            textShadowAlpha = block.shadowAlpha ?: 1.0f,
+                            textShadowRadius = block.shadowRadius ?: 0f,
+                            overlayInset = block.overlayInset,
+                            overlayInsetHorizontal = block.overlayInsetHorizontal,
+                            overlayInsetVertical = block.overlayInsetVertical,
+                            textAlign = block.textAlign,
+                            textGradientColors = block.textGradientColors,
+                            textGradientOffsets = block.textGradientOffsets,
+                            textGradientType = block.textGradientType
                         )
-                    } ?: emptyList()
+                    } else null
 
-                    val existing = dragBlocksMap[uri]
-                    val merged = if (existing != null && existing.isNotEmpty()) {
-                        rawNewBlocks.map { nb ->
-                            val match = existing.find { eb -> eb.block.bounds == nb.block.bounds && eb.block.text == nb.block.text }
-                            if (match != null) {
-                                nb.copy(
-                                    block = nb.block.copy(applyMerge = match.block.applyMerge),
-                                    textShadowColor = nb.textShadowColor ?: match.textShadowColor,
-                                    textShadowAlpha = if (nb.textShadowAlpha != 1.0f) nb.textShadowAlpha else match.textShadowAlpha,
-                                    textShadowRadius = if (nb.textShadowRadius != 0f) nb.textShadowRadius else match.textShadowRadius,
-                                    lineSpacing = if (nb.lineSpacing != 1.0f) nb.lineSpacing else match.lineSpacing,
-                                    overlayInset = if (nb.overlayInset != 0f) nb.overlayInset else match.overlayInset,
-                                    overlayInsetHorizontal = if (nb.overlayInsetHorizontal != 0f) nb.overlayInsetHorizontal else match.overlayInsetHorizontal,
-                                    overlayInsetVertical = if (nb.overlayInsetVertical != 0f) nb.overlayInsetVertical else match.overlayInsetVertical,
-                                    fontSize = nb.fontSize ?: match.fontSize,
-                                    rotation = if (nb.rotation != 0f) nb.rotation else match.rotation,
-                                    overlayRotation = nb.overlayRotation ?: match.overlayRotation,
-                                    offset = if (match.offset != Offset.Zero) match.offset else nb.offset
-                                )
-                            } else nb
-                        }
-                    } else rawNewBlocks
-                    dragBlocks = merged
-                    dragBlocksMap[uri] = merged
-                    newlyTranslated[uri] = true
-                }
-            }
-
-            LaunchedEffect(dragBlocks, isInWindow) { if (isInWindow) dragBlocksMap[uri] = dragBlocks }
-            
-            var selectedIndex by remember(uri, editTranslationMode) { mutableStateOf<Int?>(null) }
-            var draggingIndex by remember { mutableStateOf<Int?>(null) }
-            var lastDragPos by remember { mutableStateOf(Offset.Zero) }
-
-            val textRemovalPaths = remember { mutableStateListOf<Pair<Path, Float>>() }
-            val currentPaintingPath = remember { mutableStateOf<Path?>(null) }
-            var drawTrigger by remember { mutableStateOf(0) }
-            var magnifierPosition by remember { mutableStateOf<Offset?>(null) }
-            var magnifierSourcePosition by remember { mutableStateOf<Offset?>(null) }
-            
-            var zoomScale by remember(uri, isTextRemovalMode) { mutableStateOf(1f) }
-            var zoomOffset by remember(uri, isTextRemovalMode) { mutableStateOf(Offset.Zero) }
-            
-            LaunchedEffect(isTextRemovalMode) {
-                if (!isTextRemovalMode) {
-                    textRemovalPaths.clear()
-                    currentPaintingPath.value = null
-                    magnifierPosition = null
-                    magnifierSourcePosition = null
-                    zoomScale = 1f
-                    zoomOffset = Offset.Zero
-                }
-            }
-
-            Column(modifier = Modifier.fillMaxWidth().pointerInput(uri, editTranslationMode, isTextRemovalMode) {
-                if (!isTextRemovalMode && !editTranslationMode) {
-                    detectTapGestures(onLongPress = { onImageMenuUriChange(uri); onShowImageMenuChange(true) })
-                }
-            }) {
-                if (editTranslationMode) {
-                    TranslationEditor(
-                        dragBlocks = dragBlocks, selectedIndex = selectedIndex,
-                        onDragBlocksChange = { dragBlocks = it; dragBlocksMap[uri] = it },
-                        onSelectedIndexChange = { selectedIndex = it },
-                        onSave = { 
-                            val blocksToSave = dragBlocksMap[uri] ?: dragBlocks
-                            Log.i("ImageViewer", "[onSave] Saving ${blocksToSave.size} blocks for $uri")
-                            blocksToSave.forEachIndexed { i, b ->
-                                Log.i("ImageViewer", "  -> Block[$i] gradientColors=${b.textGradientColors}")
-                            }
-                            onSaveTranslation(uri, blocksToSave)
-                            onEditTranslationModeToggle(false) 
-                        },
-                        isTextRemovalMode = isTextRemovalMode, onToggleTextRemovalMode = onToggleTextRemovalMode
+                var dragBlocks by remember(
+                    uri,
+                    translationVersion,
+                    translatedTexts[uri],
+                    isInWindow
+                ) {
+                    mutableStateOf(
+                        if (isInWindow) (currentTranslatedBlocks
+                            ?: emptyList()) else (dragBlocksMap[uri] ?: emptyList())
                     )
                 }
-                Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
-                    var imageWidth by remember { mutableStateOf(0f) }
-                    var imageHeight by remember { mutableStateOf(0f) }
-                    var originalImageWidth by remember { mutableStateOf(0f) }
-                    var originalImageHeight by remember { mutableStateOf(0f) }
-                    var isImageLoaded by remember { mutableStateOf(false) }
-                    var imageLoadState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
-                    val translationStatus = translatingImages[uri] ?: TranslationStatus.IDLE
 
-                    if (isInWindow) {
-                        LaunchedEffect(uri, permissionGranted) {
-                            if (!permissionGranted) {
-                                try { permissionLauncher.launch(readPermission) } catch (e: Exception) {}
-                                originalImageWidth = 1280f; originalImageHeight = 1808f; isImageLoaded = true
-                                return@LaunchedEffect
+                LaunchedEffect(
+                    uri,
+                    isInWindow,
+                    translationVersion,
+                    translatedTexts[uri],
+                    editTranslationMode
+                ) {
+                    if (isInWindow && !editTranslationMode) {
+                        val rawNewBlocks = translatedTexts[uri]?.second?.map { it ->
+                            DragBlockState(
+                                block = it,
+                                fontSize = null,
+                                rotation = it.rotation ?: 0f,
+                                overlayRotation = it.overlayRotation,
+                                whiteoutColor = it.customOverlayColor?.let { c -> Color(c) },
+                                textColor = (it.customTextColor
+                                    ?: it.originalTextColor)?.let { c -> Color(c) },
+                                overlayAlpha = it.overlayAlpha,
+                                textBoldness = it.textBoldness,
+                                overlaySaturation = it.overlaySaturation,
+                                textAlign = it.textAlign,
+                                textSaturation = it.textSaturation,
+                                lineSpacing = it.lineSpacing,
+                                textBorderColor = it.customBorderColor?.let { c -> Color(c) },
+                                textBorderThickness = it.borderThickness,
+                                textBorderAlpha = it.borderAlpha,
+                                textShadowColor = it.customShadowColor?.let { c -> Color(c or 0xFF000000.toInt()) },
+                                textShadowAlpha = it.shadowAlpha ?: 1.0f,
+                                textShadowRadius = it.shadowRadius ?: 0f,
+                                overlayInset = it.overlayInset,
+                                overlayInsetHorizontal = it.overlayInsetHorizontal,
+                                overlayInsetVertical = it.overlayInsetVertical,
+                                textGradientColors = it.textGradientColors,
+                                textGradientOffsets = it.textGradientOffsets,
+                                textGradientType = it.textGradientType
+                            )
+                        } ?: emptyList()
+
+                        val existing = dragBlocksMap[uri]
+                        val merged = if (existing != null && existing.isNotEmpty()) {
+                            rawNewBlocks.map { nb ->
+                                val match =
+                                    existing.find { eb -> eb.block.bounds == nb.block.bounds && eb.block.text == nb.block.text }
+                                if (match != null) {
+                                    nb.copy(
+                                        block = nb.block.copy(applyMerge = match.block.applyMerge),
+                                        textShadowColor = nb.textShadowColor
+                                            ?: match.textShadowColor,
+                                        textShadowAlpha = if (nb.textShadowAlpha != 1.0f) nb.textShadowAlpha else match.textShadowAlpha,
+                                        textShadowRadius = if (nb.textShadowRadius != 0f) nb.textShadowRadius else match.textShadowRadius,
+                                        lineSpacing = if (nb.lineSpacing != 1.0f) nb.lineSpacing else match.lineSpacing,
+                                        overlayInset = if (nb.overlayInset != 0f) nb.overlayInset else match.overlayInset,
+                                        overlayInsetHorizontal = if (nb.overlayInsetHorizontal != 0f) nb.overlayInsetHorizontal else match.overlayInsetHorizontal,
+                                        overlayInsetVertical = if (nb.overlayInsetVertical != 0f) nb.overlayInsetVertical else match.overlayInsetVertical,
+                                        fontSize = nb.fontSize ?: match.fontSize,
+                                        rotation = if (nb.rotation != 0f) nb.rotation else match.rotation,
+                                        overlayRotation = nb.overlayRotation
+                                            ?: match.overlayRotation,
+                                        offset = if (match.offset != Offset.Zero) match.offset else nb.offset
+                                    )
+                                } else nb
                             }
-                            try {
-                                val (w, h) = getImageDimensions(context, uri)
-                                originalImageWidth = w.toFloat(); originalImageHeight = h.toFloat(); isImageLoaded = true
-                            } catch (e: Exception) {
-                                originalImageWidth = 1280f; originalImageHeight = 1808f; isImageLoaded = true
+                        } else rawNewBlocks
+                        dragBlocks = merged
+                        dragBlocksMap[uri] = merged
+                        newlyTranslated[uri] = true
+                    }
+                }
+
+                LaunchedEffect(dragBlocks, isInWindow) {
+                    if (isInWindow) dragBlocksMap[uri] = dragBlocks
+                }
+
+                var selectedIndex by remember(
+                    uri,
+                    editTranslationMode
+                ) { mutableStateOf<Int?>(null) }
+                var draggingIndex by remember { mutableStateOf<Int?>(null) }
+                var lastDragPos by remember { mutableStateOf(Offset.Zero) }
+
+                // Sử dụng state từ map thay vì local state
+                val textRemovalPaths = textRemovalPathsMap.getOrPut(uri) { mutableStateListOf() }
+                val textRemovalRedoStack =
+                    textRemovalRedoStackMap.getOrPut(uri) { mutableStateListOf() }
+                val currentPaintingPath = remember { mutableStateOf(currentPaintingPathMap[uri]) }
+                var magnifierPosition by remember { mutableStateOf<Offset?>(null) }
+                var magnifierSourcePosition by remember { mutableStateOf<Offset?>(null) }
+
+                var zoomScale by remember(uri, isTextRemovalMode) { mutableStateOf(1f) }
+                var zoomOffset by remember(uri, isTextRemovalMode) { mutableStateOf(Offset.Zero) }
+
+                LaunchedEffect(isTextRemovalMode) {
+                    if (!isTextRemovalMode) {
+                        textRemovalPaths.clear()
+                        textRemovalRedoStack.clear()
+                        currentPaintingPath.value = null
+                        currentPaintingPathMap[uri] = null
+                        magnifierPosition = null
+                        magnifierSourcePosition = null
+                        zoomScale = 1f
+                        zoomOffset = Offset.Zero
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                        .pointerInput(uri, editTranslationMode, isTextRemovalMode) {
+                            if (!isTextRemovalMode && !editTranslationMode) {
+                                detectTapGestures(onLongPress = {
+                                    onImageMenuUriChange(uri); onShowImageMenuChange(
+                                    true
+                                )
+                                })
                             }
-                        }
+                        }) {
+                    if (editTranslationMode) {
+                        TranslationEditor(
+                            dragBlocks = dragBlocks,
+                            selectedIndex = selectedIndex,
+                            onDragBlocksChange = { dragBlocks = it; dragBlocksMap[uri] = it },
+                            onSelectedIndexChange = { selectedIndex = it },
+                            onSave = {
+                                val blocksToSave = dragBlocksMap[uri] ?: dragBlocks
+                                Log.i(
+                                    "ImageViewer",
+                                    "[onSave] Saving ${blocksToSave.size} blocks for $uri"
+                                )
+                                blocksToSave.forEachIndexed { i, b ->
+                                    Log.i(
+                                        "ImageViewer",
+                                        "  -> Block[$i] gradientColors=${b.textGradientColors}"
+                                    )
+                                }
+                                onSaveTranslation(uri, blocksToSave)
+                                onEditTranslationModeToggle(false)
+                            },
+                            isTextRemovalMode = isTextRemovalMode,
+                            onToggleTextRemovalMode = onToggleTextRemovalMode
+                        )
                     }
 
-                    val imageVersion = try { getImageVersionForUri(uri) ?: 0 } catch (e: Exception) { 0 }
-                    val reloadToken = try { getReloadTokenForUri(uri) ?: 0L } catch (e: Exception) { 0L }
-                    val imageRequest = remember(index, uri, imageVersion) {
-                        ImageRequest.Builder(context).data(uri).memoryCacheKey("image-index-$index:${uri.toString()}:v$imageVersion:rt$reloadToken")
-                            .diskCacheKey("image-index-$index:${uri.toString()}:v$imageVersion:rt$reloadToken")
-                            .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                            .diskCachePolicy(if (suppressDiskCachePref) coil.request.CachePolicy.DISABLED else coil.request.CachePolicy.ENABLED)
-                            .build()
-                    }
-
-                    val precomputedRegionsState = remember(uri, translationVersion) { mutableStateOf<List<PrecomputedRegion>>(emptyList()) }
-                    val _conf = LocalConfiguration.current; val _sw = _conf.screenWidthDp.toFloat()
-
-                    LaunchedEffect(uri, translationVersion, dragBlocks, imageWidth, imageHeight, isInWindow, _sw) {
-                        // Allow immediate apply when either not in edit mode OR this uri was recently saved via editor
-                        val isRecentSave = recentlySavedUris.contains(uri)
-                        if (!isInWindow) { precomputedRegionsState.value = emptyList(); return@LaunchedEffect }
-                        // Allow recalculation during editing to show real-time changes
-                        val screenScaleFactor = (_sw / 360f).coerceIn(0.5f, 2.0f)
-                        withContext(kotlinx.coroutines.Dispatchers.Default) {
-                            val list = dragBlocks.filter { !it.block.pendingDelete }.mapNotNull { dragBlock ->
-                                val block = dragBlock.block; if (block.text.isBlank()) return@mapNotNull null
-                                val blockImageWidth = block.originalImageWidth?.toFloat() ?: originalImageWidth
-                                val scale = if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
-                                val offsetY = if (imageHeight > (block.originalImageHeight?.toFloat() ?: originalImageHeight) * scale) (imageHeight - (block.originalImageHeight?.toFloat() ?: originalImageHeight) * scale) / 2 else 0f
-                                val rect = Rect((block.bounds.left * scale) + dragBlock.offset.x, (block.bounds.top * scale) + offsetY + dragBlock.offset.y, (block.bounds.right * scale) + dragBlock.offset.x, (block.bounds.bottom * scale) + offsetY + dragBlock.offset.y)
-                                val fontSize = (if (editTranslationMode) computeEditModeFontSize(block, dragBlock.fontSize) else block.fontSize) * screenScaleFactor
-                                PrecomputedRegion(block, rect, fontSize, dragBlock.rotation, dragBlock.overlayRotation, dragBlock.whiteoutColor, dragBlock.textColor, dragBlock.overlayAlpha, dragBlock.textBoldness, dragBlock.overlaySaturation, dragBlock.textSaturation, dragBlock.lineSpacing, dragBlock.textBorderColor, dragBlock.textBorderThickness, dragBlock.textBorderAlpha, dragBlock.textShadowColor, dragBlock.textShadowAlpha, dragBlock.textShadowRadius, dragBlock.overlayInset * scale, dragBlock.overlayInsetHorizontal * scale, dragBlock.overlayInsetVertical * scale, dragBlock.textGradientColors, dragBlock.textGradientOffsets, dragBlock.textGradientType)
-                            }
-                            precomputedRegionsState.value = list
+                    // Box chứa ảnh và controls
+                    Box(modifier = Modifier.fillMaxWidth().clipToBounds()) {
+                        var imageWidth by remember { mutableStateOf(0f) }
+                        var imageHeight by remember { mutableStateOf(0f) }
+                        var originalImageWidth by remember { mutableStateOf(0f) }
+                        var originalImageHeight by remember { mutableStateOf(0f) }
+                        var isImageLoaded by remember { mutableStateOf(false) }
+                        var imageLoadState by remember {
+                            mutableStateOf<AsyncImagePainter.State>(
+                                AsyncImagePainter.State.Empty
+                            )
                         }
-                        // If this was a recent save, clear the flag so we don't reapply repeatedly
-                        if (isRecentSave) {
-                            try { onClearRecentlySavedUri?.invoke(uri) } catch (e: Exception) {}
-                        }
-                        // If caller requested reopen editor for this uri, invoke callback and clear flag
-                        val shouldReopen = reopenEditorUris.contains(uri)
-                        if (shouldReopen) {
-                            try { onRequestOpenEditor?.invoke(uri) } catch (e: Exception) {}
-                            try { onClearReopenEditorUri?.invoke(uri) } catch (e: Exception) {}
-                        }
-                    }
+                        val translationStatus = translatingImages[uri] ?: TranslationStatus.IDLE
 
-                    // Content Layer (Zoomable)
-                    Box(modifier = Modifier.fillMaxWidth().graphicsLayer {
-                        scaleX = zoomScale; scaleY = zoomScale
-                        translationX = zoomOffset.x; translationY = zoomOffset.y
-                    }) {
-                        AsyncImage(model = imageRequest, contentDescription = null, modifier = Modifier.fillMaxWidth().onGloballyPositioned { imageWidth = it.size.width.toFloat(); imageHeight = it.size.height.toFloat() }, contentScale = ContentScale.FillWidth, onState = { imageLoadState = it })
-                        if (isInWindow && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success && (isTextRemovalMode || (translationEnabled && translatedTexts.containsKey(uri)))) {
-                            Canvas(modifier = Modifier.matchParentSize()) {
-                                precomputedRegionsState.value.forEach { region ->
-                                    val block = region.block; val rect = region.rect; val isOval = block.shapeType == 1
-                                    val overlayRotationAngle = region.overlayRotation ?: 0f
-
-                                    // --- Tính windowed overlay bounds ---
-                                    val windowedResult = calculateWindowedOverlayBounds(
-                                        originalBounds = rect,
-                                        text = block.text,
-                                        baseFontSize = region.fontSize,
-                                        isVertical = block.isVertical,
-                                        context = context,
-                                        fontFamilyName = block.fontFamily,
-                                        lineSpacing = region.lineSpacing,
-                                        shapeType = block.shapeType,
-                                        overlayInsetHorizontal = region.overlayInsetHorizontal,
-                                        overlayInsetVertical = region.overlayInsetVertical,
-                                        horizontalPadding = 4f,
-                                        verticalPadding = 4f
-                                    )
-                                    val outerBounds = windowedResult.outerBounds
-                                    val innerBounds = windowedResult.innerBounds
-                                    val optimalFontSize = windowedResult.optimalFontSize
-
-                                    // Clamp outer bounds vào canvas
-                                    val canvasW = size.width
-                                    val canvasH = size.height
-                                    val clampedOuterBounds = Rect(
-                                        outerBounds.left.coerceIn(0f, canvasW),
-                                        outerBounds.top.coerceIn(0f, canvasH),
-                                        outerBounds.right.coerceIn(0f, canvasW),
-                                        outerBounds.bottom.coerceIn(0f, canvasH)
-                                    )
-
-                                    // Clamp inner bounds vào canvas
-                                    val clampedInnerBounds = Rect(
-                                        innerBounds.left.coerceIn(0f, canvasW),
-                                        innerBounds.top.coerceIn(0f, canvasH),
-                                        innerBounds.right.coerceIn(0f, canvasW),
-                                        innerBounds.bottom.coerceIn(0f, canvasH)
-                                    )
-
-                                    fun drawOverlayContent() {
-                                        // Vẽ overlay chỉ trên INNER bounds (outer area = transparent)
-                                        if (region.whiteoutColor != null) {
-                                            val finalColor = region.whiteoutColor.copy(alpha = region.overlayAlpha)
-                                            if (isOval) drawOval(finalColor, Offset(clampedInnerBounds.left, clampedInnerBounds.top), Size(clampedInnerBounds.width, clampedInnerBounds.height))
-                                            else drawRect(finalColor, Offset(clampedInnerBounds.left, clampedInnerBounds.top), Size(clampedInnerBounds.width, clampedInnerBounds.height))
-                                        } else drawTranslucentOverlay(clampedInnerBounds, block.backgroundType, block.averageBackgroundColor, block.originalTextColor, block.shapeType)
+                        if (isInWindow) {
+                            LaunchedEffect(uri, permissionGranted) {
+                                if (!permissionGranted) {
+                                    try {
+                                        permissionLauncher.launch(readPermission)
+                                    } catch (e: Exception) {
                                     }
-                                    if (overlayRotationAngle != 0f) withTransform({ rotate(overlayRotationAngle, clampedOuterBounds.center) }) { drawOverlayContent() } else drawOverlayContent()
-                                    if (editTranslationMode) {
-                                        val isSelected = selectedIndex != null && selectedIndex!! < dragBlocks.size && dragBlocks[selectedIndex!!].block == block
-                                        fun drawBorder() {
-                                            val color = if (isSelected) Color.Red else Color.Blue
-                                            // Border vẽ quanh OUTER bounds để show full area
-                                            if (isOval) drawOval(color, Offset(clampedOuterBounds.left, clampedOuterBounds.top), Size(clampedOuterBounds.width, clampedOuterBounds.height), style = Stroke(2f))
-                                            else drawRect(color, Offset(clampedOuterBounds.left, clampedOuterBounds.top), Size(clampedOuterBounds.width, clampedOuterBounds.height), style = Stroke(2f))
-                                        }
-                                        if (overlayRotationAngle != 0f) withTransform({ rotate(overlayRotationAngle, clampedOuterBounds.center) }) { drawBorder() } else drawBorder()
-                                    }
-                                    // Text vẽ trong INNER bounds (vùng bôi trắng thực tế)
-                                    val tL = clampedInnerBounds.left + clampedInnerBounds.width * (if (isOval) 0.15f else 0f)
-                                    val tT = clampedInnerBounds.top + clampedInnerBounds.height * (if (isOval) 0.15f else 0f)
-                                    val tW = clampedInnerBounds.width * (if (isOval) 0.7f else 1f)
-                                    val tH = clampedInnerBounds.height * (if (isOval) 0.7f else 1f)
-                                    withTransform({ if (region.rotation != 0f) rotate(region.rotation, Offset(tL + tW / 2, tT + tH / 2)) }) {
-                                        drawTextOnCanvas(
-                                            drawScope = this,
-                                            text = block.text,
-                                            x = tL,
-                                            y = tT,
-                                            width = tW,
-                                            height = tH,
-                                            color = region.textColor ?: Color.Black,
-                                            fontSize = optimalFontSize,
-                                            isVertical = block.isVertical,
-                                            boldness = region.textBoldness,
-                                            context = context,
-                                            fontFamilyName = block.fontFamily,
-                                            borderColor = region.textBorderColor,
-                                            borderThickness = region.textBorderThickness,
-                                            borderAlpha = region.textBorderAlpha,
-                                            editMode = editTranslationMode,
-                                            shapeType = block.shapeType,
-                                            lineSpacing = region.lineSpacing,
-                                            shadowColor = region.textShadowColor,
-                                            shadowAlpha = region.textShadowAlpha,
-                                            shadowRadius = region.textShadowRadius,
-                                            textAlign = block.textAlign,
-                                            textGradientColors = region.textGradientColors,
-                                            textGradientOffsets = region.textGradientOffsets,
-                                            textGradientType = region.textGradientType
+                                    originalImageWidth = 1280f; originalImageHeight =
+                                        1808f; isImageLoaded = true
+                                    return@LaunchedEffect
+                                }
+                                try {
+                                    val (w, h) = getImageDimensions(context, uri)
+                                    originalImageWidth = w.toFloat(); originalImageHeight =
+                                        h.toFloat(); isImageLoaded = true
+                                } catch (e: Exception) {
+                                    originalImageWidth = 1280f; originalImageHeight =
+                                        1808f; isImageLoaded = true
+                                }
+                            }
+                        }
+
+                        val imageVersion = try {
+                            getImageVersionForUri(uri) ?: 0
+                        } catch (e: Exception) {
+                            0
+                        }
+                        val reloadToken = try {
+                            getReloadTokenForUri(uri) ?: 0L
+                        } catch (e: Exception) {
+                            0L
+                        }
+                        val imageRequest = remember(index, uri, imageVersion) {
+                            ImageRequest.Builder(context).data(uri)
+                                .memoryCacheKey("image-index-$index:${uri.toString()}:v$imageVersion:rt$reloadToken")
+                                .diskCacheKey("image-index-$index:${uri.toString()}:v$imageVersion:rt$reloadToken")
+                                .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                                .diskCachePolicy(if (suppressDiskCachePref) coil.request.CachePolicy.DISABLED else coil.request.CachePolicy.ENABLED)
+                                .build()
+                        }
+
+                        val precomputedRegionsState = remember(
+                            uri,
+                            translationVersion
+                        ) { mutableStateOf<List<PrecomputedRegion>>(emptyList()) }
+                        val _conf = LocalConfiguration.current;
+                        val _sw = _conf.screenWidthDp.toFloat()
+
+                        LaunchedEffect(
+                            uri,
+                            translationVersion,
+                            dragBlocks,
+                            imageWidth,
+                            imageHeight,
+                            isInWindow,
+                            _sw
+                        ) {
+                            // Allow immediate apply when either not in edit mode OR this uri was recently saved via editor
+                            val isRecentSave = recentlySavedUris.contains(uri)
+                            if (!isInWindow) {
+                                precomputedRegionsState.value = emptyList(); return@LaunchedEffect
+                            }
+                            // Allow recalculation during editing to show real-time changes
+                            val screenScaleFactor = (_sw / 360f).coerceIn(0.5f, 2.0f)
+                            withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                val list = dragBlocks.filter { !it.block.pendingDelete }
+                                    .mapNotNull { dragBlock ->
+                                        val block =
+                                            dragBlock.block; if (block.text.isBlank()) return@mapNotNull null
+                                        val blockImageWidth = block.originalImageWidth?.toFloat()
+                                            ?: originalImageWidth
+                                        val scale =
+                                            if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
+                                        val offsetY =
+                                            if (imageHeight > (block.originalImageHeight?.toFloat()
+                                                    ?: originalImageHeight) * scale
+                                            ) (imageHeight - (block.originalImageHeight?.toFloat()
+                                                ?: originalImageHeight) * scale) / 2 else 0f
+                                        val rect = Rect(
+                                            (block.bounds.left * scale) + dragBlock.offset.x,
+                                            (block.bounds.top * scale) + offsetY + dragBlock.offset.y,
+                                            (block.bounds.right * scale) + dragBlock.offset.x,
+                                            (block.bounds.bottom * scale) + offsetY + dragBlock.offset.y
+                                        )
+                                        val fontSize =
+                                            (if (editTranslationMode) computeEditModeFontSize(
+                                                block,
+                                                dragBlock.fontSize
+                                            ) else block.fontSize) * screenScaleFactor
+                                        PrecomputedRegion(
+                                            block,
+                                            rect,
+                                            fontSize,
+                                            dragBlock.rotation,
+                                            dragBlock.overlayRotation,
+                                            dragBlock.whiteoutColor,
+                                            dragBlock.textColor,
+                                            dragBlock.overlayAlpha,
+                                            dragBlock.textBoldness,
+                                            dragBlock.overlaySaturation,
+                                            dragBlock.textSaturation,
+                                            dragBlock.lineSpacing,
+                                            dragBlock.textBorderColor,
+                                            dragBlock.textBorderThickness,
+                                            dragBlock.textBorderAlpha,
+                                            dragBlock.textShadowColor,
+                                            dragBlock.textShadowAlpha,
+                                            dragBlock.textShadowRadius,
+                                            dragBlock.overlayInset * scale,
+                                            dragBlock.overlayInsetHorizontal * scale,
+                                            dragBlock.overlayInsetVertical * scale,
+                                            dragBlock.textGradientColors,
+                                            dragBlock.textGradientOffsets,
+                                            dragBlock.textGradientType
                                         )
                                     }
+                                precomputedRegionsState.value = list
+                            }
+                            // If this was a recent save, clear the flag so we don't reapply repeatedly
+                            if (isRecentSave) {
+                                try {
+                                    onClearRecentlySavedUri?.invoke(uri)
+                                } catch (e: Exception) {
                                 }
+                            }
+                            // If caller requested reopen editor for this uri, invoke callback and clear flag
+                            val shouldReopen = reopenEditorUris.contains(uri)
+                            if (shouldReopen) {
+                                try {
+                                    onRequestOpenEditor?.invoke(uri)
+                                } catch (e: Exception) {
+                                }
+                                try {
+                                    onClearReopenEditorUri?.invoke(uri)
+                                } catch (e: Exception) {
+                                }
+                            }
+                        }
+
+                        // Content Layer (Zoomable)
+                        Box(modifier = Modifier.fillMaxWidth().graphicsLayer {
+                            scaleX = zoomScale; scaleY = zoomScale
+                            translationX = zoomOffset.x; translationY = zoomOffset.y
+                        }) {
+                            AsyncImage(
+                                model = imageRequest,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxWidth().onGloballyPositioned {
+                                    imageWidth = it.size.width.toFloat()
+                                    imageHeight = it.size.height.toFloat()
+                                    // Lưu dimensions cho text removal
+                                    imageDimensionsMap[uri] =
+                                        Pair(originalImageWidth, originalImageHeight)
+                                    imageDisplayDimensionsMap[uri] = Pair(imageWidth, imageHeight)
+                                },
+                                contentScale = ContentScale.FillWidth,
+                                onState = { imageLoadState = it })
+                            if (isInWindow && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success && (isTextRemovalMode || (translationEnabled && translatedTexts.containsKey(
+                                    uri
+                                )))
+                            ) {
+                                Canvas(modifier = Modifier.matchParentSize()) {
+                                    precomputedRegionsState.value.forEach { region ->
+                                        val block = region.block;
+                                        val rect = region.rect;
+                                        val isOval = block.shapeType == 1
+                                        val overlayRotationAngle = region.overlayRotation ?: 0f
+
+                                        // --- Tính windowed overlay bounds ---
+                                        val windowedResult = calculateWindowedOverlayBounds(
+                                            originalBounds = rect,
+                                            text = block.text,
+                                            baseFontSize = region.fontSize,
+                                            isVertical = block.isVertical,
+                                            context = context,
+                                            fontFamilyName = block.fontFamily,
+                                            lineSpacing = region.lineSpacing,
+                                            shapeType = block.shapeType,
+                                            overlayInsetHorizontal = region.overlayInsetHorizontal,
+                                            overlayInsetVertical = region.overlayInsetVertical,
+                                            horizontalPadding = 4f,
+                                            verticalPadding = 4f
+                                        )
+                                        val outerBounds = windowedResult.outerBounds
+                                        val innerBounds = windowedResult.innerBounds
+                                        val optimalFontSize = windowedResult.optimalFontSize
+
+                                        // Clamp outer bounds vào canvas
+                                        val canvasW = size.width
+                                        val canvasH = size.height
+                                        val clampedOuterBounds = Rect(
+                                            outerBounds.left.coerceIn(0f, canvasW),
+                                            outerBounds.top.coerceIn(0f, canvasH),
+                                            outerBounds.right.coerceIn(0f, canvasW),
+                                            outerBounds.bottom.coerceIn(0f, canvasH)
+                                        )
+
+                                        // Clamp inner bounds vào canvas
+                                        val clampedInnerBounds = Rect(
+                                            innerBounds.left.coerceIn(0f, canvasW),
+                                            innerBounds.top.coerceIn(0f, canvasH),
+                                            innerBounds.right.coerceIn(0f, canvasW),
+                                            innerBounds.bottom.coerceIn(0f, canvasH)
+                                        )
+
+                                        fun drawOverlayContent() {
+                                            // Vẽ overlay chỉ trên INNER bounds (outer area = transparent)
+                                            if (region.whiteoutColor != null) {
+                                                val finalColor =
+                                                    region.whiteoutColor.copy(alpha = region.overlayAlpha)
+                                                if (isOval) drawOval(
+                                                    finalColor,
+                                                    Offset(
+                                                        clampedInnerBounds.left,
+                                                        clampedInnerBounds.top
+                                                    ),
+                                                    Size(
+                                                        clampedInnerBounds.width,
+                                                        clampedInnerBounds.height
+                                                    )
+                                                )
+                                                else drawRect(
+                                                    finalColor,
+                                                    Offset(
+                                                        clampedInnerBounds.left,
+                                                        clampedInnerBounds.top
+                                                    ),
+                                                    Size(
+                                                        clampedInnerBounds.width,
+                                                        clampedInnerBounds.height
+                                                    )
+                                                )
+                                            } else drawTranslucentOverlay(
+                                                clampedInnerBounds,
+                                                block.backgroundType,
+                                                block.averageBackgroundColor,
+                                                block.originalTextColor,
+                                                block.shapeType
+                                            )
+                                        }
+                                        if (overlayRotationAngle != 0f) withTransform({
+                                            rotate(
+                                                overlayRotationAngle,
+                                                clampedOuterBounds.center
+                                            )
+                                        }) { drawOverlayContent() } else drawOverlayContent()
+                                        if (editTranslationMode) {
+                                            val isSelected =
+                                                selectedIndex != null && selectedIndex!! < dragBlocks.size && dragBlocks[selectedIndex!!].block == block
+
+                                            fun drawBorder() {
+                                                val color =
+                                                    if (isSelected) Color.Red else Color.Blue
+                                                // Border vẽ quanh OUTER bounds để show full area
+                                                if (isOval) drawOval(
+                                                    color,
+                                                    Offset(
+                                                        clampedOuterBounds.left,
+                                                        clampedOuterBounds.top
+                                                    ),
+                                                    Size(
+                                                        clampedOuterBounds.width,
+                                                        clampedOuterBounds.height
+                                                    ),
+                                                    style = Stroke(2f)
+                                                )
+                                                else drawRect(
+                                                    color,
+                                                    Offset(
+                                                        clampedOuterBounds.left,
+                                                        clampedOuterBounds.top
+                                                    ),
+                                                    Size(
+                                                        clampedOuterBounds.width,
+                                                        clampedOuterBounds.height
+                                                    ),
+                                                    style = Stroke(2f)
+                                                )
+                                            }
+                                            if (overlayRotationAngle != 0f) withTransform({
+                                                rotate(
+                                                    overlayRotationAngle,
+                                                    clampedOuterBounds.center
+                                                )
+                                            }) { drawBorder() } else drawBorder()
+                                        }
+                                        // Text vẽ trong INNER bounds (vùng bôi trắng thực tế)
+                                        val tL =
+                                            clampedInnerBounds.left + clampedInnerBounds.width * (if (isOval) 0.15f else 0f)
+                                        val tT =
+                                            clampedInnerBounds.top + clampedInnerBounds.height * (if (isOval) 0.15f else 0f)
+                                        val tW =
+                                            clampedInnerBounds.width * (if (isOval) 0.7f else 1f)
+                                        val tH =
+                                            clampedInnerBounds.height * (if (isOval) 0.7f else 1f)
+                                        withTransform({
+                                            if (region.rotation != 0f) rotate(
+                                                region.rotation,
+                                                Offset(tL + tW / 2, tT + tH / 2)
+                                            )
+                                        }) {
+                                            drawTextOnCanvas(
+                                                drawScope = this,
+                                                text = block.text,
+                                                x = tL,
+                                                y = tT,
+                                                width = tW,
+                                                height = tH,
+                                                color = region.textColor ?: Color.Black,
+                                                fontSize = optimalFontSize,
+                                                isVertical = block.isVertical,
+                                                boldness = region.textBoldness,
+                                                context = context,
+                                                fontFamilyName = block.fontFamily,
+                                                borderColor = region.textBorderColor,
+                                                borderThickness = region.textBorderThickness,
+                                                borderAlpha = region.textBorderAlpha,
+                                                editMode = editTranslationMode,
+                                                shapeType = block.shapeType,
+                                                lineSpacing = region.lineSpacing,
+                                                shadowColor = region.textShadowColor,
+                                                shadowAlpha = region.textShadowAlpha,
+                                                shadowRadius = region.textShadowRadius,
+                                                textAlign = block.textAlign,
+                                                textGradientColors = region.textGradientColors,
+                                                textGradientOffsets = region.textGradientOffsets,
+                                                textGradientType = region.textGradientType
+                                            )
+                                        }
+                                    }
+                                    if (isTextRemovalMode) {
+                                        val dummy = drawTrigger
+                                        val strokeStyle = Stroke(
+                                            width = brushSize,
+                                            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                            join = androidx.compose.ui.graphics.StrokeJoin.Round
+                                        )
+                                        textRemovalPaths.forEach {
+                                            drawPath(
+                                                it.first,
+                                                Color.Red.copy(alpha = 0.5f),
+                                                style = Stroke(
+                                                    width = it.second,
+                                                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                                                    join = androidx.compose.ui.graphics.StrokeJoin.Round
+                                                )
+                                            )
+                                        }
+                                        currentPaintingPath.value?.let {
+                                            drawPath(
+                                                it,
+                                                Color.Red.copy(alpha = 0.5f),
+                                                style = strokeStyle
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Touch Layer
+                        Box(
+                            modifier = Modifier.matchParentSize().pointerInput(
+                                isTextRemovalMode,
+                                editTranslationMode,
+                                zoomScale,
+                                zoomOffset,
+                                imageWidth,
+                                imageHeight
+                            ) {
                                 if (isTextRemovalMode) {
-                                    val dummy = drawTrigger
-                                    val strokeStyle = Stroke(width = brushSize, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                                    textRemovalPaths.forEach { drawPath(it.first, Color.Red.copy(alpha = 0.5f), style = Stroke(width = it.second, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)) }
-                                    currentPaintingPath.value?.let { drawPath(it, Color.Red.copy(alpha = 0.5f), style = strokeStyle) }
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            if (event.changes.size > 1) {
+                                                currentPaintingPath.value =
+                                                    null; magnifierPosition =
+                                                    null; magnifierSourcePosition = null
+                                                val zoom = event.calculateZoom();
+                                                val pan = event.calculatePan()
+                                                zoomScale = (zoomScale * zoom).coerceIn(1f, 5f)
+                                                val maxOX = (imageWidth * (zoomScale - 1f)) / 2;
+                                                val maxOY = (imageHeight * (zoomScale - 1f)) / 2
+                                                zoomOffset = Offset(
+                                                    (zoomOffset.x + pan.x).coerceIn(
+                                                        -maxOX,
+                                                        maxOX
+                                                    ),
+                                                    (zoomOffset.y + pan.y).coerceIn(-maxOY, maxOY)
+                                                )
+                                                event.changes.forEach { it.consume() }
+                                            } else {
+                                                val change = event.changes.first();
+                                                val screenPos = change.position
+                                                val centerX = imageWidth / 2;
+                                                val centerY = imageHeight / 2
+                                                val internalPos = Offset(
+                                                    (screenPos.x - centerX - zoomOffset.x) / zoomScale + centerX,
+                                                    (screenPos.y - centerY - zoomOffset.y) / zoomScale + centerY
+                                                )
+                                                if (change.pressed) {
+                                                    if (change.changedToDown()) {
+                                                        currentPaintingPath.value = Path().apply {
+                                                            moveTo(
+                                                                internalPos.x,
+                                                                internalPos.y
+                                                            )
+                                                        }
+                                                        currentPaintingPathMap[uri] =
+                                                            currentPaintingPath.value
+                                                        magnifierPosition =
+                                                            screenPos; magnifierSourcePosition =
+                                                            internalPos
+                                                    } else if (currentPaintingPath.value != null) {
+                                                        currentPaintingPath.value?.lineTo(
+                                                            internalPos.x,
+                                                            internalPos.y
+                                                        )
+                                                        currentPaintingPathMap[uri] =
+                                                            currentPaintingPath.value
+                                                        magnifierPosition =
+                                                            screenPos; magnifierSourcePosition =
+                                                            internalPos
+                                                    }
+                                                    drawTrigger++; change.consume()
+                                                } else if (change.changedToUp()) {
+                                                    currentPaintingPath.value?.let {
+                                                        textRemovalPaths.add(it to brushSize)
+                                                        // Clear redo stack khi vẽ nét mới
+                                                        textRemovalRedoStack.clear()
+                                                    }
+                                                    currentPaintingPath.value = null
+                                                    currentPaintingPathMap[uri] = null
+                                                    magnifierPosition =
+                                                        null; magnifierSourcePosition = null
+                                                    drawTrigger++; change.consume()
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else if (editTranslationMode) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent();
+                                            val dragEvent = event.changes.firstOrNull() ?: continue
+                                            if (dragEvent.pressed) {
+                                                if (draggingIndex == null) {
+                                                    val pos = dragEvent.position
+                                                    val idx = dragBlocks.indexOfLast { db ->
+                                                        val b = db.block;
+                                                        val bw = b.originalImageWidth?.toFloat()
+                                                            ?: originalImageWidth;
+                                                        val s = if (bw > 0f) imageWidth / bw else 1f
+                                                        val h = (b.originalImageHeight?.toFloat()
+                                                            ?: originalImageHeight) * s;
+                                                        val oY =
+                                                            if (imageHeight > h) (imageHeight - h) / 2 else 0f
+                                                        val blockRect = Rect(
+                                                            (b.bounds.left * s) + db.offset.x,
+                                                            (b.bounds.top * s) + oY + db.offset.y,
+                                                            (b.bounds.right * s) + db.offset.x,
+                                                            (b.bounds.bottom * s) + oY + db.offset.y
+                                                        )
+                                                        isPointInBlock(blockRect, b.shapeType, pos)
+                                                    }
+                                                    if (idx != -1) {
+                                                        selectedIndex = idx; draggingIndex =
+                                                            idx; lastDragPos = pos
+                                                    } else selectedIndex = null
+                                                    dragEvent.consume()
+                                                } else {
+                                                    val amt = dragEvent.position - lastDragPos
+                                                    dragBlocks = dragBlocks.toMutableList().also {
+                                                        it[draggingIndex!!] =
+                                                            it[draggingIndex!!].copy(offset = it[draggingIndex!!].offset + amt)
+                                                    }
+                                                    lastDragPos =
+                                                        dragEvent.position; dragEvent.consume()
+                                                }
+                                            } else {
+                                                draggingIndex?.let { idx ->
+                                                    val db = dragBlocks[idx];
+                                                    val bw = db.block.originalImageWidth?.toFloat()
+                                                        ?: originalImageWidth;
+                                                    val s = if (bw > 0f) imageWidth / bw else 1f
+                                                    val nb = android.graphics.Rect(db.block.bounds)
+                                                        .apply {
+                                                            offset(
+                                                                (db.offset.x / s).toInt(),
+                                                                (db.offset.y / s).toInt()
+                                                            )
+                                                        }
+                                                    val updated = dragBlocks.toMutableList().also {
+                                                        it[idx] = db.copy(
+                                                            block = db.block.copy(bounds = nb),
+                                                            offset = Offset.Zero
+                                                        )
+                                                    }
+                                                    dragBlocks = updated; dragBlocksMap[uri] =
+                                                    updated; draggingIndex = null
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }) { }
+
+                        TranslationOverlay(
+                            status = translationStatus,
+                            modifier = Modifier.matchParentSize()
+                        )
+
+                        magnifierPosition?.let { pos ->
+                            MagnifierPopup(
+                                magnifierPosition = pos,
+                                sourcePosition = magnifierSourcePosition ?: pos,
+                                imageWidth = imageWidth,
+                                imageHeight = imageHeight,
+                                imageUri = uri,
+                                modifier = Modifier.matchParentSize().zIndex(999f)
+                            )
+                        }
+
+                        // Text Removal Controls - hiển thị ở bottom của mỗi ảnh
+                        if (isTextRemovalMode && isInWindow) {
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .padding(bottom = 16.dp),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface.copy(
+                                            alpha = 0.95f
+                                        )
+                                    ),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Undo button
+                                        IconButton(
+                                            onClick = {
+                                                if (textRemovalPaths.isNotEmpty()) {
+                                                    val removed =
+                                                        textRemovalPaths.removeAt(textRemovalPaths.size - 1)
+                                                    textRemovalRedoStack.add(removed)
+                                                    drawTrigger++
+                                                }
+                                            },
+                                            enabled = textRemovalPaths.isNotEmpty()
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Undo,
+                                                contentDescription = "Hoàn tác",
+                                                tint = if (textRemovalPaths.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
+                                                    alpha = 0.38f
+                                                )
+                                            )
+                                        }
+
+                                        // Redo button
+                                        IconButton(
+                                            onClick = {
+                                                if (textRemovalRedoStack.isNotEmpty()) {
+                                                    val restored =
+                                                        textRemovalRedoStack.removeAt(textRemovalRedoStack.size - 1)
+                                                    textRemovalPaths.add(restored)
+                                                    drawTrigger++
+                                                }
+                                            },
+                                            enabled = textRemovalRedoStack.isNotEmpty()
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Redo,
+                                                contentDescription = "Làm lại",
+                                                tint = if (textRemovalRedoStack.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
+                                                    alpha = 0.38f
+                                                )
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        // Brush size button
+                                        IconButton(onClick = { showBrushSizeDialog = true }) {
+                                            Icon(
+                                                Icons.Default.Brush,
+                                                contentDescription = "Kích thước bút",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        // Apply button
+                                        IconButton(
+                                            onClick = {
+                                                if (textRemovalPaths.isNotEmpty()) {
+                                                    val originalDims = imageDimensionsMap[uri]
+                                                    val displayDims = imageDisplayDimensionsMap[uri]
+
+                                                    if (originalDims != null && displayDims != null) {
+                                                        val (originalW, originalH) = originalDims
+                                                        val (displayW, displayH) = displayDims
+
+                                                        if (originalW > 0 && displayW > 0) {
+                                                            val maskBmp = android.graphics.Bitmap.createBitmap(
+                                                                originalW.toInt(),
+                                                                originalH.toInt(),
+                                                                android.graphics.Bitmap.Config.ARGB_8888
+                                                            )
+                                                            val canvas = android.graphics.Canvas(maskBmp)
+                                                                .apply { drawColor(android.graphics.Color.BLACK) }
+                                                            val s = originalW / displayW
+                                                            val matrix = android.graphics.Matrix()
+                                                                .apply { setScale(s, s) }
+                                                            val paint = android.graphics.Paint().apply {
+                                                                color = android.graphics.Color.WHITE
+                                                                style = android.graphics.Paint.Style.STROKE
+                                                                strokeCap = android.graphics.Paint.Cap.ROUND
+                                                                strokeJoin = android.graphics.Paint.Join.ROUND
+                                                            }
+                                                            textRemovalPaths.forEach { pair ->
+                                                                paint.strokeWidth = pair.second * s
+                                                                canvas.drawPath(
+                                                                    pair.first.asAndroidPath()
+                                                                        .apply { transform(matrix) }, paint
+                                                                )
+                                                            }
+                                                            onRemoveTextWithMask(uri, maskBmp)
+                                                            textRemovalPaths.clear()
+                                                            textRemovalRedoStack.clear()
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            enabled = textRemovalPaths.isNotEmpty()
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = "Xóa vùng này",
+                                                tint = if (textRemovalPaths.isNotEmpty()) Color.Red else MaterialTheme.colorScheme.onSurface.copy(
+                                                    alpha = 0.38f
+                                                )
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-
-                    // Touch Layer
-                    Box(modifier = Modifier.matchParentSize().pointerInput(isTextRemovalMode, editTranslationMode, zoomScale, zoomOffset, imageWidth, imageHeight) {
-                        if (isTextRemovalMode) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    if (event.changes.size > 1) {
-                                        currentPaintingPath.value = null; magnifierPosition = null; magnifierSourcePosition = null
-                                        val zoom = event.calculateZoom(); val pan = event.calculatePan()
-                                        zoomScale = (zoomScale * zoom).coerceIn(1f, 5f)
-                                        val maxOX = (imageWidth * (zoomScale - 1f)) / 2; val maxOY = (imageHeight * (zoomScale - 1f)) / 2
-                                        zoomOffset = Offset((zoomOffset.x + pan.x).coerceIn(-maxOX, maxOX), (zoomOffset.y + pan.y).coerceIn(-maxOY, maxOY))
-                                        event.changes.forEach { it.consume() }
-                                    } else {
-                                        val change = event.changes.first(); val screenPos = change.position
-                                        val centerX = imageWidth / 2; val centerY = imageHeight / 2
-                                        val internalPos = Offset((screenPos.x - centerX - zoomOffset.x) / zoomScale + centerX, (screenPos.y - centerY - zoomOffset.y) / zoomScale + centerY)
-                                        if (change.pressed) {
-                                            if (change.changedToDown()) {
-                                                currentPaintingPath.value = Path().apply { moveTo(internalPos.x, internalPos.y) }
-                                                magnifierPosition = screenPos; magnifierSourcePosition = internalPos
-                                            } else if (currentPaintingPath.value != null) {
-                                                currentPaintingPath.value?.lineTo(internalPos.x, internalPos.y)
-                                                magnifierPosition = screenPos; magnifierSourcePosition = internalPos
-                                            }
-                                            drawTrigger++; change.consume()
-                                        } else if (change.changedToUp()) {
-                                            currentPaintingPath.value?.let { textRemovalPaths.add(it to brushSize) }
-                                            currentPaintingPath.value = null; magnifierPosition = null; magnifierSourcePosition = null
-                                            drawTrigger++; change.consume()
-                                        }
-                                    }
-                                }
-                            }
-                        } else if (editTranslationMode) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent(); val dragEvent = event.changes.firstOrNull() ?: continue
-                                    if (dragEvent.pressed) {
-                                        if (draggingIndex == null) {
-                                            val pos = dragEvent.position
-                                            val idx = dragBlocks.indexOfLast { db ->
-                                                val b = db.block; val bw = b.originalImageWidth?.toFloat() ?: originalImageWidth; val s = if (bw > 0f) imageWidth / bw else 1f
-                                                val h = (b.originalImageHeight?.toFloat() ?: originalImageHeight) * s; val oY = if (imageHeight > h) (imageHeight - h) / 2 else 0f
-                                                val blockRect = Rect((b.bounds.left * s) + db.offset.x, (b.bounds.top * s) + oY + db.offset.y, (b.bounds.right * s) + db.offset.x, (b.bounds.bottom * s) + oY + db.offset.y)
-                                                isPointInBlock(blockRect, b.shapeType, pos)
-                                            }
-                                            if (idx != -1) { selectedIndex = idx; draggingIndex = idx; lastDragPos = pos } else selectedIndex = null
-                                            dragEvent.consume()
-                                        } else {
-                                            val amt = dragEvent.position - lastDragPos
-                                            dragBlocks = dragBlocks.toMutableList().also { it[draggingIndex!!] = it[draggingIndex!!].copy(offset = it[draggingIndex!!].offset + amt) }
-                                            lastDragPos = dragEvent.position; dragEvent.consume()
-                                        }
-                                    } else {
-                                        draggingIndex?.let { idx ->
-                                            val db = dragBlocks[idx]; val bw = db.block.originalImageWidth?.toFloat() ?: originalImageWidth; val s = if (bw > 0f) imageWidth / bw else 1f
-                                            val nb = android.graphics.Rect(db.block.bounds).apply { offset((db.offset.x / s).toInt(), (db.offset.y / s).toInt()) }
-                                            val updated = dragBlocks.toMutableList().also { it[idx] = db.copy(block = db.block.copy(bounds = nb), offset = Offset.Zero) }
-                                            dragBlocks = updated; dragBlocksMap[uri] = updated; draggingIndex = null
-                                        }
-                                    }
-                                }
-                            }
+                }
+            }
+            if (isLoadingMoreImages && remainingImagesCount > 0) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        contentAlignment = androidx.compose.ui.Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Đang tải thêm $remainingImagesCount ảnh...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                         }
-                    }) { }
-
-                    TranslationOverlay(status = translationStatus, modifier = Modifier.matchParentSize())
-                    if (isTextRemovalMode && textRemovalPaths.isNotEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize().padding(8.dp), contentAlignment = androidx.compose.ui.Alignment.BottomCenter) {
-                            Button(onClick = {
-                                if (originalImageWidth > 0 && imageWidth > 0) {
-                                    val maskBmp = android.graphics.Bitmap.createBitmap(originalImageWidth.toInt(), originalImageHeight.toInt(), android.graphics.Bitmap.Config.ARGB_8888)
-                                    val canvas = android.graphics.Canvas(maskBmp).apply { drawColor(android.graphics.Color.BLACK) }
-                                    val s = originalImageWidth / imageWidth; val matrix = android.graphics.Matrix().apply { setScale(s, s) }
-                                    val paint = android.graphics.Paint().apply { color = android.graphics.Color.WHITE; style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND; strokeJoin = android.graphics.Paint.Join.ROUND }
-                                    textRemovalPaths.forEach { pair ->
-                                        paint.strokeWidth = pair.second * s
-                                        canvas.drawPath(pair.first.asAndroidPath().apply { transform(matrix) }, paint)
-                                    }
-                                    onRemoveTextWithMask(uri, maskBmp); textRemovalPaths.clear()
-                                }
-                            }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) { Text("Xóa vùng này", color = Color.White) }
-                        }
-                    }
-                    magnifierPosition?.let { pos ->
-                        MagnifierPopup(magnifierPosition = pos, sourcePosition = magnifierSourcePosition ?: pos, imageWidth = imageWidth, imageHeight = imageHeight, imageUri = uri, modifier = Modifier.matchParentSize().zIndex(999f))
                     }
                 }
             }
         }
-        if (isLoadingMoreImages && remainingImagesCount > 0) {
-            item {
-                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = "Đang tải thêm $remainingImagesCount ảnh...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+
+        // Brush size dialog - vẫn giữ ở level cao vì nó là popup global
+        if (showBrushSizeDialog) {
+            androidx.compose.ui.window.Dialog(onDismissRequest = {
+                showBrushSizeDialog = false
+            }) {
+                Card {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Kích thước bút", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "${brushSize.toInt()}px",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Slider(
+                            value = brushSize,
+                            onValueChange = onBrushSizeChange,
+                            valueRange = 10f..100f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = { showBrushSizeDialog = false },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Đóng")
+                        }
                     }
                 }
             }
         }
     }
-}
 
-private fun Color.applySaturation(saturation: Float): Color {
-    val hsv = FloatArray(3); ColorUtils.colorToHSL(this.toArgb(), hsv)
-    hsv[1] = (hsv[1] * saturation).coerceIn(0f, 1f); return Color(ColorUtils.HSLToColor(hsv))
+    fun Color.applySaturation(saturation: Float): Color {
+        val hsv = FloatArray(3); ColorUtils.colorToHSL(this.toArgb(), hsv)
+        hsv[1] = (hsv[1] * saturation).coerceIn(0f, 1f); return Color(ColorUtils.HSLToColor(hsv))
+    }
 }

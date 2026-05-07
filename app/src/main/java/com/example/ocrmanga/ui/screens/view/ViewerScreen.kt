@@ -736,7 +736,7 @@ fun ViewerScreen(
             onSpeedChange = { scrollSpeed = it },
             showSpeedSlider = showSpeedSlider
         )
-        
+
         ImageViewer(
             imageUris = uiState.imageUris,
             translatedTexts = uiState.translatedTexts,
@@ -836,7 +836,8 @@ fun ViewerScreen(
                     }
                 }
             },
-            brushSize = brushSize
+            brushSize = brushSize,
+            onBrushSizeChange = { brushSize = it }
         )
         Dialogs(
             showInsertAtIndexDialog = showInsertAtIndexDialog,
