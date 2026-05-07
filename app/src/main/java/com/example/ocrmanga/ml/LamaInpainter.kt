@@ -148,7 +148,6 @@ object LamaInpainter {
         try {
             val t0 = System.currentTimeMillis()
             onProgress?.invoke("Lấy dữ liệu...")
-            val imageType = detectImageType(image)
             // Tạo bitmap làm việc chỉ một lần - sẽ được sửa đổi tại chỗ
             val work = image.copy(Bitmap.Config.ARGB_8888, true)
             val fullMask = createMaskFromBlocks(image.width, image.height, blocks)
@@ -156,10 +155,6 @@ object LamaInpainter {
             val clusters = createSafeClusters(paddedBlocks, image.width, image.height)
             val result = mutex.withLock { processRegionClusters(work, fullMask, clusters, onProgress) }
             fullMask.recycle()
-            // Chuyển sang grayscale chỉ khi cần thiết, tại chỗ
-            if (imageType == ImageType.GRAYSCALE && result != null) {
-                toGrayInPlace(result)
-            }
             Log.d(TAG, "inpaintBlocks done: ${System.currentTimeMillis() - t0}ms")
             result
         } catch (e: Exception) { Log.e(TAG, "inpaintBlocks failed", e); null }
@@ -250,16 +245,12 @@ object LamaInpainter {
         image: Bitmap, mask: Bitmap, onProgress: ((String) -> Unit)?
     ): Bitmap? {
         val t0 = System.currentTimeMillis()
-        val imageType = detectImageType(image)
         val work = image.copy(Bitmap.Config.ARGB_8888, true)
         val normMask = normalizeMask(mask, image.width, image.height)
         val bounds = findMaskBounds(normMask)
         if (bounds == null) { normMask.recycle(); work.recycle(); return null }
         val result = mutex.withLock { processRegionClusters(work, normMask, listOf(listOf(bounds)), onProgress) }
         normMask.recycle()
-        if (imageType == ImageType.GRAYSCALE && result != null) {
-            toGrayInPlace(result)
-        }
         Log.d(TAG, "inpaintWithMask done: ${System.currentTimeMillis() - t0}ms")
         return result
     }
@@ -581,7 +572,7 @@ object LamaInpainter {
 
         val blR = lapBlendChannel(origR, inpR, mask, w, h, levels)
         val blG = lapBlendChannel(origG, inpG, mask, w, h, levels)
-        val blB = lapBlendChannel(inpB, inpB, mask, w, h, levels)
+        val blB = lapBlendChannel(origB, inpB, mask, w, h, levels)
 
         return IntArray(size) { i ->
             Color.argb(255,

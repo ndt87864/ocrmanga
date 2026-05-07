@@ -75,9 +75,9 @@ object TextRemovalHelper {
             }
 
             onProgress?.invoke("Lưu kết quả...")
-            val outputFile = File(context.cacheDir, "inpainted_${System.currentTimeMillis()}.jpg")
+            val outputFile = File(context.cacheDir, "inpainted_${System.currentTimeMillis()}.png")
             FileOutputStream(outputFile).use { out ->
-                resultBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                resultBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
             }
             resultBitmap.recycle()
 
@@ -125,9 +125,9 @@ object TextRemovalHelper {
             }
 
             onProgress?.invoke("Lưu kết quả...")
-            val outputFile = File(context.cacheDir, "inpainted_mask_${System.currentTimeMillis()}.jpg")
+            val outputFile = File(context.cacheDir, "inpainted_mask_${System.currentTimeMillis()}.png")
             FileOutputStream(outputFile).use { out ->
-                resultBitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                resultBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
             }
             resultBitmap.recycle()
 
@@ -141,11 +141,15 @@ object TextRemovalHelper {
 
     /**
      * Decode a Bitmap directly from a content Uri.
+     * Đảm bảo decode với ARGB_8888 để giữ nguyên màu sắc.
      */
     private fun decodeBitmapFromUri(context: Context, uri: Uri): Bitmap? {
         return try {
             context.contentResolver.openInputStream(uri)?.use { stream ->
-                BitmapFactory.decodeStream(stream)
+                val options = BitmapFactory.Options().apply {
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                BitmapFactory.decodeStream(stream, null, options)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error decoding bitmap from Uri", e)
