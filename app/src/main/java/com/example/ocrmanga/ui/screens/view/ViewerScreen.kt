@@ -67,6 +67,7 @@ fun ViewerScreen(
     var isRemovingText by remember { mutableStateOf(false) }
     var removingTextLocalProgress by remember { mutableStateOf("") }
     var brushSize by remember { mutableStateOf(40f) }
+
     val uiState by viewModel.uiState.collectAsState()
     val allRoomIds by viewModel.allRoomIds.collectAsState()
     val context = LocalContext.current

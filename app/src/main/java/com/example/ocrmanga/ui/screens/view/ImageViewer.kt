@@ -394,10 +394,13 @@ fun ImageViewer(
                 var draggingIndex by remember { mutableStateOf<Int?>(null) }
                 var lastDragPos by remember { mutableStateOf(Offset.Zero) }
 
-                // Sử dụng state từ map thay vì local state
-                val textRemovalPaths = textRemovalPathsMap.getOrPut(uri) { mutableStateListOf() }
-                val textRemovalRedoStack =
+                // Sử dụng state từ map thay vì local state - thêm drawTrigger để force recompose
+                val textRemovalPaths = remember(uri, drawTrigger) {
+                    textRemovalPathsMap.getOrPut(uri) { mutableStateListOf() }
+                }
+                val textRemovalRedoStack = remember(uri, drawTrigger) {
                     textRemovalRedoStackMap.getOrPut(uri) { mutableStateListOf() }
+                }
                 val currentPaintingPath = remember { mutableStateOf(currentPaintingPathMap[uri]) }
                 var magnifierPosition by remember { mutableStateOf<Offset?>(null) }
                 var magnifierSourcePosition by remember { mutableStateOf<Offset?>(null) }
@@ -1014,7 +1017,7 @@ fun ImageViewer(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Undo button
+                                    // Undo stroke button
                                     IconButton(
                                         onClick = {
                                             if (textRemovalPaths.isNotEmpty()) {
@@ -1028,14 +1031,14 @@ fun ImageViewer(
                                     ) {
                                         Icon(
                                             Icons.Default.Undo,
-                                            contentDescription = "Hoàn tác",
+                                            contentDescription = "Hoàn tác nét vẽ",
                                             tint = if (textRemovalPaths.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
                                                 alpha = 0.38f
                                             )
                                         )
                                     }
 
-                                    // Redo button
+                                    // Redo stroke button
                                     IconButton(
                                         onClick = {
                                             if (textRemovalRedoStack.isNotEmpty()) {
@@ -1049,7 +1052,7 @@ fun ImageViewer(
                                     ) {
                                         Icon(
                                             Icons.Default.Redo,
-                                            contentDescription = "Làm lại",
+                                            contentDescription = "Làm lại nét vẽ",
                                             tint = if (textRemovalRedoStack.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
                                                 alpha = 0.38f
                                             )
@@ -1107,6 +1110,7 @@ fun ImageViewer(
                                                         onRemoveTextWithMask(uri, maskBmp)
                                                         textRemovalPaths.clear()
                                                         textRemovalRedoStack.clear()
+                                                        drawTrigger++
                                                     }
                                                 }
                                             }
