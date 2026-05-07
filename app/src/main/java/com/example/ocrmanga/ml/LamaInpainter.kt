@@ -70,6 +70,19 @@ object LamaInpainter {
     private var inputH = MODEL_H; private var inputW = MODEL_W; private var inputC = MODEL_C
     private val mutex = Mutex()
 
+    // Buffer pools để tái sử dụng, tránh cấp phát lặp lại
+    private val tensorImageBuffer = FloatArray(1 * 3 * MODEL_H * MODEL_W)
+    private val tensorMaskBuffer = FloatArray(1 * 1 * MODEL_H * MODEL_W)
+    private val pixelBuffer = IntArray(MODEL_H * MODEL_W)
+
+    // FloatBuffer wrappers tái sử dụng cho ONNX tensor creation
+    private val imageFloatBuffer = FloatBuffer.wrap(tensorImageBuffer)
+    private val maskFloatBuffer = FloatBuffer.wrap(tensorMaskBuffer)
+
+    // Buffer cho pyramid blend - sẽ được resize khi cần
+    private var pyramidWorkBuffer: FloatArray? = null
+    private var pyramidMaxSize = 0
+
     enum class ImageType { GRAYSCALE, COLOR }
     data class InpaintBlock(
         val bounds: Rect, val shapeType: Int = 0,
@@ -136,15 +149,19 @@ object LamaInpainter {
             val t0 = System.currentTimeMillis()
             onProgress?.invoke("Lấy dữ liệu...")
             val imageType = detectImageType(image)
-            val work = if (imageType == ImageType.GRAYSCALE) toGray(image) else image.copy(Bitmap.Config.ARGB_8888, true)
+            // Tạo bitmap làm việc chỉ một lần - sẽ được sửa đổi tại chỗ
+            val work = image.copy(Bitmap.Config.ARGB_8888, true)
             val fullMask = createMaskFromBlocks(image.width, image.height, blocks)
             val paddedBlocks = blocks.map { padBlock(it, image.width, image.height) }
             val clusters = createSafeClusters(paddedBlocks, image.width, image.height)
             val result = mutex.withLock { processRegionClusters(work, fullMask, clusters, onProgress) }
-            fullMask.recycle(); work.recycle()
-            val final = if (imageType == ImageType.GRAYSCALE && result != null) { val g = toGray(result); result.recycle(); g } else result
+            fullMask.recycle()
+            // Chuyển sang grayscale chỉ khi cần thiết, tại chỗ
+            if (imageType == ImageType.GRAYSCALE && result != null) {
+                toGrayInPlace(result)
+            }
             Log.d(TAG, "inpaintBlocks done: ${System.currentTimeMillis() - t0}ms")
-            final
+            result
         } catch (e: Exception) { Log.e(TAG, "inpaintBlocks failed", e); null }
     }
 
@@ -191,6 +208,7 @@ object LamaInpainter {
         try {
             val t0 = System.currentTimeMillis()
             val w = image.width; val h = image.height
+            // Làm việc trực tiếp trên bản sao duy nhất
             val result = image.copy(Bitmap.Config.ARGB_8888, true)
             val pixels = IntArray(w * h)
             image.getPixels(pixels, 0, w, 0, 0, w, h)
@@ -207,6 +225,7 @@ object LamaInpainter {
                 onProgress?.invoke("Bù điểm ảnh (${idx + 1}/${blocks.size})...")
                 val bestRect = findBestPatch(pixels, w, h, maskFloats, cropRect)
                 val patchBmp = Bitmap.createBitmap(image, bestRect.left, bestRect.top, cw, ch)
+                // Blend trực tiếp vào result
                 blendCropIntoResult(result, patchBmp, fullMask, cropRect)
                 patchBmp.recycle()
             }
@@ -220,6 +239,9 @@ object LamaInpainter {
         try { ortSession?.close() } catch (_: Exception) {}
         try { ortEnv?.close() } catch (_: Exception) {}
         ortSession = null; ortEnv = null; isInitialized = false
+        // Giải phóng buffer pools
+        pyramidWorkBuffer = null
+        pyramidMaxSize = 0
     }
 
     // ── Internal ──────────────────────────────────────────────────────────
@@ -229,15 +251,17 @@ object LamaInpainter {
     ): Bitmap? {
         val t0 = System.currentTimeMillis()
         val imageType = detectImageType(image)
-        val work = if (imageType == ImageType.GRAYSCALE) toGray(image) else image.copy(Bitmap.Config.ARGB_8888, true)
+        val work = image.copy(Bitmap.Config.ARGB_8888, true)
         val normMask = normalizeMask(mask, image.width, image.height)
         val bounds = findMaskBounds(normMask)
         if (bounds == null) { normMask.recycle(); work.recycle(); return null }
         val result = mutex.withLock { processRegionClusters(work, normMask, listOf(listOf(bounds)), onProgress) }
-        normMask.recycle(); work.recycle()
-        val final = if (imageType == ImageType.GRAYSCALE && result != null) { val g = toGray(result); result.recycle(); g } else result
+        normMask.recycle()
+        if (imageType == ImageType.GRAYSCALE && result != null) {
+            toGrayInPlace(result)
+        }
         Log.d(TAG, "inpaintWithMask done: ${System.currentTimeMillis() - t0}ms")
-        return final
+        return result
     }
 
     private fun padBlock(b: InpaintBlock, imgW: Int, imgH: Int): Rect {
@@ -387,7 +411,8 @@ object LamaInpainter {
         val session = ortSession ?: return null
         val env = ortEnv ?: return null
         val w = image.width; val h = image.height
-        val result = image.copy(Bitmap.Config.ARGB_8888, true)
+        // Làm việc trực tiếp trên image thay vì tạo bản sao
+        // image đã là mutable copy từ caller
 
         for ((idx, cluster) in clusters.withIndex()) {
             onProgress?.invoke("Xóa điểm ảnh (${idx + 1}/${clusters.size})...")
@@ -401,7 +426,7 @@ object LamaInpainter {
 
             Log.d(TAG, "Cluster $idx crop=${crop.width()}x${crop.height()}")
 
-            val ci = Bitmap.createBitmap(result, crop.left, crop.top, crop.width(), crop.height())
+            val ci = Bitmap.createBitmap(image, crop.left, crop.top, crop.width(), crop.height())
             val cm = Bitmap.createBitmap(mask, crop.left, crop.top, crop.width(), crop.height())
             val (ri, pi) = resizeWithPadding(ci, inputW, inputH)
             val (rm, _) = resizeWithPadding(cm, inputW, inputH)
@@ -412,11 +437,12 @@ object LamaInpainter {
             val unpad = removePadding(out, pi); out.recycle()
             val scaled = Bitmap.createScaledBitmap(unpad, crop.width(), crop.height(), true); unpad.recycle()
             onProgress?.invoke("Bù điểm ảnh (${idx + 1}/${clusters.size})...")
-            blendCropIntoResult(result, scaled, mask, crop)
+            // Blend trực tiếp vào image (in-place modification)
+            blendCropIntoResult(image, scaled, mask, crop)
             scaled.recycle()
         }
         onProgress?.invoke("Bù điểm ảnh 100%...")
-        return result
+        return image
     }
 
     // ── Laplacian pyramid seamless blend ─────────────────────────────────
@@ -461,24 +487,38 @@ object LamaInpainter {
      */
     private fun sharpenMaskedRegion(result: Bitmap, mask: FloatArray, cw: Int, ch: Int, cropRect: Rect) {
         if (SHARPEN_AMOUNT <= 0f) return
-        val px = IntArray(cw * ch)
+        val size = cw * ch
+
+        // Tái sử dụng buffer nếu đủ lớn
+        if (pyramidMaxSize < size) {
+            pyramidMaxSize = size
+            pyramidWorkBuffer = FloatArray(size * 3)
+        }
+        val workBuf = pyramidWorkBuffer!!
+
+        val px = IntArray(size)
         result.getPixels(px, 0, cw, cropRect.left, cropRect.top, cw, ch)
 
         // Inline separable box blur with radius SHARPEN_BLUR_RADIUS
         val r = SHARPEN_BLUR_RADIUS
         val k = 2 * r + 1
-        val rF = FloatArray(cw * ch) { Color.red(px[it]) / 255f }
-        val gF = FloatArray(cw * ch) { Color.green(px[it]) / 255f }
-        val bF = FloatArray(cw * ch) { Color.blue(px[it]) / 255f }
 
-        fun blurChannel(ch_: FloatArray): FloatArray {
-            val tmp = FloatArray(cw * ch)
+        // Sử dụng workBuf cho R, G, B channels
+        for (i in 0 until size) {
+            workBuf[i] = Color.red(px[i]) / 255f
+            workBuf[size + i] = Color.green(px[i]) / 255f
+            workBuf[size * 2 + i] = Color.blue(px[i]) / 255f
+        }
+
+        fun blurChannel(offset: Int): FloatArray {
+            val ch_ = workBuf.copyOfRange(offset, offset + size)
+            val tmp = FloatArray(size)
             for (y in 0 until ch) for (x in 0 until cw) {
                 var s = 0f
                 for (d in -r..r) s += ch_[y * cw + (x + d).coerceIn(0, cw - 1)]
                 tmp[y * cw + x] = s / k
             }
-            val out = FloatArray(cw * ch)
+            val out = FloatArray(size)
             for (y in 0 until ch) for (x in 0 until cw) {
                 var s = 0f
                 for (d in -r..r) s += tmp[(y + d).coerceIn(0, ch - 1) * cw + x]
@@ -487,13 +527,18 @@ object LamaInpainter {
             return out
         }
 
-        val bR = blurChannel(rF); val bG = blurChannel(gF); val bB = blurChannel(bF)
+        val bR = blurChannel(0)
+        val bG = blurChannel(size)
+        val bB = blurChannel(size * 2)
 
-        for (i in 0 until cw * ch) {
+        for (i in 0 until size) {
             if (mask[i] < 0.5f) continue
-            val nr = (rF[i] + SHARPEN_AMOUNT * (rF[i] - bR[i])).coerceIn(0f, 1f)
-            val ng = (gF[i] + SHARPEN_AMOUNT * (gF[i] - bG[i])).coerceIn(0f, 1f)
-            val nb = (bF[i] + SHARPEN_AMOUNT * (bF[i] - bB[i])).coerceIn(0f, 1f)
+            val rF = workBuf[i]
+            val gF = workBuf[size + i]
+            val bF = workBuf[size * 2 + i]
+            val nr = (rF + SHARPEN_AMOUNT * (rF - bR[i])).coerceIn(0f, 1f)
+            val ng = (gF + SHARPEN_AMOUNT * (gF - bG[i])).coerceIn(0f, 1f)
+            val nb = (bF + SHARPEN_AMOUNT * (bF - bB[i])).coerceIn(0f, 1f)
             px[i] = Color.argb(255,
                 (nr * 255).roundToInt(), (ng * 255).roundToInt(), (nb * 255).roundToInt())
         }
@@ -507,13 +552,38 @@ object LamaInpainter {
     private fun laplacianPyramidBlend(
         orig: IntArray, inp: IntArray, mask: FloatArray, w: Int, h: Int, levels: Int = 6
     ): IntArray {
-        fun ch(px: IntArray, c: Int) = FloatArray(px.size) { i ->
-            when (c) { 0 -> Color.red(px[i]); 1 -> Color.green(px[i]); else -> Color.blue(px[i]) } / 255f
+        val size = w * h
+        // Đảm bảo buffer đủ lớn cho kích thước hiện tại
+        if (pyramidMaxSize < size) {
+            pyramidMaxSize = size
+            pyramidWorkBuffer = FloatArray(size * 3) // R, G, B channels
         }
-        val blR = lapBlendChannel(ch(orig, 0), ch(inp, 0), mask, w, h, levels)
-        val blG = lapBlendChannel(ch(orig, 1), ch(inp, 1), mask, w, h, levels)
-        val blB = lapBlendChannel(ch(orig, 2), ch(inp, 2), mask, w, h, levels)
-        return IntArray(w * h) { i ->
+        val workBuf = pyramidWorkBuffer!!
+
+        // Extract channels vào buffer tái sử dụng
+        for (i in 0 until size) {
+            workBuf[i] = Color.red(orig[i]) / 255f
+            workBuf[size + i] = Color.green(orig[i]) / 255f
+            workBuf[size * 2 + i] = Color.blue(orig[i]) / 255f
+        }
+        val origR = workBuf.copyOfRange(0, size)
+        val origG = workBuf.copyOfRange(size, size * 2)
+        val origB = workBuf.copyOfRange(size * 2, size * 3)
+
+        for (i in 0 until size) {
+            workBuf[i] = Color.red(inp[i]) / 255f
+            workBuf[size + i] = Color.green(inp[i]) / 255f
+            workBuf[size * 2 + i] = Color.blue(inp[i]) / 255f
+        }
+        val inpR = workBuf.copyOfRange(0, size)
+        val inpG = workBuf.copyOfRange(size, size * 2)
+        val inpB = workBuf.copyOfRange(size * 2, size * 3)
+
+        val blR = lapBlendChannel(origR, inpR, mask, w, h, levels)
+        val blG = lapBlendChannel(origG, inpG, mask, w, h, levels)
+        val blB = lapBlendChannel(inpB, inpB, mask, w, h, levels)
+
+        return IntArray(size) { i ->
             Color.argb(255,
                 (blR[i] * 255).roundToInt().coerceIn(0, 255),
                 (blG[i] * 255).roundToInt().coerceIn(0, 255),
@@ -674,32 +744,34 @@ object LamaInpainter {
         return try {
             val pixelCount = inputW * inputH
 
+            // Tái sử dụng buffer thay vì cấp phát mới
             // Extract mask float values
-            val mPx = IntArray(pixelCount); mask.getPixels(mPx, 0, inputW, 0, 0, inputW, inputH)
-            val mF = FloatArray(pixelCount) { i ->
-                if (Color.red(mPx[i]) > 10 || Color.green(mPx[i]) > 10 || Color.blue(mPx[i]) > 10) 1f else 0f
+            mask.getPixels(pixelBuffer, 0, inputW, 0, 0, inputW, inputH)
+            for (i in 0 until pixelCount) {
+                val p = pixelBuffer[i]
+                tensorMaskBuffer[i] = if (Color.red(p) > 10 || Color.green(p) > 10 || Color.blue(p) > 10) 1f else 0f
             }
 
             // Extract image pixels
-            val iPx = IntArray(pixelCount); image.getPixels(iPx, 0, inputW, 0, 0, inputW, inputH)
+            image.getPixels(pixelBuffer, 0, inputW, 0, 0, inputW, inputH)
 
             // Build image tensor in NCHW format: [1, 3, H, W]
             // Channel-first: all R values, then all G values, then all B values
-            val imgData = FloatArray(1 * 3 * inputH * inputW)
             for (i in 0 until pixelCount) {
-                val k = 1f - mF[i]  // zero out masked pixels
-                imgData[0 * pixelCount + i] = Color.red(iPx[i]) / 255f * k   // R channel
-                imgData[1 * pixelCount + i] = Color.green(iPx[i]) / 255f * k // G channel
-                imgData[2 * pixelCount + i] = Color.blue(iPx[i]) / 255f * k  // B channel
+                val k = 1f - tensorMaskBuffer[i]  // zero out masked pixels
+                val p = pixelBuffer[i]
+                tensorImageBuffer[0 * pixelCount + i] = Color.red(p) / 255f * k   // R channel
+                tensorImageBuffer[1 * pixelCount + i] = Color.green(p) / 255f * k // G channel
+                tensorImageBuffer[2 * pixelCount + i] = Color.blue(p) / 255f * k  // B channel
             }
 
-            // Build mask tensor in NCHW format: [1, 1, H, W]
-            val maskData = FloatArray(1 * 1 * inputH * inputW)
-            System.arraycopy(mF, 0, maskData, 0, pixelCount)
+            // Tạo tensors từ FloatBuffer wrappers tái sử dụng
+            // Reset position của buffer trước khi tạo tensor
+            imageFloatBuffer.rewind()
+            maskFloatBuffer.rewind()
 
-            // Create ONNX tensors
-            val imgTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(imgData), longArrayOf(1, 3, inputH.toLong(), inputW.toLong()))
-            val maskTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(maskData), longArrayOf(1, 1, inputH.toLong(), inputW.toLong()))
+            val imgTensor = OnnxTensor.createTensor(env, imageFloatBuffer, longArrayOf(1, 3, inputH.toLong(), inputW.toLong()))
+            val maskTensor = OnnxTensor.createTensor(env, maskFloatBuffer, longArrayOf(1, 1, inputH.toLong(), inputW.toLong()))
 
             // Run inference with named inputs
             val inputs = mapOf("image" to imgTensor, "mask" to maskTensor)
@@ -712,7 +784,6 @@ object LamaInpainter {
             val oC = oShape[1].toInt()
             val oH = oShape[2].toInt()
             val oW = oShape[3].toInt()
-            val oPixelCount = oH * oW
 
             val bitmap = nchwFloatBufferToBitmap(outputData, oW, oH, oC)
 
@@ -921,5 +992,28 @@ object LamaInpainter {
         val c = Canvas(r); val p = Paint()
         p.colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
         c.drawBitmap(src, 0f, 0f, p); return r
+    }
+
+    /**
+     * Chuyển bitmap sang grayscale tại chỗ, không tạo bản sao mới.
+     * Giảm việc cấp phát bộ nhớ và sao chép pixel.
+     */
+    private fun toGrayInPlace(bitmap: Bitmap) {
+        val w = bitmap.width
+        val h = bitmap.height
+        val pixels = IntArray(w * h)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        for (i in pixels.indices) {
+            val p = pixels[i]
+            val r = Color.red(p)
+            val g = Color.green(p)
+            val b = Color.blue(p)
+            // Công thức luminance chuẩn: 0.299R + 0.587G + 0.114B
+            val gray = (r * 0.299f + g * 0.587f + b * 0.114f).toInt()
+            pixels[i] = Color.argb(Color.alpha(p), gray, gray, gray)
+        }
+
+        bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
     }
 }
