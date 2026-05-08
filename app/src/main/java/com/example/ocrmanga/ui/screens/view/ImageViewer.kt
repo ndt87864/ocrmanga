@@ -945,8 +945,10 @@ fun ImageViewer(
                                                     if (idx != -1) {
                                                         selectedIndex = idx; draggingIndex =
                                                             idx; lastDragPos = pos
-                                                    } else selectedIndex = null
-                                                    dragEvent.consume()
+                                                        dragEvent.consume()
+                                                    } else {
+                                                        selectedIndex = null
+                                                    }
                                                 } else {
                                                     val amt = dragEvent.position - lastDragPos
                                                     dragBlocks = dragBlocks.toMutableList().also {
