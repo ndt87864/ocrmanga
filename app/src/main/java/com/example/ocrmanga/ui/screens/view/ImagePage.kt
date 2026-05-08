@@ -10,12 +10,10 @@ fun ImagePage(
     viewModel: ViewerViewModel,
     onRequestOpenEditor: ((Uri) -> Unit)? = null
 ) {
-    // Minimal wrapper: reuse existing ImageViewer by passing a single-element list.
-@Composable
-fun SingleImageWrapper(uri: Uri, viewModel: ViewerViewModel, onRequestOpenEditor: ((Uri) -> Unit)?) {
-    // This wrapper creates a LazyListState with a single item to reuse ImageViewer's rendering path
+    // Reuse existing ImageViewer by passing a single-element list and a LazyListState
     val list = listOf(uri)
     val state = androidx.compose.foundation.lazy.rememberLazyListState()
+
     ImageViewer(
         imageUris = list,
         translatedTexts = viewModel.uiState.value.translatedTexts,
@@ -50,6 +48,4 @@ fun SingleImageWrapper(uri: Uri, viewModel: ViewerViewModel, onRequestOpenEditor
         brushSize = 40f,
         onBrushSizeChange = {}
     )
-}
-
 }
