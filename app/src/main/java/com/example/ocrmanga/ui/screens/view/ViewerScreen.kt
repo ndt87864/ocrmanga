@@ -359,6 +359,7 @@ fun ViewerScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
+        val viewModeBeforeEdit = remember { mutableStateOf<com.example.ocrmanga.ui.screens.view.ViewMode?>(null) }
         val effectiveViewMode = if (editTranslationMode) {
             com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
         } else {
@@ -369,6 +370,25 @@ fun ViewerScreen(
             if (uiState.imageUris.isNotEmpty() && effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
                 val target = horizontalListState.firstVisibleItemIndex.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
                 try { lazyListState.scrollToItem(target) } catch (_: Exception) {}
+            }
+        }
+
+        // Ensure edit mode forces horizontal and remember previous view mode to restore on exit
+        LaunchedEffect(editTranslationMode) {
+            if (editTranslationMode) {
+                // entering edit
+                val currentVm = vmMode
+                if (currentVm != com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) {
+                    viewModeBeforeEdit.value = currentVm
+                    viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
+                }
+            } else {
+                // exiting edit - restore previous view mode if we forced it
+                val prev = viewModeBeforeEdit.value
+                if (prev != null) {
+                    viewModel.setViewMode(prev)
+                    viewModeBeforeEdit.value = null
+                }
             }
         }
 
