@@ -20,10 +20,11 @@ fun TextRemovalControls(
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onBrushClick: () -> Unit,
-    onApply: () -> Unit
+    onApply: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center

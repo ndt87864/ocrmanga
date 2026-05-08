@@ -1211,7 +1211,10 @@ fun ImageViewer(
                                 }
                             }
                         }
-                    }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp)
                 )
             }
         }
