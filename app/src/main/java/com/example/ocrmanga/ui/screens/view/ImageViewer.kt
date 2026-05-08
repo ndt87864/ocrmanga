@@ -239,6 +239,7 @@ fun ImageViewer(
         LazyColumn(
             state = lazyListState,
             modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = if (isTextRemovalMode) 96.dp else 0.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             itemsIndexed(items = imageUris, key = { index, uri ->
