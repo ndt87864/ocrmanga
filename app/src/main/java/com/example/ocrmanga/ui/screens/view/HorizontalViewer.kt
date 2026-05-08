@@ -45,6 +45,7 @@ import com.example.ocrmanga.data.models.TranslationStatus
 fun HorizontalViewer(
     imageUris: List<Uri>,
     viewModel: ViewerViewModel = viewModel(),
+    horizontalListState: androidx.compose.foundation.lazy.LazyListState? = null,
     editTranslationMode: Boolean,
     dragBlocksMap: MutableMap<Uri, List<DragBlockState>>,
     onEditTranslationModeToggle: (Boolean) -> Unit,
@@ -72,7 +73,7 @@ fun HorizontalViewer(
     onBrushSizeChange: (Float) -> Unit
 ) {
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
-    val state = rememberLazyListState()
+    val state = horizontalListState ?: rememberLazyListState()
     val scope = rememberCoroutineScope()
     val conf = LocalConfiguration.current
     Box(modifier = Modifier.fillMaxSize()) {

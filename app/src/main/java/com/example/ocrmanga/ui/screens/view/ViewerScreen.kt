@@ -59,6 +59,7 @@ fun ViewerScreen(
     var editTranslationMode by remember { mutableStateOf(false) }
     val dragBlocksMap = remember { mutableStateMapOf<Uri, List<DragBlockState>>() }
     val lazyListState = rememberLazyListState()
+    val horizontalListState = rememberLazyListState()
     var showSpeedSlider by remember { mutableStateOf(false) }
     var autoScrollEnabled by remember { mutableStateOf(false) }
     var scrollSpeed by remember { mutableStateOf(5f) }
@@ -416,7 +417,7 @@ fun ViewerScreen(
                     }
                 }
                 AutoScroll(
-                    lazyListState = lazyListState,
+                    lazyListState = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) horizontalListState else lazyListState,
                     autoScrollEnabled = autoScrollEnabled,
                     scrollSpeed = scrollSpeed,
                     onAutoScrollToggle = { autoScrollEnabled = it },
@@ -839,6 +840,7 @@ fun ViewerScreen(
             HorizontalViewer(
                 imageUris = uiState.imageUris,
                 viewModel = viewModel,
+                horizontalListState = horizontalListState,
                 editTranslationMode = editTranslationMode,
                 dragBlocksMap = dragBlocksMap,
                 onEditTranslationModeToggle = { editTranslationMode = it },
