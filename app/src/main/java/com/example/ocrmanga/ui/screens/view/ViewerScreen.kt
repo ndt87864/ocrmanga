@@ -64,6 +64,7 @@ fun ViewerScreen(
     var autoScrollEnabled by remember { mutableStateOf(false) }
     var scrollSpeed by remember { mutableStateOf(5f) }
     // Text removal mode state
+    var pendingInitialPage by remember { mutableStateOf<Int?>(null) }
     var isTextRemovalMode by remember { mutableStateOf(false) }
     var isRemovingText by remember { mutableStateOf(false) }
     var removingTextLocalProgress by remember { mutableStateOf("") }
@@ -358,6 +359,27 @@ fun ViewerScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
+        val effectiveViewMode = if (editTranslationMode) {
+            com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
+        } else {
+            vmMode
+        }
+        LaunchedEffect(effectiveViewMode) {
+            // Keep behavior for external sync when switching away from horizontal
+            if (uiState.imageUris.isNotEmpty() && effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
+                val target = horizontalListState.firstVisibleItemIndex.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                try { lazyListState.scrollToItem(target) } catch (_: Exception) {}
+            }
+        }
+
+        // Clear pendingInitialPage after horizontalListState has composed and settled
+        LaunchedEffect(horizontalListState, effectiveViewMode) {
+            if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) {
+                // Wait a short time for HorizontalViewer initial scroll to occur
+                delay(500)
+                pendingInitialPage = null
+            }
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -372,7 +394,7 @@ fun ViewerScreen(
                 IconButton(onClick = handleBack) {
                     Icon(Icons.Default.KeyboardDoubleArrowLeft, "Thoát", tint = MaterialTheme.colorScheme.primary)
                 }
-                val currentDisplayIndex = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) {
+                val currentDisplayIndex = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) {
                     horizontalListState.firstVisibleItemIndex
                 } else {
                     lazyListState.firstVisibleItemIndex
@@ -388,8 +410,24 @@ fun ViewerScreen(
             ) {
                 // View mode toggle
                 IconButton(onClick = {
-                    val newMode = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL else com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL
-                    viewModel.setViewMode(newMode)
+                    coroutineScope.launch {
+                        if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
+                            val target = lazyListState.firstVisibleItemIndex
+                            // set pending initial page so HorizontalViewer can start at correct page
+                            pendingInitialPage = target.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                            viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
+                        } else {
+                            val target = horizontalListState.firstVisibleItemIndex
+                            pendingInitialPage = null
+                            viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
+                            if (uiState.imageUris.isNotEmpty()) {
+                                try {
+                                    lazyListState.scrollToItem(target.coerceIn(0, uiState.imageUris.lastIndex))
+                                } catch (_: Exception) {
+                                }
+                            }
+                        }
+                    }
                 }) {
                     Icon(
                         imageVector = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) Icons.Default.Fullscreen else Icons.Default.ViewList,
@@ -422,7 +460,7 @@ fun ViewerScreen(
                     }
                 }
                 AutoScroll(
-                    lazyListState = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) horizontalListState else lazyListState,
+                    lazyListState = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) horizontalListState else lazyListState,
                     autoScrollEnabled = autoScrollEnabled,
                     scrollSpeed = scrollSpeed,
                     onAutoScrollToggle = { autoScrollEnabled = it },
@@ -468,8 +506,20 @@ fun ViewerScreen(
                                 }
                             },
                             onClick = {
-                                editTranslationMode = !editTranslationMode
-                                showMainMenu = false
+                                coroutineScope.launch {
+                                    if (!editTranslationMode) {
+                                        val target = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
+                                            lazyListState.firstVisibleItemIndex
+                                        } else {
+                                            horizontalListState.firstVisibleItemIndex
+                                        }.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                                        pendingInitialPage = target
+                                        // ensure horizontal mode when entering edit mode
+                                        viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
+                                    }
+                                    editTranslationMode = !editTranslationMode
+                                    showMainMenu = false
+                                }
                             }
                         )
 
@@ -736,7 +786,7 @@ fun ViewerScreen(
             showSpeedSlider = showSpeedSlider
         )
 
-        if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
+        if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
             ImageViewer(
                 imageUris = uiState.imageUris,
                 translatedTexts = uiState.translatedTexts,
@@ -747,7 +797,14 @@ fun ViewerScreen(
                 onClearRecentlySavedUri = { uri -> viewModel.clearRecentlySavedUri(uri) },
                 reopenEditorUris = uiState.reopenEditorUris,
                 onClearReopenEditorUri = { uri -> viewModel.clearReopenEditorUri(uri) },
-                onRequestOpenEditor = { uri -> editTranslationMode = true },
+                onRequestOpenEditor = { uri ->
+                    coroutineScope.launch {
+                        val target = lazyListState.firstVisibleItemIndex.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                        pendingInitialPage = target
+                        viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
+                        editTranslationMode = true
+                    }
+                },
                 editTranslationMode = editTranslationMode,
                 dragBlocksMap = dragBlocksMap,
                 onEditTranslationModeToggle = { editTranslationMode = it },
@@ -900,7 +957,13 @@ fun ViewerScreen(
                 onClearRecentlySavedUri = { uri -> viewModel.clearRecentlySavedUri(uri) },
                 reopenEditorUris = uiState.reopenEditorUris,
                 onClearReopenEditorUri = { uri -> viewModel.clearReopenEditorUri(uri) },
-                onRequestOpenEditor = { uri -> editTranslationMode = true },
+                onRequestOpenEditor = { uri ->
+                    coroutineScope.launch {
+                        val target = horizontalListState.firstVisibleItemIndex.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                        pendingInitialPage = target
+                        editTranslationMode = true
+                    }
+                },
                 isTextRemovalMode = isTextRemovalMode,
                 onToggleTextRemovalMode = { isTextRemovalMode = !isTextRemovalMode },
                 onRemoveTextWithMask = { uri, maskBmp ->
@@ -928,6 +991,7 @@ fun ViewerScreen(
                 },
                 brushSize = brushSize,
                 onBrushSizeChange = { brushSize = it },
+                initialPageIndex = pendingInitialPage,
                 autoScrollEnabled = autoScrollEnabled,
                 scrollSpeed = scrollSpeed,
                 onAutoScrollToggle = { autoScrollEnabled = it }

@@ -26,6 +26,8 @@ import kotlinx.coroutines.delay
 
 
 import android.graphics.Bitmap
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.models.TranslationStatus
 
@@ -61,12 +63,27 @@ fun HorizontalViewer(
     onBrushSizeChange: (Float) -> Unit,
     autoScrollEnabled: Boolean = false,
     scrollSpeed: Float = 5f,
-    onAutoScrollToggle: (Boolean) -> Unit = {}
+    onAutoScrollToggle: (Boolean) -> Unit = {},
+    initialPageIndex: Int? = null
 ) {
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
     val state = horizontalListState ?: rememberLazyListState()
     val pageListStates = remember { mutableStateMapOf<Uri, LazyListState>() }
     val conf = LocalConfiguration.current
+
+    // Scroll to initial page once LazyRow is laid out
+    LaunchedEffect(initialPageIndex, imageUris) {
+        val target = initialPageIndex
+        if (target != null && imageUris.isNotEmpty()) {
+            val safeIndex = target.coerceIn(0, imageUris.lastIndex)
+            // wait for LazyRow to compose
+            delay(100)
+            try {
+                state.scrollToItem(safeIndex)
+            } catch (_: Exception) {}
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         LazyRow(state = state, flingBehavior = rememberSnapFlingBehavior(lazyListState = state), modifier = Modifier.fillMaxSize()) {
             val screenW = conf.screenWidthDp.dp
@@ -159,10 +176,16 @@ fun HorizontalViewer(
         }
 
         // Enforce single-step paging for manual fling only. Auto-scroll may advance many pages over time.
-        androidx.compose.runtime.LaunchedEffect(state, autoScrollEnabled) {
+        // Skip enforcement during initial 600ms to allow initialScroll to settle.
+        var enforcePaging by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            delay(600)
+            enforcePaging = true
+        }
+        androidx.compose.runtime.LaunchedEffect(state, autoScrollEnabled, enforcePaging) {
             androidx.compose.runtime.snapshotFlow { state.firstVisibleItemIndex }
                 .collect { idx ->
-                    if (autoScrollEnabled) {
+                    if (!enforcePaging || autoScrollEnabled) {
                         lastPageState.value = idx
                         return@collect
                     }
