@@ -28,6 +28,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import com.example.ocrmanga.viewmodels.ViewerViewModel
 import com.example.ocrmanga.ui.screens.view.ViewMode
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Arrangement
 
 
 
@@ -44,11 +48,14 @@ fun HorizontalViewer(
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyRow(state = state, flingBehavior = rememberSnapFlingBehavior(lazyListState = state), modifier = Modifier.fillMaxSize()) {
+            val conf = LocalConfiguration.current
+            val screenW = conf.screenWidthDp.dp
             itemsIndexed(imageUris) { index, uri ->
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier
-                        .fillParentMaxWidth()
-                        .fillMaxSize()
+                        .width(screenW)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.Center
                 ) {
                     ImagePage(uri = uri, viewModel = viewModel, onRequestOpenEditor = onRequestOpenEditor)
                 }
