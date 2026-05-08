@@ -619,10 +619,17 @@ fun ImageViewer(
                         }) {
                             var imageModifier = Modifier.fillMaxWidth()
                             var contentScaleVal = ContentScale.FillWidth
-                            // If caller provided imageMaxHeight and text removal controls are shown, set fixed image height and crop so controls fit below
-                            if (imageMaxHeight != null && imageMaxHeight != androidx.compose.ui.unit.Dp.Unspecified && isTextRemovalMode) {
-                                imageModifier = imageModifier.height(imageMaxHeight).clipToBounds()
-                                contentScaleVal = ContentScale.Crop
+                            // If caller provided imageMaxHeight, adjust image rendering when in edit or text-removal modes
+                            if (imageMaxHeight != null && imageMaxHeight != androidx.compose.ui.unit.Dp.Unspecified) {
+                                if (editTranslationMode) {
+                                    // In edit mode: show full image scaled to fit available height so user can edit entire image
+                                    imageModifier = imageModifier.heightIn(max = imageMaxHeight)
+                                    contentScaleVal = ContentScale.Fit
+                                } else if (isTextRemovalMode) {
+                                    // In text removal mode: crop image to reserve space for controls below
+                                    imageModifier = imageModifier.height(imageMaxHeight).clipToBounds()
+                                    contentScaleVal = ContentScale.Crop
+                                }
                             }
                             AsyncImage(
                                 model = imageRequest,
