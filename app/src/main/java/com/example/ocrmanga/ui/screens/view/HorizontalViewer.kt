@@ -37,12 +37,39 @@ import androidx.compose.foundation.layout.Arrangement
 
 
 
+import android.graphics.Bitmap
+import com.example.ocrmanga.data.models.TranslationMode
+import com.example.ocrmanga.data.models.TranslationStatus
+
 @Composable
 fun HorizontalViewer(
     imageUris: List<Uri>,
     viewModel: ViewerViewModel = viewModel(),
+    editTranslationMode: Boolean,
+    dragBlocksMap: MutableMap<Uri, List<DragBlockState>>,
+    onEditTranslationModeToggle: (Boolean) -> Unit,
+    onSaveTranslation: (Uri, List<DragBlockState>) -> Unit,
+    onRetranslateImage: (Uri, TranslationMode) -> Unit,
+    showImageMenu: Boolean,
+    imageMenuUri: Uri?,
+    onImageMenuDismiss: () -> Unit,
+    onShowImageMenuChange: (Boolean) -> Unit,
+    onImageMenuUriChange: (Uri?) -> Unit,
+    onRemoveImage: (Uri) -> Unit,
+    getImageIdForUri: (Uri) -> Long?,
+    getImageVersionForUri: (Uri) -> Int?,
+    getReloadTokenForUri: (Uri) -> Long?,
+    translatingImages: Map<Uri, TranslationStatus>,
+    recentlySavedUris: Set<Uri>,
+    onClearRecentlySavedUri: ((Uri) -> Unit)?,
+    reopenEditorUris: Set<Uri>,
+    onClearReopenEditorUri: ((Uri) -> Unit)?,
     onRequestOpenEditor: ((Uri) -> Unit)? = null,
-    // reuse other callbacks as needed - minimal for now
+    isTextRemovalMode: Boolean,
+    onToggleTextRemovalMode: () -> Unit,
+    onRemoveTextWithMask: (Uri, Bitmap) -> Unit,
+    brushSize: Float,
+    onBrushSizeChange: (Float) -> Unit
 ) {
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
     val state = rememberLazyListState()
@@ -58,7 +85,35 @@ fun HorizontalViewer(
                         .fillMaxHeight(),
                     contentAlignment = Alignment.Center
                 ) {
-                    ImagePage(uri = uri, viewModel = viewModel, onRequestOpenEditor = onRequestOpenEditor)
+                    ImagePage(
+                        uri = uri,
+                        viewModel = viewModel,
+                        editTranslationMode = editTranslationMode,
+                        dragBlocksMap = dragBlocksMap,
+                        onEditTranslationModeToggle = onEditTranslationModeToggle,
+                        onSaveTranslation = onSaveTranslation,
+                        onRetranslateImage = onRetranslateImage,
+                        showImageMenu = showImageMenu,
+                        imageMenuUri = imageMenuUri,
+                        onImageMenuDismiss = onImageMenuDismiss,
+                        onShowImageMenuChange = onShowImageMenuChange,
+                        onImageMenuUriChange = onImageMenuUriChange,
+                        onRemoveImage = onRemoveImage,
+                        getImageIdForUri = getImageIdForUri,
+                        getImageVersionForUri = getImageVersionForUri,
+                        getReloadTokenForUri = getReloadTokenForUri,
+                        translatingImages = translatingImages,
+                        recentlySavedUris = recentlySavedUris,
+                        onClearRecentlySavedUri = onClearRecentlySavedUri,
+                        reopenEditorUris = reopenEditorUris,
+                        onClearReopenEditorUri = onClearReopenEditorUri,
+                        onRequestOpenEditor = onRequestOpenEditor,
+                        isTextRemovalMode = isTextRemovalMode,
+                        onToggleTextRemovalMode = onToggleTextRemovalMode,
+                        onRemoveTextWithMask = onRemoveTextWithMask,
+                        brushSize = brushSize,
+                        onBrushSizeChange = onBrushSizeChange
+                    )
                 }
             }
         }
