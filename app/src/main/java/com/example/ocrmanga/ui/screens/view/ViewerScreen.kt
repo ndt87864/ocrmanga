@@ -379,6 +379,18 @@ fun ViewerScreen(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // View mode toggle
+                val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
+                IconButton(onClick = {
+                    val newMode = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL else com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL
+                    viewModel.setViewMode(newMode)
+                }) {
+                    Icon(
+                        imageVector = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) Icons.Default.Fullscreen else Icons.Default.ViewList,
+                        contentDescription = "Chuyển chế độ xem",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
                 // Hiển thị tiến độ dịch khi đang dịch
                 if (uiState.isTranslating && uiState.totalImagesToTranslate > 0) {
                     Row(
@@ -717,108 +729,119 @@ fun ViewerScreen(
             showSpeedSlider = showSpeedSlider
         )
 
-        ImageViewer(
-            imageUris = uiState.imageUris,
-            translatedTexts = uiState.translatedTexts,
-            translationEnabled = uiState.translationEnabled,
-            translatedStatus = uiState.translatedStatus,
-            translatingImages = uiState.translatingImages,
-            recentlySavedUris = uiState.recentlySavedUris,
-            onClearRecentlySavedUri = { uri -> viewModel.clearRecentlySavedUri(uri) },
-            reopenEditorUris = uiState.reopenEditorUris,
-            onClearReopenEditorUri = { uri -> viewModel.clearReopenEditorUri(uri) },
-            onRequestOpenEditor = { uri -> editTranslationMode = true },
-            editTranslationMode = editTranslationMode,
-            dragBlocksMap = dragBlocksMap,
-            onEditTranslationModeToggle = { editTranslationMode = it },
-            onSaveTranslation = { uri, blocks ->
-                Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
-                blocks.forEachIndexed { idx, dragBlock ->
-                    val textColorHex = try { dragBlock.textColor?.toArgb()?.let { String.format("#%08X", it) } ?: "null" } catch (_: Exception) { "err" }
-                    val gradCols = dragBlock.textGradientColors?.joinToString(separator = ",") { c -> String.format("#%08X", c) } ?: "null"
-                    Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation} inset=${dragBlock.overlayInset} insetH=${dragBlock.overlayInsetHorizontal} insetV=${dragBlock.overlayInsetVertical} textColor=$textColorHex gradientColors=$gradCols")
-                }
-                viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
-                    // Bounds đã được cập nhật khi drag trong ImageViewer, không cần cộng offset nữa
-                    dragBlock.block.copy(
-                        fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
-                        rotation = dragBlock.rotation,
-                        overlayRotation = dragBlock.overlayRotation,
-                        shapeType = dragBlock.block.shapeType,
-                        fontFamily = dragBlock.block.fontFamily, // Lưu font family khi save translation
-                        customOverlayColor = dragBlock.whiteoutColor?.toArgb(),
-                        customTextColor = dragBlock.textColor?.toArgb(),
-                        overlayAlpha = dragBlock.overlayAlpha,
-                        textBoldness = dragBlock.textBoldness,
-                        overlaySaturation = dragBlock.overlaySaturation,
-                        textSaturation = dragBlock.textSaturation,
-                        lineSpacing = dragBlock.lineSpacing,
-                        overlayInset = dragBlock.overlayInset,
-                        overlayInsetHorizontal = dragBlock.overlayInsetHorizontal,
-                        overlayInsetVertical = dragBlock.overlayInsetVertical,
-                        customBorderColor = dragBlock.textBorderColor?.toArgb(),
-                        borderThickness = dragBlock.textBorderThickness,
-                        borderAlpha = dragBlock.textBorderAlpha,
-                        // persist shadow edits as well
-                        customShadowColor = dragBlock.textShadowColor?.toArgb(),
-                        shadowAlpha = dragBlock.textShadowAlpha,
-                        shadowRadius = dragBlock.textShadowRadius,
-                        textGradientColors = dragBlock.textGradientColors,
-                        textGradientOffsets = dragBlock.textGradientOffsets,
-                        textGradientType = dragBlock.textGradientType,
-                        // Đánh dấu rằng block này đã được edit manual, không áp dụng merge logic
-                        applyMerge = false
-                    ) 
-                })
-            },
-            onRetranslateImage = { uri, mode ->
-                viewModel.retranslateImage(uri, mode)
-            },
-            showImageMenu = showImageMenu,
-            imageMenuUri = imageMenuUri,
-            onImageMenuDismiss = { showImageMenu = false },
-            onRemoveImage = { uri ->
-                viewModel.removeImageFromRoom(uri)
-            },
-            onShowImageMenuChange = { showImageMenu = it },
-            onImageMenuUriChange = { imageMenuUri = it },
-            lazyListState = lazyListState,
-            // provide ViewModel accessor so ImageViewer can use stable DB imageId as keys
-            getImageIdForUri = viewModel::getImageIdForUri,
-            // provide a version accessor so replaced images can be forced to reload
-            getImageVersionForUri = viewModel::getImageVersionForUri,
-            getReloadTokenForUri = viewModel::getReloadTokenForUri,
-            isLoadingMoreImages = uiState.isLoadingMoreImages,
-            remainingImagesCount = uiState.remainingImages.size,
-            isTextRemovalMode = isTextRemovalMode,
-            onToggleTextRemovalMode = { isTextRemovalMode = !isTextRemovalMode },
-            onRemoveTextWithMask = { uri, maskBmp ->
-                coroutineScope.launch {
-                    isRemovingText = true
-                    removingTextLocalProgress = "Lấy dữ liệu..."
-                    try {
-                        val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextWithMask(
-                            context, uri, maskBmp
-                        ) { progress -> removingTextLocalProgress = progress }
-                        if (resultUri != null) {
-                            // Use replaceImageUri with persist=false to make this a temporary replacement
-                            viewModel.replaceImageUri(uri, resultUri, persist = false)
-                            Toast.makeText(context, "Đã xóa text thành công!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, "Lỗi khi xóa text", Toast.LENGTH_SHORT).show()
-                        }
-                    } catch (e: Exception) {
-                        Log.e("ViewerScreen", "Error removing text", e)
-                        Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
-                    } finally {
-                        isRemovingText = false
-                        removingTextLocalProgress = ""
+        val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
+
+        if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
+            ImageViewer(
+                imageUris = uiState.imageUris,
+                translatedTexts = uiState.translatedTexts,
+                translationEnabled = uiState.translationEnabled,
+                translatedStatus = uiState.translatedStatus,
+                translatingImages = uiState.translatingImages,
+                recentlySavedUris = uiState.recentlySavedUris,
+                onClearRecentlySavedUri = { uri -> viewModel.clearRecentlySavedUri(uri) },
+                reopenEditorUris = uiState.reopenEditorUris,
+                onClearReopenEditorUri = { uri -> viewModel.clearReopenEditorUri(uri) },
+                onRequestOpenEditor = { uri -> editTranslationMode = true },
+                editTranslationMode = editTranslationMode,
+                dragBlocksMap = dragBlocksMap,
+                onEditTranslationModeToggle = { editTranslationMode = it },
+                onSaveTranslation = { uri, blocks ->
+                    Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
+                    blocks.forEachIndexed { idx, dragBlock ->
+                        val textColorHex = try { dragBlock.textColor?.toArgb()?.let { String.format("#%08X", it) } ?: "null" } catch (_: Exception) { "err" }
+                        val gradCols = dragBlock.textGradientColors?.joinToString(separator = ",") { c -> String.format("#%08X", c) } ?: "null"
+                        Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation} inset=${dragBlock.overlayInset} insetH=${dragBlock.overlayInsetHorizontal} insetV=${dragBlock.overlayInsetVertical} textColor=$textColorHex gradientColors=$gradCols")
                     }
-                }
-            },
-            brushSize = brushSize,
-            onBrushSizeChange = { brushSize = it }
-        )
+                    viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
+                        // Bounds đã được cập nhật khi drag trong ImageViewer, không cần cộng offset nữa
+                        dragBlock.block.copy(
+                            fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
+                            rotation = dragBlock.rotation,
+                            overlayRotation = dragBlock.overlayRotation,
+                            shapeType = dragBlock.block.shapeType,
+                            fontFamily = dragBlock.block.fontFamily, // Lưu font family khi save translation
+                            customOverlayColor = dragBlock.whiteoutColor?.toArgb(),
+                            customTextColor = dragBlock.textColor?.toArgb(),
+                            overlayAlpha = dragBlock.overlayAlpha,
+                            textBoldness = dragBlock.textBoldness,
+                            overlaySaturation = dragBlock.overlaySaturation,
+                            textSaturation = dragBlock.textSaturation,
+                            lineSpacing = dragBlock.lineSpacing,
+                            overlayInset = dragBlock.overlayInset,
+                            overlayInsetHorizontal = dragBlock.overlayInsetHorizontal,
+                            overlayInsetVertical = dragBlock.overlayInsetVertical,
+                            customBorderColor = dragBlock.textBorderColor?.toArgb(),
+                            borderThickness = dragBlock.textBorderThickness,
+                            borderAlpha = dragBlock.textBorderAlpha,
+                            // persist shadow edits as well
+                            customShadowColor = dragBlock.textShadowColor?.toArgb(),
+                            shadowAlpha = dragBlock.textShadowAlpha,
+                            shadowRadius = dragBlock.textShadowRadius,
+                            textGradientColors = dragBlock.textGradientColors,
+                            textGradientOffsets = dragBlock.textGradientOffsets,
+                            textGradientType = dragBlock.textGradientType,
+                            // Đánh dấu rằng block này đã được edit manual, không áp dụng merge logic
+                            applyMerge = false
+                        )
+                    })
+                },
+                onRetranslateImage = { uri, mode ->
+                    viewModel.retranslateImage(uri, mode)
+                },
+                showImageMenu = showImageMenu,
+                imageMenuUri = imageMenuUri,
+                onImageMenuDismiss = { showImageMenu = false },
+                onRemoveImage = { uri ->
+                    viewModel.removeImageFromRoom(uri)
+                },
+                onShowImageMenuChange = { showImageMenu = it },
+                onImageMenuUriChange = { imageMenuUri = it },
+                lazyListState = lazyListState,
+                // provide ViewModel accessor so ImageViewer can use stable DB imageId as keys
+                getImageIdForUri = viewModel::getImageIdForUri,
+                // provide a version accessor so replaced images can be forced to reload
+                getImageVersionForUri = viewModel::getImageVersionForUri,
+                getReloadTokenForUri = viewModel::getReloadTokenForUri,
+                isLoadingMoreImages = uiState.isLoadingMoreImages,
+                remainingImagesCount = uiState.remainingImages.size,
+                isTextRemovalMode = isTextRemovalMode,
+                onToggleTextRemovalMode = { isTextRemovalMode = !isTextRemovalMode },
+                onRemoveTextWithMask = { uri, maskBmp ->
+                    coroutineScope.launch {
+                        isRemovingText = true
+                        removingTextLocalProgress = "Lấy dữ liệu..."
+                        try {
+                            val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextWithMask(
+                                context, uri, maskBmp
+                            ) { progress -> removingTextLocalProgress = progress }
+                            if (resultUri != null) {
+                                // Use replaceImageUri with persist=false to make this a temporary replacement
+                                viewModel.replaceImageUri(uri, resultUri, persist = false)
+                                Toast.makeText(context, "Đã xóa text thành công!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Lỗi khi xóa text", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            Log.e("ViewerScreen", "Error removing text", e)
+                            Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                        } finally {
+                            isRemovingText = false
+                            removingTextLocalProgress = ""
+                        }
+                    }
+                },
+                brushSize = brushSize,
+                onBrushSizeChange = { brushSize = it }
+            )
+        } else {
+            // Horizontal mode
+            HorizontalViewer(
+                imageUris = uiState.imageUris,
+                viewModel = viewModel,
+                onRequestOpenEditor = { uri -> editTranslationMode = true }
+            )
+        }
         Dialogs(
             showInsertAtIndexDialog = showInsertAtIndexDialog,
             insertAtIndex = insertAtIndex,

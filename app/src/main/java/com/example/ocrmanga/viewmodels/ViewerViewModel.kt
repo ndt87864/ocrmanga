@@ -53,6 +53,29 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
+    private val _viewMode = MutableStateFlow(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
+    val viewModeFlow: StateFlow<com.example.ocrmanga.ui.screens.view.ViewMode> = _viewMode.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            try {
+                com.example.ocrmanga.ui.screens.view.ViewerPreferences.viewModeFlow(getApplication()).collect { mode ->
+                    _viewMode.value = mode
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun setViewMode(mode: com.example.ocrmanga.ui.screens.view.ViewMode) {
+        viewModelScope.launch {
+            try {
+                com.example.ocrmanga.ui.screens.view.ViewerPreferences.saveViewMode(getApplication(), mode)
+            } catch (_: Exception) {
+            }
+            _viewMode.value = mode
+        }
+    }
             // Trả về số lượng ảnh đã thay đổi trong room
             fun getNumChangedImages(roomId: Long): Int {
                 return try {
