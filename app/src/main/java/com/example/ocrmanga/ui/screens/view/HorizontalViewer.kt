@@ -45,10 +45,9 @@ fun HorizontalViewer(
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
     val state = rememberLazyListState()
     val scope = rememberCoroutineScope()
-
+    val conf = LocalConfiguration.current
     Box(modifier = Modifier.fillMaxSize()) {
         LazyRow(state = state, flingBehavior = rememberSnapFlingBehavior(lazyListState = state), modifier = Modifier.fillMaxSize()) {
-            val conf = LocalConfiguration.current
             val screenW = conf.screenWidthDp.dp
             itemsIndexed(imageUris) { index, uri ->
                 androidx.compose.foundation.layout.Box(
