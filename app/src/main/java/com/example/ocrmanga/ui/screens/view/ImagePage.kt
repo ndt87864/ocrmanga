@@ -4,9 +4,9 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import com.example.ocrmanga.viewmodels.ViewerViewModel
 
-@Composable
 import androidx.compose.ui.unit.Dp
 
+@Composable
 fun ImagePage(
     uri: Uri,
     viewModel: ViewerViewModel,
