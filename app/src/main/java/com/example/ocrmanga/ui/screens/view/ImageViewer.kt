@@ -51,6 +51,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -163,6 +164,7 @@ fun ImageViewer(
     onBrushSizeChange: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val readPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         Manifest.permission.READ_MEDIA_IMAGES
     } else {
@@ -1017,6 +1019,10 @@ fun ImageViewer(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .zIndex(20f)
+                                .graphicsLayer {
+                                    translationY = -lazyListState.firstVisibleItemScrollOffset.toFloat() + with(density) { 8.dp.toPx() }
+                                }
                                 .padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
