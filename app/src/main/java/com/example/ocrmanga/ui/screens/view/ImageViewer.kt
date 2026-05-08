@@ -243,16 +243,7 @@ fun ImageViewer(
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = lazyListState,
-            modifier = Modifier.fillMaxSize().then(
-                if (editTranslationMode) Modifier.pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            if (event.changes.any { it.pressed }) event.changes.forEach { it.consume() }
-                        }
-                    }
-                } else Modifier
-            ),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             itemsIndexed(items = imageUris, key = { index, uri ->
@@ -622,9 +613,9 @@ fun ImageViewer(
                             // If caller provided imageMaxHeight, adjust image rendering when in edit or text-removal modes
                             if (imageMaxHeight != null && imageMaxHeight != androidx.compose.ui.unit.Dp.Unspecified) {
                                 if (editTranslationMode) {
-                                    // In edit mode: show full image scaled to fit available height so user can edit entire image
-                                    imageModifier = imageModifier.heightIn(max = imageMaxHeight)
-                                    contentScaleVal = ContentScale.Fit
+                                    // In edit mode, keep full-width rendering so long images remain scrollable vertically.
+                                    // Do not cap height here: LazyColumn must be able to scroll through the full image.
+                                    contentScaleVal = ContentScale.FillWidth
                                 } else if (isTextRemovalMode) {
                                     // In text removal mode: crop image to reserve space for controls below
                                     imageModifier = imageModifier.height(imageMaxHeight).clipToBounds()
