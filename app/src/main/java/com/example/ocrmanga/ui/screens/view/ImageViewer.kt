@@ -425,29 +425,38 @@ fun ImageViewer(
                             }
                         }) {
                     if (editTranslationMode) {
-                        TranslationEditor(
-                            dragBlocks = dragBlocks,
-                            selectedIndex = selectedIndex,
-                            onDragBlocksChange = { dragBlocks = it; dragBlocksMap[uri] = it },
-                            onSelectedIndexChange = { selectedIndex = it },
-                            onSave = {
-                                val blocksToSave = dragBlocksMap[uri] ?: dragBlocks
-                                Log.i(
-                                    "ImageViewer",
-                                    "[onSave] Saving ${blocksToSave.size} blocks for $uri"
-                                )
-                                blocksToSave.forEachIndexed { i, b ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .zIndex(20f)
+                                .graphicsLayer {
+                                    translationY = lazyListState.firstVisibleItemScrollOffset.toFloat()
+                                }
+                        ) {
+                            TranslationEditor(
+                                dragBlocks = dragBlocks,
+                                selectedIndex = selectedIndex,
+                                onDragBlocksChange = { dragBlocks = it; dragBlocksMap[uri] = it },
+                                onSelectedIndexChange = { selectedIndex = it },
+                                onSave = {
+                                    val blocksToSave = dragBlocksMap[uri] ?: dragBlocks
                                     Log.i(
                                         "ImageViewer",
-                                        "  -> Block[$i] gradientColors=${b.textGradientColors}"
+                                        "[onSave] Saving ${blocksToSave.size} blocks for $uri"
                                     )
-                                }
-                                onSaveTranslation(uri, blocksToSave)
-                                onEditTranslationModeToggle(false)
-                            },
-                            isTextRemovalMode = isTextRemovalMode,
-                            onToggleTextRemovalMode = onToggleTextRemovalMode
-                        )
+                                    blocksToSave.forEachIndexed { i, b ->
+                                        Log.i(
+                                            "ImageViewer",
+                                            "  -> Block[$i] gradientColors=${b.textGradientColors}"
+                                        )
+                                    }
+                                    onSaveTranslation(uri, blocksToSave)
+                                    onEditTranslationModeToggle(false)
+                                },
+                                isTextRemovalMode = isTextRemovalMode,
+                                onToggleTextRemovalMode = onToggleTextRemovalMode
+                            )
+                        }
                     }
 
                     // Box chứa ảnh và controls
