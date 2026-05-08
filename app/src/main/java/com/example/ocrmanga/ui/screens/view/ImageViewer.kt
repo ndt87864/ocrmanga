@@ -16,14 +16,9 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Brush
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Redo
-import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,7 +46,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -164,7 +158,6 @@ fun ImageViewer(
     onBrushSizeChange: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val density = LocalDensity.current
     val readPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         Manifest.permission.READ_MEDIA_IMAGES
     } else {
@@ -1014,143 +1007,6 @@ fun ImageViewer(
                         }
                     }
 
-                    // Text Removal Controls - nằm bên dưới ảnh
-                    if (isTextRemovalMode && isInWindow) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .zIndex(20f)
-                                .graphicsLayer {
-                                    translationY = -lazyListState.firstVisibleItemScrollOffset.toFloat() + with(density) { 8.dp.toPx() }
-                                }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surface.copy(
-                                        alpha = 0.95f
-                                    )
-                                ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Undo stroke button
-                                    IconButton(
-                                        onClick = {
-                                            if (textRemovalPaths.isNotEmpty()) {
-                                                val removed =
-                                                    textRemovalPaths.removeAt(textRemovalPaths.size - 1)
-                                                textRemovalRedoStack.add(removed)
-                                                drawTrigger++
-                                            }
-                                        },
-                                        enabled = textRemovalPaths.isNotEmpty()
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Undo,
-                                            contentDescription = "Hoàn tác nét vẽ",
-                                            tint = if (textRemovalPaths.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
-                                                alpha = 0.38f
-                                            )
-                                        )
-                                    }
-
-                                    // Redo stroke button
-                                    IconButton(
-                                        onClick = {
-                                            if (textRemovalRedoStack.isNotEmpty()) {
-                                                val restored =
-                                                    textRemovalRedoStack.removeAt(textRemovalRedoStack.size - 1)
-                                                textRemovalPaths.add(restored)
-                                                drawTrigger++
-                                            }
-                                        },
-                                        enabled = textRemovalRedoStack.isNotEmpty()
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Redo,
-                                            contentDescription = "Làm lại nét vẽ",
-                                            tint = if (textRemovalRedoStack.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(
-                                                alpha = 0.38f
-                                            )
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.width(8.dp))
-
-                                    // Brush size button
-                                    IconButton(onClick = { showBrushSizeDialog = true }) {
-                                        Icon(
-                                            Icons.Default.Brush,
-                                            contentDescription = "Kích thước bút",
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.width(8.dp))
-
-                                    // Apply button
-                                    IconButton(
-                                        onClick = {
-                                            if (textRemovalPaths.isNotEmpty()) {
-                                                val originalDims = imageDimensionsMap[uri]
-                                                val displayDims = imageDisplayDimensionsMap[uri]
-
-                                                if (originalDims != null && displayDims != null) {
-                                                    val (originalW, originalH) = originalDims
-                                                    val (displayW, displayH) = displayDims
-
-                                                    if (originalW > 0 && displayW > 0) {
-                                                        val maskBmp = android.graphics.Bitmap.createBitmap(
-                                                            originalW.toInt(),
-                                                            originalH.toInt(),
-                                                            android.graphics.Bitmap.Config.ARGB_8888
-                                                        )
-                                                        val canvas = android.graphics.Canvas(maskBmp)
-                                                            .apply { drawColor(android.graphics.Color.BLACK) }
-                                                        val s = originalW / displayW
-                                                        val matrix = android.graphics.Matrix()
-                                                            .apply { setScale(s, s) }
-                                                        val paint = android.graphics.Paint().apply {
-                                                            color = android.graphics.Color.WHITE
-                                                            style = android.graphics.Paint.Style.STROKE
-                                                            strokeCap = android.graphics.Paint.Cap.ROUND
-                                                            strokeJoin = android.graphics.Paint.Join.ROUND
-                                                        }
-                                                        textRemovalPaths.forEach { pair ->
-                                                            paint.strokeWidth = pair.second * s
-                                                            canvas.drawPath(
-                                                                pair.first.asAndroidPath()
-                                                                    .apply { transform(matrix) }, paint
-                                                            )
-                                                        }
-                                                        onRemoveTextWithMask(uri, maskBmp)
-                                                        textRemovalPaths.clear()
-                                                        textRemovalRedoStack.clear()
-                                                        drawTrigger++
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        enabled = textRemovalPaths.isNotEmpty()
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Check,
-                                            contentDescription = "Xóa vùng này",
-                                            tint = if (textRemovalPaths.isNotEmpty()) Color.Red else MaterialTheme.colorScheme.onSurface.copy(
-                                                alpha = 0.38f
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
             if (isLoadingMoreImages && remainingImagesCount > 0) {
@@ -1173,6 +1029,79 @@ fun ImageViewer(
             }
         }
 
+
+        if (isTextRemovalMode) {
+            val currentUri = imageUris.getOrNull(lazyListState.firstVisibleItemIndex)
+            if (currentUri != null) {
+                val currentPaths = textRemovalPathsMap.getOrPut(currentUri) { mutableStateListOf() }
+                val currentRedoStack = textRemovalRedoStackMap.getOrPut(currentUri) { mutableStateListOf() }
+
+                TextRemovalControls(
+                    canUndo = currentPaths.isNotEmpty(),
+                    canRedo = currentRedoStack.isNotEmpty(),
+                    onUndo = {
+                        if (currentPaths.isNotEmpty()) {
+                            val removed = currentPaths.removeAt(currentPaths.size - 1)
+                            currentRedoStack.add(removed)
+                            drawTrigger++
+                        }
+                    },
+                    onRedo = {
+                        if (currentRedoStack.isNotEmpty()) {
+                            val restored = currentRedoStack.removeAt(currentRedoStack.size - 1)
+                            currentPaths.add(restored)
+                            drawTrigger++
+                        }
+                    },
+                    onBrushClick = { showBrushSizeDialog = true },
+                    onApply = {
+                        if (currentPaths.isNotEmpty()) {
+                            val originalDims = imageDimensionsMap[currentUri]
+                            val displayDims = imageDisplayDimensionsMap[currentUri]
+
+                            if (originalDims != null && displayDims != null) {
+                                val (originalW, originalH) = originalDims
+                                val (displayW, _) = displayDims
+
+                                if (originalW > 0 && displayW > 0) {
+                                    val maskBmp = android.graphics.Bitmap.createBitmap(
+                                        originalW.toInt(),
+                                        originalH.toInt(),
+                                        android.graphics.Bitmap.Config.ARGB_8888
+                                    )
+                                    val canvas = android.graphics.Canvas(maskBmp)
+                                        .apply { drawColor(android.graphics.Color.BLACK) }
+                                    val scale = originalW / displayW
+                                    val matrix = android.graphics.Matrix().apply { setScale(scale, scale) }
+                                    val paint = android.graphics.Paint().apply {
+                                        color = android.graphics.Color.WHITE
+                                        style = android.graphics.Paint.Style.STROKE
+                                        strokeCap = android.graphics.Paint.Cap.ROUND
+                                        strokeJoin = android.graphics.Paint.Join.ROUND
+                                    }
+
+                                    currentPaths.forEach { pathWithBrush ->
+                                        paint.strokeWidth = pathWithBrush.second * scale
+                                        canvas.drawPath(
+                                            pathWithBrush.first.asAndroidPath().apply { transform(matrix) },
+                                            paint
+                                        )
+                                    }
+                                    onRemoveTextWithMask(currentUri, maskBmp)
+                                    currentPaths.clear()
+                                    currentRedoStack.clear()
+                                    drawTrigger++
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .zIndex(30f)
+                        .padding(bottom = 16.dp)
+                )
+            }
+        }
 
         // Brush size dialog - vẫn giữ ở level cao vì nó là popup global
         if (showBrushSizeDialog) {
