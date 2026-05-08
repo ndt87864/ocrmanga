@@ -352,43 +352,60 @@ fun ViewerScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White.copy(alpha = 0.8f)),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    // Wrap the main content area with AnimatedContent to animate mode transitions
+    val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
+    val modeIsHorizontal = vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
+    val editMode = editTranslationMode
+
+    // hoisted viewModeBeforeEdit and edit-mode restore outside animated content
+    val viewModeBeforeEdit = remember { mutableStateOf<com.example.ocrmanga.ui.screens.view.ViewMode?>(null) }
+    LaunchedEffect(editTranslationMode) {
+        if (editTranslationMode) {
+            // entering edit
+            val currentVm = viewModel.viewModeFlow.value
+            if (currentVm != com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) {
+                viewModeBeforeEdit.value = currentVm
+                viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
+            }
+        } else {
+            // exiting edit - restore previous view mode if we forced it
+            val prev = viewModeBeforeEdit.value
+            if (prev != null) {
+                viewModel.setViewMode(prev)
+                viewModeBeforeEdit.value = null
+            }
+        }
+    }
+
+    androidx.compose.animation.AnimatedContent(
+        targetState = Triple(modeIsHorizontal, editMode, uiState.imageUris.size),
+        transitionSpec = {
+            com.example.ocrmanga.ui.animation.AnimationUtils.chooseContentTransform(
+                oldIsEdit = initialState.second,
+                newIsEdit = targetState.second,
+                oldModeHorizontal = initialState.first,
+                newModeHorizontal = targetState.first
+            )
+        }
+    ) { _state ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = 0.8f)),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
-        val viewModeBeforeEdit = remember { mutableStateOf<com.example.ocrmanga.ui.screens.view.ViewMode?>(null) }
         val effectiveViewMode = if (editTranslationMode) {
             com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
         } else {
             vmMode
         }
+
         LaunchedEffect(effectiveViewMode) {
             // Keep behavior for external sync when switching away from horizontal
             if (uiState.imageUris.isNotEmpty() && effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
                 val target = horizontalListState.firstVisibleItemIndex.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
                 try { lazyListState.scrollToItem(target) } catch (_: Exception) {}
-            }
-        }
-
-        // Ensure edit mode forces horizontal and remember previous view mode to restore on exit
-        LaunchedEffect(editTranslationMode) {
-            if (editTranslationMode) {
-                // entering edit
-                val currentVm = vmMode
-                if (currentVm != com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) {
-                    viewModeBeforeEdit.value = currentVm
-                    viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
-                }
-            } else {
-                // exiting edit - restore previous view mode if we forced it
-                val prev = viewModeBeforeEdit.value
-                if (prev != null) {
-                    viewModel.setViewMode(prev)
-                    viewModeBeforeEdit.value = null
-                }
             }
         }
 
@@ -435,6 +452,7 @@ fun ViewerScreen(
                             val target = lazyListState.firstVisibleItemIndex
                             // set pending initial page so HorizontalViewer can start at correct page
                             pendingInitialPage = target.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                            if (viewModeBeforeEdit.value == null) viewModeBeforeEdit.value = vmMode
                             viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
                         } else {
                             val target = horizontalListState.firstVisibleItemIndex
@@ -535,6 +553,7 @@ fun ViewerScreen(
                                         }.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
                                         pendingInitialPage = target
                                         // ensure horizontal mode when entering edit mode
+                                        if (viewModeBeforeEdit.value == null) viewModeBeforeEdit.value = vmMode
                                         viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
                                     }
                                     editTranslationMode = !editTranslationMode
@@ -1129,6 +1148,7 @@ fun ViewerScreen(
         }
 
     } // end Column
+    } // end AnimatedContent
 
     // Text Removal Preview Dialog - shows mask overlay before confirming removal
     if (uiState.showTextRemovalPreview && uiState.textRemovalPreviewBitmap != null) {
@@ -1199,10 +1219,12 @@ fun ViewerScreen(
             else -> "Đang xóa text..."
         }
 
+        // Show scanline overlay over the whole screen; also keep the surface for progress text
+        ScanlineOverlay(modifier = Modifier.fillMaxSize(), progress = null, reversed = false, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.5f)),
+                .fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             androidx.compose.material3.Surface(
