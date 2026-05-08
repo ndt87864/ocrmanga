@@ -1,39 +1,27 @@
 package com.example.ocrmanga.ui.screens.view
 
 import android.net.Uri
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
-import com.example.ocrmanga.viewmodels.ViewerViewModel
-import com.example.ocrmanga.ui.screens.view.ViewMode
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.ocrmanga.viewmodels.ViewerViewModel
+import kotlinx.coroutines.delay
 
 
 
@@ -70,16 +58,20 @@ fun HorizontalViewer(
     onToggleTextRemovalMode: () -> Unit,
     onRemoveTextWithMask: (Uri, Bitmap) -> Unit,
     brushSize: Float,
-    onBrushSizeChange: (Float) -> Unit
+    onBrushSizeChange: (Float) -> Unit,
+    autoScrollEnabled: Boolean = false,
+    scrollSpeed: Float = 5f,
+    onAutoScrollToggle: (Boolean) -> Unit = {}
 ) {
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
     val state = horizontalListState ?: rememberLazyListState()
-    val scope = rememberCoroutineScope()
+    val pageListStates = remember { mutableStateMapOf<Uri, LazyListState>() }
     val conf = LocalConfiguration.current
     Box(modifier = Modifier.fillMaxSize()) {
         LazyRow(state = state, flingBehavior = rememberSnapFlingBehavior(lazyListState = state), modifier = Modifier.fillMaxSize()) {
             val screenW = conf.screenWidthDp.dp
             itemsIndexed(imageUris) { index, uri ->
+                val pageState = pageListStates.getOrPut(uri) { LazyListState() }
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier
                         .width(screenW)
@@ -122,18 +114,60 @@ fun HorizontalViewer(
                             val conf = LocalConfiguration.current
                             val screenH = conf.screenHeightDp.dp
                             (screenH - 56.dp - 72.dp - 32.dp).coerceAtLeast(100.dp)
-                        } else androidx.compose.ui.unit.Dp.Unspecified
+                        } else androidx.compose.ui.unit.Dp.Unspecified,
+                        lazyListState = pageState
                     )
                 }
             }
         }
 
-        // Enforce single-step paging: if LazyRow jumps more than 1 index (fast fling), correct to adjacent page
         val lastPageState = remember { mutableStateOf(0) }
-        val lastPage = lastPageState.value
-        androidx.compose.runtime.LaunchedEffect(state) {
+
+        LaunchedEffect(autoScrollEnabled, scrollSpeed, imageUris) {
+            if (imageUris.isEmpty()) return@LaunchedEffect
+            var currentPage = state.firstVisibleItemIndex.coerceIn(0, imageUris.lastIndex)
+            while (autoScrollEnabled && imageUris.isNotEmpty()) {
+                val currentUri = imageUris[currentPage]
+                val pageState = pageListStates.getOrPut(currentUri) { LazyListState() }
+                val visibleItems = pageState.layoutInfo.visibleItemsInfo
+                val canScrollVertically = visibleItems.any { item ->
+                    item.offset < pageState.layoutInfo.viewportStartOffset || item.offset + item.size > pageState.layoutInfo.viewportEndOffset
+                } || pageState.canScrollForward
+
+                if (canScrollVertically) {
+                    val step = (scrollSpeed * 2f).coerceAtLeast(1f)
+                    while (autoScrollEnabled && pageState.canScrollForward) {
+                        pageState.dispatchRawDelta(step)
+                        delay(16)
+                    }
+                    delay(1000)
+                } else {
+                    val holdMillis = ((11 - scrollSpeed.toInt().coerceIn(1, 10)) * 1000L)
+                    delay(holdMillis)
+                }
+
+                val nextPage = currentPage + 1
+                if (nextPage <= imageUris.lastIndex) {
+                    currentPage = nextPage
+                    lastPageState.value = nextPage
+                    state.scrollToItem(nextPage)
+                } else {
+                    onAutoScrollToggle(false)
+                    break
+                }
+            }
+        }
+
+        // Enforce single-step paging for manual fling only. Auto-scroll may advance many pages over time.
+        androidx.compose.runtime.LaunchedEffect(state, autoScrollEnabled) {
             androidx.compose.runtime.snapshotFlow { state.firstVisibleItemIndex }
                 .collect { idx ->
+                    if (autoScrollEnabled) {
+                        lastPageState.value = idx
+                        return@collect
+                    }
+
+                    val lastPage = lastPageState.value
                     if (kotlin.math.abs(idx - lastPage) > 1) {
                         val target = lastPage + if (idx > lastPage) 1 else -1
                         try {

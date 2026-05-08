@@ -357,6 +357,7 @@ fun ViewerScreen(
             .background(Color.White.copy(alpha = 0.8f)),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -371,8 +372,13 @@ fun ViewerScreen(
                 IconButton(onClick = handleBack) {
                     Icon(Icons.Default.KeyboardDoubleArrowLeft, "Thoát", tint = MaterialTheme.colorScheme.primary)
                 }
+                val currentDisplayIndex = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) {
+                    horizontalListState.firstVisibleItemIndex
+                } else {
+                    lazyListState.firstVisibleItemIndex
+                }
                 Text(
-                    text = "${(lazyListState.firstVisibleItemIndex + 1).coerceAtMost(uiState.imageUris.size)} / ${uiState.imageUris.size}",
+                    text = "${(currentDisplayIndex + 1).coerceAtMost(uiState.imageUris.size)} / ${uiState.imageUris.size}",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -381,7 +387,6 @@ fun ViewerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // View mode toggle
-                val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
                 IconButton(onClick = {
                     val newMode = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL else com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL
                     viewModel.setViewMode(newMode)
@@ -425,7 +430,8 @@ fun ViewerScreen(
                     imageUris = uiState.imageUris,
                     onLoadMoreImages = { viewModel.loadMoreImages() },
                     onShowSpeedSliderChange = { showSpeedSlider = !showSpeedSlider },
-                    isLoadingMoreImages = uiState.isLoadingMoreImages
+                    isLoadingMoreImages = uiState.isLoadingMoreImages,
+                    enableScrollLoop = vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL
                 )
                 IconButton(onClick = { showRoomNav = !showRoomNav }) {
                     Icon(
@@ -730,8 +736,6 @@ fun ViewerScreen(
             showSpeedSlider = showSpeedSlider
         )
 
-        val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
-
         if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
             ImageViewer(
                 imageUris = uiState.imageUris,
@@ -923,7 +927,10 @@ fun ViewerScreen(
                     }
                 },
                 brushSize = brushSize,
-                onBrushSizeChange = { brushSize = it }
+                onBrushSizeChange = { brushSize = it },
+                autoScrollEnabled = autoScrollEnabled,
+                scrollSpeed = scrollSpeed,
+                onAutoScrollToggle = { autoScrollEnabled = it }
             )
         }
         Dialogs(

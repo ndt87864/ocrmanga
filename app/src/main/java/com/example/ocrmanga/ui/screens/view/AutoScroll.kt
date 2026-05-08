@@ -31,13 +31,14 @@ fun AutoScroll(
     imageUris: List<Uri>,
     onLoadMoreImages: () -> Unit,
     onShowSpeedSliderChange: (() -> Unit)? = null,
-    isLoadingMoreImages: Boolean = false
+    isLoadingMoreImages: Boolean = false,
+    enableScrollLoop: Boolean = true
 ) {
     val coroutineScope = rememberCoroutineScope()
     
     // Auto scroll logic
-    LaunchedEffect(autoScrollEnabled, scrollSpeed) {
-        while (autoScrollEnabled) {
+    LaunchedEffect(autoScrollEnabled, scrollSpeed, enableScrollLoop) {
+        while (autoScrollEnabled && enableScrollLoop) {
             val currentIndex = lazyListState.firstVisibleItemIndex
             val currentOffset = lazyListState.firstVisibleItemScrollOffset
             val totalItems = imageUris.size
