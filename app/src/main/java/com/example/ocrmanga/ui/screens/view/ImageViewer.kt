@@ -618,9 +618,11 @@ fun ImageViewer(
                             translationX = zoomOffset.x; translationY = zoomOffset.y
                         }) {
                             var imageModifier = Modifier.fillMaxWidth()
-                            // If caller provided imageMaxHeight and text removal controls are shown, reduce image height so controls fit below
+                            var contentScaleVal = ContentScale.FillWidth
+                            // If caller provided imageMaxHeight and text removal controls are shown, set fixed image height and crop so controls fit below
                             if (imageMaxHeight != null && imageMaxHeight != androidx.compose.ui.unit.Dp.Unspecified && isTextRemovalMode) {
-                                imageModifier = imageModifier.heightIn(max = imageMaxHeight)
+                                imageModifier = imageModifier.height(imageMaxHeight).clipToBounds()
+                                contentScaleVal = ContentScale.Crop
                             }
                             AsyncImage(
                                 model = imageRequest,
@@ -629,11 +631,10 @@ fun ImageViewer(
                                     imageWidth = it.size.width.toFloat()
                                     imageHeight = it.size.height.toFloat()
                                     // Lưu dimensions cho text removal
-                                    imageDimensionsMap[uri] =
-                                        Pair(originalImageWidth, originalImageHeight)
+                                    imageDimensionsMap[uri] = Pair(originalImageWidth, originalImageHeight)
                                     imageDisplayDimensionsMap[uri] = Pair(imageWidth, imageHeight)
                                 },
-                                contentScale = ContentScale.FillWidth,
+                                contentScale = contentScaleVal,
                                 onState = { imageLoadState = it })
                             if (isInWindow && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success && (isTextRemovalMode || (translationEnabled && translatedTexts.containsKey(
                                     uri
