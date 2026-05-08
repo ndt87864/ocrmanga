@@ -5,6 +5,8 @@ import androidx.compose.runtime.Composable
 import com.example.ocrmanga.viewmodels.ViewerViewModel
 
 @Composable
+import androidx.compose.ui.unit.Dp
+
 fun ImagePage(
     uri: Uri,
     viewModel: ViewerViewModel,
@@ -32,7 +34,8 @@ fun ImagePage(
     onToggleTextRemovalMode: () -> Unit,
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit,
     brushSize: Float,
-    onBrushSizeChange: (Float) -> Unit
+    onBrushSizeChange: (Float) -> Unit,
+    imageMaxHeight: Dp? = null
 ) {
     val list = listOf(uri)
     val state = androidx.compose.foundation.lazy.rememberLazyListState()
