@@ -394,6 +394,7 @@ fun ImageViewer(
 
                 var zoomScale by remember(uri, isTextRemovalMode) { mutableStateOf(1f) }
                 var zoomOffset by remember(uri, isTextRemovalMode) { mutableStateOf(Offset.Zero) }
+                var suppressSingleTouchAfterMultiTouch by remember(uri) { mutableStateOf(false) }
 
                 LaunchedEffect(isTextRemovalMode) {
                     if (!isTextRemovalMode) {
@@ -851,31 +852,51 @@ fun ImageViewer(
                                 imageWidth,
                                 imageHeight
                             ) {
-                                if (isTextRemovalMode) {
+                                if (isTextRemovalMode || editTranslationMode) {
                                     awaitPointerEventScope {
                                         while (true) {
                                             val event = awaitPointerEvent()
                                             if (event.changes.size > 1) {
-                                                currentPaintingPath.value =
-                                                    null; magnifierPosition =
-                                                    null; magnifierSourcePosition = null
-                                                val zoom = event.calculateZoom();
+                                                currentPaintingPath.value = null
+                                                currentPaintingPathMap[uri] = null
+                                                magnifierPosition = null
+                                                magnifierSourcePosition = null
+                                                draggingIndex = null
+                                                suppressSingleTouchAfterMultiTouch = true
+
+                                                val firstMove = event.changes[0].position - event.changes[0].previousPosition
+                                                val secondMove = event.changes[1].position - event.changes[1].previousPosition
+                                                val movementDot = firstMove.x * secondMove.x + firstMove.y * secondMove.y
                                                 val pan = event.calculatePan()
-                                                zoomScale = (zoomScale * zoom).coerceIn(1f, 5f)
-                                                val maxOX = (imageWidth * (zoomScale - 1f)) / 2;
-                                                val maxOY = (imageHeight * (zoomScale - 1f)) / 2
-                                                zoomOffset = Offset(
-                                                    (zoomOffset.x + pan.x).coerceIn(
-                                                        -maxOX,
-                                                        maxOX
-                                                    ),
-                                                    (zoomOffset.y + pan.y).coerceIn(-maxOY, maxOY)
-                                                )
+
+                                                if (movementDot < 0f) {
+                                                    val zoom = event.calculateZoom()
+                                                    zoomScale = (zoomScale * zoom).coerceIn(1f, 10f)
+                                                    val maxOX = (imageWidth * (zoomScale - 1f)) / 2
+                                                    val maxOY = (imageHeight * (zoomScale - 1f)) / 2
+                                                    zoomOffset = Offset(
+                                                        zoomOffset.x.coerceIn(-maxOX, maxOX),
+                                                        zoomOffset.y.coerceIn(-maxOY, maxOY)
+                                                    )
+                                                } else {
+                                                    lazyListState.dispatchRawDelta(-pan.y)
+                                                }
                                                 event.changes.forEach { it.consume() }
-                                            } else {
-                                                val change = event.changes.first();
+                                            } else if (isTextRemovalMode) {
+                                                val change = event.changes.first()
+                                                if (suppressSingleTouchAfterMultiTouch) {
+                                                    currentPaintingPath.value = null
+                                                    currentPaintingPathMap[uri] = null
+                                                    magnifierPosition = null
+                                                    magnifierSourcePosition = null
+                                                    if (!change.pressed || change.changedToUp()) {
+                                                        suppressSingleTouchAfterMultiTouch = false
+                                                    }
+                                                    change.consume()
+                                                    continue
+                                                }
                                                 val screenPos = change.position
-                                                val centerX = imageWidth / 2;
+                                                val centerX = imageWidth / 2
                                                 val centerY = imageHeight / 2
                                                 val internalPos = Offset(
                                                     (screenPos.x - centerX - zoomOffset.x) / zoomScale + centerX,
@@ -884,105 +905,94 @@ fun ImageViewer(
                                                 if (change.pressed) {
                                                     if (change.changedToDown()) {
                                                         currentPaintingPath.value = Path().apply {
-                                                            moveTo(
-                                                                internalPos.x,
-                                                                internalPos.y
-                                                            )
+                                                            moveTo(internalPos.x, internalPos.y)
                                                         }
-                                                        currentPaintingPathMap[uri] =
-                                                            currentPaintingPath.value
-                                                        magnifierPosition =
-                                                            screenPos; magnifierSourcePosition =
-                                                            internalPos
+                                                        currentPaintingPathMap[uri] = currentPaintingPath.value
+                                                        magnifierPosition = screenPos
+                                                        magnifierSourcePosition = internalPos
                                                     } else if (currentPaintingPath.value != null) {
-                                                        currentPaintingPath.value?.lineTo(
-                                                            internalPos.x,
-                                                            internalPos.y
-                                                        )
-                                                        currentPaintingPathMap[uri] =
-                                                            currentPaintingPath.value
-                                                        magnifierPosition =
-                                                            screenPos; magnifierSourcePosition =
-                                                            internalPos
+                                                        currentPaintingPath.value?.lineTo(internalPos.x, internalPos.y)
+                                                        currentPaintingPathMap[uri] = currentPaintingPath.value
+                                                        magnifierPosition = screenPos
+                                                        magnifierSourcePosition = internalPos
                                                     }
-                                                    drawTrigger++; change.consume()
+                                                    drawTrigger++
+                                                    change.consume()
                                                 } else if (change.changedToUp()) {
                                                     currentPaintingPath.value?.let {
                                                         textRemovalPaths.add(it to brushSize)
-                                                        // Clear redo stack khi vẽ nét mới
                                                         textRemovalRedoStack.clear()
                                                     }
                                                     currentPaintingPath.value = null
                                                     currentPaintingPathMap[uri] = null
-                                                    magnifierPosition =
-                                                        null; magnifierSourcePosition = null
-                                                    drawTrigger++; change.consume()
+                                                    magnifierPosition = null
+                                                    magnifierSourcePosition = null
+                                                    drawTrigger++
+                                                    change.consume()
                                                 }
-                                            }
-                                        }
-                                    }
-                                } else if (editTranslationMode) {
-                                    awaitPointerEventScope {
-                                        while (true) {
-                                            val event = awaitPointerEvent();
-                                            val dragEvent = event.changes.firstOrNull() ?: continue
-                                            if (dragEvent.pressed) {
-                                                if (draggingIndex == null) {
-                                                    val pos = dragEvent.position
-                                                    val idx = dragBlocks.indexOfLast { db ->
-                                                        val b = db.block;
-                                                        val bw = b.originalImageWidth?.toFloat()
-                                                            ?: originalImageWidth;
-                                                        val s = if (bw > 0f) imageWidth / bw else 1f
-                                                        val h = (b.originalImageHeight?.toFloat()
-                                                            ?: originalImageHeight) * s;
-                                                        val oY =
-                                                            if (imageHeight > h) (imageHeight - h) / 2 else 0f
-                                                        val blockRect = Rect(
-                                                            (b.bounds.left * s) + db.offset.x,
-                                                            (b.bounds.top * s) + oY + db.offset.y,
-                                                            (b.bounds.right * s) + db.offset.x,
-                                                            (b.bounds.bottom * s) + oY + db.offset.y
+                                            } else if (editTranslationMode) {
+                                                val dragEvent = event.changes.firstOrNull() ?: continue
+                                                if (dragEvent.pressed) {
+                                                    if (draggingIndex == null) {
+                                                        val pos = Offset(
+                                                            (dragEvent.position.x - imageWidth / 2 - zoomOffset.x) / zoomScale + imageWidth / 2,
+                                                            (dragEvent.position.y - imageHeight / 2 - zoomOffset.y) / zoomScale + imageHeight / 2
                                                         )
-                                                        isPointInBlock(blockRect, b.shapeType, pos)
-                                                    }
-                                                    if (idx != -1) {
-                                                        selectedIndex = idx; draggingIndex =
-                                                            idx; lastDragPos = pos
-                                                        dragEvent.consume()
+                                                        val idx = dragBlocks.indexOfLast { db ->
+                                                            val b = db.block
+                                                            val bw = b.originalImageWidth?.toFloat() ?: originalImageWidth
+                                                            val s = if (bw > 0f) imageWidth / bw else 1f
+                                                            val h = (b.originalImageHeight?.toFloat() ?: originalImageHeight) * s
+                                                            val oY = if (imageHeight > h) (imageHeight - h) / 2 else 0f
+                                                            val blockRect = Rect(
+                                                                (b.bounds.left * s) + db.offset.x,
+                                                                (b.bounds.top * s) + oY + db.offset.y,
+                                                                (b.bounds.right * s) + db.offset.x,
+                                                                (b.bounds.bottom * s) + oY + db.offset.y
+                                                            )
+                                                            isPointInBlock(blockRect, b.shapeType, pos)
+                                                        }
+                                                        if (idx != -1) {
+                                                            selectedIndex = idx
+                                                            draggingIndex = idx
+                                                            lastDragPos = pos
+                                                            dragEvent.consume()
+                                                        } else {
+                                                            selectedIndex = null
+                                                        }
                                                     } else {
-                                                        selectedIndex = null
+                                                        val pos = Offset(
+                                                            (dragEvent.position.x - imageWidth / 2 - zoomOffset.x) / zoomScale + imageWidth / 2,
+                                                            (dragEvent.position.y - imageHeight / 2 - zoomOffset.y) / zoomScale + imageHeight / 2
+                                                        )
+                                                        val amount = pos - lastDragPos
+                                                        dragBlocks = dragBlocks.toMutableList().also {
+                                                            it[draggingIndex!!] = it[draggingIndex!!].copy(offset = it[draggingIndex!!].offset + amount)
+                                                        }
+                                                        lastDragPos = pos
+                                                        dragEvent.consume()
                                                     }
                                                 } else {
-                                                    val amt = dragEvent.position - lastDragPos
-                                                    dragBlocks = dragBlocks.toMutableList().also {
-                                                        it[draggingIndex!!] =
-                                                            it[draggingIndex!!].copy(offset = it[draggingIndex!!].offset + amt)
-                                                    }
-                                                    lastDragPos =
-                                                        dragEvent.position; dragEvent.consume()
-                                                }
-                                            } else {
-                                                draggingIndex?.let { idx ->
-                                                    val db = dragBlocks[idx];
-                                                    val bw = db.block.originalImageWidth?.toFloat()
-                                                        ?: originalImageWidth;
-                                                    val s = if (bw > 0f) imageWidth / bw else 1f
-                                                    val nb = android.graphics.Rect(db.block.bounds)
-                                                        .apply {
+                                                    draggingIndex?.let { idx ->
+                                                        val db = dragBlocks[idx]
+                                                        val bw = db.block.originalImageWidth?.toFloat() ?: originalImageWidth
+                                                        val s = if (bw > 0f) imageWidth / bw else 1f
+                                                        val updatedBounds = android.graphics.Rect(db.block.bounds).apply {
                                                             offset(
                                                                 (db.offset.x / s).toInt(),
                                                                 (db.offset.y / s).toInt()
                                                             )
                                                         }
-                                                    val updated = dragBlocks.toMutableList().also {
-                                                        it[idx] = db.copy(
-                                                            block = db.block.copy(bounds = nb),
-                                                            offset = Offset.Zero
-                                                        )
+                                                        val updated = dragBlocks.toMutableList().also {
+                                                            it[idx] = db.copy(
+                                                                block = db.block.copy(bounds = updatedBounds),
+                                                                offset = Offset.Zero
+                                                            )
+                                                        }
+                                                        dragBlocks = updated
+                                                        dragBlocksMap[uri] = updated
+                                                        draggingIndex = null
                                                     }
-                                                    dragBlocks = updated; dragBlocksMap[uri] =
-                                                    updated; draggingIndex = null
                                                 }
                                             }
                                         }
