@@ -8,6 +8,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.layout.Box
@@ -62,8 +64,8 @@ fun HorizontalViewer(
         }
 
         // Enforce single-step paging: if LazyRow jumps more than 1 index (fast fling), correct to adjacent page
-        val lastPageState = remember { androidx.compose.runtime.mutableStateOf(0) }
-        val lastPage by androidx.compose.runtime.getValue(lastPageState)
+        val lastPageState = remember { mutableStateOf(0) }
+        val lastPage = lastPageState.value
         androidx.compose.runtime.LaunchedEffect(state) {
             androidx.compose.runtime.snapshotFlow { state.firstVisibleItemIndex }
                 .collect { idx ->
