@@ -66,6 +66,7 @@ fun ImagePage(
         onClearReopenEditorUri = onClearReopenEditorUri,
         onRequestOpenEditor = onRequestOpenEditor,
         isTextRemovalMode = isTextRemovalMode,
+        imageMaxHeight = androidx.compose.ui.unit.Dp.Unspecified,
         onToggleTextRemovalMode = onToggleTextRemovalMode,
         onRemoveTextWithMask = onRemoveTextWithMask,
         brushSize = brushSize,

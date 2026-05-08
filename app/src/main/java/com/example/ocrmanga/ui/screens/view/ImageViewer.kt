@@ -156,6 +156,7 @@ fun ImageViewer(
     // Callback to request that the caller open the editor for a URI (invoked after blocks applied)
     onRequestOpenEditor: ((Uri) -> Unit)? = null,
     isTextRemovalMode: Boolean = false,
+    imageMaxHeight: androidx.compose.ui.unit.Dp? = null,
     onToggleTextRemovalMode: () -> Unit = {},
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> },
     brushSize: Float = 40f,
@@ -616,10 +617,15 @@ fun ImageViewer(
                             scaleX = zoomScale; scaleY = zoomScale
                             translationX = zoomOffset.x; translationY = zoomOffset.y
                         }) {
+                            var imageModifier = Modifier.fillMaxWidth()
+                            // If caller provided imageMaxHeight and text removal controls are shown, reduce image height so controls fit below
+                            if (imageMaxHeight != null && imageMaxHeight != androidx.compose.ui.unit.Dp.Unspecified && isTextRemovalMode) {
+                                imageModifier = imageModifier.heightIn(max = imageMaxHeight)
+                            }
                             AsyncImage(
                                 model = imageRequest,
                                 contentDescription = null,
-                                modifier = Modifier.fillMaxWidth().onGloballyPositioned {
+                                modifier = imageModifier.onGloballyPositioned {
                                     imageWidth = it.size.width.toFloat()
                                     imageHeight = it.size.height.toFloat()
                                     // Lưu dimensions cho text removal
@@ -1151,73 +1157,6 @@ fun ImageViewer(
             }
         }
 
-        // Global overlay controls for text removal (shows at bottom for current visible item)
-        if (isTextRemovalMode) {
-            val currentIndex = try { lazyListState.firstVisibleItemIndex } catch (_: Exception) { 0 }
-            val currentUri = imageUris.getOrNull(currentIndex)
-            if (currentUri != null) {
-                val paths = textRemovalPathsMap.getOrPut(currentUri) { mutableListOf() }
-                val redo = textRemovalRedoStackMap.getOrPut(currentUri) { mutableListOf() }
-                TextRemovalControls(
-                    canUndo = paths.isNotEmpty(),
-                    canRedo = redo.isNotEmpty(),
-                    onUndo = {
-                        if (paths.isNotEmpty()) {
-                            val removed = paths.removeAt(paths.size - 1)
-                            redo.add(removed)
-                            drawTrigger++
-                        }
-                    },
-                    onRedo = {
-                        if (redo.isNotEmpty()) {
-                            val restored = redo.removeAt(redo.size - 1)
-                            paths.add(restored)
-                            drawTrigger++
-                        }
-                    },
-                    onBrushClick = { showBrushSizeDialog = true },
-                    onApply = {
-                        if (paths.isNotEmpty()) {
-                            val originalDims = imageDimensionsMap[currentUri]
-                            val displayDims = imageDisplayDimensionsMap[currentUri]
-
-                            if (originalDims != null && displayDims != null) {
-                                val (originalW, originalH) = originalDims
-                                val (displayW, displayH) = displayDims
-
-                                if (originalW > 0 && displayW > 0) {
-                                    val maskBmp = android.graphics.Bitmap.createBitmap(
-                                        originalW.toInt(),
-                                        originalH.toInt(),
-                                        android.graphics.Bitmap.Config.ARGB_8888
-                                    )
-                                    val canvas = android.graphics.Canvas(maskBmp).apply { drawColor(android.graphics.Color.BLACK) }
-                                    val s = originalW / displayW
-                                    val matrix = android.graphics.Matrix().apply { setScale(s, s) }
-                                    val paint = android.graphics.Paint().apply {
-                                        color = android.graphics.Color.WHITE
-                                        style = android.graphics.Paint.Style.STROKE
-                                        strokeCap = android.graphics.Paint.Cap.ROUND
-                                        strokeJoin = android.graphics.Paint.Join.ROUND
-                                    }
-                                    paths.forEach { pair ->
-                                        paint.strokeWidth = pair.second * s
-                                        canvas.drawPath(pair.first.asAndroidPath().apply { transform(matrix) }, paint)
-                                    }
-                                    onRemoveTextWithMask(currentUri, maskBmp)
-                                    paths.clear()
-                                    redo.clear()
-                                    drawTrigger++
-                                }
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp)
-                )
-            }
-        }
 
         // Brush size dialog - vẫn giữ ở level cao vì nó là popup global
         if (showBrushSizeDialog) {

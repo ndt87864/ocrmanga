@@ -112,7 +112,11 @@ fun HorizontalViewer(
                         onToggleTextRemovalMode = onToggleTextRemovalMode,
                         onRemoveTextWithMask = onRemoveTextWithMask,
                         brushSize = brushSize,
-                        onBrushSizeChange = onBrushSizeChange
+                        onBrushSizeChange = onBrushSizeChange,
+                        // reserve space so controls can appear below image without being clipped
+                        // when isTextRemovalMode=true, ImageViewer will use imageMaxHeight to shrink image
+                        // so controls fit under it.
+                        imageMaxHeight = androidx.compose.ui.unit.Dp.Unspecified
                     )
                 }
             }
