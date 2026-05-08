@@ -61,17 +61,23 @@ fun HorizontalViewer(
             }
         }
 
-        // Simple indicator + optional controls (can be expanded)
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-        ) {
-            IconButton(onClick = {
-                scope.launch { /* future: toggle UI elements */ }
-            }) {
-                Icon(Icons.Default.Fullscreen, contentDescription = "")
-            }
+        // Enforce single-step paging: if LazyRow jumps more than 1 index (fast fling), correct to adjacent page
+        val lastPageState = remember { androidx.compose.runtime.mutableStateOf(0) }
+        val lastPage by androidx.compose.runtime.getValue(lastPageState)
+        androidx.compose.runtime.LaunchedEffect(state) {
+            androidx.compose.runtime.snapshotFlow { state.firstVisibleItemIndex }
+                .collect { idx ->
+                    if (kotlin.math.abs(idx - lastPage) > 1) {
+                        val target = lastPage + if (idx > lastPage) 1 else -1
+                        try {
+                            state.scrollToItem(target)
+                        } catch (_: Exception) {
+                        }
+                        lastPageState.value = target
+                    } else {
+                        lastPageState.value = idx
+                    }
+                }
         }
     }
 }
