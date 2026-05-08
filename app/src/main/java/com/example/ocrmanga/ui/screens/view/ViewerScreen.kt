@@ -839,7 +839,89 @@ fun ViewerScreen(
             HorizontalViewer(
                 imageUris = uiState.imageUris,
                 viewModel = viewModel,
-                onRequestOpenEditor = { uri -> editTranslationMode = true }
+                editTranslationMode = editTranslationMode,
+                dragBlocksMap = dragBlocksMap,
+                onEditTranslationModeToggle = { editTranslationMode = it },
+                onSaveTranslation = { uri, blocks ->
+                    Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
+                    blocks.forEachIndexed { idx, dragBlock ->
+                        val textColorHex = try { dragBlock.textColor?.toArgb()?.let { String.format("#%08X", it) } ?: "null" } catch (_: Exception) { "err" }
+                        val gradCols = dragBlock.textGradientColors?.joinToString(separator = ",") { c -> String.format("#%08X", c) } ?: "null"
+                        Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation} inset=${dragBlock.overlayInset} insetH=${dragBlock.overlayInsetHorizontal} insetV=${dragBlock.overlayInsetVertical} textColor=$textColorHex gradientColors=$gradCols")
+                    }
+                    viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
+                        dragBlock.block.copy(
+                            fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize,
+                            rotation = dragBlock.rotation,
+                            overlayRotation = dragBlock.overlayRotation,
+                            shapeType = dragBlock.block.shapeType,
+                            fontFamily = dragBlock.block.fontFamily,
+                            customOverlayColor = dragBlock.whiteoutColor?.toArgb(),
+                            customTextColor = dragBlock.textColor?.toArgb(),
+                            overlayAlpha = dragBlock.overlayAlpha,
+                            textBoldness = dragBlock.textBoldness,
+                            overlaySaturation = dragBlock.overlaySaturation,
+                            textSaturation = dragBlock.textSaturation,
+                            lineSpacing = dragBlock.lineSpacing,
+                            overlayInset = dragBlock.overlayInset,
+                            overlayInsetHorizontal = dragBlock.overlayInsetHorizontal,
+                            overlayInsetVertical = dragBlock.overlayInsetVertical,
+                            customBorderColor = dragBlock.textBorderColor?.toArgb(),
+                            borderThickness = dragBlock.textBorderThickness,
+                            borderAlpha = dragBlock.textBorderAlpha,
+                            customShadowColor = dragBlock.textShadowColor?.toArgb(),
+                            shadowAlpha = dragBlock.textShadowAlpha,
+                            shadowRadius = dragBlock.textShadowRadius,
+                            textGradientColors = dragBlock.textGradientColors,
+                            textGradientOffsets = dragBlock.textGradientOffsets,
+                            textGradientType = dragBlock.textGradientType,
+                            applyMerge = false
+                        )
+                    })
+                },
+                onRetranslateImage = { uri, mode -> viewModel.retranslateImage(uri, mode) },
+                showImageMenu = showImageMenu,
+                imageMenuUri = imageMenuUri,
+                onImageMenuDismiss = { showImageMenu = false },
+                onShowImageMenuChange = { showImageMenu = it },
+                onImageMenuUriChange = { imageMenuUri = it },
+                onRemoveImage = { uri -> viewModel.removeImageFromRoom(uri) },
+                getImageIdForUri = viewModel::getImageIdForUri,
+                getImageVersionForUri = viewModel::getImageVersionForUri,
+                getReloadTokenForUri = viewModel::getReloadTokenForUri,
+                translatingImages = uiState.translatingImages,
+                recentlySavedUris = uiState.recentlySavedUris,
+                onClearRecentlySavedUri = { uri -> viewModel.clearRecentlySavedUri(uri) },
+                reopenEditorUris = uiState.reopenEditorUris,
+                onClearReopenEditorUri = { uri -> viewModel.clearReopenEditorUri(uri) },
+                onRequestOpenEditor = { uri -> editTranslationMode = true },
+                isTextRemovalMode = isTextRemovalMode,
+                onToggleTextRemovalMode = { isTextRemovalMode = !isTextRemovalMode },
+                onRemoveTextWithMask = { uri, maskBmp ->
+                    coroutineScope.launch {
+                        isRemovingText = true
+                        removingTextLocalProgress = "Lấy dữ liệu..."
+                        try {
+                            val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextWithMask(
+                                context, uri, maskBmp
+                            ) { progress -> removingTextLocalProgress = progress }
+                            if (resultUri != null) {
+                                viewModel.replaceImageUri(uri, resultUri, persist = false)
+                                Toast.makeText(context, "Đã xóa text thành công!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Lỗi khi xóa text", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            Log.e("ViewerScreen", "Error removing text", e)
+                            Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                        } finally {
+                            isRemovingText = false
+                            removingTextLocalProgress = ""
+                        }
+                    }
+                },
+                brushSize = brushSize,
+                onBrushSizeChange = { brushSize = it }
             )
         }
         Dialogs(
