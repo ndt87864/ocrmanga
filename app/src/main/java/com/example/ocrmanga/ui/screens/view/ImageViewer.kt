@@ -870,13 +870,18 @@ fun ImageViewer(
                                                 val pan = event.calculatePan()
 
                                                 if (movementDot < 0f) {
-                                                    val zoom = event.calculateZoom()
-                                                    zoomScale = (zoomScale * zoom).coerceIn(1f, 10f)
+                                                    val oldScale = zoomScale
+                                                    val newScale = (zoomScale * event.calculateZoom()).coerceIn(1f, 10f)
+                                                    val centroid = event.calculateCentroid(useCurrent = true)
+                                                    val center = Offset(imageWidth / 2f, imageHeight / 2f)
+                                                    val focalBeforeZoom = (centroid - center - zoomOffset) / oldScale
+                                                    val newOffset = centroid - center - focalBeforeZoom * newScale
+                                                    zoomScale = newScale
                                                     val maxOX = (imageWidth * (zoomScale - 1f)) / 2
                                                     val maxOY = (imageHeight * (zoomScale - 1f)) / 2
                                                     zoomOffset = Offset(
-                                                        zoomOffset.x.coerceIn(-maxOX, maxOX),
-                                                        zoomOffset.y.coerceIn(-maxOY, maxOY)
+                                                        newOffset.x.coerceIn(-maxOX, maxOX),
+                                                        newOffset.y.coerceIn(-maxOY, maxOY)
                                                     )
                                                 } else {
                                                     lazyListState.dispatchRawDelta(-pan.y)
