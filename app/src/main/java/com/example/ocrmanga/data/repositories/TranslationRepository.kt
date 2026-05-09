@@ -4087,11 +4087,7 @@ import kotlin.math.max
                 apiKey = apiKey
             )
 
-            val fullPrompt = """
-Bạn là một chuyên gia tối ưu bản dịch manga. 
-Nhiệm vụ: Cải thiện bản dịch để tự nhiên, mượt mà và ĐỒNG BỘ xưng hô (nhất quán đại từ Nam/Nữ, vai vế).
-Chỉ trả về các dòng đã tối ưu, giữ nguyên format Block N:, không giải thích thêm.
-            """.trimIndent() + "\n\n$prompt"
+            val fullPrompt = prompt // Dùng toàn bộ prompt từ ViewModel (đã bao gồm luật từ asset)
 
             Log.d("TranslationRepository", "[OPTIMIZE-GEMINI] Sending request with prompt length=${fullPrompt.length}")
 
@@ -4119,30 +4115,48 @@ Chỉ trả về các dòng đã tối ưu, giữ nguyên format Block N:, khôn
      */
     private fun parseOptimizeResponse(text: String): List<String> {
         val lines = text.split("\n").filter { it.isNotBlank() }
-        val result = mutableListOf<String>()
+        val resultMap = mutableMapOf<Int, String>()
 
-        // Regex để match "Block N:" hoặc "N." hoặc "N:"
-        val blockPattern = Regex("""^\s*(?:Block\s*)?(\d+)[\.:\)\-]\s*(.*)$""", RegexOption.IGNORE_CASE)
+        // Regex hỗ trợ nhiều format: "Block 1:", "**Block 1:**", "1.", "1:", "[1]", "1/"...
+        val blockPattern = Regex("""^\s*\*?(?:\[|Block\s*)?(\d+)(?:\]|[\.:\)\-\/])\s*\*?\s*(.*)$""", RegexOption.IGNORE_CASE)
 
         for (line in lines) {
             val trimmed = line.trim()
             val match = blockPattern.find(trimmed)
             if (match != null) {
-                // Lấy phần text sau số thứ tự
-                val extractedText = match.groupValues[2].trim()
-                if (extractedText.isNotEmpty()) {
-                    result.add(extractedText)
-                }
-            } else if (result.isNotEmpty() || trimmed.length > 5) {
-                // Nếu dòng không match pattern nhưng không bắt đầu bằng số,
-                // có thể là dòng text trực tiếp (không có prefix)
-                // Chỉ thêm nếu chưa có result nào hoặc dòng ngắn hợp lý
-                if (trimmed.length < 100 && !trimmed.matches(Regex("^\\d+$"))) {
-                    result.add(trimmed)
+                try {
+                    val blockNum = match.groupValues[1].toInt()
+                    var content = match.groupValues[2].trim()
+                    
+                    // Cleanup: bỏ markdown bold, italic, bullet points và các dấu nháy thừa
+                    content = content.replace("**", "")
+                        .replace("__", "")
+                        .replace(Regex("^\\*\\s*"), "") // Xóa dấu * ở đầu dòng (bullet point)
+                        .replace(Regex("^['\"\\*]"), "")
+                        .replace(Regex("['\"\\*]$"), "")
+                        .trim()
+                        
+                    if (content.isNotEmpty()) {
+                        resultMap[blockNum] = content
+                    }
+                } catch (e: Exception) {
+                    // Skip invalid block numbers
                 }
             }
         }
 
+        if (resultMap.isEmpty()) {
+            // Nếu không tìm thấy bất kỳ "Block N" nào, trả về toàn bộ dòng (fallback cũ nhưng sạch hơn)
+            return lines.map { it.trim().replace("**", "").replace("__", "") }
+        }
+
+        // Chuyển map sang list, đảm bảo đúng thứ tự Block 1, 2, 3...
+        val maxIndex = resultMap.keys.maxOrNull() ?: 0
+        val result = mutableListOf<String>()
+        for (i in 1..maxIndex) {
+            // Nếu thiếu Block i, để trống để không làm lệch các Block sau
+            result.add(resultMap[i] ?: "")
+        }
         return result
     }
 
@@ -4150,7 +4164,7 @@ Chỉ trả về các dòng đã tối ưu, giữ nguyên format Block N:, khôn
         return try {
             val systemMessage = mapOf(
                 "role" to "system",
-                "content" to "Bạn là chuyên gia tối ưu bản dịch manga. Nhiệm vụ: Cải thiện bản dịch để tự nhiên và ĐỒNG BỘ xưng hô (Nam/Nữ, vai vế). GIỮ NGUYEN ý nghĩa. Trả về đúng format 'Block N: <bản dịch đã tối ưu>'."
+                "content" to "Bạn là một Biên tập viên Cao cấp (Senior Editor) chuyên biên dịch Manga. Hãy thực hiện tối ưu hóa bản dịch theo đúng các tiêu chuẩn chuyên nghiệp và format yêu cầu."
             )
             val userMessage = mapOf(
                 "role" to "user",
@@ -4187,13 +4201,18 @@ Chỉ trả về các dòng đã tối ưu, giữ nguyên format Block N:, khôn
         return try {
             Log.d("TranslationRepository", "[OPTIMIZE-ZAI] Preparing request with prompt length=${prompt.length}")
 
+            val systemMessage = mapOf(
+                "role" to "system",
+                "content" to "Bạn là một Biên tập viên Cao cấp (Senior Editor) chuyên biên dịch Manga. Hãy thực hiện tối ưu hóa bản dịch theo đúng các tiêu chuẩn chuyên nghiệp và format yêu cầu."
+            )
+
             val userMessage = mapOf(
                 "role" to "user",
                 "content" to prompt
             )
 
             val response = zaiRequester.executeChatCompletion(
-                messages = listOf(userMessage),
+                messages = listOf(systemMessage, userMessage),
                 temperature = 0.3, // Giảm temperature để ít sáng tạo hơn
                 max_tokens = 4096
             )
@@ -4204,7 +4223,10 @@ Chỉ trả về các dòng đã tối ưu, giữ nguyên format Block N:, khôn
             }
 
             val content = response.content ?: ""
-            Log.d("TranslationRepository", "[OPTIMIZE-ZAI] Raw response:\n$content")
+            Log.d("TranslationRepository", "[OPTIMIZE-ZAI] Raw response length=${content.length}")
+            if (content.isNotEmpty()) {
+                Log.d("TranslationRepository", "[OPTIMIZE-ZAI] Raw response snippet: ${content.take(100)}...")
+            }
 
             val result = parseOptimizeResponse(content)
             Log.i("TranslationRepository", "[OPTIMIZE-ZAI] Parsed ${result.size} optimized translations")

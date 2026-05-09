@@ -246,31 +246,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
                 _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
-                // Xây dựng prompt cho tối ưu - format rõ ràng để AI hiểu
-                val promptBuilder = StringBuilder()
-                promptBuilder.appendLine("Bạn là chuyên gia tối ưu bản dịch manga tiếng Việt, đặc biệt giỏi về ngữ cảnh và xưng hô.")
-                promptBuilder.appendLine("Nhiệm vụ: Đọc toàn bộ nội dung ảnh bên dưới và TỐI ƯU lại bản dịch để tự nhiên, mượt mà và nhất quán hơn.")
-                promptBuilder.appendLine("CÁC QUY TẮC QUAN TRỌNG:")
-                promptBuilder.appendLine("- NHẤT QUÁN XƯNG HÔ: Phân tích mối quan hệ, vị thế và giới tính (Nam/Nữ) của các nhân vật để chọn cặp xưng hô phù hợp (Tôi-Cậu, Anh-Em, Chị-Em, Tao-Mày, Ta-Ngươi...). Đảm bảo xưng hô ĐỒNG BỘ xuyên suốt toàn bộ các khung thoại trong ảnh.")
-                promptBuilder.appendLine("- CHÍNH XÁC BIỂU CẢM: Truyền tải đúng cảm xúc, sắc thái và tông giọng (giận dữ, dịu dàng, trang trọng, suồng sã) của bản gốc.")
-                promptBuilder.appendLine("- GIỮ NGUYÊN Ý NGHĨA: Tuyệt đối không làm sai lệch nội dung cốt truyện.")
-                promptBuilder.appendLine("- TỰ NHIÊN: Sử dụng văn phong tiếng Việt hiện đại, trôi chảy, không bị 'cứng' theo kiểu dịch máy.")
-                promptBuilder.appendLine("- ĐỊNH DẠNG: Trả về đúng số lượng dòng như đầu vào, giữ đúng thứ tự.")
-                promptBuilder.appendLine()
-                promptBuilder.appendLine("Bản dịch hiện tại cần tối ưu:")
-
+                // Xây dựng dữ liệu cho tối ưu - format rõ ràng để AI hiểu
+                val basePrompt = com.example.ocrmanga.utils.PromptUtils.loadPromptFromAssets(getApplication(), "translation_optimization.md")
+                
+                val dataBuilder = StringBuilder()
                 resolvedOriginalTexts.forEachIndexed { index, original ->
                     val translation = currentTranslations.getOrElse(index) { "" }
-                    promptBuilder.appendLine("Block ${index + 1}:")
-                    promptBuilder.appendLine("  Text gốc: $original")
-                    promptBuilder.appendLine("  Bản dịch hiện tại: $translation")
+                    dataBuilder.appendLine("[${index + 1}] Gốc: $original")
+                    dataBuilder.appendLine("    Dịch nháp (LỖI XƯNG HÔ): $translation")
                 }
-                promptBuilder.appendLine()
-                promptBuilder.appendLine("Trả về KẾT QUẢ theo format:")
-                promptBuilder.appendLine("Block 1: <bản dịch đã tối ưu>")
-                promptBuilder.appendLine("Block 2: <bản dịch đã tối ưu>")
-                promptBuilder.appendLine("...")
-                promptBuilder.appendLine("Mỗi dòng một Block, giữ đúng thứ tự, không đánh số thứ tự ở đầu kết quả.")
+
+                val finalPrompt = if (basePrompt.isNotEmpty()) {
+                    basePrompt.replace("{{DATA}}", dataBuilder.toString())
+                } else {
+                    // Fallback nếu không load được file
+                    "Optimize these translations:\n\n${dataBuilder}"
+                }
 
                 Log.d(TAG, "[OPTIMIZE] Sending prompt to ${mode.name} API with ${resolvedOriginalTexts.size} text blocks")
 
@@ -278,14 +269,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     Toast.makeText(getApplication(), "Đang tối ưu bản dịch...", Toast.LENGTH_SHORT).show()
                 }
 
-                val optimizedTranslations = translationRepository.optimizeTranslation(promptBuilder.toString(), mode)
+                val optimizedTranslations = translationRepository.optimizeTranslation(finalPrompt, mode)
 
                 if (optimizedTranslations != null && optimizedTranslations.isNotEmpty()) {
                     Log.i(TAG, "[OPTIMIZE] Received ${optimizedTranslations.size} optimized translations from ${mode.name}")
 
                     // Log từng bản dịch đã tối ưu (debug)
                     optimizedTranslations.forEachIndexed { index, optimized ->
-                        Log.d(TAG, "[OPTIMIZE] Block ${index + 1}: [OLD: ${currentTranslations.getOrElse(index) { "" }}] -> [NEW: $optimized]")
+                        val original = resolvedOriginalTexts.getOrElse(index) { "" }
+                        val old = currentTranslations.getOrElse(index) { "" }
+                        Log.d(TAG, "[OPTIMIZE] Block ${index + 1}:")
+                        Log.d(TAG, "  [ORIGINAL]: $original")
+                        Log.d(TAG, "  [OLD]     : $old")
+                        Log.d(TAG, "  [NEW]     : $optimized")
                     }
 
                     _uiState.update { state ->
