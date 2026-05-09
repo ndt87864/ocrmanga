@@ -465,8 +465,8 @@ fun calculateOptimalFontSize(
 
     // Điều chỉnh hệ số scale cho hình oval để text vừa vặn
     // Tăng vùng text trong oval lên tối đa: 99% chiều dọc, 93% chiều ngang
-    val widthScale = if (shapeType == 1) 0.93f else 0.999f
-    val heightScale = if (shapeType == 1) 0.99f else 0.999f
+    val widthScale = if (shapeType == 1) 0.88f else 0.98f
+    val heightScale = if (shapeType == 1) 0.98f else 0.99f
 
     // Compute available drawing area after applying explicit paddings.
     val safeWidth = (width - (horizontalPadding * 2f)).coerceAtLeast(1f)
@@ -482,9 +482,7 @@ fun calculateOptimalFontSize(
         val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
         val textHeight = wrappedLines.size * lineHeight
         val maxLineWidth = wrappedLines.maxOfOrNull { line ->
-            val bounds = android.graphics.Rect()
-            paint.getTextBounds(line, 0, line.length, bounds)
-            bounds.width().toFloat()
+            paint.measureText(line)
         } ?: 0f
 
         // Prefer height fit: if the text block height fits the safeHeight, allow
@@ -845,7 +843,7 @@ fun adjustWhiteoutBounds(
     )
 
     // Now wrap the text using the computed font size so measurements align with rendering.
-    val wrappedLines = wrapText(text, availableWidth * 0.995f, optimal, context, fontFamilyName)
+    val wrappedLines = wrapText(text, availableWidth * 0.98f, optimal, context, fontFamilyName)
     return wrappedLines.joinToString("\n") to optimal
 }
 
@@ -864,9 +862,8 @@ fun adjustWhiteoutBounds(
 
     for (word in words) {
         val testLine = if (currentLine.isEmpty()) word else "${currentLine} $word"
-        val bounds = android.graphics.Rect()
-        paint.getTextBounds(testLine, 0, testLine.length, bounds)
-        if (bounds.width().toFloat() <= width || currentLine.isEmpty()) {
+        val lineWidth = paint.measureText(testLine)
+        if (lineWidth <= width || currentLine.isEmpty()) {
             currentLine = StringBuilder(testLine)
         } else {
             if (currentLine.isNotEmpty()) lines.add(currentLine.toString())
