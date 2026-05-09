@@ -325,7 +325,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 25
+    private const val DATABASE_VERSION = 26
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -976,6 +976,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 Log.e(TAG, "Lỗi khi dọn dẹp bảng api_keys", e)
             }
         }
+
+        // Version 26: Thêm cột original_text vào bảng translations (per-block)
+        if (oldVersion < 26) {
+            try {
+                db.execSQL("ALTER TABLE translations ADD COLUMN original_text TEXT")
+                Log.i(TAG, "Đã thêm cột original_text vào bảng translations")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm cột original_text vào translations", e)
+            }
+        }
     }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -1465,10 +1475,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     // Persist each translation + image_block
                     blocksToSave.forEach { textBlock ->
                         val bounds = textBlock.bounds
-                        // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
+                        // Lưu translated_text VÀ original_text (per-block)
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
                             put("translated_text", textBlock.text)
+                            put("original_text", textBlock.originalText ?: "")
                         }
                             val inserted = db.insert("translations", null, textValues)
                             if (inserted != -1L) {
@@ -1628,10 +1639,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     (origRect.bottom * scaleY).toInt()
                                 )
                             } else origRect
-                            // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
+                            // Lưu translated_text VÀ original_text (per-block)
                             val textValues = ContentValues().apply {
                                 put(COLUMN_IMAGE_ID, imageId)
                                 put("translated_text", textBlock.text)
+                                put("original_text", textBlock.originalText ?: "")
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -1904,10 +1916,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             
                             blocksToSave.forEach { textBlock ->
                                 val origRect = textBlock.bounds
-                                // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
+                                // Lưu translated_text VÀ original_text (per-block)
                                 val textValues = ContentValues().apply {
                                     put(COLUMN_IMAGE_ID, imageId)
                                     put("translated_text", textBlock.text)
+                                    put("original_text", textBlock.originalText ?: "")
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -2002,16 +2015,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         // Filter out blocks marked for deletion (pendingDelete = true)
                         val blocksToSave = textBlocks.filter { !it.pendingDelete }
                         Log.i(TAG, "updateMangaRoom (existing image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
-                        
+
                         var insertedCount = 0
                         blocksToSave.forEach { textBlock ->
                             val origRect = textBlock.bounds
                             // Use original bounds without scaling
                             val finalRect = origRect
-                            // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
+                            // Lưu translated_text VÀ original_text (per-block)
                             val textValues = ContentValues().apply {
                                 put(COLUMN_IMAGE_ID, resolvedId)
                                 put("translated_text", textBlock.text)
+                                put("original_text", textBlock.originalText ?: "")
                             }
                             val inserted = db.insert("translations", null, textValues)
                             if (inserted != -1L) {
@@ -2484,10 +2498,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         // Use original bounds without scaling
                         val finalRect = origRect
 
-                        // translations: CHỈ lưu translated_text (bounds đã có trong image_blocks)
+                        // Lưu translated_text VÀ original_text (per-block)
                         val textValues = ContentValues().apply {
                             put(COLUMN_IMAGE_ID, imageId)
                             put("translated_text", textBlock.text)
+                            put("original_text", textBlock.originalText ?: "")
                         }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -2761,16 +2776,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             images.add(uri)
             orders.add(order)
 
-            // 2. Lấy TẤT CẢ translated_text từ bảng translations (theo thứ tự text_id)
+            // 2. Lấy TẤT CẢ translated_text VÀ original_text từ bảng translations (theo thứ tự text_id)
             val translationsCursor = db.rawQuery("""
-                SELECT translated_text FROM translations 
+                SELECT translated_text, original_text FROM translations
                 WHERE $COLUMN_IMAGE_ID = ?
                 AND (pending_delete IS NULL OR pending_delete = 0)
                 ORDER BY text_id ASC
             """, arrayOf(imageId.toString()))
             val translatedTexts = mutableListOf<String>()
+            val originalTexts = mutableListOf<String>()
             while (translationsCursor.moveToNext()) {
                 translatedTexts.add(translationsCursor.getString(0) ?: "")
+                originalTexts.add(translationsCursor.getString(1) ?: "")
             }
             translationsCursor.close()
 
@@ -2791,8 +2808,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val height = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_HEIGHT))
                 val bounds = Rect(x, y, x + width, y + height)
                 
-                // Match translated_text theo thứ tự index (translations và blocks được insert cùng thứ tự)
+                // Match translated_text VÀ original_text theo thứ tự index (translations và blocks được insert cùng thứ tự)
                 val translatedText = if (blockIndex < translatedTexts.size) translatedTexts[blockIndex] else ""
+                val originalText = if (blockIndex < originalTexts.size) originalTexts[blockIndex].takeIf { it.isNotBlank() } else null
                 blockIndex++
                 
                 // Lấy tất cả thuộc tính overlay từ image_blocks
@@ -2862,6 +2880,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 
                 textBlocks.add(TextBlockInfo(
                     text = translatedText,
+                    originalText = originalText,
                     bounds = bounds,
                     fontSize = fontSize,
                     lineSpacing = lineSpacing,
@@ -2980,7 +2999,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         val missingImageIds = mutableListOf<Long>()
         val imageIdToUri = mutableMapOf<Long, Uri>()
         val imageIdToOrder = mutableMapOf<Long, Int>()
-        val imageIdToOriginalText = mutableMapOf<Long, String>()
 
         val imageCursor = db.rawQuery("""
             SELECT $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER, $COLUMN_IMAGE_ID, $COLUMN_ORIGINAL_TEXT
@@ -3012,22 +3030,21 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             seenFilenames.add(filename)
 
             val order = imageCursor.getInt(1)
-            val originalText = imageCursor.getString(3) ?: ""
 
             images.add(uri)
             orders.add(order)
             imageIdToUri[imageId] = uri
             imageIdToOrder[imageId] = order
-            imageIdToOriginalText[imageId] = originalText
         }
         imageCursor.close()
 
         // ===== QUERY 2: Get ALL translations in ONE query (grouped by image_id) =====
         val translationsByImageId = mutableMapOf<Long, MutableList<String>>()
+        val originalTextsByImageId = mutableMapOf<Long, MutableList<String>>()
         if (seenImageIds.isNotEmpty()) {
             val placeholders = seenImageIds.joinToString(",") { "?" }
             val translationsCursor = db.rawQuery("""
-                SELECT $COLUMN_IMAGE_ID, translated_text
+                SELECT $COLUMN_IMAGE_ID, translated_text, original_text
                 FROM translations
                 WHERE $COLUMN_IMAGE_ID IN ($placeholders)
                 AND (pending_delete IS NULL OR pending_delete = 0)
@@ -3037,7 +3054,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             while (translationsCursor.moveToNext()) {
                 val imgId = translationsCursor.getLong(0)
                 val text = translationsCursor.getString(1) ?: ""
+                val origText = translationsCursor.getString(2) ?: ""
                 translationsByImageId.getOrPut(imgId) { mutableListOf() }.add(text)
+                originalTextsByImageId.getOrPut(imgId) { mutableListOf() }.add(origText)
             }
             translationsCursor.close()
         }
@@ -3124,10 +3143,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         // ===== Process each image using the cached data =====
         for (imageId in seenImageIds) {
             val uri = imageIdToUri[imageId] ?: continue
-            val originalTextForImage = imageIdToOriginalText[imageId] ?: ""
 
-            // Get translated texts for this image
+            // Get translated and original texts for this image
             val translatedTexts = translationsByImageId[imageId] ?: emptyList()
+            val originalTextsForImage = originalTextsByImageId[imageId] ?: emptyList()
 
             // Get blocks from pre-loaded map (NO additional query)
             val blocksData = blocksDataByImageId[imageId] ?: emptyList()
@@ -3136,12 +3155,14 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             for ((blockIndex, blockData) in blocksData.withIndex()) {
                 val bounds = Rect(blockData.x, blockData.y, blockData.x + blockData.width, blockData.y + blockData.height)
                 val translatedText = if (blockIndex < translatedTexts.size) translatedTexts[blockIndex] else ""
+                val originalText = if (blockIndex < originalTextsForImage.size) originalTextsForImage[blockIndex].takeIf { it.isNotBlank() } else null
 
                 val finalTextColor = blockData.textColor ?: 0xFF000000.toInt()
                 val finalFontFamily = if (blockData.fontFamily.isNullOrBlank()) "mto_astro_city" else blockData.fontFamily
 
                 textBlocks.add(TextBlockInfo(
                     text = translatedText,
+                    originalText = originalText,
                     bounds = bounds,
                     fontSize = blockData.fontSize,
                     lineSpacing = blockData.lineSpacing,
@@ -3176,7 +3197,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
 
             if (textBlocks.isNotEmpty()) {
-                translations[uri] = originalTextForImage to textBlocks
+                translations[uri] = "" to textBlocks
             }
         }
 
@@ -3235,19 +3256,20 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
             
             val imageId = imageCursor.getLong(0)
-            val originalTextForImage = imageCursor.getString(1) ?: ""
             imageCursor.close()
             
-            // 2. Lấy TẤT CẢ translated_text từ bảng translations (theo thứ tự text_id)
+            // 2. Lấy TẤT CẢ translated_text VÀ original_text từ bảng translations (theo thứ tự text_id)
             val translationsCursor = db.rawQuery("""
-                SELECT translated_text FROM translations 
+                SELECT translated_text, original_text FROM translations
                 WHERE $COLUMN_IMAGE_ID = ?
                 AND (pending_delete IS NULL OR pending_delete = 0)
                 ORDER BY text_id ASC
             """, arrayOf(imageId.toString()))
             val translatedTexts = mutableListOf<String>()
+            val originalTexts = mutableListOf<String>()
             while (translationsCursor.moveToNext()) {
                 translatedTexts.add(translationsCursor.getString(0) ?: "")
+                originalTexts.add(translationsCursor.getString(1) ?: "")
             }
             translationsCursor.close()
 
@@ -3268,8 +3290,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val height = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_HEIGHT))
                 val bounds = Rect(x, y, x + width, y + height)
                 
-                // Match translated_text theo thứ tự index (translations và blocks được insert cùng thứ tự)
+                // Match translated_text VÀ original_text theo thứ tự index (translations và blocks được insert cùng thứ tự)
                 val translatedText = if (blockIndex < translatedTexts.size) translatedTexts[blockIndex] else ""
+                val originalText = if (blockIndex < originalTexts.size) originalTexts[blockIndex].takeIf { it.isNotBlank() } else null
                 blockIndex++
                 
                 // Lấy tất cả thuộc tính overlay từ image_blocks
@@ -3353,6 +3376,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
                 textBlocks.add(TextBlockInfo(
                     text = translatedText,
+                    originalText = originalText,
                     bounds = bounds,
                     fontSize = fontSize,
                     lineSpacing = lineSpacing,
@@ -3388,11 +3412,38 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             blockCursor.close()
             
             if (textBlocks.isNotEmpty()) {
-                translations[uri] = originalTextForImage to textBlocks
+                translations[uri] = "" to textBlocks
             }
         }
         
         return translations.mapValues { (_, pair) -> pair.first to pair.second.toList() }
+    }
+
+    /**
+     * Lấy danh sách original_text từ bảng translations cho một image.
+     * Dùng khi cần reuse OCR text đã lưu (thay vì OCR lại).
+     * @return List original_text theo thứ tự text_id, rỗng nếu không có
+     */
+    fun getOriginalTextsForImage(imageId: Long): List<String> {
+        val db = readableDatabase
+        val result = mutableListOf<String>()
+        try {
+            val cursor = db.rawQuery("""
+                SELECT original_text FROM translations
+                WHERE $COLUMN_IMAGE_ID = ?
+                AND (pending_delete IS NULL OR pending_delete = 0)
+                AND original_text IS NOT NULL
+                AND original_text != ''
+                ORDER BY text_id ASC
+            """, arrayOf(imageId.toString()))
+            while (cursor.moveToNext()) {
+                result.add(cursor.getString(0) ?: "")
+            }
+            cursor.close()
+        } catch (e: Exception) {
+            Log.w(TAG, "getOriginalTextsForImage failed for imageId=$imageId", e)
+        }
+        return result
     }
 
     fun updateRoomTitle(roomId: Long, newTitle: String) {

@@ -57,6 +57,10 @@ fun Dialogs(
     var selectedMode by remember { mutableStateOf<TranslationMode?>(null) }
     var currentUri by remember { mutableStateOf<Uri?>(null) }
 
+    // State cho dialog chọn OCR lại / giữ OCR cũ khi retranslate
+    var showReTranslateDialog by remember { mutableStateOf(false) }
+    var pendingReTranslateMode by remember { mutableStateOf<TranslationMode?>(null) }
+
     // Launcher to pick a single image from file picker (OpenDocument)
     val replaceImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -285,23 +289,31 @@ fun Dialogs(
                                                 return@clickable
                                             }
                                             targetUri != null -> {
-                                                Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
-                                                onRetranslateImage(targetUri, mode)
-                                                coroutineScope.launch {
-                                                    while (true) {
-                                                        val status = viewModel.uiState.value.translatedStatus[targetUri]
-                                                        if (status == true) break
-                                                        delay(200)
-                                                    }
-                                                    val rid = viewModel.uiState.value.roomId
-                                                    val imageId = viewModel.uriToImageId[targetUri]
-                                                    var showToast = true
-                                                    if (rid != null && imageId != null) {
-                                                        val numChanged = viewModel.getNumChangedImages(rid)
-                                                        if (numChanged >= 5) showToast = false
-                                                    }
-                                                    if (showToast) {
-                                                        Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                                                val existingOriginals = viewModel.getOriginalTextsForUri(targetUri)
+                                                if (existingOriginals.isNotEmpty() && mode != TranslationMode.OFF) {
+                                                    // Có original đã lưu → hỏi user chọn OCR lại hay giữ
+                                                    pendingReTranslateMode = mode
+                                                    currentUri = targetUri
+                                                    showReTranslateDialog = true
+                                                } else {
+                                                    Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
+                                                    viewModel.retranslateImage(targetUri, mode)
+                                                    coroutineScope.launch {
+                                                        while (true) {
+                                                            val status = viewModel.uiState.value.translatedStatus[targetUri]
+                                                            if (status == true) break
+                                                            delay(200)
+                                                        }
+                                                        val rid = viewModel.uiState.value.roomId
+                                                        val imageId = viewModel.uriToImageId[targetUri]
+                                                        var showToast = true
+                                                        if (rid != null && imageId != null) {
+                                                            val numChanged = viewModel.getNumChangedImages(rid)
+                                                            if (numChanged >= 5) showToast = false
+                                                        }
+                                                        if (showToast) {
+                                                            Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                                                        }
                                                     }
                                                 }
                                             }
@@ -446,6 +458,81 @@ fun Dialogs(
             dismissButton = {
                 TextButton(onClick = { showOptimizeDialog = false }) {
                     Text("Hủy")
+                }
+            }
+        )
+    }
+
+    // Dialog chọn OCR lại từ đầu hoặc giữ OCR cũ khi retranslate
+    if (showReTranslateDialog && currentUri != null && pendingReTranslateMode != null) {
+        val mode = pendingReTranslateMode!!
+        val uri = currentUri!!
+        AlertDialog(
+            onDismissRequest = { showReTranslateDialog = false },
+            title = { Text("Chọn cách dịch lại") },
+            text = {
+                Column {
+                    Text("Bạn muốn sử dụng phương thức nào để dịch lại ảnh này?")
+                    Spacer(Modifier.height(16.dp))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // OCR lại từ đầu
+                        Toast.makeText(context, "Đang dịch lại ảnh (OCR mới)...", Toast.LENGTH_SHORT).show()
+                        viewModel.retranslateImage(uri, mode, reuseExistingOcr = false)
+                        coroutineScope.launch {
+                            while (true) {
+                                val status = viewModel.uiState.value.translatedStatus[uri]
+                                if (status == true) break
+                                delay(200)
+                            }
+                            val rid = viewModel.uiState.value.roomId
+                            val imageId = viewModel.uriToImageId[uri]
+                            var showToast = true
+                            if (rid != null && imageId != null) {
+                                val numChanged = viewModel.getNumChangedImages(rid)
+                                if (numChanged >= 5) showToast = false
+                            }
+                            if (showToast) {
+                                Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showReTranslateDialog = false
+                    }
+                ) {
+                    Text("OCR lại từ đầu")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        // Giữ OCR cũ
+                        val existingOriginals = viewModel.getOriginalTextsForUri(uri)
+                        Toast.makeText(context, "Đang dịch lại ảnh (giữ OCR cũ)...", Toast.LENGTH_SHORT).show()
+                        viewModel.retranslateImage(uri, mode, reuseExistingOcr = true, existingOriginalTexts = existingOriginals)
+                        coroutineScope.launch {
+                            while (true) {
+                                val status = viewModel.uiState.value.translatedStatus[uri]
+                                if (status == true) break
+                                delay(200)
+                            }
+                            val rid = viewModel.uiState.value.roomId
+                            val imageId = viewModel.uriToImageId[uri]
+                            var showToast = true
+                            if (rid != null && imageId != null) {
+                                val numChanged = viewModel.getNumChangedImages(rid)
+                                if (numChanged >= 5) showToast = false
+                            }
+                            if (showToast) {
+                                Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showReTranslateDialog = false
+                    }
+                ) {
+                    Text("Giữ OCR cũ")
                 }
             }
         )

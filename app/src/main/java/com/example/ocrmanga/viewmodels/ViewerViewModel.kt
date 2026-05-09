@@ -84,6 +84,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     0
                 }
             }
+            // Lấy danh sách original_text đã lưu trong DB cho một URI
+            fun getOriginalTextsForUri(uri: Uri): List<String> {
+                return try {
+                    val imageId = uriToImageId[uri]
+                    if (imageId != null) {
+                        databaseHelper.getOriginalTextsForImage(imageId)
+                    } else emptyList()
+                } catch (e: Exception) {
+                    emptyList()
+                }
+            }
     // Chuyển đổi trạng thái pendingDelete cho block của một ảnh
     fun togglePendingDelete(uri: Uri, blockId: Int, setPending: Boolean) {
         _uiState.update { state ->
@@ -193,8 +204,39 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         // Lấy bản gốc và bản dịch hiện tại
-        val originalTexts = blocks.mapNotNull { it.originalText }
         val currentTranslations = blocks.map { it.text }
+
+        // Resolve originalText: dùng block.originalText, fallback sang DB nếu cần, cuối cùng dùng translated text
+        val resolvedOriginalTexts: List<String> = if (blocks.any { it.originalText == null }) {
+            val imageId = uriToImageId[uri]
+            if (imageId != null) {
+                try {
+                    val dbList = databaseHelper.getOriginalTextsForImage(imageId)
+                    if (dbList.isNotEmpty()) {
+                        Log.i(TAG, "[OPTIMIZE] Fetched ${dbList.size} original_text from DB for imageId=$imageId")
+                        blocks.mapIndexed { index, block ->
+                            block.originalText ?: dbList.getOrNull(index) ?: currentTranslations.getOrNull(index) ?: ""
+                        }
+                    } else {
+                        Log.w(TAG, "[OPTIMIZE] No original_text in DB for imageId=$imageId, falling back to translated texts")
+                        blocks.mapIndexed { index, block ->
+                            block.originalText ?: currentTranslations.getOrNull(index) ?: ""
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "[OPTIMIZE] Failed to fetch original_text from DB", e)
+                    blocks.mapIndexed { index, block ->
+                        block.originalText ?: currentTranslations.getOrNull(index) ?: ""
+                    }
+                }
+            } else {
+                blocks.mapIndexed { index, block ->
+                    block.originalText ?: currentTranslations.getOrNull(index) ?: ""
+                }
+            }
+        } else {
+            blocks.mapNotNull { it.originalText }
+        }
 
         Log.i(TAG, "[OPTIMIZE] Starting optimization with mode=${mode.name} for uri=$uri with ${blocks.size} blocks")
 
@@ -216,7 +258,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 promptBuilder.appendLine()
                 promptBuilder.appendLine("Bản dịch hiện tại cần tối ưu:")
 
-                originalTexts.forEachIndexed { index, original ->
+                resolvedOriginalTexts.forEachIndexed { index, original ->
                     val translation = currentTranslations.getOrElse(index) { "" }
                     promptBuilder.appendLine("Block ${index + 1}:")
                     promptBuilder.appendLine("  Text gốc: $original")
@@ -229,7 +271,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 promptBuilder.appendLine("...")
                 promptBuilder.appendLine("Mỗi dòng một Block, giữ đúng thứ tự, không đánh số thứ tự ở đầu kết quả.")
 
-                Log.d(TAG, "[OPTIMIZE] Sending prompt to ${mode.name} API with ${originalTexts.size} text blocks")
+                Log.d(TAG, "[OPTIMIZE] Sending prompt to ${mode.name} API with ${resolvedOriginalTexts.size} text blocks")
 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Đang tối ưu bản dịch...", Toast.LENGTH_SHORT).show()
@@ -419,7 +461,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     
     // Dịch lại 1 ảnh (re-translate single image)
     // IMPORTANT: This will DELETE all existing translations for this image before creating new ones
-    fun retranslateImage(uri: Uri, mode: TranslationMode) {
+    fun retranslateImage(uri: Uri, mode: TranslationMode, reuseExistingOcr: Boolean = false, existingOriginalTexts: List<String>? = null) {
         viewModelScope.launch {
             val hasApiKeys = when(mode) {
                 TranslationMode.GEMINI -> hasGeminiApiKeys()
@@ -551,8 +593,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         uri
                     }
 
-                    Log.i(TAG, "Calling translateImage for uri=$uri (canonical=$canonicalUri, imageId=${uriToImageId[uri]}) mode=$mode")
-                    val result = translationRepository.translateImage(canonicalUri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode)
+                    Log.i(TAG, "Calling translateImage for uri=$uri (canonical=$canonicalUri, imageId=${uriToImageId[uri]}) mode=$mode reuseExistingOcr=$reuseExistingOcr")
+                    val result = translationRepository.translateImage(canonicalUri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode, reuseExistingOriginalTexts = if (reuseExistingOcr) existingOriginalTexts else null)
                     
                     Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
                     
