@@ -2,8 +2,6 @@ package com.example.ocrmanga.ui.screens.view
 
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
@@ -23,7 +21,6 @@ import androidx.activity.result.PickVisualMediaRequest
 import android.content.Intent
 import com.example.ocrmanga.utils.AppLogger as Log
 import com.example.ocrmanga.data.models.TranslationMode
-import com.example.ocrmanga.data.database.DatabaseHelper
 import com.example.ocrmanga.viewmodels.ViewerViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -48,23 +45,28 @@ fun Dialogs(
     onImageMenuDismiss: () -> Unit,
     onRemoveImage: (Uri) -> Unit,
     onRetranslateImage: (Uri, TranslationMode) -> Unit,
+    onOptimizeTranslation: ((Uri, TranslationMode) -> Unit)? = null,
     imageUris: List<Uri>,
     viewModel: ViewerViewModel
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    // State cho dialog chọn model AI tối ưu
+    var showOptimizeDialog by remember { mutableStateOf(false) }
+    var selectedMode by remember { mutableStateOf<TranslationMode?>(null) }
+    var currentUri by remember { mutableStateOf<Uri?>(null) }
+
     // Launcher to pick a single image from file picker (OpenDocument)
     val replaceImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri: Uri? ->
             if (uri != null && imageMenuUri != null) {
                 try {
-                    // Persist read permission so we can access this URI later
                     context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (e: Exception) {
                     Log.w("Dialogs", "Could not persist permission for $uri", e)
                 }
-                // Call ViewModel to replace uri
                 viewModel.replaceImageUri(imageMenuUri, uri)
                 Toast.makeText(context, "Đã chọn ảnh thay thế", Toast.LENGTH_SHORT).show()
             } else if (uri == null) {
@@ -73,19 +75,17 @@ fun Dialogs(
             onImageMenuDismiss()
         }
     )
-    
+
     // Launcher to pick a single image from gallery (PickVisualMedia - photo picker)
     val replaceImageFromGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri: Uri? ->
             if (uri != null && imageMenuUri != null) {
                 try {
-                    // Persist read permission so we can access this URI later
                     context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (e: Exception) {
                     Log.w("Dialogs", "Could not persist permission for gallery URI $uri", e)
                 }
-                // Call ViewModel to replace uri
                 viewModel.replaceImageUri(imageMenuUri, uri)
                 Toast.makeText(context, "Đã chọn ảnh thay thế từ thư viện", Toast.LENGTH_SHORT).show()
             } else if (uri == null) {
@@ -112,9 +112,7 @@ fun Dialogs(
                         label = { Text("Vị trí") },
                         placeholder = { Text("1") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number
-                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (insertAtIndex.isNotEmpty()) {
@@ -135,14 +133,10 @@ fun Dialogs(
                     onClick = onInsertAtIndexConfirm,
                     enabled = insertAtIndex.isNotEmpty() &&
                             insertAtIndex.toIntOrNull()?.let { it in 1..(imageUris.size + 1) } == true
-                ) {
-                    Text("Chọn ảnh")
-                }
+                ) { Text("Chọn ảnh") }
             },
             dismissButton = {
-                TextButton(onClick = onInsertAtIndexDismiss) {
-                    Text("Hủy")
-                }
+                TextButton(onClick = onInsertAtIndexDismiss) { Text("Hủy") }
             }
         )
     }
@@ -185,11 +179,8 @@ fun Dialogs(
 
     if (showImageMenu && imageMenuUri != null) {
         val uri = imageMenuUri
-        // Lấy danh sách block của ảnh này
         val blocks = viewModel.uiState.value.translatedTexts[uri]?.second ?: emptyList()
-        // Nếu có block, lấy trạng thái pendingDelete của block đầu tiên (hoặc có thể chọn block cụ thể nếu cần)
-        val hasPendingDelete = blocks.any { it.pendingDelete }
-        val blockId = blocks.firstOrNull()?.bounds?.hashCode()
+
         AlertDialog(
             onDismissRequest = onImageMenuDismiss,
             title = { Text("Tùy chọn ảnh") },
@@ -197,54 +188,70 @@ fun Dialogs(
                 Column {
                     Button(
                         onClick = {
-                            imageMenuUri?.let {
-                                onRemoveImage(it)
-                                Toast.makeText(context, "Đã xóa ảnh khỏi trang", Toast.LENGTH_SHORT).show()
-                            }
+                            imageMenuUri?.let { onRemoveImage(it) }
+                            Toast.makeText(context, "Đã xóa ảnh khỏi trang", Toast.LENGTH_SHORT).show()
                             onImageMenuDismiss()
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Xóa ảnh khỏi trang") }
+
                     Spacer(Modifier.height(16.dp))
-                    // Nút xóa text gốc trên ảnh (hiển thị preview trước)
+
                     Button(
                         onClick = {
-                            imageMenuUri?.let { uri ->
-                                viewModel.removeOriginalText(uri)
-                            }
+                            imageMenuUri?.let { viewModel.removeOriginalText(it) }
                             onImageMenuDismiss()
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Xóa text gốc trên ảnh") }
+
                     Spacer(Modifier.height(16.dp))
-                    // ...không còn nút ON/OFF riêng biệt...
+
+                    // Nút tối ưu bản dịch
+                    Button(
+                        onClick = {
+                            if (blocks.isEmpty()) {
+                                Toast.makeText(context, "Ảnh này chưa có bản dịch", Toast.LENGTH_SHORT).show()
+                            } else {
+                                showOptimizeDialog = true
+                                currentUri = uri
+                                onImageMenuDismiss()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Tối ưu bản dịch")
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
+
                     listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI).forEach { mode ->
                         if (mode == TranslationMode.OFF) {
-                            // Kiểm tra xem tất cả block đã bị ẩn chưa để quyết định hiển thị ON hay OFF
                             val allBlocksHidden = blocks.isNotEmpty() && blocks.all { it.pendingDelete }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        val uri = imageMenuUri
-                                        if (uri != null && blocks.isNotEmpty()) {
+                                        val targetUri = imageMenuUri
+                                        if (targetUri != null && blocks.isNotEmpty()) {
                                             if (allBlocksHidden) {
-                                                // Hiện lại toàn bộ bản dịch (đang ẩn -> bật lại)
                                                 blocks.forEach { block ->
-                                                    viewModel.togglePendingDelete(uri, block.bounds.hashCode(), false)
+                                                    viewModel.togglePendingDelete(targetUri, block.bounds.hashCode(), false)
                                                 }
                                                 Toast.makeText(context, "Đã bật lại bản dịch", Toast.LENGTH_SHORT).show()
                                             } else {
-                                                // Ẩn toàn bộ bản dịch (đang hiện -> tắt)
                                                 blocks.forEach { block ->
-                                                    viewModel.togglePendingDelete(uri, block.bounds.hashCode(), true)
+                                                    viewModel.togglePendingDelete(targetUri, block.bounds.hashCode(), true)
                                                 }
                                                 Toast.makeText(context, "Đã tắt bản dịch", Toast.LENGTH_SHORT).show()
                                             }
-                                        } else if (uri != null && blocks.isEmpty()) {
+                                        } else if (targetUri != null && blocks.isEmpty()) {
                                             Toast.makeText(context, "Ảnh này chưa có bản dịch", Toast.LENGTH_SHORT).show()
                                         }
                                         onImageMenuDismiss()
@@ -252,8 +259,6 @@ fun Dialogs(
                                     .padding(vertical = 4.dp)
                             ) {
                                 Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
-                                // Hiển thị "ON" nếu tất cả đang ẩn (để người dùng biết bấm sẽ bật lại)
-                                // Hiển thị "OFF" nếu đang hiển thị (để người dùng biết bấm sẽ tắt)
                                 Text(if (allBlocksHidden) "ON" else "OFF", modifier = Modifier.padding(start = 8.dp))
                             }
                         } else {
@@ -262,55 +267,42 @@ fun Dialogs(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        val uri = imageMenuUri
-                                        // Check API key availability for Gemini and Mistral modes
-                                        if (mode == TranslationMode.GEMINI && !viewModel.hasGeminiApiKeys()) {
-                                            Toast.makeText(
-                                                context,
-                                                "Không có API key Gemini. Vui lòng thêm ít nhất một API key Gemini trong cài đặt để dùng tính năng dịch Gemini.",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                            onImageMenuDismiss()
-                                            return@clickable
-                                        }
-                                        if (mode == TranslationMode.MISTRAL && !viewModel.hasMistralApiKeys()) {
-                                            Toast.makeText(
-                                                context,
-                                                "Không có API key Mistral. Vui lòng thêm ít nhất một API key Mistral trong cài đặt để dùng tính năng dịch Mistral.",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                            onImageMenuDismiss()
-                                            return@clickable
-                                        }
-                                        if (mode == TranslationMode.ZAI && !viewModel.hasZAiApiKeys()) {
-                                            Toast.makeText(
-                                                context,
-                                                "Không có API key Z.AI. Vui lòng thêm ít nhất một API key Z.AI trong cài đặt để dùng tính năng dịch Z.AI.",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                            onImageMenuDismiss()
-                                            return@clickable
-                                        }
-
-                                        if (uri != null) {
-                                            Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
-                                            onRetranslateImage(uri, mode)
-                                            coroutineScope.launch {
-                                                while (true) {
-                                                    val status = viewModel.uiState.value.translatedStatus[uri]
-                                                    if (status == true) break
-                                                    delay(200)
-                                                }
-                                                // Kiểm tra nếu ảnh này là ảnh thứ 5 đã thay đổi thì không thông báo
-                                                val rid = viewModel.uiState.value.roomId
-                                                val imageId = viewModel.uriToImageId[uri]
-                                                var showToast = true
-                                                if (rid != null && imageId != null) {
-                                                    val numChanged = viewModel.getNumChangedImages(rid)
-                                                    if (numChanged >= 5) showToast = false
-                                                }
-                                                if (showToast) {
-                                                    Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                                        val targetUri = imageMenuUri
+                                        when {
+                                            mode == TranslationMode.GEMINI && !viewModel.hasGeminiApiKeys() -> {
+                                                Toast.makeText(context, "Không có API key Gemini", Toast.LENGTH_LONG).show()
+                                                onImageMenuDismiss()
+                                                return@clickable
+                                            }
+                                            mode == TranslationMode.MISTRAL && !viewModel.hasMistralApiKeys() -> {
+                                                Toast.makeText(context, "Không có API key Mistral", Toast.LENGTH_LONG).show()
+                                                onImageMenuDismiss()
+                                                return@clickable
+                                            }
+                                            mode == TranslationMode.ZAI && !viewModel.hasZAiApiKeys() -> {
+                                                Toast.makeText(context, "Không có API key Z.AI", Toast.LENGTH_LONG).show()
+                                                onImageMenuDismiss()
+                                                return@clickable
+                                            }
+                                            targetUri != null -> {
+                                                Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
+                                                onRetranslateImage(targetUri, mode)
+                                                coroutineScope.launch {
+                                                    while (true) {
+                                                        val status = viewModel.uiState.value.translatedStatus[targetUri]
+                                                        if (status == true) break
+                                                        delay(200)
+                                                    }
+                                                    val rid = viewModel.uiState.value.roomId
+                                                    val imageId = viewModel.uriToImageId[targetUri]
+                                                    var showToast = true
+                                                    if (rid != null && imageId != null) {
+                                                        val numChanged = viewModel.getNumChangedImages(rid)
+                                                        if (numChanged >= 5) showToast = false
+                                                    }
+                                                    if (showToast) {
+                                                        Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+                                                    }
                                                 }
                                             }
                                         }
@@ -323,14 +315,14 @@ fun Dialogs(
                             }
                         }
                     }
+
                     Spacer(Modifier.height(12.dp))
-                    // Replace image from file option
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // Launch file picker to replace current image
                                 try {
                                     replaceImageLauncher.launch(arrayOf("image/*"))
                                 } catch (e: Exception) {
@@ -343,13 +335,12 @@ fun Dialogs(
                         Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(20.dp))
                         Text("Thay thế ảnh (từ file)", modifier = Modifier.padding(start = 8.dp))
                     }
-                    // Replace image from gallery option (photo picker)
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                // Launch photo picker to replace current image
                                 try {
                                     replaceImageFromGalleryLauncher.launch(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -369,6 +360,93 @@ fun Dialogs(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = onImageMenuDismiss) { Text("Đóng") }
+            }
+        )
+    }
+
+    // Dialog chọn model AI để tối ưu bản dịch
+    if (showOptimizeDialog && currentUri != null) {
+        AlertDialog(
+            onDismissRequest = { showOptimizeDialog = false },
+            title = { Text("Chọn model AI để tối ưu") },
+            text = {
+                Column {
+                    Text("Chọn model AI bạn muốn sử dụng để tối ưu bản dịch:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(16.dp))
+
+                    listOf(
+                        Triple(TranslationMode.GEMINI, "Gemini AI", "Dịch nhanh, chính xác"),
+                        Triple(TranslationMode.MISTRAL, "Mistral AI", "Ngữ pháp tự nhiên"),
+                        Triple(TranslationMode.ZAI, "Z.AI (GLM-4)", "Sáng tạo, linh hoạt")
+                    ).forEach { (mode, name, description) ->
+                        val hasKey = when (mode) {
+                            TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys()
+                            TranslationMode.MISTRAL -> viewModel.hasMistralApiKeys()
+                            TranslationMode.ZAI -> viewModel.hasZAiApiKeys()
+                            else -> false
+                        }
+                        val isEnabled = hasKey
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = isEnabled) {
+                                    selectedMode = mode
+                                }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            RadioButton(
+                                selected = selectedMode == mode,
+                                onClick = { if (isEnabled) selectedMode = mode },
+                                enabled = isEnabled
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    name,
+                                    color = if (isEnabled) MaterialTheme.colorScheme.onSurface
+                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isEnabled) MaterialTheme.colorScheme.onSurfaceVariant
+                                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                            if (!hasKey) {
+                                Text(
+                                    "Cần API key",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        selectedMode?.let { mode ->
+                            val uri = currentUri
+                            if (uri != null) {
+                                onOptimizeTranslation?.invoke(uri, mode)
+                            }
+                        }
+                        showOptimizeDialog = false
+                        selectedMode = null
+                    },
+                    enabled = selectedMode != null
+                ) {
+                    Text("Tối ưu")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOptimizeDialog = false }) {
+                    Text("Hủy")
+                }
             }
         )
     }

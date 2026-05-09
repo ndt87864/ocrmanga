@@ -3925,7 +3925,7 @@ import kotlin.math.max
                 }
             }
             if (currentBand.isNotEmpty()) bands.add(currentBand)
-            
+
             // Sau khi sort RTL xong, chuyển isVertical = false để bản dịch tiếng Việt render ngang
             bands.flatMap { band ->
                 band.sortedByDescending { it.bounds.left }
@@ -3935,4 +3935,165 @@ import kotlin.math.max
         }
     }
 
+    /**
+     * Tối ưu bản dịch sử dụng AI
+     * @param prompt Prompt chứa yêu cầu tối ưu
+     * @param mode Chế độ AI (GEMINI, MISTRAL, ZAI)
+     * @return List bản dịch đã tối ưu, hoặc null nếu thất bại
+     */
+    suspend fun optimizeTranslation(prompt: String, mode: TranslationMode): List<String>? {
+        Log.i("TranslationRepository", "[OPTIMIZE-REPO] Starting with mode=${mode.name}")
+
+        return when (mode) {
+            TranslationMode.GEMINI -> {
+                if (!hasGeminiApiKeys()) {
+                    Log.e("TranslationRepository", "[OPTIMIZE-REPO] No Gemini API key available")
+                    return null
+                }
+                val result = optimizeWithGemini(prompt)
+                Log.i("TranslationRepository", "[OPTIMIZE-REPO] Gemini result: ${result?.size ?: 0} translations")
+                result
+            }
+            TranslationMode.MISTRAL -> {
+                if (!hasMistralApiKeys()) {
+                    Log.e("TranslationRepository", "[OPTIMIZE-REPO] No Mistral API key available")
+                    return null
+                }
+                val result = optimizeWithMistral(prompt)
+                Log.i("TranslationRepository", "[OPTIMIZE-REPO] Mistral result: ${result?.size ?: 0} translations")
+                result
+            }
+            TranslationMode.ZAI -> {
+                if (!hasZAiApiKeys()) {
+                    Log.e("TranslationRepository", "[OPTIMIZE-REPO] No Z.AI API key available")
+                    return null
+                }
+                val result = optimizeWithZAi(prompt)
+                Log.i("TranslationRepository", "[OPTIMIZE-REPO] Z.AI result: ${result?.size ?: 0} translations")
+                result
+            }
+            else -> {
+                Log.e("TranslationRepository", "[OPTIMIZE-REPO] Unsupported mode: $mode")
+                null
+            }
+        }
+    }
+
+    private suspend fun optimizeWithGemini(prompt: String): List<String>? {
+        return try {
+            val apiKeyInfo = poolManager.selectBestKey("gemini") ?: run {
+                Log.e("TranslationRepository", "[OPTIMIZE-GEMINI] No available API key")
+                return null
+            }
+            val apiKey = apiKeyInfo.value
+            val modelName = getCurrentGeminiModel()
+
+            Log.d("TranslationRepository", "[OPTIMIZE-GEMINI] Using model=$modelName")
+
+            val generativeModel = GenerativeModel(
+                modelName = modelName,
+                apiKey = apiKey
+            )
+
+            val fullPrompt = """
+Bạn là một chuyên gia tối ưu bản dịch truyện manga.
+Hãy tối ưu lại bản dịch theo yêu cầu.
+Chỉ trả về các dòng đã tối ưu, mỗi dòng một kết quả, không giải thích.
+
+$prompt
+
+KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
+            """.trimIndent()
+
+            Log.d("TranslationRepository", "[OPTIMIZE-GEMINI] Sending request with prompt length=${fullPrompt.length}")
+
+            val response = generativeModel.generateContent(fullPrompt)
+            val text = response.text?.trim() ?: run {
+                Log.w("TranslationRepository", "[OPTIMIZE-GEMINI] Empty response from API")
+                return null
+            }
+
+            val result = text.split("\n").filter { it.isNotBlank() }.map { it.trim() }
+            Log.i("TranslationRepository", "[OPTIMIZE-GEMINI] Received ${result.size} optimized translations")
+            result
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "[OPTIMIZE-GEMINI] Failed: ${e.message}", e)
+            null
+        }
+    }
+
+    private suspend fun optimizeWithMistral(prompt: String): List<String>? {
+        return try {
+            val systemMessage = mapOf(
+                "role" to "system",
+                "content" to "Bạn là một chuyên gia tối ưu bản dịch truyện manga. Hãy tối ưu lại bản dịch theo yêu cầu. Chỉ trả về các dòng đã tối ưu, mỗi dòng một kết quả, không giải thích."
+            )
+            val userMessage = mapOf(
+                "role" to "user",
+                "content" to """
+$prompt
+
+KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
+                """.trimIndent()
+            )
+
+            Log.d("TranslationRepository", "[OPTIMIZE-MISTRAL] Sending request with prompt length=${userMessage["content"].toString().length}")
+
+            val response = mistralRequester.executeChatCompletion(
+                messages = listOf(systemMessage, userMessage),
+                temperature = 0.7,
+                frequency_penalty = 0.3,
+                presence_penalty = 0.3
+            )
+
+            if (response == null) {
+                Log.w("TranslationRepository", "[OPTIMIZE-MISTRAL] Empty response from API")
+                return null
+            }
+
+            val result = response.content?.split("\n")?.filter { it.isNotBlank() }?.map { it.trim() } ?: emptyList()
+            Log.i("TranslationRepository", "[OPTIMIZE-MISTRAL] Received ${result.size} optimized translations")
+            result
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "[OPTIMIZE-MISTRAL] Failed: ${e.message}", e)
+            null
+        }
+    }
+
+    private suspend fun optimizeWithZAi(prompt: String): List<String>? {
+        return try {
+            Log.d("TranslationRepository", "[OPTIMIZE-ZAI] Preparing request with prompt length=${prompt.length}")
+
+            val userMessage = mapOf(
+                "role" to "user",
+                "content" to """
+Bạn là một chuyên gia tối ưu bản dịch truyện manga.
+Hãy tối ưu lại bản dịch theo yêu cầu.
+Chỉ trả về các dòng đã tối ưu, mỗi dòng một kết quả, không giải thích.
+
+$prompt
+
+KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
+                """.trimIndent()
+            )
+
+            val response = zaiRequester.executeChatCompletion(
+                messages = listOf(userMessage),
+                temperature = 0.8,
+                max_tokens = 4096
+            )
+
+            if (response == null) {
+                Log.w("TranslationRepository", "[OPTIMIZE-ZAI] Empty response from API")
+                return null
+            }
+
+            val result = response.content?.split("\n")?.filter { it.isNotBlank() }?.map { it.trim() } ?: emptyList()
+            Log.i("TranslationRepository", "[OPTIMIZE-ZAI] Received ${result.size} optimized translations")
+            result
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "[OPTIMIZE-ZAI] Failed: ${e.message}", e)
+            null
+        }
+    }
 }
