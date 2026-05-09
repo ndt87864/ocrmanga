@@ -710,7 +710,7 @@ fun ImageViewer(
                                         val rect = region.rect;
                                         val isOval = block.shapeType == 1
                                         val overlayRotationAngle = region.overlayRotation ?: 0f
-                                        val windowedResult = region.windowedResult ?: continue
+                                        val windowedResult = region.windowedResult ?: return@forEach
                                         val outerBounds = windowedResult.outerBounds
                                         val innerBounds = windowedResult.innerBounds
                                         val optimalFontSize = windowedResult.optimalFontSize
