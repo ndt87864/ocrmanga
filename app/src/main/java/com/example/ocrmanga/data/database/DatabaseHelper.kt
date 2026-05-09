@@ -18,6 +18,39 @@ import com.example.ocrmanga.data.models.BackgroundType
 import java.io.File
 import java.io.FileOutputStream
 
+// Helper data class for batch block loading
+private data class BlockData(
+    val blockId: Long,
+    val x: Int,
+    val y: Int,
+    val width: Int,
+    val height: Int,
+    val overlayColor: Int?,
+    val overlayAlpha: Float,
+    val overlaySaturation: Float,
+    val overlayInset: Float,
+    val overlayInsetH: Float,
+    val overlayInsetV: Float,
+    val overlayRotation: Float?,
+    val overlayType: Int,
+    val textColor: Int?,
+    val textBoldness: Float,
+    val textSaturation: Float,
+    val fontSize: Float,
+    val fontFamily: String?,
+    val rotation: Float,
+    val lineSpacing: Float,
+    val borderColor: Int?,
+    val borderThickness: Float,
+    val shadowColor: Int?,
+    val shadowAlpha: Float,
+    val shadowRadius: Float,
+    val textAlign: com.example.ocrmanga.data.models.TextAlignMode,
+    val textGradientColors: List<Int>?,
+    val textGradientOffsets: List<Float>?,
+    val textGradientType: Int
+)
+
 class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
         // Trả về số lượng ảnh đã thay đổi trong room
         fun getNumChangedImages(roomId: Long): Int {
@@ -2885,6 +2918,281 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 }
             }
             // Re-index display_order after removing missing images
+            val reorderCursor = db.rawQuery(
+                "SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ? ORDER BY $COLUMN_DISPLAY_ORDER ASC",
+                arrayOf(roomId.toString())
+            )
+            var newOrder = 0
+            while (reorderCursor.moveToNext()) {
+                val imgId = reorderCursor.getLong(0)
+                val values = ContentValues().apply { put(COLUMN_DISPLAY_ORDER, newOrder) }
+                db.update(TABLE_IMAGES, values, "$COLUMN_IMAGE_ID = ?", arrayOf(imgId.toString()))
+                newOrder++
+            }
+            reorderCursor.close()
+        }
+
+        return Triple(images, orders, translations)
+    }
+
+    /**
+     * OPTIMIZED VERSION: Load room data using batch queries instead of N+2 queries.
+     *
+     * OLD WAY (N+2 queries for N images):
+     * - 1 query: get all images
+     * - N queries: 1 translation query per image
+     * - N queries: 1 blocks query per image
+     *
+     * NEW WAY (3 queries total):
+     * - 1 query: get all images
+     * - 1 query: get ALL translations at once (grouped by image_id)
+     * - 1 query: get ALL blocks at once (grouped by image_id)
+     */
+    fun getMangaRoomOptimized(roomId: Long): Triple<List<Uri>, List<Int>, Map<Uri, Pair<String, List<TextBlockInfo>>>> {
+        val db = writableDatabase
+
+        // Cleanup duplicates first (same as original)
+        cleanupDuplicateImagesStrict(roomId)
+
+        // Delete pending translations
+        db.execSQL("""
+            DELETE FROM translations
+            WHERE image_id IN (
+                SELECT image_id FROM images WHERE room_id = ?
+            ) AND pending_delete = 1
+        """, arrayOf(roomId.toString()))
+
+        // Reset change flags
+        db.execSQL("""
+            UPDATE $TABLE_CHANGE_IMAGES
+            SET $COLUMN_CHANGE_IMAGE_FLAG = 0
+            WHERE $COLUMN_CHANGE_IMAGE_ROOM_ID = ?
+        """, arrayOf(roomId.toString()))
+
+        val images = mutableListOf<Uri>()
+        val orders = mutableListOf<Int>()
+        val translations = mutableMapOf<Uri, Pair<String, MutableList<TextBlockInfo>>>()
+
+        // ===== QUERY 1: Get all images in ONE query =====
+        val seenUris = mutableSetOf<String>()
+        val seenImageIds = mutableSetOf<Long>()
+        val seenFilenames = mutableSetOf<String>()
+        val missingImageIds = mutableListOf<Long>()
+        val imageIdToUri = mutableMapOf<Long, Uri>()
+        val imageIdToOrder = mutableMapOf<Long, Int>()
+        val imageIdToOriginalText = mutableMapOf<Long, String>()
+
+        val imageCursor = db.rawQuery("""
+            SELECT $COLUMN_IMAGE_URI, $COLUMN_DISPLAY_ORDER, $COLUMN_IMAGE_ID, $COLUMN_ORIGINAL_TEXT
+            FROM $TABLE_IMAGES
+            WHERE $COLUMN_ROOM_ID = ?
+            ORDER BY $COLUMN_DISPLAY_ORDER
+        """, arrayOf(roomId.toString()))
+
+        while (imageCursor.moveToNext()) {
+            val uriStr = imageCursor.getString(0)
+            val imageId = imageCursor.getLong(2)
+            val filename = try { Uri.parse(uriStr).lastPathSegment ?: uriStr } catch (e: Exception) { uriStr }
+
+            if (seenImageIds.contains(imageId) || seenUris.contains(uriStr) || seenFilenames.contains(filename)) {
+                Log.w(TAG, "getMangaRoomOptimized: Skip duplicate image_id=$imageId")
+                continue
+            }
+
+            val uri = Uri.parse(uriStr)
+            val filePath = uri.path
+            if (filePath != null && !File(filePath).exists()) {
+                Log.w(TAG, "getMangaRoomOptimized: File missing for imageId=$imageId")
+                missingImageIds.add(imageId)
+                continue
+            }
+
+            seenImageIds.add(imageId)
+            seenUris.add(uriStr)
+            seenFilenames.add(filename)
+
+            val order = imageCursor.getInt(1)
+            val originalText = imageCursor.getString(3) ?: ""
+
+            images.add(uri)
+            orders.add(order)
+            imageIdToUri[imageId] = uri
+            imageIdToOrder[imageId] = order
+            imageIdToOriginalText[imageId] = originalText
+        }
+        imageCursor.close()
+
+        // ===== QUERY 2: Get ALL translations in ONE query (grouped by image_id) =====
+        val translationsByImageId = mutableMapOf<Long, MutableList<String>>()
+        if (seenImageIds.isNotEmpty()) {
+            val placeholders = seenImageIds.joinToString(",") { "?" }
+            val translationsCursor = db.rawQuery("""
+                SELECT $COLUMN_IMAGE_ID, translated_text
+                FROM translations
+                WHERE $COLUMN_IMAGE_ID IN ($placeholders)
+                AND (pending_delete IS NULL OR pending_delete = 0)
+                ORDER BY $COLUMN_IMAGE_ID, text_id ASC
+            """, seenImageIds.map { it.toString() }.toTypedArray())
+
+            while (translationsCursor.moveToNext()) {
+                val imgId = translationsCursor.getLong(0)
+                val text = translationsCursor.getString(1) ?: ""
+                translationsByImageId.getOrPut(imgId) { mutableListOf() }.add(text)
+            }
+            translationsCursor.close()
+        }
+
+        // ===== QUERY 3: Get ALL blocks in ONE query, store in memory map =====
+        val blocksDataByImageId = mutableMapOf<Long, MutableList<BlockData>>()
+        if (seenImageIds.isNotEmpty()) {
+            val placeholders = seenImageIds.joinToString(",") { "?" }
+            val blocksCursor = db.rawQuery("""
+                SELECT * FROM $TABLE_IMAGE_BLOCKS
+                WHERE $COLUMN_BLOCK_IMAGE_ID IN ($placeholders)
+                ORDER BY $COLUMN_BLOCK_IMAGE_ID, $COLUMN_BLOCK_ID ASC
+            """, seenImageIds.map { it.toString() }.toTypedArray())
+
+            val blockIdCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_ID)
+            val imgIdCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_IMAGE_ID)
+            val xCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_X)
+            val yCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_Y)
+            val wCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_WIDTH)
+            val hCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_HEIGHT)
+            val overlayColorCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_COLOR)
+            val overlayAlphaCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ALPHA)
+            val overlaySatCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_SATURATION)
+            val overlayInsetCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET)
+            val overlayInsetHCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL)
+            val overlayInsetVCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_VERTICAL)
+            val overlayRotCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ROTATION)
+            val overlayTypeCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_TYPE)
+            val textColorCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR)
+            val textBoldCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_BOLDNESS)
+            val textSatCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_SATURATION)
+            val fontSizeCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_FONT_SIZE)
+            val fontFamilyCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_FONT_FAMILY)
+            val rotationCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_ROTATION)
+            val lineSpacingCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_LINE_SPACING)
+            val borderColorCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_COLOR)
+            val borderThickCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_THICKNESS)
+            val shadowColorCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR)
+            val shadowAlphaCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_ALPHA)
+            val shadowRadiusCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_RADIUS)
+            val textAlignCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_ALIGN)
+            val textGradColorsCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_COLORS)
+            val textGradOffsetsCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS)
+            val textGradTypeCol = blocksCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_TYPE)
+
+            while (blocksCursor.moveToNext()) {
+                val imgId = blocksCursor.getLong(imgIdCol)
+                val blockData = BlockData(
+                    blockId = blocksCursor.getLong(blockIdCol),
+                    x = blocksCursor.getInt(xCol),
+                    y = blocksCursor.getInt(yCol),
+                    width = blocksCursor.getInt(wCol),
+                    height = blocksCursor.getInt(hCol),
+                    overlayColor = if (!blocksCursor.isNull(overlayColorCol)) blocksCursor.getInt(overlayColorCol) else null,
+                    overlayAlpha = blocksCursor.getDouble(overlayAlphaCol).toFloat(),
+                    overlaySaturation = blocksCursor.getDouble(overlaySatCol).toFloat(),
+                    overlayInset = blocksCursor.getDouble(overlayInsetCol).toFloat(),
+                    overlayInsetH = blocksCursor.getDouble(overlayInsetHCol).toFloat(),
+                    overlayInsetV = blocksCursor.getDouble(overlayInsetVCol).toFloat(),
+                    overlayRotation = if (!blocksCursor.isNull(overlayRotCol)) blocksCursor.getDouble(overlayRotCol).toFloat() else null,
+                    overlayType = blocksCursor.getInt(overlayTypeCol),
+                    textColor = if (!blocksCursor.isNull(textColorCol)) { val c = blocksCursor.getInt(textColorCol); if (c != 0) c else null } else null,
+                    textBoldness = blocksCursor.getDouble(textBoldCol).toFloat(),
+                    textSaturation = blocksCursor.getDouble(textSatCol).toFloat(),
+                    fontSize = blocksCursor.getDouble(fontSizeCol).toFloat(),
+                    fontFamily = blocksCursor.getString(fontFamilyCol),
+                    rotation = blocksCursor.getDouble(rotationCol).toFloat(),
+                    lineSpacing = blocksCursor.getDouble(lineSpacingCol).toFloat(),
+                    borderColor = if (!blocksCursor.isNull(borderColorCol)) blocksCursor.getInt(borderColorCol) else null,
+                    borderThickness = blocksCursor.getDouble(borderThickCol).toFloat(),
+                    shadowColor = if (!blocksCursor.isNull(shadowColorCol)) blocksCursor.getInt(shadowColorCol) else null,
+                    shadowAlpha = blocksCursor.getDouble(shadowAlphaCol).toFloat(),
+                    shadowRadius = blocksCursor.getDouble(shadowRadiusCol).toFloat(),
+                    textAlign = try { com.example.ocrmanga.data.models.TextAlignMode.valueOf(blocksCursor.getString(textAlignCol)) } catch (e: Exception) { com.example.ocrmanga.data.models.TextAlignMode.CENTER },
+                    textGradientColors = try { blocksCursor.getString(textGradColorsCol)?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toIntOrNull() } } catch (e: Exception) { null },
+                    textGradientOffsets = try { blocksCursor.getString(textGradOffsetsCol)?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toFloatOrNull() } } catch (e: Exception) { null },
+                    textGradientType = try { blocksCursor.getInt(textGradTypeCol) } catch (e: Exception) { 0 }
+                )
+                blocksDataByImageId.getOrPut(imgId) { mutableListOf() }.add(blockData)
+            }
+            blocksCursor.close()
+        }
+
+        // ===== Process each image using the cached data =====
+        for (imageId in seenImageIds) {
+            val uri = imageIdToUri[imageId] ?: continue
+            val originalTextForImage = imageIdToOriginalText[imageId] ?: ""
+
+            // Get translated texts for this image
+            val translatedTexts = translationsByImageId[imageId] ?: emptyList()
+
+            // Get blocks from pre-loaded map (NO additional query)
+            val blocksData = blocksDataByImageId[imageId] ?: emptyList()
+
+            val textBlocks = mutableListOf<TextBlockInfo>()
+            for ((blockIndex, blockData) in blocksData.withIndex()) {
+                val bounds = Rect(blockData.x, blockData.y, blockData.x + blockData.width, blockData.y + blockData.height)
+                val translatedText = if (blockIndex < translatedTexts.size) translatedTexts[blockIndex] else ""
+
+                val finalTextColor = blockData.textColor ?: 0xFF000000.toInt()
+                val finalFontFamily = if (blockData.fontFamily.isNullOrBlank()) "mto_astro_city" else blockData.fontFamily
+
+                textBlocks.add(TextBlockInfo(
+                    text = translatedText,
+                    bounds = bounds,
+                    fontSize = blockData.fontSize,
+                    lineSpacing = blockData.lineSpacing,
+                    rotation = blockData.rotation,
+                    textAlign = blockData.textAlign,
+                    originalImageWidth = null,
+                    originalImageHeight = null,
+                    shapeType = blockData.overlayType,
+                    backgroundType = BackgroundType.WHITE,
+                    averageBackgroundColor = blockData.overlayColor,
+                    originalTextColor = null,
+                    customOverlayColor = blockData.overlayColor,
+                    customTextColor = finalTextColor,
+                    overlayAlpha = blockData.overlayAlpha,
+                    textBoldness = blockData.textBoldness,
+                    overlaySaturation = blockData.overlaySaturation,
+                    textSaturation = blockData.textSaturation,
+                    customBorderColor = blockData.borderColor,
+                    borderThickness = blockData.borderThickness,
+                    customShadowColor = blockData.shadowColor,
+                    shadowAlpha = blockData.shadowAlpha,
+                    shadowRadius = blockData.shadowRadius,
+                    fontFamily = finalFontFamily,
+                    applyMerge = false,
+                    overlayInsetHorizontal = blockData.overlayInsetH,
+                    overlayInsetVertical = blockData.overlayInsetV,
+                    overlayRotation = blockData.overlayRotation,
+                    textGradientColors = blockData.textGradientColors,
+                    textGradientOffsets = blockData.textGradientOffsets,
+                    textGradientType = blockData.textGradientType
+                ))
+            }
+
+            if (textBlocks.isNotEmpty()) {
+                translations[uri] = originalTextForImage to textBlocks
+            }
+        }
+
+        // Clean up missing images
+        if (missingImageIds.isNotEmpty()) {
+            Log.w(TAG, "getMangaRoomOptimized: Removing ${missingImageIds.size} images with missing files from DB")
+            for (imageId in missingImageIds) {
+                try {
+                    db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                    db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
+                } catch (e: Exception) {
+                    Log.e(TAG, "getMangaRoomOptimized: Failed to remove missing image imageId=$imageId", e)
+                }
+            }
+            // Re-index display_order
             val reorderCursor = db.rawQuery(
                 "SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ? ORDER BY $COLUMN_DISPLAY_ORDER ASC",
                 arrayOf(roomId.toString())

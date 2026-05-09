@@ -1164,8 +1164,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             // Load ancient/"cổ trang" translation setting for this room
             val ancientMode = databaseHelper.getAncientTranslationSetting(roomId)
             
-            // getMangaRoom đã cleanup duplicates trong DB, nên allImages đã unique
-            val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
+            // getMangaRoomOptimized uses batch queries (3 queries total instead of N+2)
+            val (allImages, _, translations) = databaseHelper.getMangaRoomOptimized(roomId)
             
             Log.i(TAG, "loadRoomInternal: Room $roomId has ${allImages.size} images after DB cleanup")
             
@@ -2346,7 +2346,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             // Set loading state
             _uiState.update { it.copy(isExportingRoom = true) }
             try {
-                val (allImages, _, translations) = databaseHelper.getMangaRoom(roomId)
+                val (allImages, _, translations) = databaseHelper.getMangaRoomOptimized(roomId)
                 if (allImages.isEmpty()) return@withContext null
                 val app = getApplication<Application>()
                 val timestamp = System.currentTimeMillis()
