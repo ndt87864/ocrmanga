@@ -542,7 +542,9 @@ fun drawTextOnCanvas(drawScope: DrawScope,
     textAlign: com.example.ocrmanga.data.models.TextAlignMode = com.example.ocrmanga.data.models.TextAlignMode.CENTER,
     textGradientColors: List<Int>? = null,
     textGradientOffsets: List<Float>? = null,
-    textGradientType: Int = 0
+    textGradientType: Int = 0,
+    precomputedWrappedText: String? = null,
+    precomputedOptimalFontSize: Float? = null
 ) {
     val whenAligned = textAlign
 
@@ -612,17 +614,21 @@ fun drawTextOnCanvas(drawScope: DrawScope,
         }
     } else null
 
-    val (wrappedText, optimalFontSize) = adjustWhiteoutBounds(
-        text = text,
-        initialWidth = width,
-        initialHeight = height,
-        fontSize = fontSize,
-        isVertical = isVertical,
-        context = context,
-        fontFamilyName = fontFamilyName,
-        shapeType = shapeType,
-        lineSpacing = lineSpacing
-    )
+    val (wrappedText, optimalFontSize) = if (precomputedWrappedText != null && precomputedOptimalFontSize != null) {
+        precomputedWrappedText to precomputedOptimalFontSize
+    } else {
+        adjustWhiteoutBounds(
+            text = text,
+            initialWidth = width,
+            initialHeight = height,
+            fontSize = fontSize,
+            isVertical = isVertical,
+            context = context,
+            fontFamilyName = fontFamilyName,
+            shapeType = shapeType,
+            lineSpacing = lineSpacing
+        )
+    }
     // Use textAlign to affect drawing positions (default CENTER behavior)
     // textAlign will be applied below when drawing each line.
     paint.textSize = optimalFontSize

@@ -114,7 +114,9 @@ data class PrecomputedRegion(
     val overlayInsetVertical: Float = 0f,
     val textGradientColors: List<Int>? = null,
     val textGradientOffsets: List<Float>? = null,
-    val textGradientType: Int = 0
+    val textGradientType: Int = 0,
+    val windowedResult: com.example.ocrmanga.ui.screens.view.WindowedOverlayResult? = null,
+    val wrappedText: String? = null
 )
 
 @Composable
@@ -591,31 +593,57 @@ fun ImageViewer(
                                                 block,
                                                 dragBlock.fontSize
                                             ) else block.fontSize) * screenScaleFactor
+
                                         PrecomputedRegion(
-                                            block,
-                                            rect,
-                                            fontSize,
-                                            dragBlock.rotation,
-                                            dragBlock.overlayRotation,
-                                            dragBlock.whiteoutColor,
-                                            dragBlock.textColor,
-                                            dragBlock.overlayAlpha,
-                                            dragBlock.textBoldness,
-                                            dragBlock.overlaySaturation,
-                                            dragBlock.textSaturation,
-                                            dragBlock.lineSpacing,
-                                            dragBlock.textBorderColor,
-                                            dragBlock.textBorderThickness,
-                                            dragBlock.textBorderAlpha,
-                                            dragBlock.textShadowColor,
-                                            dragBlock.textShadowAlpha,
-                                            dragBlock.textShadowRadius,
-                                            dragBlock.overlayInset * scale,
-                                            dragBlock.overlayInsetHorizontal * scale,
-                                            dragBlock.overlayInsetVertical * scale,
-                                            dragBlock.textGradientColors,
-                                            dragBlock.textGradientOffsets,
-                                            dragBlock.textGradientType
+                                            block = block,
+                                            rect = rect,
+                                            fontSize = fontSize,
+                                            rotation = dragBlock.rotation,
+                                            overlayRotation = dragBlock.overlayRotation,
+                                            whiteoutColor = dragBlock.whiteoutColor,
+                                            textColor = dragBlock.textColor,
+                                            overlayAlpha = dragBlock.overlayAlpha,
+                                            textBoldness = dragBlock.textBoldness,
+                                            overlaySaturation = dragBlock.overlaySaturation,
+                                            textSaturation = dragBlock.textSaturation,
+                                            lineSpacing = dragBlock.lineSpacing,
+                                            textBorderColor = dragBlock.textBorderColor,
+                                            textBorderThickness = dragBlock.textBorderThickness,
+                                            textBorderAlpha = dragBlock.textBorderAlpha,
+                                            textShadowColor = dragBlock.textShadowColor,
+                                            textShadowAlpha = dragBlock.textShadowAlpha,
+                                            textShadowRadius = dragBlock.textShadowRadius,
+                                            overlayInset = dragBlock.overlayInset * scale,
+                                            overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
+                                            overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
+                                            textGradientColors = dragBlock.textGradientColors,
+                                            textGradientOffsets = dragBlock.textGradientOffsets,
+                                            textGradientType = dragBlock.textGradientType,
+                                            windowedResult = calculateWindowedOverlayBounds(
+                                                originalBounds = rect,
+                                                text = block.text,
+                                                baseFontSize = fontSize,
+                                                isVertical = block.isVertical,
+                                                context = context,
+                                                fontFamilyName = block.fontFamily,
+                                                lineSpacing = dragBlock.lineSpacing,
+                                                shapeType = block.shapeType,
+                                                overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
+                                                overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
+                                                horizontalPadding = 4f,
+                                                verticalPadding = 4f
+                                            ),
+                                            wrappedText = adjustWhiteoutBounds(
+                                                text = block.text,
+                                                initialWidth = rect.width,
+                                                initialHeight = rect.height,
+                                                fontSize = fontSize,
+                                                isVertical = block.isVertical,
+                                                context = context,
+                                                fontFamilyName = block.fontFamily,
+                                                shapeType = block.shapeType,
+                                                lineSpacing = dragBlock.lineSpacing
+                                            ).first
                                         )
                                     }
                                 precomputedRegionsState.value = list
@@ -682,22 +710,7 @@ fun ImageViewer(
                                         val rect = region.rect;
                                         val isOval = block.shapeType == 1
                                         val overlayRotationAngle = region.overlayRotation ?: 0f
-
-                                        // --- Tính windowed overlay bounds ---
-                                        val windowedResult = calculateWindowedOverlayBounds(
-                                            originalBounds = rect,
-                                            text = block.text,
-                                            baseFontSize = region.fontSize,
-                                            isVertical = block.isVertical,
-                                            context = context,
-                                            fontFamilyName = block.fontFamily,
-                                            lineSpacing = region.lineSpacing,
-                                            shapeType = block.shapeType,
-                                            overlayInsetHorizontal = region.overlayInsetHorizontal,
-                                            overlayInsetVertical = region.overlayInsetVertical,
-                                            horizontalPadding = 4f,
-                                            verticalPadding = 4f
-                                        )
+                                        val windowedResult = region.windowedResult ?: continue
                                         val outerBounds = windowedResult.outerBounds
                                         val innerBounds = windowedResult.innerBounds
                                         val optimalFontSize = windowedResult.optimalFontSize
@@ -841,7 +854,9 @@ fun ImageViewer(
                                                 textAlign = block.textAlign,
                                                 textGradientColors = region.textGradientColors,
                                                 textGradientOffsets = region.textGradientOffsets,
-                                                textGradientType = region.textGradientType
+                                                textGradientType = region.textGradientType,
+                                                precomputedWrappedText = region.wrappedText,
+                                                precomputedOptimalFontSize = optimalFontSize
                                             )
                                         }
                                     }

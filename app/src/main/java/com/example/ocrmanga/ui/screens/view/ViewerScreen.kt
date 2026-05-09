@@ -384,7 +384,7 @@ fun ViewerScreen(
     }
 
     androidx.compose.animation.AnimatedContent(
-        targetState = Triple(modeIsHorizontal, editMode, uiState.imageUris.size),
+        targetState = Pair(modeIsHorizontal, editMode),
         transitionSpec = {
             com.example.ocrmanga.ui.animation.AnimationUtils.chooseContentTransform(
                 oldIsEdit = initialState.second,
