@@ -465,8 +465,8 @@ fun calculateOptimalFontSize(
 
     // Điều chỉnh hệ số scale cho hình oval để text vừa vặn
     // Tăng vùng text trong oval lên tối đa: 99% chiều dọc, 93% chiều ngang
-    val widthScale = if (shapeType == 1) 0.88f else 0.98f
-    val heightScale = if (shapeType == 1) 0.98f else 0.99f
+    val widthScale = if (shapeType == 1) 0.75f else 0.95f
+    val heightScale = if (shapeType == 1) 0.95f else 0.98f
 
     // Compute available drawing area after applying explicit paddings.
     val safeWidth = (width - (horizontalPadding * 2f)).coerceAtLeast(1f)
@@ -843,7 +843,9 @@ fun adjustWhiteoutBounds(
     )
 
     // Now wrap the text using the computed font size so measurements align with rendering.
-    val wrappedLines = wrapText(text, availableWidth * 0.98f, optimal, context, fontFamilyName)
+    // Use the same width scale as calculateOptimalFontSize
+    val finalWidthScale = if (shapeType == 1) 0.75f else 0.95f
+    val wrappedLines = wrapText(text, availableWidth * finalWidthScale, optimal, context, fontFamilyName)
     return wrappedLines.joinToString("\n") to optimal
 }
 
@@ -1627,16 +1629,14 @@ fun measureTextActualSize(
         context?.let { ctx -> getCachedTypeface(ctx, fontFamilyName)?.let { this.typeface = it } }
     }
 
-    // Với oval, thu hẹp vùng wrap như khi vẽ (70% width)
-    val wrapWidth = if (shapeType == 1) maxWidth * 0.7f else maxWidth
+    // Với oval, thu hẹp vùng wrap như khi vẽ (75% width)
+    val wrapWidth = if (shapeType == 1) maxWidth * 0.75f else maxWidth * 0.95f
     val lines = wrapText(text, wrapWidth, fontSize, context, fontFamilyName)
     val fontMetrics = paint.fontMetrics
     val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
 
     val measuredWidth = lines.maxOfOrNull { line ->
-        val bounds = android.graphics.Rect()
-        paint.getTextBounds(line, 0, line.length, bounds)
-        bounds.width().toFloat()
+        paint.measureText(line)
     } ?: 0f
 
     val measuredHeight = lines.size * lineHeight
@@ -1707,8 +1707,8 @@ fun calculateWindowedOverlayBounds(
 
     // 3. Tính toán vùng vẽ văn bản dựa trên INNER bounds thay vì outer bounds
     // MỤC TIÊU: Đảm bảo văn bản luôn nằm gọn trong vùng bôi trắng (overlay)
-    val textAreaWidth = innerBounds.width * (if (shapeType == 1) 0.7f else 1f)
-    val textAreaHeight = innerBounds.height * (if (shapeType == 1) 0.7f else 1f)
+    val textAreaWidth = innerBounds.width
+    val textAreaHeight = innerBounds.height
 
     val optimalFontSize = calculateOptimalFontSize(
         text = text,

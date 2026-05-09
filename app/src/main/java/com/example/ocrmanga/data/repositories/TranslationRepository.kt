@@ -4088,14 +4088,10 @@ import kotlin.math.max
             )
 
             val fullPrompt = """
-Bạn là một chuyên gia tối ưu bản dịch truyện manga.
-Hãy tối ưu lại bản dịch theo yêu cầu.
-Chỉ trả về các dòng đã tối ưu, mỗi dòng một kết quả, không giải thích.
-
-$prompt
-
-KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
-            """.trimIndent()
+Bạn là một chuyên gia tối ưu bản dịch manga. 
+Nhiệm vụ: Cải thiện bản dịch để tự nhiên, mượt mà và ĐỒNG BỘ xưng hô (nhất quán đại từ Nam/Nữ, vai vế).
+Chỉ trả về các dòng đã tối ưu, giữ nguyên format Block N:, không giải thích thêm.
+            """.trimIndent() + "\n\n$prompt"
 
             Log.d("TranslationRepository", "[OPTIMIZE-GEMINI] Sending request with prompt length=${fullPrompt.length}")
 
@@ -4154,7 +4150,7 @@ KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
         return try {
             val systemMessage = mapOf(
                 "role" to "system",
-                "content" to "Bạn là chuyên gia tối ưu bản dịch manga. Nhiệm vụ: Cải thiện cách diễn đạt của bản dịch để tự nhiên hơn. GIỮ NGUYEN ý nghĩa. KHÔNG thêm nội dung mới. Trả về đúng format 'Block N: <bản dịch đã tối ưu>'."
+                "content" to "Bạn là chuyên gia tối ưu bản dịch manga. Nhiệm vụ: Cải thiện bản dịch để tự nhiên và ĐỒNG BỘ xưng hô (Nam/Nữ, vai vế). GIỮ NGUYEN ý nghĩa. Trả về đúng format 'Block N: <bản dịch đã tối ưu>'."
             )
             val userMessage = mapOf(
                 "role" to "user",

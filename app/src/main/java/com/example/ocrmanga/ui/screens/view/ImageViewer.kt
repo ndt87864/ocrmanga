@@ -816,13 +816,13 @@ fun ImageViewer(
                                         }
                                         // Text vẽ trong INNER bounds (vùng bôi trắng thực tế)
                                         val tL =
-                                            clampedInnerBounds.left + clampedInnerBounds.width * (if (isOval) 0.15f else 0f)
+                                            clampedInnerBounds.left + clampedInnerBounds.width * (if (isOval) 0.125f else 0f)
                                         val tT =
-                                            clampedInnerBounds.top + clampedInnerBounds.height * (if (isOval) 0.15f else 0f)
+                                            clampedInnerBounds.top + clampedInnerBounds.height * (if (isOval) 0.025f else 0f)
                                         val tW =
-                                            clampedInnerBounds.width * (if (isOval) 0.7f else 1f)
+                                            clampedInnerBounds.width * (if (isOval) 0.75f else 1f)
                                         val tH =
-                                            clampedInnerBounds.height * (if (isOval) 0.7f else 1f)
+                                            clampedInnerBounds.height * (if (isOval) 0.95f else 1f)
                                         withTransform({
                                             if (region.rotation != 0f) rotate(
                                                 region.rotation,

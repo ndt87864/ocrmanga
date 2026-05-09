@@ -224,12 +224,25 @@ fun ViewerScreen(
     // Theo dõi vị trí scroll hiện tại và thông báo cho ViewModel
     // Chỉ update khi không đang scroll programmatically để tránh xung đột
     LaunchedEffect(lazyListState) {
-        snapshotFlow { lazyListState.firstVisibleItemIndex }
-            .collect { index ->
-                if (!isScrollingProgrammatically) {
-                    viewModel.setCurrentScrollIndex(index)
+        snapshotFlow {
+            val layoutInfo = lazyListState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) 0
+            else {
+                val firstItem = visibleItems.first()
+                val scrollOffset = lazyListState.firstVisibleItemScrollOffset
+                val itemSize = firstItem.size
+                if (itemSize > 0 && scrollOffset > itemSize * 0.7f) {
+                    (firstItem.index + 1).coerceAtMost(layoutInfo.totalItemsCount - 1)
+                } else {
+                    firstItem.index
                 }
             }
+        }.collect { index ->
+            if (!isScrollingProgrammatically) {
+                viewModel.setCurrentScrollIndex(index)
+            }
+        }
     }
 
     // Scroll đến vị trí sau khi reload từ DB
