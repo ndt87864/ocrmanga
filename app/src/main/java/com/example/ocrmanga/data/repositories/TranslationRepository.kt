@@ -1990,6 +1990,7 @@ import kotlin.math.max
                             val containerInfo = null  // Disabled due to OpenCV native library compatibility issue
                             TextBlockInfo(
                                 text = processedText,
+                                originalText = processedText,
                                 bounds = scaledBounds,
                                 fontSize = fontSize,
                                 wordCountsPerLine = listOf(wordCount),
@@ -2114,6 +2115,7 @@ import kotlin.math.max
                     val containerInfo = null
                     TextBlockInfo(
                         text = processedText,
+                        originalText = processedText,
                         bounds = scaledBounds,
                         fontSize = fontSize,
                         wordCountsPerLine = listOf(wordCount),
@@ -2205,6 +2207,7 @@ import kotlin.math.max
                         */
                         TextBlockInfo(
                             text = processedText,
+                            originalText = processedText,
                             bounds = scaledBounds,
                             fontSize = fontSize,
                             wordCountsPerLine = listOf(wordCount),
@@ -2305,6 +2308,7 @@ import kotlin.math.max
                                 val rawContainerInfo = null
                                 mergedTextBlocks.add(TextBlockInfo(
                                     text = rawProcessedText,
+                                    originalText = rawProcessedText,
                                     bounds = rawBounds,
                                     fontSize = rawFontSize,
                                     wordCountsPerLine = listOf(rawWordCount),
@@ -2651,8 +2655,10 @@ import kotlin.math.max
             }
             */
 
+            val mergedOriginalText = sortedBlocks.mapNotNull { it.originalText }.joinToString("\n").ifBlank { mergedText.toString() }
             val mergedBlock = TextBlockInfo(
                 text = mergedText.toString(),
+                originalText = mergedOriginalText,
                 bounds = Rect(mergedBounds),
                 fontSize = minFontSize,
                 wordCountsPerLine = null, // Reset wordCountsPerLine after merging
@@ -2738,15 +2744,44 @@ import kotlin.math.max
             val regions = mutableListOf<MutableList<TextBlockInfo>>()
             var currentRegion = mutableListOf(sortedByTop.first())
             var lastTop = sortedByTop.first().bounds.top
+            // Theo dõi bounding box tích lũy của region hiện tại để kiểm tra overlap
+            var regionLeft = sortedByTop.first().bounds.left
+            var regionTop = sortedByTop.first().bounds.top
+            var regionRight = sortedByTop.first().bounds.right
+            var regionBottom = sortedByTop.first().bounds.bottom
 
             for (block in sortedByTop.drop(1)) {
                 val currentTop = block.bounds.top
-                if (currentTop - lastTop <= verticalThreshold) {
+                // Kiểm tra overlap giữa block hiện tại và bounding box của region hiện tại.
+                // Nếu 2 block chồng nhau đáng kể (>30% diện tích block nhỏ hơn),
+                // luôn merge chúng bất kể top gap → tránh tách nhầm các block lồng nhau.
+                val overlapLeft = maxOf(block.bounds.left, regionLeft)
+                val overlapTop = maxOf(block.bounds.top, regionTop)
+                val overlapRight = minOf(block.bounds.right, regionRight)
+                val overlapBottom = minOf(block.bounds.bottom, regionBottom)
+                val overlapArea = if (overlapRight > overlapLeft && overlapBottom > overlapTop) {
+                    (overlapRight - overlapLeft) * (overlapBottom - overlapTop)
+                } else 0
+                val blockArea = block.bounds.width() * block.bounds.height()
+                val regionArea = (regionRight - regionLeft) * (regionBottom - regionTop)
+                val smallerArea = minOf(blockArea, regionArea).coerceAtLeast(1)
+                val overlapRatio = overlapArea.toFloat() / smallerArea
+
+                if (currentTop - lastTop <= verticalThreshold || overlapRatio > 0.3f) {
                     currentRegion.add(block)
                 } else {
                     regions.add(currentRegion)
                     currentRegion = mutableListOf(block)
+                    regionLeft = block.bounds.left
+                    regionTop = block.bounds.top
+                    regionRight = block.bounds.right
+                    regionBottom = block.bounds.bottom
                 }
+                // Cập nhật bounding box tích lũy
+                regionLeft = minOf(regionLeft, block.bounds.left)
+                regionTop = minOf(regionTop, block.bounds.top)
+                regionRight = maxOf(regionRight, block.bounds.right)
+                regionBottom = maxOf(regionBottom, block.bounds.bottom)
                 lastTop = currentTop
             }
             if (currentRegion.isNotEmpty()) {
@@ -2858,8 +2893,10 @@ import kotlin.math.max
                     }
                     */
 
+                    val mergedOriginalText = subGroupBlocks.mapNotNull { it.originalText }.joinToString("\n").ifBlank { mergedText.toString() }
                     val mergedBlock = TextBlockInfo(
                         text = mergedText.toString(),
+                        originalText = mergedOriginalText,
                         bounds = mergedBounds,
                         fontSize = minFontSize,
                         isVertical = true, // Đánh dấu là vertical text để downstream merge đúng thứ tự RTL
@@ -3933,9 +3970,11 @@ import kotlin.math.max
                     }
                     // DISABLED: Container classification
                     val containerInfo = firstBlock.containerInfo
+                    val mergedOriginalText = group.mapNotNull { it.originalText }.joinToString("\n").ifBlank { mergedText }
                     merged.add(
                         TextBlockInfo(
                             text = mergedText,
+                            originalText = mergedOriginalText,
                             bounds = mergedBounds,
                             fontSize = minFontSize,
                             isVertical = isVertical,

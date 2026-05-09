@@ -242,7 +242,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Cập nhật trạng thái - bắt đầu tối ưu
+                // Cập nhật trạng thái - bắt đầu tối ưu (hiển thị popup đè ảnh)
+                updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
                 _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
                 // Xây dựng prompt cho tối ưu - format rõ ràng để AI hiểu
@@ -320,14 +321,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Đã tối ưu bản dịch thành công!", Toast.LENGTH_SHORT).show()
+                        // Tự động tắt popup overlay sau 1.5s
+                        kotlinx.coroutines.delay(1500)
+                        clearTranslationStatus(uri)
                     }
                     onResult(true, "Tối ưu thành công")
                 } else {
                     Log.w(TAG, "[OPTIMIZE] Failed to get optimized translations from ${mode.name} API")
-                    // Đánh dấu thất bại - không cần gọi updateTranslationStatus với FAILED
+                    // Đánh dấu thất bại
                     _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Không thể tối ưu bản dịch", Toast.LENGTH_SHORT).show()
+                        // Tự động tắt popup overlay sau 1.5s
+                        kotlinx.coroutines.delay(1500)
+                        clearTranslationStatus(uri)
                     }
                     onResult(false, "Lỗi khi tối ưu")
                 }
@@ -515,10 +522,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             Log.w(TAG, "Failed to delete image_blocks for imageId=$imageId", e)
                         }
                         
-                        // Đánh dấu ảnh là chưa dịch trong TABLE_IMAGES
+                        // Đánh dấu ảnh là chưa dịch trong TABLE_IMAGES (original_text giờ lưu trong translations, không cần clear ở đây)
                         val imageValues = android.content.ContentValues().apply {
                             put(DatabaseHelper.COLUMN_IS_TRANSLATED, 0)
-                            put(DatabaseHelper.COLUMN_ORIGINAL_TEXT, "") // Clear original text too
                         }
                         db.update(DatabaseHelper.TABLE_IMAGES, imageValues, "${DatabaseHelper.COLUMN_IMAGE_ID} = ?", arrayOf(imageId.toString()))
                         Log.i(TAG, "[RETRANSLATE-OFF] Marked image as untranslated in TABLE_IMAGES for imageId=$imageId")
