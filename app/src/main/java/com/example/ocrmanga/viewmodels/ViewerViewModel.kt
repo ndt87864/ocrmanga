@@ -49,8 +49,10 @@ import android.text.TextPaint
 import android.os.Build
 import android.os.Environment
 import com.example.ocrmanga.data.constant.AppConfig
+import kotlinx.coroutines.coroutineScope
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
     private val _viewMode = MutableStateFlow(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
@@ -168,20 +170,46 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         Toast.LENGTH_SHORT
                     ).show()
                 }
-                _uiState.update { it.copy(removingTextProgress = "") }
             }
         }
     }
 
     fun optimizeTranslation(uri: Uri, mode: TranslationMode, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Đang tối ưu bản dịch...", Toast.LENGTH_SHORT).show()
+                }
+                
+                val success = performSingleImageOptimization(uri, mode)
+                
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        Toast.makeText(getApplication(), "Đã tối ưu bản dịch thành công!", Toast.LENGTH_SHORT).show()
+                        onResult(true, "Tối ưu thành công")
+                    } else {
+                        Toast.makeText(getApplication(), "Không thể tối ưu bản dịch", Toast.LENGTH_SHORT).show()
+                        onResult(false, "Lỗi khi tối ưu")
+                    }
+                    // Tự động tắt popup overlay sau 1.5s
+                    kotlinx.coroutines.delay(1500)
+                    clearTranslationStatus(uri)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi trong optimizeTranslation", e)
+                withContext(Dispatchers.Main) {
+                    onResult(false, "Lỗi hệ thống: ${e.message}")
+                    clearTranslationStatus(uri)
+                }
+            }
+        }
+    }
+
+    private suspend fun performSingleImageOptimization(uri: Uri, mode: TranslationMode): Boolean {
         val currentPair = uiState.value.translatedTexts[uri] ?: ("" to emptyList<TextBlockInfo>())
         val blocks = currentPair.second
 
-        if (blocks.isEmpty()) {
-            Log.w(TAG, "[OPTIMIZE] No translations to optimize for uri=$uri")
-            onResult(false, "Không có bản dịch để tối ưu")
-            return
-        }
+        if (blocks.isEmpty()) return false
 
         // Kiểm tra API key
         val hasApiKeys = when(mode) {
@@ -190,41 +218,26 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             TranslationMode.ZAI -> hasZAiApiKeys()
             else -> true
         }
+        if (!hasApiKeys) return false
 
-        if (!hasApiKeys) {
-            val msg = when(mode) {
-                TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
-                TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
-                TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
-                else -> "Không có API key. Vui lòng thêm trong cài đặt."
-            }
-            Log.w(TAG, "[OPTIMIZE] No API key available for mode=${mode.name}")
-            onResult(false, msg)
-            return
-        }
-
-        // Lấy bản gốc và bản dịch hiện tại
         val currentTranslations = blocks.map { it.text }
 
-        // Resolve originalText: dùng block.originalText, fallback sang DB nếu cần, cuối cùng dùng translated text
+        // Resolve originalText
         val resolvedOriginalTexts: List<String> = if (blocks.any { it.originalText == null }) {
             val imageId = uriToImageId[uri]
             if (imageId != null) {
                 try {
                     val dbList = databaseHelper.getOriginalTextsForImage(imageId)
                     if (dbList.isNotEmpty()) {
-                        Log.i(TAG, "[OPTIMIZE] Fetched ${dbList.size} original_text from DB for imageId=$imageId")
                         blocks.mapIndexed { index, block ->
                             block.originalText ?: dbList.getOrNull(index) ?: currentTranslations.getOrNull(index) ?: ""
                         }
                     } else {
-                        Log.w(TAG, "[OPTIMIZE] No original_text in DB for imageId=$imageId, falling back to translated texts")
                         blocks.mapIndexed { index, block ->
                             block.originalText ?: currentTranslations.getOrNull(index) ?: ""
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "[OPTIMIZE] Failed to fetch original_text from DB", e)
                     blocks.mapIndexed { index, block ->
                         block.originalText ?: currentTranslations.getOrNull(index) ?: ""
                     }
@@ -238,101 +251,61 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             blocks.mapNotNull { it.originalText }
         }
 
-        Log.i(TAG, "[OPTIMIZE] Starting optimization with mode=${mode.name} for uri=$uri with ${blocks.size} blocks")
+        // Cập nhật trạng thái - bắt đầu tối ưu và đảm bảo bật hiển thị bản dịch
+        _uiState.update { it.copy(translationEnabled = true) }
+        updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
+        _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // Cập nhật trạng thái - bắt đầu tối ưu (hiển thị popup đè ảnh)
-                updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
-                _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
+        // Xây dựng dữ liệu cho tối ưu
+        val basePrompt = com.example.ocrmanga.utils.PromptUtils.loadPromptFromAssets(getApplication(), "translation_optimization.md")
+        val dataBuilder = StringBuilder()
+        resolvedOriginalTexts.forEachIndexed { index, original ->
+            val translation = currentTranslations.getOrElse(index) { "" }
+            dataBuilder.appendLine("[${index + 1}] Gốc: $original")
+            dataBuilder.appendLine("    Dịch nháp (LỖI XƯNG HÔ): $translation")
+        }
 
-                // Xây dựng dữ liệu cho tối ưu - format rõ ràng để AI hiểu
-                val basePrompt = com.example.ocrmanga.utils.PromptUtils.loadPromptFromAssets(getApplication(), "translation_optimization.md")
-                
-                val dataBuilder = StringBuilder()
-                resolvedOriginalTexts.forEachIndexed { index, original ->
-                    val translation = currentTranslations.getOrElse(index) { "" }
-                    dataBuilder.appendLine("[${index + 1}] Gốc: $original")
-                    dataBuilder.appendLine("    Dịch nháp (LỖI XƯNG HÔ): $translation")
-                }
+        val instructions = if (basePrompt.isNotEmpty()) basePrompt.replace("{{DATA}}", "") else "Optimize these translations:"
+        val data = dataBuilder.toString()
 
-                val instructions = if (basePrompt.isNotEmpty()) basePrompt.replace("{{DATA}}", "") else "Optimize these translations:"
-                val data = dataBuilder.toString()
+        try {
+            val optimizedTranslations = translationRepository.optimizeTranslation(instructions, data, mode)
 
-                Log.d(TAG, "[OPTIMIZE] Sending request to ${mode.name} API with ${resolvedOriginalTexts.size} text blocks")
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Đang tối ưu bản dịch...", Toast.LENGTH_SHORT).show()
-                }
-
-                val optimizedTranslations = translationRepository.optimizeTranslation(instructions, data, mode)
-
-                if (optimizedTranslations != null && optimizedTranslations.isNotEmpty()) {
-                    Log.i(TAG, "[OPTIMIZE] Received ${optimizedTranslations.size} optimized translations from ${mode.name}")
-
-                    // Log từng bản dịch đã tối ưu (debug)
-                    optimizedTranslations.forEachIndexed { index, optimized ->
-                        val original = resolvedOriginalTexts.getOrElse(index) { "" }
-                        val old = currentTranslations.getOrElse(index) { "" }
-                        Log.d(TAG, "[OPTIMIZE] Block ${index + 1}:")
-                        Log.d(TAG, "  [ORIGINAL]: $original")
-                        Log.d(TAG, "  [OLD]     : $old")
-                        Log.d(TAG, "  [NEW]     : $optimized")
-                    }
-
-                    _uiState.update { state ->
-                        val newTranslatedTexts = state.translatedTexts.toMutableMap()
-                        val updatedBlocks = blocks.mapIndexed { index, block ->
-                            if (index < optimizedTranslations.size) {
-                                block.copy(text = optimizedTranslations[index])
-                            } else {
-                                block
-                            }
+            if (optimizedTranslations != null && optimizedTranslations.isNotEmpty()) {
+                _uiState.update { state ->
+                    val newTranslatedTexts = state.translatedTexts.toMutableMap()
+                    val updatedBlocks = blocks.mapIndexed { index, block ->
+                        if (index < optimizedTranslations.size) {
+                            block.copy(text = optimizedTranslations[index], applyMerge = false)
+                        } else {
+                            block
                         }
-                        newTranslatedTexts[uri] = currentPair.first to updatedBlocks
-                        state.copy(translatedTexts = newTranslatedTexts)
                     }
-
-                    // Đánh dấu URI là đã thay đổi để có thể lưu thủ công sau này
-                    dirtyUris.add(uri)
-                    Log.i(TAG, "[OPTIMIZE] Added uri to dirtyUris for temporary optimization: $uri")
-
-                    // Cập nhật trạng thái hoàn thành
-                    updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
-                    _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to true)) }
-
-                    Log.i(TAG, "[OPTIMIZE] Successfully optimized ${optimizedTranslations.size} translations for uri=$uri")
-
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Đã tối ưu bản dịch thành công!", Toast.LENGTH_SHORT).show()
-                        // Tự động tắt popup overlay sau 1.5s
-                        kotlinx.coroutines.delay(1500)
-                        clearTranslationStatus(uri)
-                    }
-                    onResult(true, "Tối ưu thành công")
-                } else {
-                    Log.w(TAG, "[OPTIMIZE] Failed to get optimized translations from ${mode.name} API")
-                    // Đánh dấu thất bại
-                    _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Không thể tối ưu bản dịch", Toast.LENGTH_SHORT).show()
-                        // Tự động tắt popup overlay sau 1.5s
-                        kotlinx.coroutines.delay(1500)
-                        clearTranslationStatus(uri)
-                    }
-                    onResult(false, "Lỗi khi tối ưu")
+                    newTranslatedTexts[uri] = currentPair.first to updatedBlocks
+                    state.copy(
+                        translatedTexts = newTranslatedTexts,
+                        translationVersion = state.translationVersion + 1
+                    )
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "[OPTIMIZE] Error optimizing translation for uri=$uri", e)
-                // Đánh dấu thất bại
+
+                // Đánh dấu URI là đã thay đổi để có thể lưu thủ công sau này
+                dirtyUris.add(uri)
+                
+                // Cập nhật trạng thái hoàn thành
+                updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
+                _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to true)) }
+                return true
+            } else {
                 _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Lỗi: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-                onResult(false, e.message ?: "Lỗi không xác định")
+                return false
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error optimizing single image $uri", e)
+            _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
+            return false
         }
     }
+
 
     // Bước 2: User xác nhận xóa text sau khi xem preview
     fun confirmTextRemoval() {
@@ -3205,21 +3178,42 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 Toast.makeText(getApplication(), "Đang bắt đầu tối ưu ${imageUris.size} ảnh (2 ảnh/lượt)...", Toast.LENGTH_SHORT).show()
             }
 
-            // Cập nhật UI state để hiển thị tiến trình
-            _uiState.update { it.copy(isTranslating = true, totalImagesToTranslate = imageUris.size, translationProgress = 0) }
+            // Cập nhật UI state để hiển thị tiến trình và đảm bảo bật hiển thị bản dịch
+            _uiState.update { it.copy(
+                isTranslating = true, 
+                totalImagesToTranslate = imageUris.size, 
+                translationProgress = 0,
+                translationEnabled = true
+            ) }
 
             val chunks = imageUris.chunked(2)
-            var totalProcessed = 0
+            val totalProcessedCount = AtomicInteger(0)
 
             for (chunk in chunks) {
                 if (!isActive) break
                 
-                optimizeBatchInternal(chunk, mode)
-                totalProcessed += chunk.size
+                // Tối ưu các ảnh trong chunk SONG SONG (parallel requests)
+                coroutineScope {
+                    chunk.forEach { uri ->
+                        launch(Dispatchers.IO) {
+                            val success = performSingleImageOptimization(uri, mode)
+                            if (success) {
+                                totalProcessedCount.incrementAndGet()
+                                _uiState.update { it.copy(translationProgress = totalProcessedCount.get()) }
+                            } else {
+                                // Vẫn tính vào tiến trình để progress bar chạy hết
+                                totalProcessedCount.incrementAndGet()
+                                _uiState.update { it.copy(translationProgress = totalProcessedCount.get()) }
+                            }
+                            
+                            // Delay tắt overlay status
+                            delay(1500)
+                            clearTranslationStatus(uri)
+                        }
+                    }
+                }
                 
-                _uiState.update { it.copy(translationProgress = totalProcessed) }
-                
-                // Delay một chút để tránh rate limit
+                // Delay một chút giữa các đợt (chunks) để tránh rate limit nặng
                 delay(1000)
             }
 
@@ -3232,122 +3226,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private suspend fun optimizeBatchInternal(uris: List<Uri>, mode: TranslationMode) {
-        val allBlocks = mutableListOf<TextBlockInfo>()
-        val uriToBlockCount = mutableMapOf<Uri, Int>()
-        
-        for (uri in uris) {
-            val blocks = uiState.value.translatedTexts[uri]?.second ?: emptyList()
-            allBlocks.addAll(blocks)
-            uriToBlockCount[uri] = blocks.size
-            updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
-        }
 
-        if (allBlocks.isEmpty()) {
-            uris.forEach { clearTranslationStatus(it) }
-            return
-        }
-
-        // Lấy original_text cho tất cả các block trong batch
-        val resolvedOriginalTexts = mutableListOf<String>()
-        for (uri in uris) {
-            val blocks = uiState.value.translatedTexts[uri]?.second ?: emptyList()
-            val currentTranslations = blocks.map { it.text }
-            val imageId = uriToImageId[uri]
-            
-            val imageOriginals = if (blocks.any { it.originalText == null } && imageId != null) {
-                try {
-                    val dbList = databaseHelper.getOriginalTextsForImage(imageId)
-                    if (dbList.isNotEmpty()) {
-                        blocks.mapIndexed { index, block ->
-                            block.originalText ?: dbList.getOrNull(index) ?: currentTranslations.getOrNull(index) ?: ""
-                        }
-                    } else {
-                        blocks.mapIndexed { index, block ->
-                            block.originalText ?: currentTranslations.getOrNull(index) ?: ""
-                        }
-                    }
-                } catch (e: Exception) {
-                    blocks.mapIndexed { index, block ->
-                        block.originalText ?: currentTranslations.getOrNull(index) ?: ""
-                    }
-                }
-            } else {
-                blocks.map { it.originalText ?: it.text }
-            }
-            resolvedOriginalTexts.addAll(imageOriginals)
-        }
-
-        // Xây dựng prompt
-        val basePrompt = com.example.ocrmanga.utils.PromptUtils.loadPromptFromAssets(getApplication(), "translation_optimization.md")
-        val dataBuilder = StringBuilder()
-        val currentTranslations = allBlocks.map { it.text }
-        
-        resolvedOriginalTexts.forEachIndexed { index, original ->
-            val translation = currentTranslations.getOrElse(index) { "" }
-            dataBuilder.appendLine("[${index + 1}] Gốc: $original")
-            dataBuilder.appendLine("    Dịch nháp (LỖI XƯNG HÔ): $translation")
-        }
-
-        val instructions = if (basePrompt.isNotEmpty()) basePrompt.replace("{{DATA}}", "") else "Tối ưu hóa các bản dịch sau, đảm bảo xưng hô phù hợp và văn phong Senior Editor:"
-        val data = dataBuilder.toString()
-
-        try {
-            val optimizedTranslations = translationRepository.optimizeTranslation(instructions, data, mode)
-            
-            if (optimizedTranslations != null && optimizedTranslations.isNotEmpty()) {
-                var globalIndex = 0
-                for (uri in uris) {
-                    val blockCount = uriToBlockCount[uri] ?: 0
-                    val imageOptimized = mutableListOf<String>()
-                    repeat(blockCount) {
-                        if (globalIndex < optimizedTranslations.size) {
-                            imageOptimized.add(optimizedTranslations[globalIndex])
-                        }
-                        globalIndex++
-                    }
-                    
-                    if (imageOptimized.isNotEmpty()) {
-                        updateImageWithOptimizedTranslations(uri, imageOptimized)
-                    }
-                    updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
-                }
-            } else {
-                Log.w(TAG, "optimizeBatchInternal: AI returned empty or null results for batch $uris")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Lỗi khi tối ưu batch $uris", e)
-        } finally {
-            delay(500)
-            uris.forEach { clearTranslationStatus(it) }
-        }
-    }
-
-    private fun updateImageWithOptimizedTranslations(uri: Uri, optimized: List<String>) {
-        val currentPair = uiState.value.translatedTexts[uri] ?: return
-        val blocks = currentPair.second
-        
-        val updatedBlocks = blocks.mapIndexed { index, block ->
-            if (index < optimized.size) {
-                block.copy(text = optimized[index], applyMerge = false) // Mark as edited to avoid re-merging
-            } else {
-                block
-            }
-        }
-        
-        _uiState.update { state ->
-            val newTranslatedTexts = state.translatedTexts.toMutableMap()
-            newTranslatedTexts[uri] = currentPair.first to updatedBlocks
-            state.copy(
-                translatedTexts = newTranslatedTexts,
-                translationVersion = state.translationVersion + 1
-            )
-        }
-
-        // Đánh dấu URI là đã thay đổi để có thể lưu thủ công sau này
-        dirtyUris.add(uri)
-        Log.i(TAG, "updateImageWithOptimizedTranslations: added $uri to dirtyUris (temporary)")
-    }
 
 
     // Per-image version counter used to force image reloads when the underlying file is replaced

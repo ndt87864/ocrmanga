@@ -158,7 +158,8 @@ fun ImageViewer(
     onToggleTextRemovalMode: () -> Unit = {},
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> },
     brushSize: Float = 40f,
-    onBrushSizeChange: (Float) -> Unit = {}
+    onBrushSizeChange: (Float) -> Unit = {},
+    translationVersion: Int = 0
 ) {
     val context = LocalContext.current
     val readPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -178,7 +179,6 @@ fun ImageViewer(
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             permissionGranted = granted
         }
-    var translationVersion by remember { mutableStateOf(0) }
     val newlyTranslated = remember { mutableStateMapOf<Uri, Boolean>() }
     val visibleRange = remember { mutableStateOf(IntRange(0, -1)) }
     val prefetchBuffer = 2

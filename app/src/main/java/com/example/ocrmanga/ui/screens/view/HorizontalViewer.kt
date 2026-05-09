@@ -64,7 +64,8 @@ fun HorizontalViewer(
     autoScrollEnabled: Boolean = false,
     scrollSpeed: Float = 5f,
     onAutoScrollToggle: (Boolean) -> Unit = {},
-    initialPageIndex: Int? = null
+    initialPageIndex: Int? = null,
+    translationVersion: Int = 0
 ) {
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
     val state = horizontalListState ?: rememberLazyListState()
@@ -132,7 +133,8 @@ fun HorizontalViewer(
                             val screenH = conf.screenHeightDp.dp
                             (screenH - 56.dp - 72.dp - 32.dp).coerceAtLeast(100.dp)
                         } else androidx.compose.ui.unit.Dp.Unspecified,
-                        lazyListState = pageState
+                        lazyListState = pageState,
+                        translationVersion = translationVersion
                     )
                 }
             }

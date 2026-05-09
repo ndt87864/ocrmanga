@@ -38,7 +38,8 @@ fun ImagePage(
     brushSize: Float,
     onBrushSizeChange: (Float) -> Unit,
     imageMaxHeight: Dp? = null,
-    lazyListState: LazyListState = rememberLazyListState()
+    lazyListState: LazyListState = rememberLazyListState(),
+    translationVersion: Int = 0
 ) {
     val list = listOf(uri)
     val state = lazyListState
@@ -76,6 +77,7 @@ fun ImagePage(
         onToggleTextRemovalMode = onToggleTextRemovalMode,
         onRemoveTextWithMask = onRemoveTextWithMask,
         brushSize = brushSize,
-        onBrushSizeChange = onBrushSizeChange
+        onBrushSizeChange = onBrushSizeChange,
+        translationVersion = translationVersion
     )
 }

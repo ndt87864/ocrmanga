@@ -794,7 +794,7 @@ fun ViewerScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = {Text("Tối ưu bản dịch (2 ảnh/lượt)")},
+                            text = {Text("Tối ưu bản dịch")},
                             onClick = {
                                 showOptimizeSelectionDialog = true
                                 showTranslationMenu = false
@@ -932,6 +932,7 @@ fun ViewerScreen(
                 // provide a version accessor so replaced images can be forced to reload
                 getImageVersionForUri = viewModel::getImageVersionForUri,
                 getReloadTokenForUri = viewModel::getReloadTokenForUri,
+                translationVersion = uiState.translationVersion,
                 isLoadingMoreImages = uiState.isLoadingMoreImages,
                 remainingImagesCount = uiState.remainingImages.size,
                 isTextRemovalMode = isTextRemovalMode,
@@ -1059,6 +1060,7 @@ fun ViewerScreen(
                 brushSize = brushSize,
                 onBrushSizeChange = { brushSize = it },
                 initialPageIndex = pendingInitialPage,
+                translationVersion = uiState.translationVersion,
                 autoScrollEnabled = autoScrollEnabled,
                 scrollSpeed = scrollSpeed,
                 onAutoScrollToggle = { autoScrollEnabled = it }
