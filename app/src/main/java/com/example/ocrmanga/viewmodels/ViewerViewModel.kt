@@ -256,20 +256,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     dataBuilder.appendLine("    Dịch nháp (LỖI XƯNG HÔ): $translation")
                 }
 
-                val finalPrompt = if (basePrompt.isNotEmpty()) {
-                    basePrompt.replace("{{DATA}}", dataBuilder.toString())
-                } else {
-                    // Fallback nếu không load được file
-                    "Optimize these translations:\n\n${dataBuilder}"
-                }
+                val instructions = if (basePrompt.isNotEmpty()) basePrompt.replace("{{DATA}}", "") else "Optimize these translations:"
+                val data = dataBuilder.toString()
 
-                Log.d(TAG, "[OPTIMIZE] Sending prompt to ${mode.name} API with ${resolvedOriginalTexts.size} text blocks")
+                Log.d(TAG, "[OPTIMIZE] Sending request to ${mode.name} API with ${resolvedOriginalTexts.size} text blocks")
 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Đang tối ưu bản dịch...", Toast.LENGTH_SHORT).show()
                 }
 
-                val optimizedTranslations = translationRepository.optimizeTranslation(finalPrompt, mode)
+                val optimizedTranslations = translationRepository.optimizeTranslation(instructions, data, mode)
 
                 if (optimizedTranslations != null && optimizedTranslations.isNotEmpty()) {
                     Log.i(TAG, "[OPTIMIZE] Received ${optimizedTranslations.size} optimized translations from ${mode.name}")

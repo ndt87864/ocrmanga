@@ -45,6 +45,7 @@ import com.google.ai.client.generativeai.type.HarmCategory
 import com.google.ai.client.generativeai.type.SafetySetting
 import com.google.ai.client.generativeai.type.BlockThreshold
 import com.google.ai.client.generativeai.type.generationConfig
+import com.google.ai.client.generativeai.type.content
 import com.google.gson.stream.JsonReader
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.io.StringReader
@@ -4033,7 +4034,7 @@ import kotlin.math.max
      * @param mode Chế độ AI (GEMINI, MISTRAL, ZAI)
      * @return List bản dịch đã tối ưu, hoặc null nếu thất bại
      */
-    suspend fun optimizeTranslation(prompt: String, mode: TranslationMode): List<String>? {
+    suspend fun optimizeTranslation(instructions: String, data: String, mode: TranslationMode): List<String>? {
         Log.i("TranslationRepository", "[OPTIMIZE-REPO] Starting with mode=${mode.name}")
 
         return when (mode) {
@@ -4042,7 +4043,7 @@ import kotlin.math.max
                     Log.e("TranslationRepository", "[OPTIMIZE-REPO] No Gemini API key available")
                     return null
                 }
-                val result = optimizeWithGemini(prompt)
+                val result = optimizeWithGemini(instructions, data)
                 Log.i("TranslationRepository", "[OPTIMIZE-REPO] Gemini result: ${result?.size ?: 0} translations")
                 result
             }
@@ -4051,7 +4052,7 @@ import kotlin.math.max
                     Log.e("TranslationRepository", "[OPTIMIZE-REPO] No Mistral API key available")
                     return null
                 }
-                val result = optimizeWithMistral(prompt)
+                val result = optimizeWithMistral(instructions, data)
                 Log.i("TranslationRepository", "[OPTIMIZE-REPO] Mistral result: ${result?.size ?: 0} translations")
                 result
             }
@@ -4060,7 +4061,7 @@ import kotlin.math.max
                     Log.e("TranslationRepository", "[OPTIMIZE-REPO] No Z.AI API key available")
                     return null
                 }
-                val result = optimizeWithZAi(prompt)
+                val result = optimizeWithZAi(instructions, data)
                 Log.i("TranslationRepository", "[OPTIMIZE-REPO] Z.AI result: ${result?.size ?: 0} translations")
                 result
             }
@@ -4071,7 +4072,7 @@ import kotlin.math.max
         }
     }
 
-    private suspend fun optimizeWithGemini(prompt: String): List<String>? {
+    private suspend fun optimizeWithGemini(instructions: String, data: String): List<String>? {
         return try {
             val apiKeyInfo = poolManager.selectBestKey("gemini") ?: run {
                 Log.e("TranslationRepository", "[OPTIMIZE-GEMINI] No available API key")
@@ -4084,14 +4085,13 @@ import kotlin.math.max
 
             val generativeModel = GenerativeModel(
                 modelName = modelName,
-                apiKey = apiKey
+                apiKey = apiKey,
+                systemInstruction = content { text(instructions) }
             )
 
-            val fullPrompt = prompt // Dùng toàn bộ prompt từ ViewModel (đã bao gồm luật từ asset)
+            Log.d("TranslationRepository", "[OPTIMIZE-GEMINI] Sending request with data length=${data.length}")
 
-            Log.d("TranslationRepository", "[OPTIMIZE-GEMINI] Sending request with prompt length=${fullPrompt.length}")
-
-            val response = generativeModel.generateContent(fullPrompt)
+            val response = generativeModel.generateContent(data)
             val text = response.text?.trim() ?: run {
                 Log.w("TranslationRepository", "[OPTIMIZE-GEMINI] Empty response from API")
                 return null
@@ -4160,15 +4160,15 @@ import kotlin.math.max
         return result
     }
 
-    private suspend fun optimizeWithMistral(prompt: String): List<String>? {
+    private suspend fun optimizeWithMistral(instructions: String, data: String): List<String>? {
         return try {
             val systemMessage = mapOf(
                 "role" to "system",
-                "content" to "Bạn là một Biên tập viên Cao cấp (Senior Editor) chuyên biên dịch Manga. Hãy thực hiện tối ưu hóa bản dịch theo đúng các tiêu chuẩn chuyên nghiệp và format yêu cầu."
+                "content" to instructions
             )
             val userMessage = mapOf(
                 "role" to "user",
-                "content" to prompt
+                "content" to data
             )
 
             Log.d("TranslationRepository", "[OPTIMIZE-MISTRAL] Sending request with prompt length=${userMessage["content"].toString().length}")
@@ -4198,18 +4198,18 @@ import kotlin.math.max
         }
     }
 
-    private suspend fun optimizeWithZAi(prompt: String): List<String>? {
+    private suspend fun optimizeWithZAi(instructions: String, data: String): List<String>? {
         return try {
-            Log.d("TranslationRepository", "[OPTIMIZE-ZAI] Preparing request with prompt length=${prompt.length}")
+            Log.d("TranslationRepository", "[OPTIMIZE-ZAI] Preparing request with data length=${data.length}")
 
             val systemMessage = mapOf(
                 "role" to "system",
-                "content" to "Bạn là một Biên tập viên Cao cấp (Senior Editor) chuyên biên dịch Manga. Hãy thực hiện tối ưu hóa bản dịch theo đúng các tiêu chuẩn chuyên nghiệp và format yêu cầu."
+                "content" to instructions
             )
 
             val userMessage = mapOf(
                 "role" to "user",
-                "content" to prompt
+                "content" to data
             )
 
             val response = zaiRequester.executeChatCompletion(
