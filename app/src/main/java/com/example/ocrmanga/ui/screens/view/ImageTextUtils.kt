@@ -443,7 +443,8 @@ fun calculateOptimalFontSize(
     // current behavior.
     horizontalPadding: Float = 0f,
     verticalPadding: Float = 0f,
-    lineSpacing: Float = 1.0f // Khoảng cách dòng multiplier
+    lineSpacing: Float = 1.0f, // Khoảng cách dòng multiplier
+    boldness: Float = 1.0f // Độ đậm của chữ
 ): Float {
     if (text.isBlank() || width <= 0 || height <= 0) return minFontSize
     
@@ -456,6 +457,12 @@ fun calculateOptimalFontSize(
         // Use cached Typeface to avoid repeated asset loads
         context?.let { ctx ->
             getCachedTypeface(ctx, fontFamilyName)?.let { tf -> this.typeface = tf }
+        }
+        
+        // Cần tính cả độ đậm khi đo kích thước
+        if (boldness > 1.0f) {
+            this.style = android.graphics.Paint.Style.FILL_AND_STROKE
+            this.strokeWidth = (boldness - 1.0f) * 2.0f
         }
     }
 
@@ -476,7 +483,7 @@ fun calculateOptimalFontSize(
     repeat(12) {
         val mid = (low + high) / 2
         paint.textSize = mid
-            val wrappedLines = wrapText(text, safeWidth * widthScale, mid, context, fontFamilyName)
+        val wrappedLines = wrapText(text, safeWidth * widthScale, mid, context, fontFamilyName, boldness)
         val fontMetrics = paint.fontMetrics
         // Áp dụng lineSpacing vào tính toán lineHeight
         val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
@@ -624,7 +631,8 @@ fun drawTextOnCanvas(drawScope: DrawScope,
             context = context,
             fontFamilyName = fontFamilyName,
             shapeType = shapeType,
-            lineSpacing = lineSpacing
+            lineSpacing = lineSpacing,
+            boldness = boldness
         )
     }
     // Use textAlign to affect drawing positions (default CENTER behavior)
@@ -803,7 +811,8 @@ fun adjustWhiteoutBounds(
     context: Context? = null,
     fontFamilyName: String? = null,
     shapeType: Int = 0,
-    lineSpacing: Float = 1.0f // Khoảng cách dòng multiplier
+    lineSpacing: Float = 1.0f, // Khoảng cách dòng multiplier
+    boldness: Float = 1.0f
 ): Pair<String, Float> {
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textAlign = android.graphics.Paint.Align.LEFT
@@ -829,32 +838,38 @@ fun adjustWhiteoutBounds(
     val maxSize = fontSize.coerceAtLeast(minSize)
     val optimal = calculateOptimalFontSize(
         text = text,
-        width = availableWidth,
-        height = availableHeight,
+        width = effectiveWidth,
+        height = effectiveHeight,
         minFontSize = minSize,
         maxFontSize = maxSize,
         shapeType = shapeType,
         context = context,
         fontFamilyName = fontFamilyName,
-        extraSizeAllowance = 0f,
+        extraSizeAllowance = 0f, // No allowance here to be strict
         horizontalPadding = safePadding,
         verticalPadding = safePadding,
-        lineSpacing = lineSpacing
+        lineSpacing = lineSpacing,
+        boldness = boldness
     )
 
     // Now wrap the text using the computed font size so measurements align with rendering.
     // Use the same width scale as calculateOptimalFontSize
     val finalWidthScale = if (shapeType == 1) 0.75f else 0.95f
-    val wrappedLines = wrapText(text, availableWidth * finalWidthScale, optimal, context, fontFamilyName)
+    val wrappedLines = wrapText(text, availableWidth * finalWidthScale, optimal, context, fontFamilyName, boldness)
     return wrappedLines.joinToString("\n") to optimal
 }
 
- fun wrapText(text: String, width: Float, fontSize: Float, context: Context? = null, fontFamilyName: String? = null): List<String> {
+ fun wrapText(text: String, width: Float, fontSize: Float, context: Context? = null, fontFamilyName: String? = null, boldness: Float = 1.0f): List<String> {
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.LEFT
         // Use cached Typeface for measuring text width/bounds
         context?.let { ctx -> getCachedTypeface(ctx, fontFamilyName)?.let { this.typeface = it } }
+        
+        if (boldness > 1.0f) {
+            this.style = android.graphics.Paint.Style.FILL_AND_STROKE
+            this.strokeWidth = (boldness - 1.0f) * 2.0f
+        }
     }
 
     val lines = mutableListOf<String>()
@@ -865,6 +880,7 @@ fun adjustWhiteoutBounds(
     for (word in words) {
         val testLine = if (currentLine.isEmpty()) word else "${currentLine} $word"
         val lineWidth = paint.measureText(testLine)
+        
         if (lineWidth <= width || currentLine.isEmpty()) {
             currentLine = StringBuilder(testLine)
         } else {
@@ -1619,19 +1635,27 @@ fun measureTextActualSize(
     context: Context? = null,
     fontFamilyName: String? = null,
     lineSpacing: Float = 1.0f,
-    shapeType: Int = 0
+    shapeType: Int = 0,
+    boldness: Float = 1.0f
 ): Pair<Float, Float> {
     if (text.isBlank() || fontSize <= 0f) return Pair(0f, 0f)
 
     val paint = androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
         this.textSize = fontSize
         this.textAlign = android.graphics.Paint.Align.LEFT
-        context?.let { ctx -> getCachedTypeface(ctx, fontFamilyName)?.let { this.typeface = it } }
+        context?.let { ctx ->
+            getCachedTypeface(ctx, fontFamilyName)?.let { this.typeface = it }
+        }
+        
+        if (boldness > 1.0f) {
+            this.style = android.graphics.Paint.Style.FILL_AND_STROKE
+            this.strokeWidth = (boldness - 1.0f) * 2.0f
+        }
     }
 
     // Với oval, thu hẹp vùng wrap như khi vẽ (75% width)
     val wrapWidth = if (shapeType == 1) maxWidth * 0.75f else maxWidth * 0.95f
-    val lines = wrapText(text, wrapWidth, fontSize, context, fontFamilyName)
+    val lines = wrapText(text, wrapWidth, fontSize, context, fontFamilyName, boldness)
     val fontMetrics = paint.fontMetrics
     val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
 
@@ -1662,6 +1686,7 @@ fun measureTextActualSize(
  * @param shapeType 0=rectangle, 1=oval
  * @param overlayInsetHorizontal User inset horizontal
  * @param overlayInsetVertical User inset vertical
+ * @param boldness Boldness factor
  * @return Quad(outerBounds, innerBounds, optimalFontSize, textMeasuredSize)
  */
 data class WindowedOverlayResult(
@@ -1683,7 +1708,8 @@ fun calculateWindowedOverlayBounds(
     overlayInsetHorizontal: Float,
     overlayInsetVertical: Float,
     horizontalPadding: Float = 0f,
-    verticalPadding: Float = 0f
+    verticalPadding: Float = 0f,
+    boldness: Float = 1.0f
 ): WindowedOverlayResult {
     // Check cache first
     val cacheKey = generateCacheKey(originalBounds, text, baseFontSize, isVertical, fontFamilyName, lineSpacing, shapeType, overlayInsetHorizontal, overlayInsetVertical)
@@ -1721,7 +1747,8 @@ fun calculateWindowedOverlayBounds(
         fontFamilyName = fontFamilyName,
         lineSpacing = lineSpacing,
         horizontalPadding = horizontalPadding,
-        verticalPadding = verticalPadding
+        verticalPadding = verticalPadding,
+        boldness = boldness
     )
 
     // 4. Measure text size với optimal font size
@@ -1733,7 +1760,8 @@ fun calculateWindowedOverlayBounds(
         context = context,
         fontFamilyName = fontFamilyName,
         lineSpacing = lineSpacing,
-        shapeType = shapeType
+        shapeType = shapeType,
+        boldness = boldness
     )
 
     val result = WindowedOverlayResult(outerBounds, innerBounds, optimalFontSize, Pair(textMeasuredW, textMeasuredH))

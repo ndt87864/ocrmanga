@@ -793,6 +793,13 @@ fun ViewerScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = {Text("Tối ưu bản dịch hiện có")},
+                            onClick = {
+                                viewModel.optimizeAllImagesInRoom(TranslationMode.GEMINI)
+                                showTranslationMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Tắt") },
                             onClick = {
                                 viewModel.setTranslationMode(TranslationMode.OFF)

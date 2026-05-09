@@ -3070,8 +3070,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 Toast.makeText(getApplication(), "Đang bắt đầu dịch tất cả ${imageUris.size} ảnh...", Toast.LENGTH_SHORT).show()
             }
 
+            _uiState.update { it.copy(isTranslating = true, totalImagesToTranslate = imageUris.size, translationProgress = 0) }
+
             // Dịch tuần tự để giữ ngữ cảnh (previousTranslation)
-            for (uri in imageUris) {
+            for ((index, uri) in imageUris.withIndex()) {
+                _uiState.update { it.copy(translationProgress = index + 1) }
                 // Chúng ta gọi logic dịch tương tự như retranslateImage nhưng không launch coroutine mới cho mỗi ảnh
                 // để đảm bảo tính tuần tự và tránh quá tải API
 
@@ -3165,6 +3168,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
 
+            _uiState.update { it.copy(isTranslating = false) }
+
             val rid = _uiState.value.roomId
             if (rid != null) {
                 maybeAutoSaveChangedImages(rid)
@@ -3175,6 +3180,195 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
+
+    /**
+     * Tối ưu bản dịch cho tất cả ảnh trong phòng theo từng cặp 2 ảnh.
+     */
+    fun optimizeAllImagesInRoom(mode: TranslationMode) {
+        viewModelScope.launch {
+            val hasApiKeys = when(mode) {
+                TranslationMode.GEMINI -> hasGeminiApiKeys()
+                TranslationMode.MISTRAL -> hasMistralApiKeys()
+                TranslationMode.ZAI -> hasZAiApiKeys()
+                else -> true
+            }
+
+            if (!hasApiKeys) {
+                withContext(Dispatchers.Main) {
+                    val msg = when(mode) {
+                        TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
+                        TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
+                        TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
+                        else -> "Không có API key. Vui lòng thêm trong cài đặt."
+                    }
+                    Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
+                }
+                return@launch
+            }
+
+            val imageUris = uiState.value.imageUris
+            if (imageUris.isEmpty()) return@launch
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Đang bắt đầu tối ưu ${imageUris.size} ảnh (2 ảnh/lượt)...", Toast.LENGTH_SHORT).show()
+            }
+
+            // Cập nhật UI state để hiển thị tiến trình
+            _uiState.update { it.copy(isTranslating = true, totalImagesToTranslate = imageUris.size, translationProgress = 0) }
+
+            val chunks = imageUris.chunked(2)
+            var totalProcessed = 0
+
+            for (chunk in chunks) {
+                if (!isActive) break
+                
+                optimizeBatchInternal(chunk, mode)
+                totalProcessed += chunk.size
+                
+                _uiState.update { it.copy(translationProgress = totalProcessed) }
+                
+                // Delay một chút để tránh rate limit
+                delay(1000)
+            }
+
+            _uiState.update { it.copy(isTranslating = false) }
+
+            val rid = _uiState.value.roomId
+            if (rid != null) {
+                maybeAutoSaveChangedImages(rid)
+            }
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Đã hoàn thành tối ưu tất cả ảnh trong phòng.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private suspend fun optimizeBatchInternal(uris: List<Uri>, mode: TranslationMode) {
+        val allBlocks = mutableListOf<TextBlockInfo>()
+        val uriToBlockCount = mutableMapOf<Uri, Int>()
+        
+        for (uri in uris) {
+            val blocks = uiState.value.translatedTexts[uri]?.second ?: emptyList()
+            allBlocks.addAll(blocks)
+            uriToBlockCount[uri] = blocks.size
+            updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
+        }
+
+        if (allBlocks.isEmpty()) {
+            uris.forEach { clearTranslationStatus(it) }
+            return
+        }
+
+        // Lấy original_text cho tất cả các block trong batch
+        val resolvedOriginalTexts = mutableListOf<String>()
+        for (uri in uris) {
+            val blocks = uiState.value.translatedTexts[uri]?.second ?: emptyList()
+            val currentTranslations = blocks.map { it.text }
+            val imageId = uriToImageId[uri]
+            
+            val imageOriginals = if (blocks.any { it.originalText == null } && imageId != null) {
+                try {
+                    val dbList = databaseHelper.getOriginalTextsForImage(imageId)
+                    if (dbList.isNotEmpty()) {
+                        blocks.mapIndexed { index, block ->
+                            block.originalText ?: dbList.getOrNull(index) ?: currentTranslations.getOrNull(index) ?: ""
+                        }
+                    } else {
+                        blocks.mapIndexed { index, block ->
+                            block.originalText ?: currentTranslations.getOrNull(index) ?: ""
+                        }
+                    }
+                } catch (e: Exception) {
+                    blocks.mapIndexed { index, block ->
+                        block.originalText ?: currentTranslations.getOrNull(index) ?: ""
+                    }
+                }
+            } else {
+                blocks.map { it.originalText ?: it.text }
+            }
+            resolvedOriginalTexts.addAll(imageOriginals)
+        }
+
+        // Xây dựng prompt
+        val basePrompt = com.example.ocrmanga.utils.PromptUtils.loadPromptFromAssets(getApplication(), "translation_optimization.md")
+        val dataBuilder = StringBuilder()
+        val currentTranslations = allBlocks.map { it.text }
+        
+        resolvedOriginalTexts.forEachIndexed { index, original ->
+            val translation = currentTranslations.getOrElse(index) { "" }
+            dataBuilder.appendLine("[${index + 1}] Gốc: $original")
+            dataBuilder.appendLine("    Dịch nháp (LỖI XƯNG HÔ): $translation")
+        }
+
+        val instructions = if (basePrompt.isNotEmpty()) basePrompt.replace("{{DATA}}", "") else "Tối ưu hóa các bản dịch sau, đảm bảo xưng hô phù hợp và văn phong Senior Editor:"
+        val data = dataBuilder.toString()
+
+        try {
+            val optimizedTranslations = translationRepository.optimizeTranslation(instructions, data, mode)
+            
+            if (optimizedTranslations != null && optimizedTranslations.isNotEmpty()) {
+                var globalIndex = 0
+                for (uri in uris) {
+                    val blockCount = uriToBlockCount[uri] ?: 0
+                    val imageOptimized = mutableListOf<String>()
+                    repeat(blockCount) {
+                        if (globalIndex < optimizedTranslations.size) {
+                            imageOptimized.add(optimizedTranslations[globalIndex])
+                        }
+                        globalIndex++
+                    }
+                    
+                    if (imageOptimized.isNotEmpty()) {
+                        updateImageWithOptimizedTranslations(uri, imageOptimized)
+                    }
+                    updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
+                }
+            } else {
+                Log.w(TAG, "optimizeBatchInternal: AI returned empty or null results for batch $uris")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Lỗi khi tối ưu batch $uris", e)
+        } finally {
+            delay(500)
+            uris.forEach { clearTranslationStatus(it) }
+        }
+    }
+
+    private fun updateImageWithOptimizedTranslations(uri: Uri, optimized: List<String>) {
+        val currentPair = uiState.value.translatedTexts[uri] ?: return
+        val blocks = currentPair.second
+        
+        val updatedBlocks = blocks.mapIndexed { index, block ->
+            if (index < optimized.size) {
+                block.copy(text = optimized[index], applyMerge = false) // Mark as edited to avoid re-merging
+            } else {
+                block
+            }
+        }
+        
+        _uiState.update { state ->
+            val newTranslatedTexts = state.translatedTexts.toMutableMap()
+            newTranslatedTexts[uri] = currentPair.first to updatedBlocks
+            state.copy(
+                translatedTexts = newTranslatedTexts,
+                translationVersion = state.translationVersion + 1
+            )
+        }
+
+        // Đánh dấu ảnh đã thay đổi để lưu vào DB
+        val imageId = uriToImageId[uri]
+        val roomId = uiState.value.roomId
+        if (imageId != null && roomId != null) {
+            try {
+                databaseHelper.markImageChanged(imageId, roomId)
+                dirtyUris.add(uri)
+            } catch (e: Exception) {
+                Log.w(TAG, "updateImageWithOptimizedTranslations: failed to mark image changed for $uri", e)
+            }
+        }
+    }
+
 
     // Per-image version counter used to force image reloads when the underlying file is replaced
     private val imageVersions = mutableMapOf<Long, Int>()

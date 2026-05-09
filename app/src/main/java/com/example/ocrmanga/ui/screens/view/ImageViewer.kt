@@ -631,18 +631,62 @@ fun ImageViewer(
                                                 overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
                                                 overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
                                                 horizontalPadding = 4f,
-                                                verticalPadding = 4f
+                                                verticalPadding = 4f,
+                                                boldness = dragBlock.textBoldness
                                             ),
                                             wrappedText = adjustWhiteoutBounds(
                                                 text = block.text,
-                                                initialWidth = rect.width,
-                                                initialHeight = rect.height,
-                                                fontSize = fontSize,
+                                                initialWidth = calculateWindowedOverlayBounds(
+                                                    originalBounds = rect,
+                                                    text = block.text,
+                                                    baseFontSize = fontSize,
+                                                    isVertical = block.isVertical,
+                                                    context = context,
+                                                    fontFamilyName = block.fontFamily,
+                                                    lineSpacing = dragBlock.lineSpacing,
+                                                    shapeType = block.shapeType,
+                                                    overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
+                                                    overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
+                                                    horizontalPadding = 4f,
+                                                    verticalPadding = 4f,
+                                                    boldness = dragBlock.textBoldness
+                                                ).innerBounds.width,
+                                                initialHeight = calculateWindowedOverlayBounds(
+                                                    originalBounds = rect,
+                                                    text = block.text,
+                                                    baseFontSize = fontSize,
+                                                    isVertical = block.isVertical,
+                                                    context = context,
+                                                    fontFamilyName = block.fontFamily,
+                                                    lineSpacing = dragBlock.lineSpacing,
+                                                    shapeType = block.shapeType,
+                                                    overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
+                                                    overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
+                                                    horizontalPadding = 4f,
+                                                    verticalPadding = 4f,
+                                                    boldness = dragBlock.textBoldness
+                                                ).innerBounds.height,
+                                                fontSize = calculateWindowedOverlayBounds(
+                                                    originalBounds = rect,
+                                                    text = block.text,
+                                                    baseFontSize = fontSize,
+                                                    isVertical = block.isVertical,
+                                                    context = context,
+                                                    fontFamilyName = block.fontFamily,
+                                                    lineSpacing = dragBlock.lineSpacing,
+                                                    shapeType = block.shapeType,
+                                                    overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
+                                                    overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
+                                                    horizontalPadding = 4f,
+                                                    verticalPadding = 4f,
+                                                    boldness = dragBlock.textBoldness
+                                                ).optimalFontSize,
                                                 isVertical = block.isVertical,
                                                 context = context,
                                                 fontFamilyName = block.fontFamily,
                                                 shapeType = block.shapeType,
-                                                lineSpacing = dragBlock.lineSpacing
+                                                lineSpacing = dragBlock.lineSpacing,
+                                                boldness = dragBlock.textBoldness
                                             ).first
                                         )
                                     }
