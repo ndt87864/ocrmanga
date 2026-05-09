@@ -87,7 +87,8 @@ class ZAiRequester(
             "model" to model,
             "messages" to messages,
             "max_tokens" to max_tokens,
-            "temperature" to temperature
+            "temperature" to temperature,
+            "top_p" to 0.9 // Mặc định dùng 0.9 cho ổn định
         )
         val rawJsonBody = gson.toJson(bodyMap)
 

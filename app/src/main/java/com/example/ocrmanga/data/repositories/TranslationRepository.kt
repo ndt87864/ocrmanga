@@ -4175,9 +4175,10 @@ import kotlin.math.max
 
             val response = mistralRequester.executeChatCompletion(
                 messages = listOf(systemMessage, userMessage),
-                temperature = 0.3, // Giảm temperature để ít sáng tạo hơn
-                frequency_penalty = 0.5,
-                presence_penalty = 0.3
+                temperature = 0.4,
+                top_p = 0.9,
+                top_k = 40,
+                max_tokens = 4096
             )
 
             if (response == null) {
@@ -4213,7 +4214,7 @@ import kotlin.math.max
 
             val response = zaiRequester.executeChatCompletion(
                 messages = listOf(systemMessage, userMessage),
-                temperature = 0.3, // Giảm temperature để ít sáng tạo hơn
+                temperature = 0.4,
                 max_tokens = 4096
             )
 
