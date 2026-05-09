@@ -97,6 +97,30 @@ private fun resolveFontFile(fontFamilyName: String?): String {
 // Typeface cache to avoid repeated asset loads during drawing/layout
 private val typefaceCache: MutableMap<String, Typeface?> = ConcurrentHashMap()
 
+// Cache cho calculateWindowedOverlayBounds - tránh tính toán lại liên tục
+private val windowedBoundsCache = object : LinkedHashMap<String, WindowedOverlayResult>(100, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, WindowedOverlayResult>?): Boolean {
+        return size > 200 // Giới hạn cache
+    }
+}
+
+// Lock cho thread safety
+private val boundsCacheLock = Any()
+
+private fun generateCacheKey(
+    bounds: androidx.compose.ui.geometry.Rect,
+    text: String,
+    baseFontSize: Float,
+    isVertical: Boolean,
+    fontFamilyName: String?,
+    lineSpacing: Float,
+    shapeType: Int,
+    overlayInsetH: Float,
+    overlayInsetV: Float
+): String {
+    return "${bounds.left.toInt()}_${bounds.top.toInt()}_${bounds.width.toInt()}_${bounds.height.toInt()}_${text.hashCode()}_${baseFontSize.toInt()}_${isVertical}_${fontFamilyName ?: ""}_${(lineSpacing * 100).toInt()}_${shapeType}_${overlayInsetH.toInt()}_${overlayInsetV.toInt()}"
+}
+
 private fun getCachedTypeface(context: Context, fontFamilyName: String?): Typeface? {
     val key = fontFamilyName ?: "default"
     return typefaceCache.getOrPut(key) {
@@ -1650,7 +1674,7 @@ fun calculateWindowedOverlayBounds(
     baseFontSize: Float,
     isVertical: Boolean,
     context: Context,
-    fontFamilyName: String,
+    fontFamilyName: String?,
     lineSpacing: Float,
     shapeType: Int,
     overlayInsetHorizontal: Float,
@@ -1658,6 +1682,14 @@ fun calculateWindowedOverlayBounds(
     horizontalPadding: Float = 0f,
     verticalPadding: Float = 0f
 ): WindowedOverlayResult {
+    // Check cache first
+    val cacheKey = generateCacheKey(originalBounds, text, baseFontSize, isVertical, fontFamilyName, lineSpacing, shapeType, overlayInsetHorizontal, overlayInsetVertical)
+    synchronized(boundsCacheLock) {
+        windowedBoundsCache[cacheKey]?.let { cached ->
+            return cached
+        }
+    }
+
     // 1. Outer bounds = FULL original bounds (KHÔNG áp dụng user insets)
     val outerBounds = originalBounds
 
@@ -1701,7 +1733,14 @@ fun calculateWindowedOverlayBounds(
         shapeType = shapeType
     )
 
-    return WindowedOverlayResult(outerBounds, innerBounds, optimalFontSize, Pair(textMeasuredW, textMeasuredH))
+    val result = WindowedOverlayResult(outerBounds, innerBounds, optimalFontSize, Pair(textMeasuredW, textMeasuredH))
+
+    // Store in cache
+    synchronized(boundsCacheLock) {
+        windowedBoundsCache[cacheKey] = result
+    }
+
+    return result
 }
 
 /**

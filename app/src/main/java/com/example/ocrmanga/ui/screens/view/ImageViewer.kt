@@ -58,6 +58,7 @@ import coil.request.ImageRequest
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.models.TranslationStatus
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
@@ -202,9 +203,24 @@ fun ImageViewer(
     var drawTrigger by remember { mutableStateOf(0) }
     var showBrushSizeDialog by remember { mutableStateOf(false) }
 
+    // Scroll velocity tracking for debouncing
+    var lastScrollTime by remember { mutableStateOf(0L) }
+    var isScrollingFast by remember { mutableStateOf(false) }
+
     LaunchedEffect(lazyListState, imageUris) {
         snapshotFlow { lazyListState.layoutInfo.visibleItemsInfo.map { it.index } }
             .collect { visibleIndices ->
+                val currentTime = System.currentTimeMillis()
+                val timeDelta = currentTime - lastScrollTime
+                lastScrollTime = currentTime
+
+                // Detect fast scrolling (more than 3 items in 100ms)
+                if (timeDelta < 100 && visibleIndices.size > 3) {
+                    isScrollingFast = true
+                } else {
+                    isScrollingFast = false
+                }
+
                 if (visibleIndices.isNotEmpty()) {
                     val min = visibleIndices.minOrNull() ?: 0
                     val max = visibleIndices.maxOrNull() ?: 0
@@ -518,6 +534,9 @@ fun ImageViewer(
                         val _conf = LocalConfiguration.current;
                         val _sw = _conf.screenWidthDp.toFloat()
 
+                        // Last computation time for debouncing
+                        var lastComputeTime by remember { mutableStateOf(0L) }
+
                         LaunchedEffect(
                             uri,
                             translationVersion,
@@ -525,8 +544,21 @@ fun ImageViewer(
                             imageWidth,
                             imageHeight,
                             isInWindow,
-                            _sw
+                            _sw,
+                            isScrollingFast
                         ) {
+                            // Skip tính toán nặng khi đang scroll nhanh
+                            if (isScrollingFast && !editTranslationMode) {
+                                return@LaunchedEffect
+                            }
+
+                            // Debounce: skip if computed recently (within 50ms)
+                            val now = System.currentTimeMillis()
+                            if (now - lastComputeTime < 50 && !editTranslationMode) {
+                                return@LaunchedEffect
+                            }
+                            lastComputeTime = now
+
                             // Allow immediate apply when either not in edit mode OR this uri was recently saved via editor
                             val isRecentSave = recentlySavedUris.contains(uri)
                             if (!isInWindow) {
