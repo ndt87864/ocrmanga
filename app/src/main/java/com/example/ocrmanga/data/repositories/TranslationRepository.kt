@@ -4013,8 +4013,11 @@ KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
                 return null
             }
 
-            val result = text.split("\n").filter { it.isNotBlank() }.map { it.trim() }
-            Log.i("TranslationRepository", "[OPTIMIZE-GEMINI] Received ${result.size} optimized translations")
+            Log.d("TranslationRepository", "[OPTIMIZE-GEMINI] Raw response:\n$text")
+
+            // Parse kết quả - extract text sau "Block N:"
+            val result = parseOptimizeResponse(text)
+            Log.i("TranslationRepository", "[OPTIMIZE-GEMINI] Parsed ${result.size} optimized translations")
             result
         } catch (e: Exception) {
             Log.e("TranslationRepository", "[OPTIMIZE-GEMINI] Failed: ${e.message}", e)
@@ -4022,27 +4025,56 @@ KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
         }
     }
 
+    /**
+     * Parse kết quả optimize từ AI response
+     * Extract text sau "Block N:" hoặc số thứ tự
+     */
+    private fun parseOptimizeResponse(text: String): List<String> {
+        val lines = text.split("\n").filter { it.isNotBlank() }
+        val result = mutableListOf<String>()
+
+        // Regex để match "Block N:" hoặc "N." hoặc "N:"
+        val blockPattern = Regex("""^\s*(?:Block\s*)?(\d+)[\.:\)\-]\s*(.*)$""", RegexOption.IGNORE_CASE)
+
+        for (line in lines) {
+            val trimmed = line.trim()
+            val match = blockPattern.find(trimmed)
+            if (match != null) {
+                // Lấy phần text sau số thứ tự
+                val extractedText = match.groupValues[2].trim()
+                if (extractedText.isNotEmpty()) {
+                    result.add(extractedText)
+                }
+            } else if (result.isNotEmpty() || trimmed.length > 5) {
+                // Nếu dòng không match pattern nhưng không bắt đầu bằng số,
+                // có thể là dòng text trực tiếp (không có prefix)
+                // Chỉ thêm nếu chưa có result nào hoặc dòng ngắn hợp lý
+                if (trimmed.length < 100 && !trimmed.matches(Regex("^\\d+$"))) {
+                    result.add(trimmed)
+                }
+            }
+        }
+
+        return result
+    }
+
     private suspend fun optimizeWithMistral(prompt: String): List<String>? {
         return try {
             val systemMessage = mapOf(
                 "role" to "system",
-                "content" to "Bạn là một chuyên gia tối ưu bản dịch truyện manga. Hãy tối ưu lại bản dịch theo yêu cầu. Chỉ trả về các dòng đã tối ưu, mỗi dòng một kết quả, không giải thích."
+                "content" to "Bạn là chuyên gia tối ưu bản dịch manga. Nhiệm vụ: Cải thiện cách diễn đạt của bản dịch để tự nhiên hơn. GIỮ NGUYEN ý nghĩa. KHÔNG thêm nội dung mới. Trả về đúng format 'Block N: <bản dịch đã tối ưu>'."
             )
             val userMessage = mapOf(
                 "role" to "user",
-                "content" to """
-$prompt
-
-KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
-                """.trimIndent()
+                "content" to prompt
             )
 
             Log.d("TranslationRepository", "[OPTIMIZE-MISTRAL] Sending request with prompt length=${userMessage["content"].toString().length}")
 
             val response = mistralRequester.executeChatCompletion(
                 messages = listOf(systemMessage, userMessage),
-                temperature = 0.7,
-                frequency_penalty = 0.3,
+                temperature = 0.3, // Giảm temperature để ít sáng tạo hơn
+                frequency_penalty = 0.5,
                 presence_penalty = 0.3
             )
 
@@ -4051,8 +4083,11 @@ KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
                 return null
             }
 
-            val result = response.content?.split("\n")?.filter { it.isNotBlank() }?.map { it.trim() } ?: emptyList()
-            Log.i("TranslationRepository", "[OPTIMIZE-MISTRAL] Received ${result.size} optimized translations")
+            val content = response.content ?: ""
+            Log.d("TranslationRepository", "[OPTIMIZE-MISTRAL] Raw response:\n$content")
+
+            val result = parseOptimizeResponse(content)
+            Log.i("TranslationRepository", "[OPTIMIZE-MISTRAL] Parsed ${result.size} optimized translations")
             result
         } catch (e: Exception) {
             Log.e("TranslationRepository", "[OPTIMIZE-MISTRAL] Failed: ${e.message}", e)
@@ -4066,20 +4101,12 @@ KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
 
             val userMessage = mapOf(
                 "role" to "user",
-                "content" to """
-Bạn là một chuyên gia tối ưu bản dịch truyện manga.
-Hãy tối ưu lại bản dịch theo yêu cầu.
-Chỉ trả về các dòng đã tối ưu, mỗi dòng một kết quả, không giải thích.
-
-$prompt
-
-KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
-                """.trimIndent()
+                "content" to prompt
             )
 
             val response = zaiRequester.executeChatCompletion(
                 messages = listOf(userMessage),
-                temperature = 0.8,
+                temperature = 0.3, // Giảm temperature để ít sáng tạo hơn
                 max_tokens = 4096
             )
 
@@ -4088,8 +4115,11 @@ KẾT QUẢ (mỗi dòng một bản dịch đã tối ưu):
                 return null
             }
 
-            val result = response.content?.split("\n")?.filter { it.isNotBlank() }?.map { it.trim() } ?: emptyList()
-            Log.i("TranslationRepository", "[OPTIMIZE-ZAI] Received ${result.size} optimized translations")
+            val content = response.content ?: ""
+            Log.d("TranslationRepository", "[OPTIMIZE-ZAI] Raw response:\n$content")
+
+            val result = parseOptimizeResponse(content)
+            Log.i("TranslationRepository", "[OPTIMIZE-ZAI] Parsed ${result.size} optimized translations")
             result
         } catch (e: Exception) {
             Log.e("TranslationRepository", "[OPTIMIZE-ZAI] Failed: ${e.message}", e)

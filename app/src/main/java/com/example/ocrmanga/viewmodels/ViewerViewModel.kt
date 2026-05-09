@@ -203,18 +203,31 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // Cập nhật trạng thái - bắt đầu tối ưu
                 _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
-                // Xây dựng prompt cho tối ưu
+                // Xây dựng prompt cho tối ưu - format rõ ràng để AI hiểu
                 val promptBuilder = StringBuilder()
-                promptBuilder.appendLine("Hãy tối ưu lại bản dịch manga để tự nhiên và hay hơn.")
-                promptBuilder.appendLine("Chỉ trả về các dòng đã tối ưu, mỗi dòng một kết quả, không giải thích.")
+                promptBuilder.appendLine("Bạn là chuyên gia tối ưu bản dịch manga tiếng Việt.")
+                promptBuilder.appendLine("Nhiệm vụ: Đọc bản dịch hiện tại và TỐI ƯU nó để tự nhiên, mượt mà hơn.")
+                promptBuilder.appendLine("QUAN TRỌNG:")
+                promptBuilder.appendLine("- Giữ NGUYEN ý nghĩa của bản dịch gốc")
+                promptBuilder.appendLine("- Chỉ cải thiện CÁCH DIỄN ĐẠT để tự nhiên hơn")
+                promptBuilder.appendLine("- Không được thay đổi nội dung câu chuyện")
+                promptBuilder.appendLine("- Không thêm nội dung mới, không bịa đặt")
+                promptBuilder.appendLine("- Trả về đúng số lượng dòng như đầu vào")
                 promptBuilder.appendLine()
-                promptBuilder.appendLine("Nội dung text gốc và bản dịch hiện tại:")
+                promptBuilder.appendLine("Bản dịch hiện tại cần tối ưu:")
 
                 originalTexts.forEachIndexed { index, original ->
                     val translation = currentTranslations.getOrElse(index) { "" }
-                    promptBuilder.appendLine("${index + 1}. [GỐC: $original]")
-                    promptBuilder.appendLine("   [DỊCH: $translation]")
+                    promptBuilder.appendLine("Block ${index + 1}:")
+                    promptBuilder.appendLine("  Text gốc: $original")
+                    promptBuilder.appendLine("  Bản dịch hiện tại: $translation")
                 }
+                promptBuilder.appendLine()
+                promptBuilder.appendLine("Trả về KẾT QUẢ theo format:")
+                promptBuilder.appendLine("Block 1: <bản dịch đã tối ưu>")
+                promptBuilder.appendLine("Block 2: <bản dịch đã tối ưu>")
+                promptBuilder.appendLine("...")
+                promptBuilder.appendLine("Mỗi dòng một Block, giữ đúng thứ tự, không đánh số thứ tự ở đầu kết quả.")
 
                 Log.d(TAG, "[OPTIMIZE] Sending prompt to ${mode.name} API with ${originalTexts.size} text blocks")
 
@@ -247,10 +260,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                     // Đánh dấu ảnh là đã thay đổi
                     val imageId = uriToImageId[uri]
-                    if (imageId != null) {
+                    val roomId = uiState.value.roomId
+                    if (imageId != null && roomId != null) {
                         try {
-                            databaseHelper.markImageChanged(imageId)
-                            Log.i(TAG, "[OPTIMIZE] Marked image changed: imageId=$imageId")
+                            databaseHelper.markImageChanged(roomId, imageId)
+                            Log.i(TAG, "[OPTIMIZE] Marked image changed: roomId=$roomId, imageId=$imageId")
                         } catch (e: Exception) {
                             Log.w(TAG, "Failed to mark image changed: imageId=$imageId", e)
                         }
@@ -268,7 +282,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     onResult(true, "Tối ưu thành công")
                 } else {
                     Log.w(TAG, "[OPTIMIZE] Failed to get optimized translations from ${mode.name} API")
-                    updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.FAILED)
+                    // Đánh dấu thất bại - không cần gọi updateTranslationStatus với FAILED
+                    _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Không thể tối ưu bản dịch", Toast.LENGTH_SHORT).show()
                     }
@@ -276,7 +291,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "[OPTIMIZE] Error optimizing translation for uri=$uri", e)
-                updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.FAILED)
+                // Đánh dấu thất bại
+                _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Lỗi: ${e.message}", Toast.LENGTH_LONG).show()
                 }
