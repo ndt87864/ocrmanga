@@ -4177,7 +4177,6 @@ import kotlin.math.max
                 messages = listOf(systemMessage, userMessage),
                 temperature = 0.4,
                 top_p = 0.9,
-                top_k = 40,
                 max_tokens = 4096
             )
 

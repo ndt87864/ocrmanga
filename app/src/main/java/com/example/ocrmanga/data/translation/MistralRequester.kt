@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * Lớp hỗ trợ thực hiện các yêu cầu đến Mistral AI API (Phiên bản đơn giản hóa)
@@ -26,6 +27,16 @@ class MistralRequester(
 
     // Map lưu trữ model đang được gán cho từng API key
     private val keyToModelMap = ConcurrentHashMap<String, String>()
+
+    // --- CẤU HÌNH CLIENT CHUYÊN DỤNG CHO MẠNG CHẬM ---
+    private val robustClient: OkHttpClient by lazy {
+        httpClient.newBuilder()
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS) // 5 phút
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+    }
 
     companion object {
         private const val TAG = "MistralRequester"
@@ -62,7 +73,6 @@ class MistralRequester(
             "messages" to messages,
             "temperature" to temperature,
             "top_p" to top_p,
-            "top_k" to top_k,
             "max_tokens" to max_tokens,
             "frequency_penalty" to frequency_penalty,
             "presence_penalty" to presence_penalty,
@@ -85,10 +95,11 @@ class MistralRequester(
             .build()
 
         return try {
-            val response = withContext(Dispatchers.IO) { httpClient.newCall(request).execute() }
+            val response = withContext(Dispatchers.IO) { robustClient.newCall(request).execute() }
             val responseBody = response.body?.string()
 
             if (!response.isSuccessful) {
+                Log.e(TAG, "Lỗi API Mistral (${response.code}): $responseBody")
                 if (response.code == 429) {
                     Log.w(TAG, "Key ${apiKey.take(10)}... bị 429. Chuyển sang model $FALLBACK_MODEL")
                     keyToModelMap[apiKey] = FALLBACK_MODEL
