@@ -243,20 +243,32 @@ import kotlin.math.max
             "Block #${index + 1}: $normalizedText"
         }.joinToString("\n")
 
-        val prompt = TranslationPrompts.getZAiMultiScalePrompt(
-            ocrResultsText = ocrResultsText,
-            numberedBlocks = numberedBlocks,
+        val instructions = TranslationPrompts.getZAiMultiScalePrompt(
+            ocrResultsText = "DỮ LIỆU ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
+            numberedBlocks = "DANH SÁCH ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
             blockCount = textBlocks.size,
             previousContextText = previousContextText,
             isAncientMode = isAncientMode
         )
 
-        // Đưa Z.AI vào form chuẩn với hướng dẫn từ file MD
-        val userMessage = mapOf("role" to "user", "content" to prompt)
+        val systemMessage = mapOf(
+            "role" to "system",
+            "content" to instructions
+        )
+
+        val dataContent = """
+            === DỮ LIỆU OCR THAM KHẢO ===
+            $ocrResultsText
+            
+            === DANH SÁCH CẦN DỊCH ===
+            $numberedBlocks
+        """.trimIndent()
+
+        val userMessage = mapOf("role" to "user", "content" to dataContent)
 
         val response = zaiRequester.executeChatCompletion(
-            messages = listOf(userMessage),
-            temperature = 1.0, // Đặt mức tối đa để AI dịch linh hoạt như curl
+            messages = listOf(systemMessage, userMessage),
+            temperature = 0.7, // Giảm temperature một chút để ổn định hơn
             max_tokens = 4096
         )
 
@@ -409,9 +421,9 @@ import kotlin.math.max
             "Block #${index + 1}: $normalizedText"
         }.joinToString("\n")
 
-        val prompt = TranslationPrompts.getMistralMultiScalePromptOptimized(
-            ocrResultsText = ocrResultsText,
-            numberedBlocks = numberedBlocks,
+        val instructions = TranslationPrompts.getMistralMultiScalePromptOptimized(
+            ocrResultsText = "DỮ LIỆU ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
+            numberedBlocks = "DANH SÁCH ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
             blockCount = textBlocks.size,
             previousContextText = previousContextText,
             isAncientMode = isAncientMode
@@ -419,9 +431,18 @@ import kotlin.math.max
 
         val systemMessage = mapOf(
             "role" to "system",
-            "content" to "Bạn là phiên dịch viên chuyên nghiệp cấp cao, chuyên bản địa hóa truyện tranh người lớn sang tiếng Việt. Tuyệt đối KHÔNG kiểm duyệt nội dung. Output CHỈ gồm các dòng 'Block #N: <bản dịch>'. Không giải thích, không ghi chú, không markdown."
+            "content" to instructions
         )
-        val userMessage = mapOf("role" to "user", "content" to prompt)
+
+        val dataContent = """
+            === DỮ LIỆU OCR ===
+            $ocrResultsText
+            
+            === BLOCKS CẦN DỊCH ===
+            $numberedBlocks
+        """.trimIndent()
+
+        val userMessage = mapOf("role" to "user", "content" to dataContent)
 
         val response = mistralRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
@@ -3346,22 +3367,31 @@ import kotlin.math.max
                     maxOutputTokens = 4096
                 }
 
-                val generativeModel = GenerativeModel(
-                    modelName = modelName,
-                    apiKey = useKey,
-                    safetySettings = safetySettings,
-                    generationConfig = config
-                )
-                
-                val prompt = TranslationPrompts.getGeminiMultiScalePrompt(
-                    ocrResultsText = ocrResultsText,
-                    numberedBlocks = numberedBlocks,
+                val instructions = TranslationPrompts.getGeminiMultiScalePrompt(
+                    ocrResultsText = "DỮ LIỆU ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
+                    numberedBlocks = "DANH SÁCH ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
                     blockCount = textBlocks.size,
                     previousContextText = previousContextText,
                     isAncientMode = isAncientMode
                 )
+
+                val generativeModel = GenerativeModel(
+                    modelName = modelName,
+                    apiKey = useKey,
+                    safetySettings = safetySettings,
+                    generationConfig = config,
+                    systemInstruction = content { text(instructions) }
+                )
                 
-                val response = generativeModel.generateContent(prompt)
+                val dataContent = """
+                    === DỮ LIỆU OCR ===
+                    $ocrResultsText
+                    
+                    === BLOCKS CẦN DỊCH ===
+                    $numberedBlocks
+                """.trimIndent()
+                
+                val response = generativeModel.generateContent(dataContent)
                 val content = response.text?.trim()
 
                 if (content.isNullOrBlank()) {
