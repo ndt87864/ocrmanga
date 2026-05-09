@@ -293,17 +293,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         state.copy(translatedTexts = newTranslatedTexts)
                     }
 
-                    // Đánh dấu ảnh là đã thay đổi
-                    val imageId = uriToImageId[uri]
-                    val roomId = uiState.value.roomId
-                    if (imageId != null && roomId != null) {
-                        try {
-                            databaseHelper.markImageChanged(roomId, imageId)
-                            Log.i(TAG, "[OPTIMIZE] Marked image changed: roomId=$roomId, imageId=$imageId")
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Failed to mark image changed: imageId=$imageId", e)
-                        }
-                    }
+                    // Đánh dấu URI là đã thay đổi để có thể lưu thủ công sau này
+                    dirtyUris.add(uri)
+                    Log.i(TAG, "[OPTIMIZE] Added uri to dirtyUris for temporary optimization: $uri")
 
                     // Cập nhật trạng thái hoàn thành
                     updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
@@ -3233,10 +3225,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
             _uiState.update { it.copy(isTranslating = false) }
 
-            val rid = _uiState.value.roomId
-            if (rid != null) {
-                maybeAutoSaveChangedImages(rid)
-            }
 
             withContext(Dispatchers.Main) {
                 Toast.makeText(getApplication(), "Đã hoàn thành tối ưu tất cả ảnh trong phòng.", Toast.LENGTH_LONG).show()
@@ -3356,17 +3344,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
 
-        // Đánh dấu ảnh đã thay đổi để lưu vào DB
-        val imageId = uriToImageId[uri]
-        val roomId = uiState.value.roomId
-        if (imageId != null && roomId != null) {
-            try {
-                databaseHelper.markImageChanged(imageId, roomId)
-                dirtyUris.add(uri)
-            } catch (e: Exception) {
-                Log.w(TAG, "updateImageWithOptimizedTranslations: failed to mark image changed for $uri", e)
-            }
-        }
+        // Đánh dấu URI là đã thay đổi để có thể lưu thủ công sau này
+        dirtyUris.add(uri)
+        Log.i(TAG, "updateImageWithOptimizedTranslations: added $uri to dirtyUris (temporary)")
     }
 
 
