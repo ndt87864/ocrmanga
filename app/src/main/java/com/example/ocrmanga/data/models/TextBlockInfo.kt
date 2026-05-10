@@ -13,6 +13,7 @@ data class TextBlockInfo(
     val fontFamily: String = "mto_comic_2", // Font chữ mặc định cho dịch
     val text: String,
     val originalText: String? = null, // Văn bản gốc từ OCR trước khi dịch
+    val originalFontSize: Float? = null, // Cỡ chữ của văn bản gốc từ OCR
     val bounds: Rect,
     val fontSize: Float,
         val lineSpacing: Float = 

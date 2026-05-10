@@ -116,9 +116,11 @@ private fun generateCacheKey(
     lineSpacing: Float,
     shapeType: Int,
     overlayInsetH: Float,
-    overlayInsetV: Float
+    overlayInsetV: Float,
+    originalFontSize: Float?,
+    isSolidBubble: Boolean
 ): String {
-    return "${bounds.left.toInt()}_${bounds.top.toInt()}_${bounds.width.toInt()}_${bounds.height.toInt()}_${text.hashCode()}_${baseFontSize.toInt()}_${isVertical}_${fontFamilyName ?: ""}_${(lineSpacing * 100).toInt()}_${shapeType}_${overlayInsetH.toInt()}_${overlayInsetV.toInt()}"
+    return "${bounds.left.toInt()}_${bounds.top.toInt()}_${bounds.width.toInt()}_${bounds.height.toInt()}_${text.hashCode()}_${baseFontSize.toInt()}_${isVertical}_${fontFamilyName ?: ""}_${(lineSpacing * 100).toInt()}_${shapeType}_${overlayInsetH.toInt()}_${overlayInsetV.toInt()}_${originalFontSize?.toInt()}_$isSolidBubble"
 }
 
 private fun getCachedTypeface(context: Context, fontFamilyName: String?): Typeface? {
@@ -1714,10 +1716,12 @@ fun calculateWindowedOverlayBounds(
     overlayInsetVertical: Float,
     horizontalPadding: Float = 0f,
     verticalPadding: Float = 0f,
-    boldness: Float = 1.0f
+    boldness: Float = 1.0f,
+    originalFontSize: Float? = null,
+    isSolidBubble: Boolean = false
 ): WindowedOverlayResult {
     // Check cache first
-    val cacheKey = generateCacheKey(originalBounds, text, baseFontSize, isVertical, fontFamilyName, lineSpacing, shapeType, overlayInsetHorizontal, overlayInsetVertical)
+    val cacheKey = generateCacheKey(originalBounds, text, baseFontSize, isVertical, fontFamilyName, lineSpacing, shapeType, overlayInsetHorizontal, overlayInsetVertical, originalFontSize, isSolidBubble)
     synchronized(boundsCacheLock) {
         windowedBoundsCache[cacheKey]?.let { cached ->
             return cached
@@ -1727,19 +1731,21 @@ fun calculateWindowedOverlayBounds(
     // 1. Outer bounds = FULL original bounds (KHÔNG áp dụng user insets)
     var currentOuterBounds = originalBounds
 
+    var currentOverlayInsetH = overlayInsetHorizontal
+    var currentOverlayInsetV = overlayInsetVertical
+
     // 2. Inner bounds = outer bounds - user insets
     // Đây là vùng bôi trắng thực tế sẽ được vẽ
     var currentInnerBounds = androidx.compose.ui.geometry.Rect(
-        currentOuterBounds.left + overlayInsetHorizontal,
-        currentOuterBounds.top + overlayInsetVertical,
-        currentOuterBounds.right - overlayInsetHorizontal,
-        currentOuterBounds.bottom - overlayInsetVertical
+        currentOuterBounds.left + currentOverlayInsetH,
+        currentOuterBounds.top + currentOverlayInsetV,
+        currentOuterBounds.right - currentOverlayInsetH,
+        currentOuterBounds.bottom - currentOverlayInsetV
     ).takeIf { it.width > 0 && it.height > 0 } ?: currentOuterBounds
 
-    // 3. Tính toán vùng vẽ văn bản dựa trên INNER bounds thay vì outer bounds
-    // MỤC TIÊU: Đảm bảo văn bản luôn nằm gọn trong vùng bôi trắng (overlay)
-    var textAreaWidth = currentInnerBounds.width
-    var textAreaHeight = currentInnerBounds.height
+    // 3. Tính toán vùng vẽ văn bản dựa trên OUTER bounds để text không bị ảnh hưởng bởi inset
+    var textAreaWidth = currentOuterBounds.width
+    var textAreaHeight = currentOuterBounds.height
 
     var optimalFontSize = calculateOptimalFontSize(
         text = text,
@@ -1756,47 +1762,19 @@ fun calculateWindowedOverlayBounds(
         boldness = boldness
     )
 
-    // Expand bounding box dynamically if optimalFontSize < 20f
-    if (optimalFontSize < 20f) {
-        var expansion = 0f
-        val step = 2f
-        val maxExpansion = 100f // Limit expansion to prevent infinite loop or huge bounds
+    // Expand bounding box dynamically if optimalFontSize < minTargetSize
+    // Bỏ logic while loop tự động giãn bounds ở UI layer vì đã chuyển logic scale (originalFontSize và min 15f) vào OverlayOptimizer.kt
+    // Giúp data nhất quán giữa Log, Database và UI.
+    val minLimit = 15f
+    val targetMinFontSize = if (originalFontSize != null && originalFontSize > minLimit) {
+        maxOf(minLimit, originalFontSize)
+    } else {
+        minLimit
+    }
 
-        while (optimalFontSize < 20f && expansion < maxExpansion) {
-            expansion += step
-
-            currentOuterBounds = androidx.compose.ui.geometry.Rect(
-                originalBounds.left - expansion,
-                originalBounds.top - expansion,
-                originalBounds.right + expansion,
-                originalBounds.bottom + expansion
-            )
-
-            currentInnerBounds = androidx.compose.ui.geometry.Rect(
-                currentOuterBounds.left + overlayInsetHorizontal,
-                currentOuterBounds.top + overlayInsetVertical,
-                currentOuterBounds.right - overlayInsetHorizontal,
-                currentOuterBounds.bottom - overlayInsetVertical
-            ).takeIf { it.width > 0 && it.height > 0 } ?: currentOuterBounds
-
-            textAreaWidth = currentInnerBounds.width
-            textAreaHeight = currentInnerBounds.height
-
-            optimalFontSize = calculateOptimalFontSize(
-                text = text,
-                width = textAreaWidth,
-                height = textAreaHeight,
-                minFontSize = (baseFontSize * 0.1f).coerceAtLeast(4f),
-                maxFontSize = baseFontSize * 3f,
-                shapeType = shapeType,
-                context = context,
-                fontFamilyName = fontFamilyName,
-                lineSpacing = lineSpacing,
-                horizontalPadding = horizontalPadding,
-                verticalPadding = verticalPadding,
-                boldness = boldness
-            )
-        }
+    if (optimalFontSize < targetMinFontSize) {
+        // Nếu UI tính ra optimalFontSize nhỏ hơn mức cho phép, ta vẫn force sử dụng targetMinFontSize
+        optimalFontSize = targetMinFontSize
     }
 
     // 4. Measure text size với optimal font size

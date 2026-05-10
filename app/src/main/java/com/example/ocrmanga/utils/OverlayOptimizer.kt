@@ -37,7 +37,9 @@ object OverlayOptimizer {
         val confidence: Float,
         val containerType: ContainerType,
         val reason: String,
-        val shapeType: Int // 0=Rect, 1=Oval
+        val shapeType: Int, // 0=Rect, 1=Oval
+        val newBounds: Rect? = null,
+        val newFontSize: Float? = null
     )
 
     enum class ContainerType {
@@ -65,7 +67,7 @@ object OverlayOptimizer {
             optimizeBlock(block, index, imageBitmap, imageWidth, imageHeight)
         }
         val optimizedBlocks = blocks.mapIndexed { index, block ->
-            applyResult(block, results[index])
+            applyResult(block, results[index], index)
         }
         return Pair(optimizedBlocks, results)
     }
@@ -113,7 +115,7 @@ object OverlayOptimizer {
         val isSolidBubble = isSolidColorBubble(block, imageBitmap)
 
         return if (isSolidBubble) {
-            optimizeForSolidBubble(block, index, imageWidth, imageHeight)
+            optimizeForSolidBubble(block, index, imageWidth, imageHeight, imageBitmap)
         } else {
             optimizeForTransparent(block, index, imageWidth, imageHeight)
         }
@@ -252,7 +254,8 @@ object OverlayOptimizer {
         block: TextBlockInfo,
         index: Int,
         imageWidth: Int,
-        imageHeight: Int
+        imageHeight: Int,
+        imageBitmap: Bitmap?
     ): OptimizationResult {
         val bgColor = block.averageBackgroundColor
         val isDarkBg = bgColor != null && isColorDark(bgColor)
@@ -269,22 +272,123 @@ object OverlayOptimizer {
             ?: block.originalTextColor
             ?: if (isDarkBg) Color.WHITE else Color.BLACK
 
-        // Tính inset hợp lý dựa trên kích thước block
-        // Để không làm lộ text gốc, inset phải bằng 0.
-        // Hủy bỏ việc tự động ép sang Oval vì Oval sẽ cắt lẹm 4 góc của bounding box chữ nhật,
-        // khiến chữ tiếng Nhật gốc bị lộ ra ngoài. Thay vào đó, ta sẽ xử lý bo góc nhẹ cho Rectangle
-        // bên trong ImageViewer.kt để tránh viền sắc nhọn mà không làm lộ chữ.
         val shapeToUse = block.shapeType
-
-        // Dùng inset 0 để đảm bảo che kín 100% text gốc
-        val insetH = 0f
-        val insetV = 0f
-
         val containerType = if (shapeToUse == 1) ContainerType.BUBBLE_OVAL else ContainerType.BUBBLE_RECT
 
-        val originalInsetH = block.overlayInsetHorizontal
-        val originalInsetV = block.overlayInsetVertical
-        Log.i(TAG, "[TH1] Block $index '${block.text.take(20)}...', cỡ chữ=${block.fontSize}, inset ban đầu=($originalInsetH, $originalInsetV), inset sau khi sửa=($insetH, $insetV)")
+        var newBounds = Rect(block.bounds)
+        var newFontSize = block.fontSize
+        var insetH = 0f
+        var insetV = 0f
+
+        if (imageBitmap != null) {
+            // Define border pixel: significantly different brightness from background
+            fun isBorderPixel(p: Int): Boolean {
+                val red = Color.red(p)
+                val green = Color.green(p)
+                val blue = Color.blue(p)
+                val brightness = (red + green + blue) / 3
+                return if (isDarkBg) {
+                    brightness > 120 // Border of dark bubble is light
+                } else {
+                    brightness < 120 // Border of light bubble is dark
+                }
+            }
+
+            val origBounds = block.bounds
+            var originalTouchesBorder = false
+
+            // Check if original bounds perimeter already touches border
+            var borderCount = 0
+            val maxPixels = (origBounds.width() + origBounds.height()) * 2
+            for (x in origBounds.left..origBounds.right) {
+                if (origBounds.top in 0 until imageBitmap.height && isBorderPixel(imageBitmap.getPixel(x.coerceIn(0, imageBitmap.width - 1), origBounds.top))) borderCount++
+                if (origBounds.bottom in 0 until imageBitmap.height && isBorderPixel(imageBitmap.getPixel(x.coerceIn(0, imageBitmap.width - 1), origBounds.bottom))) borderCount++
+            }
+            for (y in origBounds.top..origBounds.bottom) {
+                if (origBounds.left in 0 until imageBitmap.width && isBorderPixel(imageBitmap.getPixel(origBounds.left, y.coerceIn(0, imageBitmap.height - 1)))) borderCount++
+                if (origBounds.right in 0 until imageBitmap.width && isBorderPixel(imageBitmap.getPixel(origBounds.right, y.coerceIn(0, imageBitmap.height - 1)))) borderCount++
+            }
+
+            if (borderCount > maxPixels * 0.02f) {
+                originalTouchesBorder = true
+            }
+
+            if (originalTouchesBorder) {
+                // If it already touches the border, apply inset so overlay shrinks and just covers the text
+                insetH = origBounds.width() * 0.05f
+                insetV = origBounds.height() * 0.05f
+            } else {
+                // Expand until we hit the border
+                var l = origBounds.left
+                var t = origBounds.top
+                var r = origBounds.right
+                var b = origBounds.bottom
+
+                var expandLeft = true
+                var expandRight = true
+                var expandTop = true
+                var expandBottom = true
+
+                val maxStep = (imageBitmap.width + imageBitmap.height) / 4
+                var step = 0
+
+                while (step < maxStep && (expandLeft || expandRight || expandTop || expandBottom)) {
+                    // Expand left
+                    if (expandLeft && l > 0) {
+                        var hits = 0
+                        val checkX = l - 1
+                        for (y in t..b) {
+                            if (isBorderPixel(imageBitmap.getPixel(checkX, y))) hits++
+                        }
+                        if (hits > 0) expandLeft = false else l--
+                    } else { expandLeft = false }
+
+                    // Expand right
+                    if (expandRight && r < imageBitmap.width - 1) {
+                        var hits = 0
+                        val checkX = r + 1
+                        for (y in t..b) {
+                            if (isBorderPixel(imageBitmap.getPixel(checkX, y))) hits++
+                        }
+                        if (hits > 0) expandRight = false else r++
+                    } else { expandRight = false }
+
+                    // Expand top
+                    if (expandTop && t > 0) {
+                        var hits = 0
+                        val checkY = t - 1
+                        for (x in l..r) {
+                            if (isBorderPixel(imageBitmap.getPixel(x, checkY))) hits++
+                        }
+                        if (hits > 0) expandTop = false else t--
+                    } else { expandTop = false }
+
+                    // Expand bottom
+                    if (expandBottom && b < imageBitmap.height - 1) {
+                        var hits = 0
+                        val checkY = b + 1
+                        for (x in l..r) {
+                            if (isBorderPixel(imageBitmap.getPixel(x, checkY))) hits++
+                        }
+                        if (hits > 0) expandBottom = false else b++
+                    } else { expandBottom = false }
+
+                    step++
+                }
+
+                newBounds = Rect(l, t, r, b)
+
+                // Scale text size proportional to the expanded bounds
+                if (newBounds.width() > origBounds.width() || newBounds.height() > origBounds.height()) {
+                    val scaleFactor = minOf(
+                        newBounds.width().toFloat() / origBounds.width().toFloat(),
+                        newBounds.height().toFloat() / origBounds.height().toFloat()
+                    ).coerceIn(1f, 3f)
+
+                    newFontSize = block.fontSize * scaleFactor
+                }
+            }
+        }
 
         return OptimizationResult(
             overlayInsetHorizontal = insetH,
@@ -298,8 +402,10 @@ object OverlayOptimizer {
             transparencyThreshold = 1.0f,
             confidence = 0.95f,
             containerType = containerType,
-            reason = "Solid ${if (isDarkBg) "dark" else "light"} bubble, inset to avoid border",
-            shapeType = shapeToUse
+            reason = "Solid ${if (isDarkBg) "dark" else "light"} bubble, optimized bounds",
+            shapeType = shapeToUse,
+            newBounds = newBounds,
+            newFontSize = newFontSize
         )
     }
 
@@ -344,7 +450,7 @@ object OverlayOptimizer {
         val containerType = classifyNonBubble(block)
 
         val originalAlpha = block.overlayAlpha
-        Log.i(TAG, "[TH2] Block $index '${block.text.take(20)}...', cỡ chữ=${block.fontSize}, độ trong suốt ban đầu=$originalAlpha, độ trong suốt sau khi sửa=0.0")
+        // Log được chuyển sang applyResult
 
         return OptimizationResult(
             overlayInsetHorizontal = insetH,
@@ -392,13 +498,48 @@ object OverlayOptimizer {
      */
     private fun applyResult(
         block: TextBlockInfo,
-        result: OptimizationResult
+        result: OptimizationResult,
+        index: Int = -1
     ): TextBlockInfo {
+        var newText = formatPunctuationSpacing(block.text)
+        var newFontSize = result.newFontSize ?: block.fontSize
+        var newBounds = result.newBounds ?: Rect(block.bounds)
+        var newInsetH = result.overlayInsetHorizontal
+        var newInsetV = result.overlayInsetVertical
+
+        val blockIdentifier = if (index >= 0) "$index" else "${block.bubbleId ?: "?"}"
+        val origText = block.originalText?.replace("\n", " ") ?: ""
+        val transText = newText.replace("\n", " ")
+
+        if (!result.needsTransparency) {
+            val logMessage = """
+                |[TH1] Block $blockIdentifier
+                |Orig text: '$origText'
+                |Trans text: '$transText' (FontSize: $newFontSize)
+                |Orig inset: (H: ${block.overlayInsetHorizontal}, V: ${block.overlayInsetVertical})
+                |New inset: (H: $newInsetH, V: $newInsetV)
+                |Orig bounds: ${block.bounds}
+                |New bounds: $newBounds
+            """.trimMargin()
+            Log.i(TAG, "\n" + logMessage)
+        } else {
+            val logMessage = """
+                |[TH2] Block $blockIdentifier
+                |Orig text: '$origText'
+                |Trans text: '$transText' (FontSize: $newFontSize)
+                |Orig bounds: ${block.bounds}
+                |New bounds: $newBounds
+            """.trimMargin()
+            Log.i(TAG, "\n" + logMessage)
+        }
+
         return block.copy(
-            text = formatPunctuationSpacing(block.text),
+            text = newText,
+            fontSize = newFontSize,
+            bounds = newBounds,
             overlayAlpha = result.overlayAlpha,
-            overlayInsetHorizontal = result.overlayInsetHorizontal,
-            overlayInsetVertical = result.overlayInsetVertical,
+            overlayInsetHorizontal = newInsetH,
+            overlayInsetVertical = newInsetV,
             shapeType = result.shapeType,
             customBorderColor = result.borderColor ?: block.customBorderColor,
             borderThickness = result.borderThickness ?: block.borderThickness

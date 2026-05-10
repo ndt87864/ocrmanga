@@ -588,6 +588,9 @@ fun ImageViewer(
                                                 dragBlock.fontSize
                                             ) else block.fontSize) * screenScaleFactor
 
+                                        val isSolidBubble = dragBlock.overlayAlpha >= 0.95f
+                                        val scaledOriginalFontSize = block.originalFontSize?.let { it * screenScaleFactor }
+
                                         PrecomputedRegion(
                                             block = block,
                                             rect = rect,
@@ -626,7 +629,9 @@ fun ImageViewer(
                                                 overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
                                                 horizontalPadding = 4f,
                                                 verticalPadding = 4f,
-                                                boldness = dragBlock.textBoldness
+                                                boldness = dragBlock.textBoldness,
+                                                originalFontSize = scaledOriginalFontSize,
+                                                isSolidBubble = isSolidBubble
                                             ),
                                             wrappedText = adjustWhiteoutBounds(
                                                 text = block.text,
@@ -643,8 +648,10 @@ fun ImageViewer(
                                                     overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
                                                     horizontalPadding = 4f,
                                                     verticalPadding = 4f,
-                                                    boldness = dragBlock.textBoldness
-                                                ).innerBounds.width,
+                                                    boldness = dragBlock.textBoldness,
+                                                    originalFontSize = scaledOriginalFontSize,
+                                                    isSolidBubble = isSolidBubble
+                                                ).outerBounds.width,
                                                 initialHeight = calculateWindowedOverlayBounds(
                                                     originalBounds = rect,
                                                     text = block.text,
@@ -658,8 +665,10 @@ fun ImageViewer(
                                                     overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
                                                     horizontalPadding = 4f,
                                                     verticalPadding = 4f,
-                                                    boldness = dragBlock.textBoldness
-                                                ).innerBounds.height,
+                                                    boldness = dragBlock.textBoldness,
+                                                    originalFontSize = scaledOriginalFontSize,
+                                                    isSolidBubble = isSolidBubble
+                                                ).outerBounds.height,
                                                 fontSize = calculateWindowedOverlayBounds(
                                                     originalBounds = rect,
                                                     text = block.text,
@@ -673,7 +682,9 @@ fun ImageViewer(
                                                     overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
                                                     horizontalPadding = 4f,
                                                     verticalPadding = 4f,
-                                                    boldness = dragBlock.textBoldness
+                                                    boldness = dragBlock.textBoldness,
+                                                    originalFontSize = scaledOriginalFontSize,
+                                                    isSolidBubble = isSolidBubble
                                                 ).optimalFontSize,
                                                 isVertical = block.isVertical,
                                                 context = context,
@@ -857,15 +868,15 @@ fun ImageViewer(
                                                 )
                                             }) { drawBorder() } else drawBorder()
                                         }
-                                        // Text vẽ trong INNER bounds (vùng bôi trắng thực tế)
+                                        // Text vẽ trong OUTER bounds để không bị ảnh hưởng bởi inset
                                         val tL =
-                                            clampedInnerBounds.left + clampedInnerBounds.width * (if (isOval) 0.125f else 0f)
+                                            clampedOuterBounds.left + clampedOuterBounds.width * (if (isOval) 0.125f else 0f)
                                         val tT =
-                                            clampedInnerBounds.top + clampedInnerBounds.height * (if (isOval) 0.025f else 0f)
+                                            clampedOuterBounds.top + clampedOuterBounds.height * (if (isOval) 0.025f else 0f)
                                         val tW =
-                                            clampedInnerBounds.width * (if (isOval) 0.75f else 1f)
+                                            clampedOuterBounds.width * (if (isOval) 0.75f else 1f)
                                         val tH =
-                                            clampedInnerBounds.height * (if (isOval) 0.95f else 1f)
+                                            clampedOuterBounds.height * (if (isOval) 0.95f else 1f)
                                         withTransform({
                                             if (region.rotation != 0f) rotate(
                                                 region.rotation,

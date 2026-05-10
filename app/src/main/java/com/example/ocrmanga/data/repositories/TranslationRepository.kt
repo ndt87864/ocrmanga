@@ -159,6 +159,19 @@ import kotlin.math.max
         // Note: translators (MLKit) do not expose a cancel; we don't close them here.
     }
 
+    fun clearCacheForImage(imageUri: Uri, mode: TranslationMode? = null) {
+        try {
+            if (mode != null) {
+                cache.remove("$imageUri-$mode")
+            } else {
+                val keysToRemove = cache.keys.filter { it.startsWith("$imageUri-") }
+                keysToRemove.forEach { cache.remove(it) }
+            }
+        } catch (e: Throwable) {
+            Log.w("TranslationRepository", "Failed to clear cache for $imageUri", e)
+        }
+    }
+
     private val poolManager by lazy { com.example.ocrmanga.data.translation.ApiKeyPoolManager(application) }
     private val mistralRequester by lazy { com.example.ocrmanga.data.translation.MistralRequester(application, poolManager, httpClient) }
     private val zaiRequester by lazy { com.example.ocrmanga.data.translation.ZAiRequester(application, poolManager, httpClient) }
@@ -983,6 +996,7 @@ import kotlin.math.max
                                             originalText = text,
                                             bounds = scaledBounds,
                                             fontSize = scaledBounds.height().toFloat(),
+                                            originalFontSize = scaledBounds.height().toFloat(),
                                             wordCountsPerLine = listOf(1),
                                             originalImageWidth = bitmap.width,
                                             originalImageHeight = bitmap.height,
@@ -1218,6 +1232,7 @@ import kotlin.math.max
                 Log.i("TranslationRepository", "[OCR-BLOCK] #$index: Text='${block.text}'")
                 Log.i("TranslationRepository", "    + Container: $containerTypeStr")
                 Log.i("TranslationRepository", "    + Color: Text=$textColorHex, Overlay=$overlayColorHex")
+                Log.i("TranslationRepository", "    + Font: originalFontSize=${block.originalFontSize}, calculatedFontSize=${block.fontSize}")
                 Log.i("TranslationRepository", "    + Bounds: ${block.bounds}")
             }
             Log.i("TranslationRepository", "================================================")
@@ -1994,6 +2009,7 @@ import kotlin.math.max
                                 originalText = processedText,
                                 bounds = scaledBounds,
                                 fontSize = fontSize,
+                                originalFontSize = fontSize,
                                 wordCountsPerLine = listOf(wordCount),
                                 originalImageWidth = bitmap.width,
                                 originalImageHeight = bitmap.height,
@@ -2040,7 +2056,7 @@ import kotlin.math.max
                     try {
                         val origColorHex = block.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
                         val avgBgHex = block.averageBackgroundColor?.let { String.format("#%08X", it) } ?: "null"
-                        Log.i("TranslationRepository", "[OCR] Block #$index: text='${block.text.take(40)}', bounds=${block.bounds.left},${block.bounds.top},${block.bounds.right},${block.bounds.bottom}, fontSize=${block.fontSize}, originalColor=$origColorHex, avgBg=$avgBgHex")
+                        Log.i("TranslationRepository", "[OCR] Block #$index: text='${block.text.take(40)}', bounds=${block.bounds.left},${block.bounds.top},${block.bounds.right},${block.bounds.bottom}, fontSize=${block.fontSize}, originalFontSize=${block.originalFontSize}, originalColor=$origColorHex, avgBg=$avgBgHex")
                     } catch (_: Exception) { }
                 }
 
@@ -2304,6 +2320,7 @@ import kotlin.math.max
                                     originalText = rawProcessedText,
                                     bounds = rawBounds,
                                     fontSize = rawFontSize,
+                                    originalFontSize = rawFontSize,
                                     wordCountsPerLine = listOf(rawWordCount),
                                     originalImageWidth = bitmap.width,
                                     originalImageHeight = bitmap.height,
@@ -2649,6 +2666,7 @@ import kotlin.math.max
                 originalText = mergedOriginalText,
                 bounds = Rect(mergedBounds),
                 fontSize = minFontSize,
+                originalFontSize = sortedBlocks.maxOfOrNull { it.originalFontSize ?: it.fontSize } ?: minFontSize,
                 wordCountsPerLine = null, // Reset wordCountsPerLine after merging
                 originalImageWidth = sortedBlocks.firstOrNull()?.originalImageWidth,
                 originalImageHeight = sortedBlocks.firstOrNull()?.originalImageHeight,
@@ -2882,6 +2900,7 @@ import kotlin.math.max
                         originalText = mergedOriginalText,
                         bounds = mergedBounds,
                         fontSize = minFontSize,
+                originalFontSize = subGroupBlocks.maxOfOrNull { it.originalFontSize ?: it.fontSize } ?: minFontSize,
                         isVertical = true, // Đánh dấu là vertical text để downstream merge đúng thứ tự RTL
                         wordCountsPerLine = null, // Reset wordCountsPerLine after merging
                         originalImageWidth = subGroupBlocks.firstOrNull()?.originalImageWidth,
@@ -3021,7 +3040,7 @@ import kotlin.math.max
             // Chọn scale nhỏ hơn để đảm bảo vừa
             val finalScale = minOf(widthScale, heightScale, 1.0f)
             
-            // Tăng giới hạn tối thiểu fontSize lên 70% fontSize gốc cho vertical (AI dịch) để text to hơn
+            // Tăng giới hạn tối thiểu fontSize lên 50% fontSize gốc cho vertical để text không quá to
             val minFontSize = originalFontSize * 0.5f
             val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
             
@@ -3076,8 +3095,8 @@ import kotlin.math.max
         // Chọn scale nhỏ hơn để đảm bảo vừa cả width và height
         val finalScale = minOf(widthScale, heightScale, 1.0f)
         
-    // Tăng giới hạn tối thiểu fontSize lên 80% fontSize gốc để text to hơn
-    val minFontSize = originalFontSize * 0.7f
+    // Giới hạn tối thiểu fontSize bằng 50% fontSize gốc để text không bị quá to gây tràn khung
+    val minFontSize = originalFontSize * 0.5f
     val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
 //        Log.i("TranslationRepository", "[FONT-ADJUST-HORIZONTAL] Original: '${originalText.take(30)}...', " +
 //            "Translated: '${translatedText.take(30)}...', " +
@@ -3931,6 +3950,7 @@ import kotlin.math.max
                             originalText = mergedOriginalText,
                             bounds = mergedBounds,
                             fontSize = minFontSize,
+                originalFontSize = group.maxOfOrNull { it.originalFontSize ?: it.fontSize } ?: minFontSize,
                             isVertical = isVertical,
                             wordCountsPerLine = null,
                             originalImageWidth = group.first().originalImageWidth,

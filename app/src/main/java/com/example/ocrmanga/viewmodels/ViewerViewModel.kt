@@ -276,7 +276,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     customTextColor = opt?.customTextColor,
                     overlayAlpha = opt?.overlayAlpha ?: 1.0f,
                     overlayInsetHorizontal = opt?.overlayInsetHorizontal ?: 0f,
-                    overlayInsetVertical = opt?.overlayInsetVertical ?: 0f
+                    overlayInsetVertical = opt?.overlayInsetVertical ?: 0f,
+                    bounds = opt?.bounds ?: block.bounds,
+                    fontSize = opt?.fontSize ?: block.fontSize,
+                    shapeType = opt?.shapeType ?: block.shapeType,
+                    customBorderColor = opt?.customBorderColor ?: block.customBorderColor,
+                    borderThickness = opt?.borderThickness ?: block.borderThickness
                 )
             }
             newTranslatedTexts[uri] = currentPair.first to overlayAppliedBlocks
@@ -345,14 +350,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val newTranslatedTexts = state.translatedTexts.toMutableMap()
                     val updatedBlocks = blocks.mapIndexed { index, block ->
                         if (index < optimizedTranslations.size) {
+                            val opt = optimizedBlocks.getOrNull(index)
                             block.copy(
                                 text = optimizedTranslations[index],
                                 applyMerge = false,
-                                customOverlayColor = optimizedBlocks.getOrNull(index)?.customOverlayColor,
-                                customTextColor = optimizedBlocks.getOrNull(index)?.customTextColor,
-                                overlayAlpha = optimizedBlocks.getOrNull(index)?.overlayAlpha ?: 1.0f,
-                                overlayInsetHorizontal = optimizedBlocks.getOrNull(index)?.overlayInsetHorizontal ?: 0f,
-                                overlayInsetVertical = optimizedBlocks.getOrNull(index)?.overlayInsetVertical ?: 0f
+                                customOverlayColor = opt?.customOverlayColor,
+                                customTextColor = opt?.customTextColor,
+                                overlayAlpha = opt?.overlayAlpha ?: 1.0f,
+                                overlayInsetHorizontal = opt?.overlayInsetHorizontal ?: 0f,
+                                overlayInsetVertical = opt?.overlayInsetVertical ?: 0f,
+                                bounds = opt?.bounds ?: block.bounds,
+                                fontSize = opt?.fontSize ?: block.fontSize,
+                                shapeType = opt?.shapeType ?: block.shapeType,
+                                customBorderColor = opt?.customBorderColor ?: block.customBorderColor,
+                                borderThickness = opt?.borderThickness ?: block.borderThickness
                             )
                         } else {
                             block
@@ -641,6 +652,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
 
                     Log.i(TAG, "Calling translateImage for uri=$uri (canonical=$canonicalUri, imageId=${uriToImageId[uri]}) mode=$mode reuseExistingOcr=$reuseExistingOcr")
+
+                    // Xóa cache cũ của ảnh này để đảm bảo nó chạy lại quá trình dịch/OCR mới nhất
+                    translationRepository.clearCacheForImage(canonicalUri, mode)
+
                     val result = translationRepository.translateImage(canonicalUri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode, reuseExistingBlocks = if (reuseExistingOcr) existingBlocks else null)
                     
                     Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
@@ -3257,6 +3272,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             stored ?: uri
                         } else uri
                     } catch (e: Exception) { uri }
+
+                    // Xóa cache cũ trước khi dịch để đảm bảo không lấy nhầm dữ liệu cũ chưa có originalFontSize
+                    translationRepository.clearCacheForImage(canonicalUri, mode)
 
                     val result = translationRepository.translateImage(
                         canonicalUri,
