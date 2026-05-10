@@ -295,163 +295,119 @@ object OverlayOptimizer {
             }
 
             val origBounds = block.bounds
-            var originalTouchesBorder = false
 
-            // Check if original bounds perimeter already touches border
-            var borderCount = 0
-            val maxPixels = (origBounds.width() + origBounds.height()) * 2
-            for (x in origBounds.left..origBounds.right) {
-                if (origBounds.top in 0 until imageBitmap.height && isBorderPixel(imageBitmap.getPixel(x.coerceIn(0, imageBitmap.width - 1), origBounds.top))) borderCount++
-                if (origBounds.bottom in 0 until imageBitmap.height && isBorderPixel(imageBitmap.getPixel(x.coerceIn(0, imageBitmap.width - 1), origBounds.bottom))) borderCount++
+            // Instead of originalTouchesBorder, we use a more robust two-phase approach (Expand then Shrink)
+            // with different hit thresholds to distinguish between text and bubble borders.
+            var l = origBounds.left.coerceIn(0, imageBitmap.width - 1)
+            var t = origBounds.top.coerceIn(0, imageBitmap.height - 1)
+            var r = origBounds.right.coerceIn(0, imageBitmap.width - 1)
+            var b = origBounds.bottom.coerceIn(0, imageBitmap.height - 1)
+
+            // Yêu cầu của người dùng: "nếu đã che hết text gốc -> vẫn giữu giới hạn 20%; ngược lại thì giới hạn là che hết text gốc trước đã"
+            // - Hình Chữ Nhật (Rect): Mặc định đã che hết text gốc (origBounds). Nên giới hạn mở rộng là 20% tổng (tức 10% mỗi bên -> 0.1f).
+            // - Hình Bầu Dục (Oval): Để một hình oval nội tiếp có thể che trọn 4 góc của hình chữ nhật, nó phải lớn hơn hình chữ nhật đó ít nhất căn(2) lần (tức ~1.414 lần).
+            //   Do đó, nó CẦN phải mở rộng thêm 41.4% tổng (tức ~21% mỗi bên -> 0.21f) thì mới "che hết text gốc".
+            val limitFactor = if (shapeToUse == 1) 0.21f else 0.10f
+            val limitL = (origBounds.left - origBounds.width() * limitFactor).toInt().coerceAtLeast(0)
+            val limitR = (origBounds.right + origBounds.width() * limitFactor).toInt().coerceAtMost(imageBitmap.width - 1)
+            val limitT = (origBounds.top - origBounds.height() * limitFactor).toInt().coerceAtLeast(0)
+            val limitB = (origBounds.bottom + origBounds.height() * limitFactor).toInt().coerceAtMost(imageBitmap.height - 1)
+
+            var expandLeft = true
+            var expandRight = true
+            var expandTop = true
+            var expandBottom = true
+            val maxStep = (imageBitmap.width + imageBitmap.height) / 4
+            var step = 0
+
+            // PHASE 1: EXPAND OUTWARDS
+            // We use a low threshold (e.g. 2 hits) to stop exactly at the tips of jagged borders.
+            while (step < maxStep && (expandLeft || expandRight || expandTop || expandBottom)) {
+                if (expandLeft && l > limitL) {
+                    var hits = 0
+                    val checkX = l - 1
+                    for (y in t..b) if (isBorderPixel(imageBitmap.getPixel(checkX, y))) hits++
+                    if (hits > 2) expandLeft = false else l--
+                } else expandLeft = false
+
+                if (expandRight && r < limitR) {
+                    var hits = 0
+                    val checkX = r + 1
+                    for (y in t..b) if (isBorderPixel(imageBitmap.getPixel(checkX, y))) hits++
+                    if (hits > 2) expandRight = false else r++
+                } else expandRight = false
+
+                if (expandTop && t > limitT) {
+                    var hits = 0
+                    val checkY = t - 1
+                    for (x in l..r) if (isBorderPixel(imageBitmap.getPixel(x, checkY))) hits++
+                    if (hits > 2) expandTop = false else t--
+                } else expandTop = false
+
+                if (expandBottom && b < limitB) {
+                    var hits = 0
+                    val checkY = b + 1
+                    for (x in l..r) if (isBorderPixel(imageBitmap.getPixel(x, checkY))) hits++
+                    if (hits > 2) expandBottom = false else b++
+                } else expandBottom = false
+
+                step++
             }
-            for (y in origBounds.top..origBounds.bottom) {
-                if (origBounds.left in 0 until imageBitmap.width && isBorderPixel(imageBitmap.getPixel(origBounds.left, y.coerceIn(0, imageBitmap.height - 1)))) borderCount++
-                if (origBounds.right in 0 until imageBitmap.width && isBorderPixel(imageBitmap.getPixel(origBounds.right, y.coerceIn(0, imageBitmap.height - 1)))) borderCount++
+
+            // PHASE 2: SHRINK INWARDS
+            // If the original bounds overlapped a thick or jagged border, Phase 1 wouldn't have expanded.
+            // We shrink inwards to clear the border. Since Phase 1 guarantees we are either on the border
+            // or in the white gap, we can safely use a low threshold (hits > 2) to perfectly clear jagged tips
+            // without worrying about hitting text (unless the text physically touches the border).
+            var shrinkLeft = true
+            var shrinkRight = true
+            var shrinkTop = true
+            var shrinkBottom = true
+
+            // Max shrink is 10% of original bounds, to prevent eating too much text in worst cases
+            val shrinkLimitL = (origBounds.left + origBounds.width() * 0.1f).toInt().coerceAtMost(imageBitmap.width - 1)
+            val shrinkLimitR = (origBounds.right - origBounds.width() * 0.1f).toInt().coerceAtLeast(0)
+            val shrinkLimitT = (origBounds.top + origBounds.height() * 0.1f).toInt().coerceAtMost(imageBitmap.height - 1)
+            val shrinkLimitB = (origBounds.bottom - origBounds.height() * 0.1f).toInt().coerceAtLeast(0)
+
+            while (shrinkLeft || shrinkRight || shrinkTop || shrinkBottom) {
+                if (shrinkLeft && l < shrinkLimitL) {
+                    var hits = 0
+                    for (y in t..b) if (isBorderPixel(imageBitmap.getPixel(l, y))) hits++
+                    if (hits > 2) l++ else shrinkLeft = false
+                } else shrinkLeft = false
+
+                if (shrinkRight && r > shrinkLimitR) {
+                    var hits = 0
+                    for (y in t..b) if (isBorderPixel(imageBitmap.getPixel(r, y))) hits++
+                    if (hits > 2) r-- else shrinkRight = false
+                } else shrinkRight = false
+
+                if (shrinkTop && t < shrinkLimitT) {
+                    var hits = 0
+                    for (x in l..r) if (isBorderPixel(imageBitmap.getPixel(x, t))) hits++
+                    if (hits > 2) t++ else shrinkTop = false
+                } else shrinkTop = false
+
+                if (shrinkBottom && b > shrinkLimitB) {
+                    var hits = 0
+                    for (x in l..r) if (isBorderPixel(imageBitmap.getPixel(x, b))) hits++
+                    if (hits > 2) b-- else shrinkBottom = false
+                } else shrinkBottom = false
             }
 
-            if (borderCount > maxPixels * 0.02f) {
-                originalTouchesBorder = true
-            }
+            newBounds = Rect(l, t, r, b)
+            insetH = 0f
+            insetV = 0f
 
-            if (originalTouchesBorder) {
-                // Shrink inwards until we don't hit the border, or we hit a maximum shrink limit (15%)
-                var l = origBounds.left.coerceIn(0, imageBitmap.width - 1)
-                var t = origBounds.top.coerceIn(0, imageBitmap.height - 1)
-                var r = origBounds.right.coerceIn(0, imageBitmap.width - 1)
-                var b = origBounds.bottom.coerceIn(0, imageBitmap.height - 1)
+            // Scale text size proportional to the expanded bounds, capping at 20% increase
+            if (newBounds.width() > origBounds.width() || newBounds.height() > origBounds.height()) {
+                val scaleFactor = minOf(
+                    newBounds.width().toFloat() / origBounds.width().toFloat(),
+                    newBounds.height().toFloat() / origBounds.height().toFloat()
+                ).coerceIn(1f, 1.2f)
 
-                var shrinkLeft = true
-                var shrinkRight = true
-                var shrinkTop = true
-                var shrinkBottom = true
-
-                val limitL = (l + origBounds.width() * 0.15f).toInt()
-                val limitR = (r - origBounds.width() * 0.15f).toInt()
-                val limitT = (t + origBounds.height() * 0.15f).toInt()
-                val limitB = (b - origBounds.height() * 0.15f).toInt()
-
-                val maxStep = (imageBitmap.width + imageBitmap.height) / 4
-                var step = 0
-
-                while (step < maxStep && (shrinkLeft || shrinkRight || shrinkTop || shrinkBottom)) {
-                    // Shrink left
-                    if (shrinkLeft && l < limitL) {
-                        var hits = 0
-                        for (y in t..b) {
-                            if (isBorderPixel(imageBitmap.getPixel(l, y))) hits++
-                        }
-                        if (hits > 0) l++ else shrinkLeft = false
-                    } else { shrinkLeft = false }
-
-                    // Shrink right
-                    if (shrinkRight && r > limitR) {
-                        var hits = 0
-                        for (y in t..b) {
-                            if (isBorderPixel(imageBitmap.getPixel(r, y))) hits++
-                        }
-                        if (hits > 0) r-- else shrinkRight = false
-                    } else { shrinkRight = false }
-
-                    // Shrink top
-                    if (shrinkTop && t < limitT) {
-                        var hits = 0
-                        for (x in l..r) {
-                            if (isBorderPixel(imageBitmap.getPixel(x, t))) hits++
-                        }
-                        if (hits > 0) t++ else shrinkTop = false
-                    } else { shrinkTop = false }
-
-                    // Shrink bottom
-                    if (shrinkBottom && b > limitB) {
-                        var hits = 0
-                        for (x in l..r) {
-                            if (isBorderPixel(imageBitmap.getPixel(x, b))) hits++
-                        }
-                        if (hits > 0) b-- else shrinkBottom = false
-                    } else { shrinkBottom = false }
-
-                    step++
-                }
-
-                newBounds = Rect(l, t, r, b)
-                // Remove fixed inset because we shrank the bounds dynamically
-                insetH = 0f
-                insetV = 0f
-            } else {
-                // Expand until we hit the border
-                var l = origBounds.left.coerceIn(0, imageBitmap.width - 1)
-                var t = origBounds.top.coerceIn(0, imageBitmap.height - 1)
-                var r = origBounds.right.coerceIn(0, imageBitmap.width - 1)
-                var b = origBounds.bottom.coerceIn(0, imageBitmap.height - 1)
-
-                var expandLeft = true
-                var expandRight = true
-                var expandTop = true
-                var expandBottom = true
-
-                val limitL = (origBounds.left - origBounds.width() * 0.1f).toInt().coerceAtLeast(0)
-                val limitR = (origBounds.right + origBounds.width() * 0.1f).toInt().coerceAtMost(imageBitmap.width - 1)
-                val limitT = (origBounds.top - origBounds.height() * 0.1f).toInt().coerceAtLeast(0)
-                val limitB = (origBounds.bottom + origBounds.height() * 0.1f).toInt().coerceAtMost(imageBitmap.height - 1)
-
-                val maxStep = (imageBitmap.width + imageBitmap.height) / 4
-                var step = 0
-
-                while (step < maxStep && (expandLeft || expandRight || expandTop || expandBottom)) {
-                    // Expand left
-                    if (expandLeft && l > limitL) {
-                        var hits = 0
-                        val checkX = l - 1
-                        for (y in t..b) {
-                            if (isBorderPixel(imageBitmap.getPixel(checkX, y))) hits++
-                        }
-                        if (hits > 0) expandLeft = false else l--
-                    } else { expandLeft = false }
-
-                    // Expand right
-                    if (expandRight && r < limitR) {
-                        var hits = 0
-                        val checkX = r + 1
-                        for (y in t..b) {
-                            if (isBorderPixel(imageBitmap.getPixel(checkX, y))) hits++
-                        }
-                        if (hits > 0) expandRight = false else r++
-                    } else { expandRight = false }
-
-                    // Expand top
-                    if (expandTop && t > limitT) {
-                        var hits = 0
-                        val checkY = t - 1
-                        for (x in l..r) {
-                            if (isBorderPixel(imageBitmap.getPixel(x, checkY))) hits++
-                        }
-                        if (hits > 0) expandTop = false else t--
-                    } else { expandTop = false }
-
-                    // Expand bottom
-                    if (expandBottom && b < limitB) {
-                        var hits = 0
-                        val checkY = b + 1
-                        for (x in l..r) {
-                            if (isBorderPixel(imageBitmap.getPixel(x, checkY))) hits++
-                        }
-                        if (hits > 0) expandBottom = false else b++
-                    } else { expandBottom = false }
-
-                    step++
-                }
-
-                newBounds = Rect(l, t, r, b)
-
-                // Scale text size proportional to the expanded bounds
-                if (newBounds.width() > origBounds.width() || newBounds.height() > origBounds.height()) {
-                    val scaleFactor = minOf(
-                        newBounds.width().toFloat() / origBounds.width().toFloat(),
-                        newBounds.height().toFloat() / origBounds.height().toFloat()
-                    ).coerceIn(1f, 3f)
-
-                    newFontSize = block.fontSize * scaleFactor
-                }
+                newFontSize = block.fontSize * scaleFactor
             }
         }
 
