@@ -1135,10 +1135,10 @@ fun DrawScope.advancedTextRemoval(rect: Rect, originalImageWidth: Float = 0f, or
  fun findBackgroundRegion(rect: Rect, bitmap: Bitmap): Rect {
     // Lấy vùng lân cận quanh rect, kiểm tra màu nền đồng nhất (ví dụ: trắng)
     val margin = 8 // px
-    val left = rect.left.toInt().coerceAtLeast(0)
-    val top = rect.top.toInt().coerceAtLeast(0)
-    val right = rect.right.toInt().coerceAtMost(bitmap.width - 1)
-    val bottom = rect.bottom.toInt().coerceAtMost(bitmap.height - 1)
+    val left = rect.left.toInt().coerceIn(0, bitmap.width - 1)
+    val top = rect.top.toInt().coerceIn(0, bitmap.height - 1)
+    val right = rect.right.toInt().coerceIn(0, bitmap.width - 1)
+    val bottom = rect.bottom.toInt().coerceIn(0, bitmap.height - 1)
     val bgColor = bitmap.getPixel(left, top)
     var bgLeft = left
     var bgRight = right

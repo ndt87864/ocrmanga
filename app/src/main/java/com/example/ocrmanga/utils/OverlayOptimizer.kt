@@ -319,22 +319,27 @@ object OverlayOptimizer {
                 insetV = origBounds.height() * 0.05f
             } else {
                 // Expand until we hit the border
-                var l = origBounds.left
-                var t = origBounds.top
-                var r = origBounds.right
-                var b = origBounds.bottom
+                var l = origBounds.left.coerceIn(0, imageBitmap.width - 1)
+                var t = origBounds.top.coerceIn(0, imageBitmap.height - 1)
+                var r = origBounds.right.coerceIn(0, imageBitmap.width - 1)
+                var b = origBounds.bottom.coerceIn(0, imageBitmap.height - 1)
 
                 var expandLeft = true
                 var expandRight = true
                 var expandTop = true
                 var expandBottom = true
 
+                val limitL = (origBounds.left - origBounds.width() * 0.1f).toInt().coerceAtLeast(0)
+                val limitR = (origBounds.right + origBounds.width() * 0.1f).toInt().coerceAtMost(imageBitmap.width - 1)
+                val limitT = (origBounds.top - origBounds.height() * 0.1f).toInt().coerceAtLeast(0)
+                val limitB = (origBounds.bottom + origBounds.height() * 0.1f).toInt().coerceAtMost(imageBitmap.height - 1)
+
                 val maxStep = (imageBitmap.width + imageBitmap.height) / 4
                 var step = 0
 
                 while (step < maxStep && (expandLeft || expandRight || expandTop || expandBottom)) {
                     // Expand left
-                    if (expandLeft && l > 0) {
+                    if (expandLeft && l > limitL) {
                         var hits = 0
                         val checkX = l - 1
                         for (y in t..b) {
@@ -344,7 +349,7 @@ object OverlayOptimizer {
                     } else { expandLeft = false }
 
                     // Expand right
-                    if (expandRight && r < imageBitmap.width - 1) {
+                    if (expandRight && r < limitR) {
                         var hits = 0
                         val checkX = r + 1
                         for (y in t..b) {
@@ -354,7 +359,7 @@ object OverlayOptimizer {
                     } else { expandRight = false }
 
                     // Expand top
-                    if (expandTop && t > 0) {
+                    if (expandTop && t > limitT) {
                         var hits = 0
                         val checkY = t - 1
                         for (x in l..r) {
@@ -364,7 +369,7 @@ object OverlayOptimizer {
                     } else { expandTop = false }
 
                     // Expand bottom
-                    if (expandBottom && b < imageBitmap.height - 1) {
+                    if (expandBottom && b < limitB) {
                         var hits = 0
                         val checkY = b + 1
                         for (x in l..r) {
