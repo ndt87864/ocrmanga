@@ -1568,11 +1568,10 @@ fun DrawScope.drawTranslucentOverlay(
                         topLeft = Offset(rect.left, rect.top),
                         size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
                     )
-                    else -> drawRoundRect(
+                    else -> drawRect(
                         color = overlayColor.copy(alpha = 0.95f),
                         topLeft = Offset(rect.left, rect.top),
-                        size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(16f, 16f)
+                        size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
                     )
                 }
             } else {
@@ -1584,11 +1583,10 @@ fun DrawScope.drawTranslucentOverlay(
                         topLeft = Offset(rect.left, rect.top),
                         size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
                     )
-                    else -> drawRoundRect(
+                    else -> drawRect(
                         color = overlayColor,
                         topLeft = Offset(rect.left, rect.top),
-                        size = androidx.compose.ui.geometry.Size(rect.width, rect.height),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(16f, 16f)
+                        size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
                     )
                 }
             }

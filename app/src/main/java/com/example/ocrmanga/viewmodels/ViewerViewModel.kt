@@ -16,6 +16,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.ocrmanga.data.database.DatabaseHelper
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
+import com.example.ocrmanga.data.models.BackgroundType
 import com.example.ocrmanga.data.repositories.TranslationRepository
 import com.example.ocrmanga.ui.screens.view.computeDefaultTextColor
 import com.example.ocrmanga.ui.screens.view.getImageDimensions
@@ -41,6 +42,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.Layout
@@ -226,7 +228,67 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         if (!hasApiKeys) return false
 
-        val currentTranslations = blocks.map { it.text }
+        // Tìm ảnh bitmap để tối ưu overlay
+        val imageId = uriToImageId[uri]
+        val imageBitmap = if (imageId != null) {
+            try {
+                com.example.ocrmanga.utils.ImageUtils.loadImageBitmap(
+                    getApplication(),
+                    imageId
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not load image for optimization", e)
+                null
+            }
+        } else null
+
+        // Lấy image dimensions - từ bitmap hoặc dùng default phổ biến cho manga (360x640)
+        val (imageWidth, imageHeight) = if (imageBitmap != null) {
+            Pair(imageBitmap.width, imageBitmap.height)
+        } else {
+            // Default aspect ratio cho manga pages
+            Pair(360, 640)
+        }
+
+        // Tối ưu overlay tự động sử dụng OverlayOptimizer
+        val (optimizedBlocks, optimizationResults) = com.example.ocrmanga.utils.OverlayOptimizer.analyzeAndOptimize(
+            blocks,
+            imageBitmap,
+            imageWidth,
+            imageHeight
+        )
+
+        // Log các kết quả tối ưu
+        optimizationResults.forEachIndexed { index, result ->
+            Log.d(TAG, "Optimization block #$index: ${result.containerType} - ${result.reason}")
+            Log.d(TAG, "  Inset: ${result.overlayInsetHorizontal} - Alpha: ${result.overlayAlpha}")
+        }
+
+        val currentTranslations = optimizedBlocks.map { it.text }
+
+        // === BƯỚC 1: LUÔN ÁP DỤNG OVERLAY OPTIMIZATION TRƯỚC ===
+        _uiState.update { state ->
+            val newTranslatedTexts = state.translatedTexts.toMutableMap()
+            val overlayAppliedBlocks = blocks.mapIndexed { index, block ->
+                val opt = optimizedBlocks.getOrNull(index)
+                block.copy(
+                    customOverlayColor = opt?.customOverlayColor,
+                    customTextColor = opt?.customTextColor,
+                    overlayAlpha = opt?.overlayAlpha ?: 1.0f,
+                    overlayInsetHorizontal = opt?.overlayInsetHorizontal ?: 0f,
+                    overlayInsetVertical = opt?.overlayInsetVertical ?: 0f
+                )
+            }
+            newTranslatedTexts[uri] = currentPair.first to overlayAppliedBlocks
+            state.copy(
+                translatedTexts = newTranslatedTexts,
+                translationVersion = state.translationVersion + 1
+            )
+        }
+        Log.i(TAG, "[OVERLAY-OPT] Đã áp dụng overlay optimization cho ${blocks.size} blocks")
+
+        // Đánh dấu URI là đã thay đổi
+        dirtyUris.add(uri)
 
         // Resolve originalText
         val resolvedOriginalTexts: List<String> = if (blocks.any { it.originalText == null }) {
@@ -257,12 +319,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             blocks.mapNotNull { it.originalText }
         }
 
-        // Cập nhật trạng thái - bắt đầu tối ưu và đảm bảo bật hiển thị bản dịch
+        // Cập nhật trạng thái - bắt đầu tối ưu text
         _uiState.update { it.copy(translationEnabled = true) }
         updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
         _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
 
-        // Xây dựng dữ liệu cho tối ưu
+        // === BƯỚC 2: THỬ TỐI ƯU TEXT BẰNG AI (NẾU THẤT BẠI VẪN GIỮ OVERLAY) ===
+        // Xây dựng dữ liệu cho tối ưu bản dịch (AI text optimization)
         val basePrompt = com.example.ocrmanga.utils.PromptUtils.loadPromptFromAssets(getApplication(), "translation_optimization.md")
         val dataBuilder = StringBuilder()
         resolvedOriginalTexts.forEachIndexed { index, original ->
@@ -282,7 +345,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val newTranslatedTexts = state.translatedTexts.toMutableMap()
                     val updatedBlocks = blocks.mapIndexed { index, block ->
                         if (index < optimizedTranslations.size) {
-                            block.copy(text = optimizedTranslations[index], applyMerge = false)
+                            block.copy(
+                                text = optimizedTranslations[index],
+                                applyMerge = false,
+                                customOverlayColor = optimizedBlocks.getOrNull(index)?.customOverlayColor,
+                                customTextColor = optimizedBlocks.getOrNull(index)?.customTextColor,
+                                overlayAlpha = optimizedBlocks.getOrNull(index)?.overlayAlpha ?: 1.0f,
+                                overlayInsetHorizontal = optimizedBlocks.getOrNull(index)?.overlayInsetHorizontal ?: 0f,
+                                overlayInsetVertical = optimizedBlocks.getOrNull(index)?.overlayInsetVertical ?: 0f
+                            )
                         } else {
                             block
                         }
@@ -300,15 +371,22 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // Cập nhật trạng thái hoàn thành
                 updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
                 _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to true)) }
+                Log.i(TAG, "[OVERLAY-OPT] Text optimization cũng thành công")
                 return true
             } else {
-                _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
-                return false
+                // AI text optimization thất bại, NHƯNG overlay vẫn đã được áp dụng ở BƯỚC 1
+                updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
+                _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to true)) }
+                Log.i(TAG, "[OVERLAY-OPT] Text optimization thất bại, nhưng overlay đã được áp dụng")
+                return true // Vẫn trả về true vì overlay đã tối ưu thành công
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error optimizing single image $uri", e)
-            _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
-            return false
+            // Overlay vẫn đã được áp dụng ở BƯỚC 1
+            updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
+            _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to true)) }
+            Log.i(TAG, "[OVERLAY-OPT] Exception trong text optimization, nhưng overlay đã được áp dụng")
+            return true // Vẫn trả về true vì overlay đã tối ưu thành công
         }
     }
 
@@ -923,110 +1001,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             BitmapFactory.decodeStream(inputStream)
         } catch (e: Exception) {
             null
-        } ?: return blocks
-
-        return blocks.map { block ->
-            val bgType = block.backgroundType
-            // Kiểm tra xem có phải bong bóng chat không (dựa trên background type hoặc bubbleId)
-            val isBubble = bgType == com.example.ocrmanga.data.models.BackgroundType.WHITE || block.bubbleId != null
-            
-            // Nếu containerInfo cho thấy là text rời (FREE_TEXT)
-            val isFreeText = block.containerInfo?.type == com.example.ocrmanga.data.ocr.models.TextContainerType.FREE_TEXT
-
-            if (isBubble && !isFreeText) {
-                // Trường hợp 1: Trong bong bóng chat
-                // Tự động tìm inset để không đè lên chi tiết ảnh (nét vẽ, viền bong bóng)
-                val optimizedInset = findOptimalOverlayInset(bitmap, block)
-                block.copy(
-                    overlayAlpha = 1.0f,
-                    shapeType = 1, // Luôn dùng Oval cho bong bóng
-                    overlayInsetHorizontal = optimizedInset.first,
-                    overlayInsetVertical = optimizedInset.second
-                )
-            } else {
-                // Trường hợp 2: Không phải bong bóng hoặc là text rời
-                // Chuyển sang trong suốt để không che mất background ảnh gốc
-                block.copy(
-                    overlayAlpha = 0.0f,
-                    shapeType = 0
-                )
-            }
         }
-    }
 
-    private fun findOptimalOverlayInset(bitmap: Bitmap, block: TextBlockInfo): Pair<Float, Float> {
-        val bounds = block.bounds
-        if (bounds.width() <= 10 || bounds.height() <= 10) return 4f to 4f
-        
-        val imgW = bitmap.width
-        val imgH = bitmap.height
-        
-        val left = bounds.left.coerceIn(0, imgW - 1)
-        val top = bounds.top.coerceIn(0, imgH - 1)
-        val right = bounds.right.coerceIn(0, imgW - 1)
-        val bottom = bounds.bottom.coerceIn(0, imgH - 1)
-        
-        // Kiểm tra màu nền trung tâm
-        val centerX = (left + right) / 2
-        val centerY = (top + bottom) / 2
-        val centerPixel = bitmap.getPixel(centerX, centerY)
-        val centerLuminance = ColorUtils.calculateLuminance(centerPixel)
-        
-        var insetH = 0f
-        var insetV = 0f
-        
-        val maxInsetH = bounds.width() * 0.2f
-        val maxInsetV = bounds.height() * 0.2f
-        
-        // Chỉ tối ưu inset cho nền sáng (bong bóng trắng)
-        if (centerLuminance > 0.8) {
-            // Tìm inset ngang (trái/phải)
-            for (i in 0..maxInsetH.toInt()) {
-                val checkXLeft = left + i
-                val checkXRight = right - i
-                if (checkXLeft >= right || checkXRight <= left) break
-                
-                var hasDetail = false
-                // Kiểm tra vài điểm dọc theo cạnh để tìm nét vẽ/viền
-                val stepY = (bottom - top) / 5
-                for (y in top..bottom step stepY.coerceAtLeast(1)) {
-                    val py = y.coerceIn(0, imgH - 1)
-                    val p1 = bitmap.getPixel(checkXLeft, py)
-                    val p2 = bitmap.getPixel(checkXRight, py)
-                    if (ColorUtils.calculateLuminance(p1) < 0.75 || ColorUtils.calculateLuminance(p2) < 0.75) {
-                        hasDetail = true
-                        break
-                    }
-                }
-                if (hasDetail) insetH = i.toFloat() + 2f else break
-            }
-            
-            // Tìm inset dọc (trên/dưới)
-            for (i in 0..maxInsetV.toInt()) {
-                val checkYTop = top + i
-                val checkYBottom = bottom - i
-                if (checkYTop >= bottom || checkYBottom <= top) break
-                
-                var hasDetail = false
-                val stepX = (right - left) / 5
-                for (x in left..right step stepX.coerceAtLeast(1)) {
-                    val px = x.coerceIn(0, imgW - 1)
-                    val p1 = bitmap.getPixel(px, checkYTop)
-                    val p2 = bitmap.getPixel(px, checkYBottom)
-                    if (ColorUtils.calculateLuminance(p1) < 0.75 || ColorUtils.calculateLuminance(p2) < 0.75) {
-                        hasDetail = true
-                        break
-                    }
-                }
-                if (hasDetail) insetV = i.toFloat() + 2f else break
-            }
-        } else {
-            // Nền tối hoặc phức tạp, dùng mặc định
-            insetH = 4f
-            insetV = 4f
-        }
-        
-        return insetH.coerceAtMost(maxInsetH) to insetV.coerceAtMost(maxInsetV)
+        val imgW = bitmap?.width ?: 360
+        val imgH = bitmap?.height ?: 640
+
+        val (optimizedBlocks, _) = com.example.ocrmanga.utils.OverlayOptimizer.analyzeAndOptimize(
+            blocks, bitmap, imgW, imgH
+        )
+
+        return optimizedBlocks
     }
 
     private val translationRepository = TranslationRepository(application)

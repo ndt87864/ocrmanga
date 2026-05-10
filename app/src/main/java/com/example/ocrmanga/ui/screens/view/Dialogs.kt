@@ -226,7 +226,7 @@ fun Dialogs(
                     ) {
                         Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Tối ưu bản dịch")
+                        Text("Tối ưu bản dịch (Overlay)")
                     }
 
                     Spacer(Modifier.height(16.dp))
@@ -380,16 +380,17 @@ fun Dialogs(
     if (showOptimizeDialog && currentUri != null) {
         AlertDialog(
             onDismissRequest = { showOptimizeDialog = false },
-            title = { Text("Chọn model AI để tối ưu") },
+            title = { Text("Tối ưu bản dịch") },
             text = {
                 Column {
-                    Text("Chọn model AI bạn muốn sử dụng để tối ưu bản dịch:", style = MaterialTheme.typography.bodyMedium)
+                    Text("Chọn cách tối ưu bản dịch:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(16.dp))
 
                     listOf(
-                        Triple(TranslationMode.GEMINI, "Gemini AI", "Dịch nhanh, chính xác"),
-                        Triple(TranslationMode.MISTRAL, "Mistral AI", "Ngữ pháp tự nhiên"),
-                        Triple(TranslationMode.ZAI, "Z.AI (GLM-4)", "Sáng tạo, linh hoạt")
+                        Triple(TranslationMode.GEMINI, "Gemini AI - AI Translation", "Tối ưu cả bản dịch và overlay hiển thị"),
+                        Triple(TranslationMode.MISTRAL, "Mistral AI - AI Translation", "Tối ưu cả bản dịch và overlay hiển thị"),
+                        Triple(TranslationMode.ZAI, "Z.AI (GLM-4) - AI Translation", "Tối ưu cả bản dịch và overlay hiển thị"),
+                        Triple(TranslationMode.OFF, "Auto-Optimize Overlay Only", "Chỉ tối ưu overlay hiển thị không cần API")
                     ).forEach { (mode, name, description) ->
                         val hasKey = when (mode) {
                             TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys()
@@ -427,7 +428,7 @@ fun Dialogs(
                                             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                                 )
                             }
-                            if (!hasKey) {
+                            if (!hasKey && mode != TranslationMode.OFF) {
                                 Text(
                                     "Cần API key",
                                     style = MaterialTheme.typography.bodySmall,
@@ -452,7 +453,7 @@ fun Dialogs(
                     },
                     enabled = selectedMode != null
                 ) {
-                    Text("Tối ưu")
+                    Text("Áp dụng")
                 }
             },
             dismissButton = {

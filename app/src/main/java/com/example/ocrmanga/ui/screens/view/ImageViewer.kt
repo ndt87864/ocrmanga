@@ -361,23 +361,24 @@ fun ImageViewer(
                         val existing = dragBlocksMap[uri]
                         val merged = if (existing != null && existing.isNotEmpty()) {
                             rawNewBlocks.map { nb ->
-                                val match =
-                                    existing.find { eb -> eb.block.bounds == nb.block.bounds && eb.block.text == nb.block.text }
+                                val match = existing.find { eb -> eb.block.bounds == nb.block.bounds && eb.block.text == nb.block.text }
                                 if (match != null) {
+                                    // PHẢI ưu tiên giá trị từ nb (mới từ ViewModel) nếu nó khác mặc định hoặc nếu ta vừa chạy Optimize
                                     nb.copy(
                                         block = nb.block.copy(applyMerge = match.block.applyMerge),
-                                        textShadowColor = nb.textShadowColor
-                                            ?: match.textShadowColor,
+                                        // Nếu nb.overlayAlpha là 0 (do optimize), phải lấy 0, không được lấy alpha cũ của match
+                                        overlayAlpha = nb.overlayAlpha,
+                                        overlayInsetHorizontal = nb.overlayInsetHorizontal,
+                                        overlayInsetVertical = nb.overlayInsetVertical,
+                                        // Các thuộc tính khác giữ nguyên cơ chế fallback nếu cần
+                                        textShadowColor = nb.textShadowColor ?: match.textShadowColor,
                                         textShadowAlpha = if (nb.textShadowAlpha != 1.0f) nb.textShadowAlpha else match.textShadowAlpha,
                                         textShadowRadius = if (nb.textShadowRadius != 0f) nb.textShadowRadius else match.textShadowRadius,
                                         lineSpacing = if (nb.lineSpacing != 1.0f) nb.lineSpacing else match.lineSpacing,
                                         overlayInset = if (nb.overlayInset != 0f) nb.overlayInset else match.overlayInset,
-                                        overlayInsetHorizontal = if (nb.overlayInsetHorizontal != 0f) nb.overlayInsetHorizontal else match.overlayInsetHorizontal,
-                                        overlayInsetVertical = if (nb.overlayInsetVertical != 0f) nb.overlayInsetVertical else match.overlayInsetVertical,
                                         fontSize = nb.fontSize ?: match.fontSize,
                                         rotation = if (nb.rotation != 0f) nb.rotation else match.rotation,
-                                        overlayRotation = nb.overlayRotation
-                                            ?: match.overlayRotation,
+                                        overlayRotation = nb.overlayRotation ?: match.overlayRotation,
                                         offset = if (match.offset != Offset.Zero) match.offset else nb.offset
                                     )
                                 } else nb
@@ -553,13 +554,6 @@ fun ImageViewer(
                             if (isScrollingFast && !editTranslationMode) {
                                 return@LaunchedEffect
                             }
-
-                            // Debounce: skip if computed recently (within 50ms)
-                            val now = System.currentTimeMillis()
-                            if (now - lastComputeTime < 50 && !editTranslationMode) {
-                                return@LaunchedEffect
-                            }
-                            lastComputeTime = now
 
                             // Allow immediate apply when either not in edit mode OR this uri was recently saved via editor
                             val isRecentSave = recentlySavedUris.contains(uri)
@@ -778,7 +772,10 @@ fun ImageViewer(
                                         )
 
                                         fun drawOverlayContent() {
-                                            // Vẽ overlay chỉ trên INNER bounds (outer area = transparent)
+                                            if (region.overlayAlpha <= 0f) return
+
+                                            // Vẽ overlay trên INNER bounds để thay đổi kích thước của background trắng (bôi trắng)
+                                            // sao cho vừa vặn hơn, tránh lẹm viền bong bóng (theo yêu cầu [TH1])
                                             if (region.whiteoutColor != null) {
                                                 val finalColor =
                                                     region.whiteoutColor.copy(alpha = region.overlayAlpha)
@@ -793,7 +790,7 @@ fun ImageViewer(
                                                         clampedInnerBounds.height
                                                     )
                                                 )
-                                                else drawRect(
+                                                else drawRoundRect(
                                                     finalColor,
                                                     Offset(
                                                         clampedInnerBounds.left,
@@ -802,7 +799,8 @@ fun ImageViewer(
                                                     Size(
                                                         clampedInnerBounds.width,
                                                         clampedInnerBounds.height
-                                                    )
+                                                    ),
+                                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(16f, 16f)
                                                 )
                                             } else drawTranslucentOverlay(
                                                 clampedInnerBounds,
@@ -838,7 +836,7 @@ fun ImageViewer(
                                                     ),
                                                     style = Stroke(2f)
                                                 )
-                                                else drawRect(
+                                                else drawRoundRect(
                                                     color,
                                                     Offset(
                                                         clampedOuterBounds.left,
@@ -848,6 +846,7 @@ fun ImageViewer(
                                                         clampedOuterBounds.width,
                                                         clampedOuterBounds.height
                                                     ),
+                                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(16f, 16f),
                                                     style = Stroke(2f)
                                                 )
                                             }

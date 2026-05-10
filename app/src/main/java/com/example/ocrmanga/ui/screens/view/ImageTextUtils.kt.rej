@@ -1,0 +1,29 @@
+--- app/src/main/java/com/example/ocrmanga/ui/screens/view/ImageTextUtils.kt
++++ app/src/main/java/com/example/ocrmanga/ui/screens/view/ImageTextUtils.kt
+@@ -1597,24 +1614,24 @@
+-                val overlayColor = Color.White.copy(alpha = 0.9f)
++                val overlayColor = Color.White.copy(alpha = targetAlpha)
+                 when (shapeType) {
+                     1 -> drawOval(
+                         color = overlayColor,
+                         topLeft = Offset(rect.left, rect.top),
+                         size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                     )
+                     else -> drawRect(
+                         color = overlayColor,
+                         topLeft = Offset(rect.left, rect.top),
+                         size = androidx.compose.ui.geometry.Size(rect.width, rect.height)
+                     )
+                 }
+             }
+         }
+         com.example.ocrmanga.data.models.BackgroundType.TRANSPARENT -> {
+             // Nền trong suốt - sử dụng màu trắng với độ mờ cao
+-            val overlayColor = Color.White.copy(alpha = 0.95f)
++            val overlayColor = Color.White.copy(alpha = if (shouldBeTransparent) 0.45f else 0.95f)
+             when (shapeType) {
+                 1 -> drawOval(
+                     color = overlayColor,
+ 
+ 
+ 

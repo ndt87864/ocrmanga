@@ -81,14 +81,6 @@ import kotlin.math.max
         com.example.ocrmanga.data.ocr.RegionBasedMerger()
     }
 
-    // Phase 5: Container Classification
-    private val containerClassifier by lazy {
-        com.example.ocrmanga.data.ocr.TextContainerClassifier()
-    }
-    
-    /**
-     * Lấy tất cả cài đặt font và style mặc định từ cài đặt người dùng
-     */
     private suspend fun getDefaultFontSettings(): Map<String, Any> {
         val fontFamily = themePreferences.defaultTranslationFont.first() ?: "Default"
         val lineSpacing = themePreferences.defaultLineSpacing.first() ?: 1.0f
@@ -153,9 +145,6 @@ import kotlin.math.max
         .build()
     private val databaseHelper = DatabaseHelper(application)
 
-    /**
-     * Clear internal caches and last session data. Best-effort cleanup when leaving a room.
-     */
     fun clearSession() {
         try {
             cache.clear()
@@ -620,13 +609,6 @@ import kotlin.math.max
         }
     }
 
-    /**
-     * Enhanced preprocessing with multiple strategies for better OCR accuracy
-     * @param bitmap Original bitmap (NOT recycled by this function)
-     * @param scaleFactor Scale factor for resizing
-     * @param enhanceMode Enhancement mode: 0=standard, 1=high contrast, 2=soft contrast
-     * @return Pair of processed bitmap and scale factor
-     */
     @Synchronized
     private fun preprocessImage(bitmap: Bitmap, scaleFactor: Float, enhanceMode: Int = 0): Pair<Bitmap, Float> {
         // Check if source bitmap is valid
@@ -710,21 +692,12 @@ import kotlin.math.max
         return Pair(contrastBitmap, scaleFactor)
     }
 
-    /**
-     * Enum định nghĩa hướng văn bản
-     */
     enum class TextOrientation {
         HORIZONTAL,      // Văn bản ngang (trái sang phải)
         VERTICAL_RTL,    // Văn bản dọc (phải sang trái) - Kiểu manga Nhật
         VERTICAL_LTR     // Văn bản dọc (trái sang phải) - Kiểu Trung Quốc truyền thống
     }
 
-    /**
-     * Xoay ảnh theo góc cho trước (90, -90, 180 độ)
-     * @param bitmap Ảnh gốc
-     * @param rotationDegrees Góc xoay (90 = xoay phải, -90 = xoay trái)
-     * @return Ảnh đã xoay
-     */
     private fun rotateImageForVerticalText(bitmap: Bitmap, rotationDegrees: Int): Bitmap {
         val matrix = Matrix()
         matrix.postRotate(rotationDegrees.toFloat())
@@ -832,10 +805,6 @@ import kotlin.math.max
         return TextOrientation.HORIZONTAL
     }
 
-    /**
-     * Quét văn bản với cả ảnh gốc và ảnh xoay, chọn kết quả tốt nhất
-     * Đặc biệt hữu ích cho văn bản dọc trong manga/comic
-     */
     private suspend fun recognizeTextWithRotationStrategy(
         bitmap: Bitmap,
         rotationDegrees: Int,
@@ -929,10 +898,6 @@ import kotlin.math.max
         return@withContext recognizeText(bitmap, rotationDegrees, onlyPreview, forceScript)
     }
 
-    /**
-     * Tính điểm đánh giá chất lượng kết quả OCR
-     * Dựa trên: số ký tự Asian, số blocks, độ dài text, và lọc nhiễu
-     */
     private fun calculateOcrScore(text: String, blocks: List<TextBlockInfo>): Double {
         if (text.isEmpty()) return 0.0
         
@@ -1125,48 +1090,49 @@ import kotlin.math.max
                 val sourceTexts = reuseExistingBlocks.map { it.originalText ?: it.text }
                 val joinedSourceText = sourceTexts.joinToString("\n")
                 
-                // Gọi translate - dùng đúng hàm MultiScale cho Mistral để đảm bảo Block # format nhất quán
+                // Gọi translate - dùng đúng hàm MultiScale cho các model để đảm bảo Block # format nhất quán
                 val translatedLines: List<String> = when (mode) {
                     TranslationMode.MISTRAL -> {
-                        // Tạo ocrResults giả cho MultiScale (chỉ 1 scale = 1.0, text ghép lại)
                         val fakeOcrResults = listOf(Pair(1.0f, joinedSourceText))
-                        // Tạo danh sách TextBlockInfo tạm với originalText
                         val blockListForTranslation = reuseExistingBlocks.map { b ->
                             b.copy(text = b.originalText ?: b.text)
                         }
-                        val result = translateWithMistralMultiScale(
+                        translateWithMistralMultiScale(
                             textBlocks = blockListForTranslation,
                             ocrResults = fakeOcrResults,
                             sourceLang = detectLanguage(joinedSourceText) ?: "zh",
                             targetLang = "vi",
                             previousTranslation = previousTranslation,
                             isAncientMode = isAncientMode
-                        )
-                        result ?: sourceTexts.map { "" }
+                        ) ?: sourceTexts.map { "" }
                     }
                     TranslationMode.GEMINI -> {
-                        val geminiResult = translateTextWithGemini(
-                            reuseExistingBlocks.mapIndexed { i, b -> "Block #${i+1}: ${b.originalText ?: b.text}" }.joinToString("\n"),
-                            "zh"
-                        )
-                        // Parse kết quả Gemini theo Block #N format
-                        val regex = Regex("Block\\s*#(\\d+)\\s*[:\\-]?\\s*([^\n]*)", RegexOption.IGNORE_CASE)
-                        val map = mutableMapOf<Int, String>()
-                        regex.findAll(geminiResult).forEach { match ->
-                            val num = match.groupValues[1].toIntOrNull()
-                            val content = match.groupValues[2].trim()
-                            if (num != null) map[num] = content
+                        val fakeOcrResults = listOf(Pair(1.0f, joinedSourceText))
+                        val blockListForTranslation = reuseExistingBlocks.map { b ->
+                            b.copy(text = b.originalText ?: b.text)
                         }
-                        reuseExistingBlocks.indices.map { i -> map[i + 1] ?: "" }
+                        translateWithGeminiMultiScale(
+                            textBlocks = blockListForTranslation,
+                            ocrResults = fakeOcrResults,
+                            sourceLang = detectLanguage(joinedSourceText) ?: "zh",
+                            targetLang = "vi",
+                            previousTranslation = previousTranslation,
+                            isAncientMode = isAncientMode
+                        ) ?: sourceTexts.map { "" }
                     }
                     TranslationMode.ZAI -> {
-                        val srcLang = detectLanguage(joinedSourceText) ?: "zh"
-                        val zaiRaw = translateWithZAi(
-                            reuseExistingBlocks.map { it.originalText ?: it.text }.joinToString(" | "),
-                            srcLang, "vi"
-                        ) ?: ""
-                        if (zaiRaw.contains("|")) zaiRaw.split("|").map { it.trim() }
-                        else zaiRaw.split("\n").map { it.trim() }
+                        val fakeOcrResults = listOf(Pair(1.0f, joinedSourceText))
+                        val blockListForTranslation = reuseExistingBlocks.map { b ->
+                            b.copy(text = b.originalText ?: b.text)
+                        }
+                        translateWithZAiMultiScale(
+                            textBlocks = blockListForTranslation,
+                            ocrResults = fakeOcrResults,
+                            sourceLang = detectLanguage(joinedSourceText) ?: "zh",
+                            targetLang = "vi",
+                            previousTranslation = previousTranslation,
+                            isAncientMode = isAncientMode
+                        ) ?: sourceTexts.map { "" }
                     }
                     else -> {
                         val onlineRaw = translateTextOnline(joinedSourceText, "zh")
@@ -1405,10 +1371,6 @@ import kotlin.math.max
                 val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
                 
                 //Log.i("TranslationRepository", "[GEMINI] Số blocks cần dịch: ${mergedBlocks.size}")
-                /*mergedBlocks.forEachIndexed { index, block ->
-                    Log.i("TranslationRepository", "[GEMINI] Block gốc #${index + 1}: ${block.text}")
-                }
-                */
                 // Gửi tất cả kết quả cho Gemini AI để tổng hợp và dịch, kèm theo bản dịch ảnh trước (nếu có)
                 var translatedTexts = translateWithGeminiMultiScale(mergedBlocks, allOcrResults, sourceLanguage, "vi", previousTranslation, isAncientMode)
 
@@ -1439,12 +1401,6 @@ import kotlin.math.max
                     // Post-process bản dịch
                     val naturalText = postProcessTranslation(translatedTextForBlock)
                     
-                    /*Log.i("TranslationRepository", "[GEMINI] Block #${index + 1}:")
-                    Log.i("TranslationRepository", "  - Văn bản gốc: ${block.text}")
-                    Log.i("TranslationRepository", "  - Văn bản dịch: $naturalText")
-                    Log.i("TranslationRepository", "  - Tọa độ: left=${block.bounds.left}, top=${block.bounds.top}, right=${block.bounds.right}, bottom=${block.bounds.bottom}")
-                    Log.i("TranslationRepository", "  - FontSize gốc: ${block.fontSize}")
-                    */
                     val isVertical = block.isVertical
                     val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
                         val words = naturalText.split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -1761,10 +1717,6 @@ import kotlin.math.max
         }
     }
 
-    /**
-     * Thu thập tất cả kết quả OCR từ các scale khác nhau với nhiều chiến lược tiền xử lý
-     * @return List<Pair<Float, String>> - danh sách các cặp (scaleFactor, ocrText)
-     */
     private suspend fun recognizeTextAllScales(
         bitmap: Bitmap,
         rotationDegrees: Int,
@@ -1840,28 +1792,12 @@ import kotlin.math.max
         return@withContext allResults
     }
 
-    /**
-     * Minimum confidence threshold for accepting OCR results
-     * Elements with confidence below this will be filtered out
-     * Lowered to 0.45 to keep more valid text while still filtering obvious noise
-     */
     private val MIN_OCR_CONFIDENCE = 0.45f
     
-    /**
-     * Minimum character count for a text block to be considered valid
-     */
     private val MIN_TEXT_LENGTH = 1
     
-    /**
-     * Maximum aspect ratio (height/width) for a single character block
-     * Helps filter out noise like sweat drops, etc.
-     */
     private val MAX_SINGLE_CHAR_ASPECT_RATIO = 3.5f
     
-    /**
-     * Minimum area in pixels for a text block to be considered valid
-     * Lowered to 64 to allow smaller text blocks
-     */
     private val MIN_BLOCK_AREA = 64
 
     // recognizeText mới: cho phép chỉ quét preview hoặc ép loại recognizer
@@ -2262,14 +2198,6 @@ import kotlin.math.max
                         val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
                         // Phân loại container type (TẠM THỜI TẮT)
                         val containerInfo = null
-                        /*
-                        val containerInfo = try {
-                            containerClassifier.classifyContainer(bitmap, scaledBounds)
-                        } catch (e: Exception) {
-                            Log.e("TranslationRepository", "Error classifying container", e)
-                            null
-                        }
-                        */
                         TextBlockInfo(
                             text = processedText,
                             originalText = processedText,
@@ -2714,11 +2642,6 @@ import kotlin.math.max
             val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
             // Re-enabled: Container classification after merging for better accuracy (TẠM THỜI TẮT)
             val containerInfo = null
-            /*
-            val containerInfo = bitmap?.let { bmp ->
-                containerClassifier.classifyContainer(bmp, mergedBounds)
-            }
-            */
 
             val mergedOriginalText = sortedBlocks.joinToString("\n") { it.originalText ?: it.text }
             val mergedBlock = TextBlockInfo(
@@ -2952,11 +2875,6 @@ import kotlin.math.max
                     val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
                     // Re-enabled: Container classification after merging for better accuracy (TẠM THỜI TẮT)
                     val containerInfo = null
-                    /*
-                    val containerInfo = bitmap?.let { bmp ->
-                        containerClassifier.classifyContainer(bmp, mergedBounds)
-                    }
-                    */
 
                     val mergedOriginalText = subGroupBlocks.mapNotNull { it.originalText }.joinToString("\n").ifBlank { mergedText.toString() }
                     val mergedBlock = TextBlockInfo(
@@ -3047,15 +2965,6 @@ import kotlin.math.max
         return Rect(left, top, right, bottom)
     }
 
-    /**
-     * Tính toán fontSize phù hợp để văn bản dịch vừa với overlay gốc
-     * @param translatedText Văn bản đã dịch
-     * @param originalText Văn bản gốc
-     * @param originalBounds Bounds của overlay gốc
-     * @param originalFontSize FontSize gốc
-     * @param isVertical Có phải là văn bản dọc (vertical) hay không
-     * @return FontSize mới phù hợp
-     */
     private fun calculateAdjustedFontSize(
         translatedText: String,
         originalText: String,
@@ -3116,14 +3025,6 @@ import kotlin.math.max
             val minFontSize = originalFontSize * 0.5f
             val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
             
-            /*Log.i("TranslationRepository", "[FONT-ADJUST-VERTICAL] " +
-                "Original: '${originalText.replace("\n", "|")}' (${originalCharsNoNewline} chars), " +
-                "Translated: '${translatedText.replace("\n", "|")}' (${translatedCharsNoNewline} chars), " +
-                "charRatio=$charRatio, " +
-                "estimatedHeight=$estimatedHeight, availableHeight=$availableHeight, heightScale=$heightScale, " +
-                "widthScale=$widthScale, " +
-                "originalFontSize=$originalFontSize, newFontSize=$newFontSize (min: $minFontSize)")
-            */
             return newFontSize
         }
         
@@ -3314,10 +3215,6 @@ import kotlin.math.max
         return@withContext originalText
     }
 
-    /**
-     * Hàm dịch văn bản từ nhiều kết quả OCR (multi-scale) bằng Gemini API
-     * Trả về danh sách các bản dịch tương ứng với từng text block gốc
-     */
     suspend fun translateWithGeminiMultiScale(
         textBlocks: List<TextBlockInfo>,
         ocrResults: List<Pair<Float, String>>,
@@ -3666,11 +3563,6 @@ import kotlin.math.max
         }
     }
 
-    /**
-     * Xử lý hậu kỳ cho kết quả OCR: chuyển đổi ký tự し (katakana shi) thành L
-     * khi phát hiện văn bản là Latin script. Đây là lỗi OCR phổ biến.
-     * Cũng loại bỏ các ký tự nhiễu phổ biến.
-     */
     private fun postProcessOCRText(text: String, detectedScript: String?): String {
         if (text.isBlank()) return text
 
@@ -3747,11 +3639,6 @@ import kotlin.math.max
         return result
     }
     
-    /**
-     * Kiểm tra xem một text block có phải là nhiễu (false positive) hay không
-     * Dựa trên nhiều tiêu chí: kích thước, tỷ lệ khung hình, nội dung
-     * Điều chỉnh để ít loại bỏ text CJK hợp lệ trong manga
-     */
     private fun isNoiseBlock(text: String, bounds: Rect, confidence: Float): Boolean {
         val cleanText = text.trim()
         val area = bounds.width() * bounds.height()
@@ -3955,10 +3842,6 @@ import kotlin.math.max
                         val leftThreshold = avgWidth * threshold
                         val gapThreshold = avgHeight * 1.5f
                         
-                       /* Log.i("TranslationRepository", "[MERGE-CHECK] Block='${block.text.take(10)}', " +
-                            "leftDiff=$leftDiff (threshold=$leftThreshold), " +
-                            "verticalGap=$verticalGap (threshold=$gapThreshold)")
-                        */
                         // Kiểm tra nếu block nằm sát cột bên cạnh trong cùng speech bubble:
                         // các cột dọc liền kề nhau (right của cột này ≈ left của cột kia)
                         // và có overlap dọc đủ lớn → cho phép merge ngay cả khi leftDiff lớn.
@@ -4020,9 +3903,6 @@ import kotlin.math.max
             }
             
             //Log.i("TranslationRepository", "[MERGE] Tổng số groups sau khi phân loại: ${groups.size}")
-            /*groups.forEachIndexed { idx, group ->
-                Log.i("TranslationRepository", "[MERGE] Group #$idx: ${group.size} blocks, text='${group.joinToString(" | ") { it.text.take(10) }}'")
-            }*/
             
             // Merge từng group nhỏ trong bubble
             for (group in groups) {
@@ -4101,12 +3981,6 @@ import kotlin.math.max
         }
     }
 
-    /**
-     * Tối ưu bản dịch sử dụng AI
-     * @param prompt Prompt chứa yêu cầu tối ưu
-     * @param mode Chế độ AI (GEMINI, MISTRAL, ZAI)
-     * @return List bản dịch đã tối ưu, hoặc null nếu thất bại
-     */
     suspend fun optimizeTranslation(instructions: String, data: String, mode: TranslationMode): List<String>? {
         Log.i("TranslationRepository", "[OPTIMIZE-REPO] Starting with mode=${mode.name}")
 
@@ -4182,10 +4056,6 @@ import kotlin.math.max
         }
     }
 
-    /**
-     * Parse kết quả optimize từ AI response
-     * Extract text sau "Block N:" hoặc số thứ tự
-     */
     private fun parseOptimizeResponse(text: String): List<String> {
         val lines = text.split("\n").filter { it.isNotBlank() }
         val resultMap = mutableMapOf<Int, String>()
