@@ -2750,6 +2750,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             val safeOrigText = textBlock.originalText?.trim()
                             val finalOrigToSave = if (safeOrigText == "[]") "" else safeOrigText ?: ""
                             put("original_text", finalOrigToSave)
+                            put("x", finalRect.left)
+                            put("y", finalRect.top)
+                            put("width", finalRect.width())
+                            put("height", finalRect.height())
                         }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -3562,6 +3566,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 
                 // Prioritize coordinates from translations table if available
                 val bounds = if (transData != null && transData.width > 0 && transData.height > 0) {
+                    Log.i(TAG, "[DB-READ-COORD] imageId=$imageId block=$blockIndex text='${transData.translatedText.take(20)}' FROM translations: x=${transData.x} y=${transData.y} w=${transData.width} h=${transData.height}")
                     Rect(transData.x, transData.y, transData.x + transData.width, transData.y + transData.height)
                 } else {
                     val x = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_X))

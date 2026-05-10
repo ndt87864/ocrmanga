@@ -1121,38 +1121,84 @@ import kotlin.math.max
                 onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
             }
             try {
-                // Tạo các block rỗng để dịch (giữ nguyên vị trí và text gốc)
-                val dummyBlocks = reuseExistingBlocks.map { it.copy(text = "") }
+                // Lấy danh sách văn bản gốc cho đầu vào
+                val sourceTexts = reuseExistingBlocks.map { it.originalText ?: it.text }
+                val joinedSourceText = sourceTexts.joinToString("\n")
                 
-                // Gọi translate trực tiếp với các block đã có originalText
-                val translatedTexts = when (mode) {
-                    TranslationMode.GEMINI -> translateTextWithGemini(dummyBlocks.map { it.originalText ?: "" }.joinToString("\n"), "zh")
+                // Gọi translate - dùng đúng hàm MultiScale cho Mistral để đảm bảo Block # format nhất quán
+                val translatedLines: List<String> = when (mode) {
                     TranslationMode.MISTRAL -> {
-                        val srcLang = detectLanguage(dummyBlocks.map { it.originalText ?: "" }.joinToString(" ")) ?: "zh"
-                        translateWithMistral(dummyBlocks.map { it.originalText ?: "" }.joinToString(" | "), srcLang, "vi") ?: ""
+                        // Tạo ocrResults giả cho MultiScale (chỉ 1 scale = 1.0, text ghép lại)
+                        val fakeOcrResults = listOf(Pair(1.0f, joinedSourceText))
+                        // Tạo danh sách TextBlockInfo tạm với originalText
+                        val blockListForTranslation = reuseExistingBlocks.map { b ->
+                            b.copy(text = b.originalText ?: b.text)
+                        }
+                        val result = translateWithMistralMultiScale(
+                            textBlocks = blockListForTranslation,
+                            ocrResults = fakeOcrResults,
+                            sourceLang = detectLanguage(joinedSourceText) ?: "zh",
+                            targetLang = "vi",
+                            previousTranslation = previousTranslation,
+                            isAncientMode = isAncientMode
+                        )
+                        result ?: sourceTexts.map { "" }
+                    }
+                    TranslationMode.GEMINI -> {
+                        val geminiResult = translateTextWithGemini(
+                            reuseExistingBlocks.mapIndexed { i, b -> "Block #${i+1}: ${b.originalText ?: b.text}" }.joinToString("\n"),
+                            "zh"
+                        )
+                        // Parse kết quả Gemini theo Block #N format
+                        val regex = Regex("Block\\s*#(\\d+)\\s*[:\\-]?\\s*([^\n]*)", RegexOption.IGNORE_CASE)
+                        val map = mutableMapOf<Int, String>()
+                        regex.findAll(geminiResult).forEach { match ->
+                            val num = match.groupValues[1].toIntOrNull()
+                            val content = match.groupValues[2].trim()
+                            if (num != null) map[num] = content
+                        }
+                        reuseExistingBlocks.indices.map { i -> map[i + 1] ?: "" }
                     }
                     TranslationMode.ZAI -> {
-                        val srcLang = detectLanguage(dummyBlocks.map { it.originalText ?: "" }.joinToString(" ")) ?: "zh"
-                        translateWithZAi(dummyBlocks.map { it.originalText ?: "" }.joinToString(" | "), srcLang, "vi") ?: ""
+                        val srcLang = detectLanguage(joinedSourceText) ?: "zh"
+                        val zaiRaw = translateWithZAi(
+                            reuseExistingBlocks.map { it.originalText ?: it.text }.joinToString(" | "),
+                            srcLang, "vi"
+                        ) ?: ""
+                        if (zaiRaw.contains("|")) zaiRaw.split("|").map { it.trim() }
+                        else zaiRaw.split("\n").map { it.trim() }
                     }
-                    else -> translateTextOnline(dummyBlocks.map { it.originalText ?: "" }.joinToString(" "), "zh")
+                    else -> {
+                        val onlineRaw = translateTextOnline(joinedSourceText, "zh")
+                        onlineRaw.split("\n").map { it.trim() }
+                    }
                 }
                 
-                // Parse lại text đã dịch vào các block
-                val translatedLines = if (translatedTexts.contains("Block #") || translatedTexts.contains("Block #1")) {
-                    parseMultiBlockResponse(translatedTexts, dummyBlocks)
-                } else if (translatedTexts.contains("|")) {
-                    translatedTexts.split("|").map { it.trim() }
-                } else {
-                    translatedTexts.split("\n").map { it.trim() }
-                }
+                Log.i("TranslationRepository", "[REUSE-PARSE] Got ${translatedLines.size} translated lines for ${reuseExistingBlocks.size} blocks")
 
-                val finalBlocks = dummyBlocks.mapIndexed { index, block ->
-                    block.copy(text = translatedLines.getOrNull(index) ?: "")
+                val finalBlocks = reuseExistingBlocks.mapIndexed { index, block ->
+                    val cleanOriginalText = block.originalText ?: block.text
+                    block.copy(
+                        text = translatedLines.getOrNull(index) ?: "",
+                        originalText = cleanOriginalText,
+                        bounds = android.graphics.Rect(block.bounds),
+                        applyMerge = false
+                    )
                 }
                 val fullText = finalBlocks.joinToString("\n") { it.text }
                 
                 cache[cacheKey] = fullText to finalBlocks
+
+                // LOG CHI TIẾT KẾT QUẢ REUSE-OCR
+                Log.i("TranslationRepository", "===== KẾT QUẢ DỊCH (REUSE-OCR - NO MERGE) =====")
+                finalBlocks.forEachIndexed { index, block ->
+                    Log.i("TranslationRepository", "[REUSE-BLOCK] #$index:")
+                    Log.i("TranslationRepository", "    + Bounds: ${block.bounds}")
+                    Log.i("TranslationRepository", "    + Gốc: '${block.originalText}'")
+                    Log.i("TranslationRepository", "    + Dịch: '${block.text}'")
+                }
+                Log.i("TranslationRepository", "====================================")
+
                 return@withContext Triple(fullText, finalBlocks, detectLanguage(fullText) ?: "zh")
             } catch (e: Exception) {
                 Log.e("TranslationRepository", "Error in REUSE-OCR pipeline", e)
@@ -1309,6 +1355,7 @@ import kotlin.math.max
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
                     val newBlock = block.copy(
                         text = reformattedText,
+                        originalText = block.text,
                         bounds = newBounds,
                         fontSize = adjustedFontSize,
                         fontFamily = defaultSettings["fontFamily"] as? String ?: "Default",
@@ -1435,6 +1482,7 @@ import kotlin.math.max
                     val newBounds = adjustBoundsForTranslatedText(reformattedText, block.bounds, adjustedFontSize, 1.0f)
                     val newBlock = block.copy(
                         text = reformattedText,
+                        originalText = block.text,
                         bounds = newBounds,
                         fontSize = adjustedFontSize,
                         fontFamily = defaultSettingsGemini["fontFamily"] as? String ?: "Default",
@@ -2672,7 +2720,7 @@ import kotlin.math.max
             }
             */
 
-            val mergedOriginalText = sortedBlocks.mapNotNull { it.originalText }.joinToString("\n").ifBlank { mergedText.toString() }
+            val mergedOriginalText = sortedBlocks.joinToString("\n") { it.originalText ?: it.text }
             val mergedBlock = TextBlockInfo(
                 text = mergedText.toString(),
                 originalText = mergedOriginalText,
