@@ -314,9 +314,69 @@ object OverlayOptimizer {
             }
 
             if (originalTouchesBorder) {
-                // If it already touches the border, apply inset so overlay shrinks and just covers the text
-                insetH = origBounds.width() * 0.05f
-                insetV = origBounds.height() * 0.05f
+                // Shrink inwards until we don't hit the border, or we hit a maximum shrink limit (15%)
+                var l = origBounds.left.coerceIn(0, imageBitmap.width - 1)
+                var t = origBounds.top.coerceIn(0, imageBitmap.height - 1)
+                var r = origBounds.right.coerceIn(0, imageBitmap.width - 1)
+                var b = origBounds.bottom.coerceIn(0, imageBitmap.height - 1)
+
+                var shrinkLeft = true
+                var shrinkRight = true
+                var shrinkTop = true
+                var shrinkBottom = true
+
+                val limitL = (l + origBounds.width() * 0.15f).toInt()
+                val limitR = (r - origBounds.width() * 0.15f).toInt()
+                val limitT = (t + origBounds.height() * 0.15f).toInt()
+                val limitB = (b - origBounds.height() * 0.15f).toInt()
+
+                val maxStep = (imageBitmap.width + imageBitmap.height) / 4
+                var step = 0
+
+                while (step < maxStep && (shrinkLeft || shrinkRight || shrinkTop || shrinkBottom)) {
+                    // Shrink left
+                    if (shrinkLeft && l < limitL) {
+                        var hits = 0
+                        for (y in t..b) {
+                            if (isBorderPixel(imageBitmap.getPixel(l, y))) hits++
+                        }
+                        if (hits > 0) l++ else shrinkLeft = false
+                    } else { shrinkLeft = false }
+
+                    // Shrink right
+                    if (shrinkRight && r > limitR) {
+                        var hits = 0
+                        for (y in t..b) {
+                            if (isBorderPixel(imageBitmap.getPixel(r, y))) hits++
+                        }
+                        if (hits > 0) r-- else shrinkRight = false
+                    } else { shrinkRight = false }
+
+                    // Shrink top
+                    if (shrinkTop && t < limitT) {
+                        var hits = 0
+                        for (x in l..r) {
+                            if (isBorderPixel(imageBitmap.getPixel(x, t))) hits++
+                        }
+                        if (hits > 0) t++ else shrinkTop = false
+                    } else { shrinkTop = false }
+
+                    // Shrink bottom
+                    if (shrinkBottom && b > limitB) {
+                        var hits = 0
+                        for (x in l..r) {
+                            if (isBorderPixel(imageBitmap.getPixel(x, b))) hits++
+                        }
+                        if (hits > 0) b-- else shrinkBottom = false
+                    } else { shrinkBottom = false }
+
+                    step++
+                }
+
+                newBounds = Rect(l, t, r, b)
+                // Remove fixed inset because we shrank the bounds dynamically
+                insetH = 0f
+                insetV = 0f
             } else {
                 // Expand until we hit the border
                 var l = origBounds.left.coerceIn(0, imageBitmap.width - 1)
