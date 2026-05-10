@@ -30,6 +30,8 @@ object OverlayOptimizer {
         val overlayAlpha: Float,
         val overlayColor: Int,
         val textColor: Int,
+        val borderColor: Int? = null,
+        val borderThickness: Float? = null,
         val needsTransparency: Boolean,
         val transparencyThreshold: Float,
         val confidence: Float,
@@ -59,8 +61,8 @@ object OverlayOptimizer {
         imageWidth: Int,
         imageHeight: Int
     ): Pair<List<TextBlockInfo>, List<OptimizationResult>> {
-        val results = blocks.map { block ->
-            optimizeBlock(block, imageBitmap, imageWidth, imageHeight)
+        val results = blocks.mapIndexed { index, block ->
+            optimizeBlock(block, index, imageBitmap, imageWidth, imageHeight)
         }
         val optimizedBlocks = blocks.mapIndexed { index, block ->
             applyResult(block, results[index])
@@ -77,8 +79,8 @@ object OverlayOptimizer {
         imageWidth: Int,
         imageHeight: Int
     ): List<OptimizationResult> {
-        return blocks.map { block ->
-            optimizeBlock(block, imageBitmap, imageWidth, imageHeight)
+        return blocks.mapIndexed { index, block ->
+            optimizeBlock(block, index, imageBitmap, imageWidth, imageHeight)
         }
     }
 
@@ -103,6 +105,7 @@ object OverlayOptimizer {
      */
     private fun optimizeBlock(
         block: TextBlockInfo,
+        index: Int,
         imageBitmap: Bitmap?,
         imageWidth: Int,
         imageHeight: Int
@@ -110,9 +113,9 @@ object OverlayOptimizer {
         val isSolidBubble = isSolidColorBubble(block, imageBitmap)
 
         return if (isSolidBubble) {
-            optimizeForSolidBubble(block, imageWidth, imageHeight)
+            optimizeForSolidBubble(block, index, imageWidth, imageHeight)
         } else {
-            optimizeForTransparent(block, imageWidth, imageHeight)
+            optimizeForTransparent(block, index, imageWidth, imageHeight)
         }
     }
 
@@ -247,6 +250,7 @@ object OverlayOptimizer {
      */
     private fun optimizeForSolidBubble(
         block: TextBlockInfo,
+        index: Int,
         imageWidth: Int,
         imageHeight: Int
     ): OptimizationResult {
@@ -280,7 +284,7 @@ object OverlayOptimizer {
 
         val originalInsetH = block.overlayInsetHorizontal
         val originalInsetV = block.overlayInsetVertical
-        Log.i(TAG, "[TH1] Block '${block.text.take(20)}...', inset ban đầu=($originalInsetH, $originalInsetV), inset sau khi sửa=($insetH, $insetV)")
+        Log.i(TAG, "[TH1] Block $index '${block.text.take(20)}...', cỡ chữ=${block.fontSize}, inset ban đầu=($originalInsetH, $originalInsetV), inset sau khi sửa=($insetH, $insetV)")
 
         return OptimizationResult(
             overlayInsetHorizontal = insetH,
@@ -288,6 +292,8 @@ object OverlayOptimizer {
             overlayAlpha = 1.0f, // Đục hoàn toàn
             overlayColor = block.customOverlayColor ?: block.averageBackgroundColor ?: Color.WHITE,
             textColor = block.customTextColor ?: block.originalTextColor ?: Color.BLACK,
+            borderColor = null,
+            borderThickness = 0f,
             needsTransparency = false,
             transparencyThreshold = 1.0f,
             confidence = 0.95f,
@@ -308,6 +314,7 @@ object OverlayOptimizer {
      */
     private fun optimizeForTransparent(
         block: TextBlockInfo,
+        index: Int,
         imageWidth: Int,
         imageHeight: Int
     ): OptimizationResult {
@@ -318,6 +325,10 @@ object OverlayOptimizer {
         val textColor = block.customTextColor
             ?: block.originalTextColor
             ?: if (isDarkBg) Color.WHITE else Color.BLACK
+
+        // Tính viền cho text (nếu text màu trắng -> viền đen ; các màu khác -> viền trắng)
+        val isTextWhite = Color.red(textColor) > 240 && Color.green(textColor) > 240 && Color.blue(textColor) > 240
+        val borderColor = if (isTextWhite) Color.BLACK else Color.WHITE
 
         // Overlay color: semi-transparent white hoặc black
         val overlayColor = if (isDarkBg) {
@@ -333,14 +344,16 @@ object OverlayOptimizer {
         val containerType = classifyNonBubble(block)
 
         val originalAlpha = block.overlayAlpha
-        Log.i(TAG, "[TH2] Block '${block.text.take(20)}...', độ trong suốt ban đầu=$originalAlpha, độ trong suốt sau khi sửa=0.0")
+        Log.i(TAG, "[TH2] Block $index '${block.text.take(20)}...', cỡ chữ=${block.fontSize}, độ trong suốt ban đầu=$originalAlpha, độ trong suốt sau khi sửa=0.0")
 
         return OptimizationResult(
             overlayInsetHorizontal = insetH,
             overlayInsetVertical = insetV,
             overlayAlpha = 0.0f, // Trong suốt hoàn toàn (0%)
             overlayColor = block.customOverlayColor ?: block.averageBackgroundColor ?: Color.WHITE,
-            textColor = block.customTextColor ?: block.originalTextColor ?: Color.BLACK,
+            textColor = textColor,
+            borderColor = borderColor,
+            borderThickness = -1f, // -1f = Dùng tỷ lệ động (fontSize / 6)
             needsTransparency = true,
             transparencyThreshold = 0.0f,
             confidence = 0.7f,
@@ -385,8 +398,10 @@ object OverlayOptimizer {
             overlayAlpha = result.overlayAlpha,
             overlayInsetHorizontal = result.overlayInsetHorizontal,
             overlayInsetVertical = result.overlayInsetVertical,
-            shapeType = result.shapeType
-            // KHÔNG can thiệp vào customOverlayColor và customTextColor
+            shapeType = result.shapeType,
+            customBorderColor = result.borderColor ?: block.customBorderColor,
+            borderThickness = result.borderThickness ?: block.borderThickness
+            // KHÔNG can thiệp vào customOverlayColor và customTextColor (nếu không cần thiết)
         )
     }
 }
