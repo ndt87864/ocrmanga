@@ -132,9 +132,9 @@ import kotlin.math.max
         onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null,
         previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
         isAncientMode: Boolean = false,
-        reuseExistingOriginalTexts: List<String>? = null // Nếu không null, skip OCR và dùng lại các original text đã lưu
+        reuseExistingBlocks: List<TextBlockInfo>? = null // Nếu không null, skip OCR và dùng lại các block đã có (vị trí, text gốc)
     ): Pair<String, List<TextBlockInfo>> {
-        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode, onStatusUpdate, previousTranslation, isAncientMode, reuseExistingOriginalTexts = reuseExistingOriginalTexts)
+        val (translatedText, translatedBlocks, _) = recognizeAndTranslateText(imageUri, mode, onStatusUpdate, previousTranslation, isAncientMode, reuseExistingBlocks = reuseExistingBlocks)
         return Pair(translatedText, translatedBlocks)
     }
 
@@ -1064,7 +1064,7 @@ import kotlin.math.max
         onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null,
         previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
         isAncientMode: Boolean = false,
-        reuseExistingOriginalTexts: List<String>? = null // Nếu không null, dùng lại original text đã lưu thay vì OCR mới
+        reuseExistingBlocks: List<TextBlockInfo>? = null // Nếu không null, dùng lại blocks đã có (vị trí, text gốc) thay vì OCR mới
     ): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
         if (mode == TranslationMode.OFF) {
             //log.i("TranslationRepository", "Chế độ dịch đã tắt, bỏ qua việc dịch cho $imageUri")
@@ -1114,27 +1114,16 @@ import kotlin.math.max
             return@withContext Triple(it.first, it.second, detectLanguage(it.first) ?: "zh")
         }
 
-        // === XỬ LÝ REUSE OCR: Nếu có existing originals, dùng trực tiếp không OCR lại ===
-        if (!reuseExistingOriginalTexts.isNullOrEmpty()) {
-            Log.i("TranslationRepository", "[REUSE-OCR] Using ${reuseExistingOriginalTexts.size} existing original texts, skipping OCR")
+        // === XỬ LÝ REUSE OCR: Nếu có existing blocks, dùng trực tiếp không OCR lại ===
+        if (!reuseExistingBlocks.isNullOrEmpty()) {
+            Log.i("TranslationRepository", "[REUSE-OCR] Using ${reuseExistingBlocks.size} existing blocks, skipping OCR")
             withContext(Dispatchers.Main) {
                 onStatusUpdate?.invoke(com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
             }
             try {
-                val bitmap = MediaStore.Images.Media.getBitmap(application.contentResolver, imageUri)
-                val rotationDegrees = getRotationDegrees(imageUri)
-                val w = bitmap.width
-                val h = bitmap.height
-                val dummyBlocks = reuseExistingOriginalTexts.mapIndexed { index, originalText ->
-                    TextBlockInfo(
-                        text = "",
-                        originalText = originalText,
-                        bounds = android.graphics.Rect(0, 0, w, h),
-                        fontSize = 14f,
-                        applyMerge = true
-                    )
-                }
-                bitmap.recycle()
+                // Tạo các block rỗng để dịch (giữ nguyên vị trí và text gốc)
+                val dummyBlocks = reuseExistingBlocks.map { it.copy(text = "") }
+                
                 // Gọi translate trực tiếp với các block đã có originalText
                 val translatedTexts = when (mode) {
                     TranslationMode.GEMINI -> translateTextWithGemini(dummyBlocks.map { it.originalText ?: "" }.joinToString("\n"), "zh")
@@ -1148,20 +1137,26 @@ import kotlin.math.max
                     }
                     else -> translateTextOnline(dummyBlocks.map { it.originalText ?: "" }.joinToString(" "), "zh")
                 }
-                val finalTranslatedTexts = translatedTexts.split("|").map { it.trim() }.filter { it.isNotEmpty() }
-                val resultBlocks = dummyBlocks.mapIndexed { index, block ->
-                    block.copy(
-                        text = finalTranslatedTexts.getOrElse(index) { "" },
-                        bounds = block.bounds
-                    )
+                
+                // Parse lại text đã dịch vào các block
+                val translatedLines = if (translatedTexts.contains("Block #") || translatedTexts.contains("Block #1")) {
+                    parseMultiBlockResponse(translatedTexts, dummyBlocks)
+                } else if (translatedTexts.contains("|")) {
+                    translatedTexts.split("|").map { it.trim() }
+                } else {
+                    translatedTexts.split("\n").map { it.trim() }
                 }
-                val resultText = resultBlocks.joinToString("\n") { it.text }
-                lastTranslationSession.add(Pair(imageUri, Pair(dummyBlocks.map { it.originalText }.joinToString("\n"), resultText)))
-                return@withContext Triple(resultText, resultBlocks, "zh")
+
+                val finalBlocks = dummyBlocks.mapIndexed { index, block ->
+                    block.copy(text = translatedLines.getOrNull(index) ?: "")
+                }
+                val fullText = finalBlocks.joinToString("\n") { it.text }
+                
+                cache[cacheKey] = fullText to finalBlocks
+                return@withContext Triple(fullText, finalBlocks, detectLanguage(fullText) ?: "zh")
             } catch (e: Exception) {
-                Log.e("TranslationRepository", "[REUSE-OCR] Failed: ${e.message}", e)
-                // Fallback: vẫn tiếp tục với OCR bình thường
-                Log.w("TranslationRepository", "[REUSE-OCR] Falling back to normal OCR")
+                Log.e("TranslationRepository", "Error in REUSE-OCR pipeline", e)
+                // Fallback to normal OCR below if reuse fails
             }
         }
 

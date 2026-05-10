@@ -70,6 +70,7 @@ fun ViewerScreen(
     var removingTextLocalProgress by remember { mutableStateOf("") }
     var brushSize by remember { mutableStateOf(40f) }
     var showOptimizeSelectionDialog by remember { mutableStateOf(false) }
+    var showOverlayStyleDialog by remember { mutableStateOf(false) }
 
     val uiState by viewModel.uiState.collectAsState()
     val allRoomIds by viewModel.allRoomIds.collectAsState()
@@ -582,6 +583,18 @@ fun ViewerScreen(
                             }
                         )
 
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.AutoFixHigh, null, modifier = Modifier.padding(end = 8.dp))
+                                    Text("Tối ưu hiển thị overlay")
+                                }
+                            },
+                            onClick = {
+                                showOverlayStyleDialog = true
+                                showMainMenu = false
+                            }
+                        )
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1372,6 +1385,67 @@ fun ViewerScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showOptimizeSelectionDialog = false }) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
+
+    // Dialog tối ưu hiển thị overlay (Preset Styles)
+    if (showOverlayStyleDialog) {
+        var selectedStyle by remember { mutableStateOf<String?>(null) }
+        
+        AlertDialog(
+            onDismissRequest = { showOverlayStyleDialog = false },
+            title = { Text("Tối ưu hiển thị overlay") },
+            text = {
+                Column {
+                    Text("Chọn kiểu hiển thị overlay cho toàn bộ phòng để tối ưu thẩm mỹ:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    val options = listOf(
+                        Triple("SMART_AUTO", "Tự động thông minh (Smart)", "Tự nhận diện bong bóng chat và tối ưu che phủ"),
+                        Triple("CLASSIC", "Mặc định (Classic)", "Nền đặc, hình chữ nhật truyền thống"),
+                        Triple("BUBBLES", "Bong bóng (Bubbles)", "Hình oval, bán trong suốt (75%)"),
+                        Triple("TRANSPARENT", "Trong suốt", "Chỉ hiển thị chữ trên nền ảnh gốc")
+                    )
+                    
+                    options.forEach { (id, name, description) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedStyle = id }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            RadioButton(
+                                selected = selectedStyle == id,
+                                onClick = { selectedStyle = id }
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(name, style = MaterialTheme.typography.titleSmall)
+                                Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        selectedStyle?.let { style ->
+                            viewModel.applyGlobalOverlayStyle(style)
+                        }
+                        showOverlayStyleDialog = false
+                    },
+                    enabled = selectedStyle != null
+                ) {
+                    Text("Áp dụng")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOverlayStyleDialog = false }) {
                     Text("Hủy")
                 }
             }

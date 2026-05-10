@@ -86,12 +86,18 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     0
                 }
             }
-            // Lấy danh sách original_text đã lưu trong DB cho một URI
-            fun getOriginalTextsForUri(uri: Uri): List<String> {
+            // Lấy danh sách blocks hiện tại cho một URI
+            fun getExistingBlocksForUri(uri: Uri): List<TextBlockInfo> {
+                // Ưu tiên lấy từ memory (uiState) nếu đã load
+                val fromMemory = _uiState.value.translatedTexts[uri]?.second
+                if (!fromMemory.isNullOrEmpty()) return fromMemory
+                
+                // Nếu chưa có trong memory, thử lấy từ DB
                 return try {
                     val imageId = uriToImageId[uri]
                     if (imageId != null) {
-                        databaseHelper.getOriginalTextsForImage(imageId)
+                        // Trả về list blocks đầy đủ từ DB
+                        databaseHelper.getBlocksForImageAsTextBlockInfo(imageId)
                     } else emptyList()
                 } catch (e: Exception) {
                     emptyList()
@@ -425,7 +431,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     
     // Dịch lại 1 ảnh (re-translate single image)
     // IMPORTANT: This will DELETE all existing translations for this image before creating new ones
-    fun retranslateImage(uri: Uri, mode: TranslationMode, reuseExistingOcr: Boolean = false, existingOriginalTexts: List<String>? = null) {
+    fun retranslateImage(uri: Uri, mode: TranslationMode, reuseExistingOcr: Boolean = false, existingBlocks: List<TextBlockInfo>? = null) {
         viewModelScope.launch {
             val hasApiKeys = when(mode) {
                 TranslationMode.GEMINI -> hasGeminiApiKeys()
@@ -557,7 +563,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
 
                     Log.i(TAG, "Calling translateImage for uri=$uri (canonical=$canonicalUri, imageId=${uriToImageId[uri]}) mode=$mode reuseExistingOcr=$reuseExistingOcr")
-                    val result = translationRepository.translateImage(canonicalUri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode, reuseExistingOriginalTexts = if (reuseExistingOcr) existingOriginalTexts else null)
+                    val result = translationRepository.translateImage(canonicalUri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode, reuseExistingBlocks = if (reuseExistingOcr) existingBlocks else null)
                     
                     Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
                     
@@ -828,19 +834,199 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     dirtyUris.add(uri)
                     val imageId = uriToImageId[uri]
                     if (rid != null && imageId != null) {
-                         try {
-                            databaseHelper.markImageChanged(imageId, rid)
-                         } catch(e: Exception) { Log.e(TAG, "Failed to mark changed", e) }
+                        databaseHelper.markImageChanged(imageId, rid)
                     }
                 }
-                
                 Toast.makeText(getApplication(), "Đã cập nhật font cho ${urisToUpdate.size} trang!", Toast.LENGTH_SHORT).show()
-                
-                 if (rid != null && urisToUpdate.size >= 5) {
-                      maybeAutoSaveChangedImages(rid)
-                 }
             }
         }
+    }
+
+    /**
+     * Áp dụng kiểu overlay cho toàn bộ phòng
+     */
+    fun applyGlobalOverlayStyle(style: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentTranslated = _uiState.value.translatedTexts
+            val newTranslated = currentTranslated.toMutableMap()
+            val urisToUpdate = mutableListOf<Uri>()
+
+            currentTranslated.forEach { (uri, pair) ->
+                val (originalText, blocks) = pair
+                if (blocks.isNotEmpty()) {
+                    val newBlocks = if (style == "SMART_AUTO") {
+                        autoOptimizeOverlay(uri, blocks)
+                    } else {
+                        blocks.map { block ->
+                            when (style) {
+                                "CLASSIC" -> block.copy(
+                                    overlayAlpha = 1.0f,
+                                    shapeType = 0, // Rect
+                                    overlayInsetHorizontal = 0f,
+                                    overlayInsetVertical = 0f
+                                )
+                                "BUBBLES" -> block.copy(
+                                    overlayAlpha = 0.75f,
+                                    shapeType = 1, // Oval
+                                    overlayInsetHorizontal = 0f,
+                                    overlayInsetVertical = 0f
+                                )
+                                "TRANSPARENT" -> block.copy(
+                                    overlayAlpha = 0.0f,
+                                    shapeType = 0,
+                                    overlayInsetHorizontal = 0f,
+                                    overlayInsetVertical = 0f
+                                )
+                                "SMART_FIT" -> block.copy(
+                                    overlayAlpha = 1.0f,
+                                    shapeType = 1, // Oval
+                                    overlayInsetHorizontal = 4f,
+                                    overlayInsetVertical = 4f
+                                )
+                                else -> block
+                            }
+                        }
+                    }
+                    newTranslated[uri] = originalText to newBlocks
+                    urisToUpdate.add(uri)
+                }
+            }
+
+            if (urisToUpdate.isNotEmpty()) {
+                withContext(Dispatchers.Main) {
+                    _uiState.update { 
+                        it.copy(translatedTexts = newTranslated, translationVersion = it.translationVersion + 1)
+                    }
+                    
+                    val rid = _uiState.value.roomId
+                    urisToUpdate.forEach { uri ->
+                        dirtyUris.add(uri)
+                        val imageId = uriToImageId[uri]
+                        if (rid != null && imageId != null) {
+                            databaseHelper.markImageChanged(imageId, rid)
+                        }
+                    }
+                    Toast.makeText(getApplication(), "Đã tối ưu hiển thị cho ${urisToUpdate.size} trang.", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Không có trang nào cần cập nhật.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private suspend fun autoOptimizeOverlay(uri: Uri, blocks: List<TextBlockInfo>): List<TextBlockInfo> {
+        val context = getApplication<Application>()
+        val bitmap = try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            BitmapFactory.decodeStream(inputStream)
+        } catch (e: Exception) {
+            null
+        } ?: return blocks
+
+        return blocks.map { block ->
+            val bgType = block.backgroundType
+            // Kiểm tra xem có phải bong bóng chat không (dựa trên background type hoặc bubbleId)
+            val isBubble = bgType == com.example.ocrmanga.data.models.BackgroundType.WHITE || block.bubbleId != null
+            
+            // Nếu containerInfo cho thấy là text rời (FREE_TEXT)
+            val isFreeText = block.containerInfo?.type == com.example.ocrmanga.data.ocr.models.TextContainerType.FREE_TEXT
+
+            if (isBubble && !isFreeText) {
+                // Trường hợp 1: Trong bong bóng chat
+                // Tự động tìm inset để không đè lên chi tiết ảnh (nét vẽ, viền bong bóng)
+                val optimizedInset = findOptimalOverlayInset(bitmap, block)
+                block.copy(
+                    overlayAlpha = 1.0f,
+                    shapeType = 1, // Luôn dùng Oval cho bong bóng
+                    overlayInsetHorizontal = optimizedInset.first,
+                    overlayInsetVertical = optimizedInset.second
+                )
+            } else {
+                // Trường hợp 2: Không phải bong bóng hoặc là text rời
+                // Chuyển sang trong suốt để không che mất background ảnh gốc
+                block.copy(
+                    overlayAlpha = 0.0f,
+                    shapeType = 0
+                )
+            }
+        }
+    }
+
+    private fun findOptimalOverlayInset(bitmap: Bitmap, block: TextBlockInfo): Pair<Float, Float> {
+        val bounds = block.bounds
+        if (bounds.width() <= 10 || bounds.height() <= 10) return 4f to 4f
+        
+        val imgW = bitmap.width
+        val imgH = bitmap.height
+        
+        val left = bounds.left.coerceIn(0, imgW - 1)
+        val top = bounds.top.coerceIn(0, imgH - 1)
+        val right = bounds.right.coerceIn(0, imgW - 1)
+        val bottom = bounds.bottom.coerceIn(0, imgH - 1)
+        
+        // Kiểm tra màu nền trung tâm
+        val centerX = (left + right) / 2
+        val centerY = (top + bottom) / 2
+        val centerPixel = bitmap.getPixel(centerX, centerY)
+        val centerLuminance = ColorUtils.calculateLuminance(centerPixel)
+        
+        var insetH = 0f
+        var insetV = 0f
+        
+        val maxInsetH = bounds.width() * 0.2f
+        val maxInsetV = bounds.height() * 0.2f
+        
+        // Chỉ tối ưu inset cho nền sáng (bong bóng trắng)
+        if (centerLuminance > 0.8) {
+            // Tìm inset ngang (trái/phải)
+            for (i in 0..maxInsetH.toInt()) {
+                val checkXLeft = left + i
+                val checkXRight = right - i
+                if (checkXLeft >= right || checkXRight <= left) break
+                
+                var hasDetail = false
+                // Kiểm tra vài điểm dọc theo cạnh để tìm nét vẽ/viền
+                val stepY = (bottom - top) / 5
+                for (y in top..bottom step stepY.coerceAtLeast(1)) {
+                    val py = y.coerceIn(0, imgH - 1)
+                    val p1 = bitmap.getPixel(checkXLeft, py)
+                    val p2 = bitmap.getPixel(checkXRight, py)
+                    if (ColorUtils.calculateLuminance(p1) < 0.75 || ColorUtils.calculateLuminance(p2) < 0.75) {
+                        hasDetail = true
+                        break
+                    }
+                }
+                if (hasDetail) insetH = i.toFloat() + 2f else break
+            }
+            
+            // Tìm inset dọc (trên/dưới)
+            for (i in 0..maxInsetV.toInt()) {
+                val checkYTop = top + i
+                val checkYBottom = bottom - i
+                if (checkYTop >= bottom || checkYBottom <= top) break
+                
+                var hasDetail = false
+                val stepX = (right - left) / 5
+                for (x in left..right step stepX.coerceAtLeast(1)) {
+                    val px = x.coerceIn(0, imgW - 1)
+                    val p1 = bitmap.getPixel(px, checkYTop)
+                    val p2 = bitmap.getPixel(px, checkYBottom)
+                    if (ColorUtils.calculateLuminance(p1) < 0.75 || ColorUtils.calculateLuminance(p2) < 0.75) {
+                        hasDetail = true
+                        break
+                    }
+                }
+                if (hasDetail) insetV = i.toFloat() + 2f else break
+            }
+        } else {
+            // Nền tối hoặc phức tạp, dùng mặc định
+            insetH = 4f
+            insetV = 4f
+        }
+        
+        return insetH.coerceAtMost(maxInsetH) to insetV.coerceAtMost(maxInsetV)
     }
 
     private val translationRepository = TranslationRepository(application)
