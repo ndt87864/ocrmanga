@@ -430,7 +430,7 @@ fun calculateOptimalFontSize(
     text: String,
     width: Float,
     height: Float,
-    minFontSize: Float = 12f,
+    minFontSize: Float = 20f,
     maxFontSize: Float = 1000f,
     shapeType: Int = 0, // 0 = rectangle, 1 = oval
     context: Context? = null,
@@ -837,7 +837,7 @@ fun adjustWhiteoutBounds(
     // Compute an optimal font size that fits into the available area. Do not allow it
     // to grow beyond the provided fontSize (we only want to shrink when overflowing).
     // Ensure maxFontSize is at least minFontSize to avoid invalid range.
-    val minSize = 8f
+    val minSize = 20f
     val maxSize = fontSize.coerceAtLeast(minSize)
     val optimal = calculateOptimalFontSize(
         text = text,
@@ -1756,13 +1756,13 @@ fun calculateWindowedOverlayBounds(
         boldness = boldness
     )
 
-    // Expand bounding box dynamically if optimalFontSize < 12f
-    if (optimalFontSize < 12f) {
+    // Expand bounding box dynamically if optimalFontSize < 20f
+    if (optimalFontSize < 20f) {
         var expansion = 0f
         val step = 2f
         val maxExpansion = 100f // Limit expansion to prevent infinite loop or huge bounds
 
-        while (optimalFontSize < 12f && expansion < maxExpansion) {
+        while (optimalFontSize < 20f && expansion < maxExpansion) {
             expansion += step
 
             currentOuterBounds = androidx.compose.ui.geometry.Rect(

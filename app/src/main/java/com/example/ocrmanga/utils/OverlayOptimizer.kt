@@ -395,6 +395,7 @@ object OverlayOptimizer {
         result: OptimizationResult
     ): TextBlockInfo {
         return block.copy(
+            text = formatPunctuationSpacing(block.text),
             overlayAlpha = result.overlayAlpha,
             overlayInsetHorizontal = result.overlayInsetHorizontal,
             overlayInsetVertical = result.overlayInsetVertical,
@@ -403,5 +404,19 @@ object OverlayOptimizer {
             borderThickness = result.borderThickness ?: block.borderThickness
             // KHÔNG can thiệp vào customOverlayColor và customTextColor (nếu không cần thiết)
         )
+    }
+
+    /**
+     * Tự động thêm khoảng trắng vào các dấu câu đặc biệt để dễ đọc hơn.
+     */
+    private fun formatPunctuationSpacing(text: String): String {
+        var res = text
+        // "text" + "..." -> "text" + " " + "..."
+        res = res.replace(Regex("([\\p{L}\\d])(\\.\\.\\.)"), "$1 $2")
+        // "..." + "text2" -> "..." + " " + "text2"
+        res = res.replace(Regex("(\\.\\.\\.)([\\p{L}\\d])"), "$1 $2")
+        // "text1" + "-" hoặc "." + "text2" -> "text1" + "-"/"." + " " + "text2"
+        res = res.replace(Regex("([\\p{L}\\d])([-\\.])([\\p{L}\\d])"), "$1$2 $3")
+        return res
     }
 }
