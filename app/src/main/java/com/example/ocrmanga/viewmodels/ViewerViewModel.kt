@@ -547,7 +547,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             if (imageId != null) {
                 try {
                     databaseHelper.markTranslationsAsPendingDelete(imageId)
-                    Log.i(TAG, "[RETRANSLATE] Marked old translations as pending_delete for imageId=$imageId")
+                    //Log.i(TAG, "[RETRANSLATE] Marked old translations as pending_delete for imageId=$imageId")
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to mark pending delete for imageId=$imageId", e)
                 }
@@ -658,7 +658,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                     val result = translationRepository.translateImage(canonicalUri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode, reuseExistingBlocks = if (reuseExistingOcr) existingBlocks else null)
                     
-                    Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
+                    //Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
                     
                     // Ensure blocks have overlay/text colors set similarly to queued translations
                     val (originalText, blocks) = result
@@ -682,11 +682,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         fixedBlocks.forEachIndexed { i, fb ->
                             val origHex = fb.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
                             val custHex = fb.customTextColor?.let { String.format("#%08X", it) } ?: "null"
-                            Log.i(TAG, "[RETRANSLATE] Block #$i: origColor=$origHex customColor=$custHex text='${fb.text.take(40)}'")
+                            //Log.i(TAG, "[RETRANSLATE] Block #$i: origColor=$origHex customColor=$custHex text='${fb.text.take(40)}'")
                         }
                     } catch (_: Exception) { }
                     
-                    Log.i(TAG, "[RETRANSLATE] About to update UI state with ${fixedBlocks.size} blocks")
+                    //Log.i(TAG, "[RETRANSLATE] About to update UI state with ${fixedBlocks.size} blocks")
                     
                     _uiState.update {
                         it.copy(
@@ -698,7 +698,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     }
                     
-                    Log.i(TAG, "[RETRANSLATE] UI state updated successfully. translationVersion=${_uiState.value.translationVersion}")
+                    //Log.i(TAG, "[RETRANSLATE] UI state updated successfully. translationVersion=${_uiState.value.translationVersion}")
                     
                     // Cập nhật trạng thái: hoàn tất
                     updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
@@ -709,13 +709,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     // Mark as dirty and set DB change flag if this image belongs to a saved room
                     dirtyUris.add(uri)
                     val rid = _uiState.value.roomId
-                    Log.i(TAG, "[RETRANSLATE] Checking auto-save: uri=$uri imageId=$imageId roomId=$rid")
+                    //Log.i(TAG, "[RETRANSLATE] Checking auto-save: uri=$uri imageId=$imageId roomId=$rid")
                     if (rid != null && imageId != null) {
                         try {
                             val numChanged = databaseHelper.markImageChanged(imageId, rid)
-                            Log.i(TAG, "[RETRANSLATE] After markImageChanged: numChanged=$numChanged for imageId=$imageId")
+                            //Log.i(TAG, "[RETRANSLATE] After markImageChanged: numChanged=$numChanged for imageId=$imageId")
                             if (numChanged >= 5) {
-                                Log.i(TAG, "[RETRANSLATE] Threshold reached! Calling maybeAutoSaveChangedImages")
+                                //Log.i(TAG, "[RETRANSLATE] Threshold reached! Calling maybeAutoSaveChangedImages")
                                 maybeAutoSaveChangedImages(rid)
                             }
                         } catch (e: Exception) { 

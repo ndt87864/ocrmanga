@@ -20,16 +20,40 @@ object TranslationPrompts {
      * Khởi tạo prompt từ assets
      */
     fun initialize(context: Context) {
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] Bắt đầu tải prompts từ assets...")
+
         managerSystemPrompt = PromptUtils.loadPromptFromAssets(context, "manager_system.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] manager_system.md: ${managerSystemPrompt.length} chars")
+
         translatorSystemPrompt = PromptUtils.loadPromptFromAssets(context, "translator_system.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] translator_system.md: ${translatorSystemPrompt.length} chars")
+
         mistralBasicPrompt = PromptUtils.loadPromptFromAssets(context, "mistral_basic.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] mistral_basic.md: ${mistralBasicPrompt.length} chars")
+
         mistralMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "mistral_multi_scale.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] mistral_multi_scale.md: ${mistralMultiScalePrompt.length} chars")
+
         mistralMultiScalePromptOptimized = PromptUtils.loadPromptFromAssets(context, "mistral_multi_scale_optimized.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] mistral_multi_scale_optimized.md: ${mistralMultiScalePromptOptimized.length} chars")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] mistral_multi_scale_optimized.md preview:\n${mistralMultiScalePromptOptimized.take(500)}")
+
         geminiMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "gemini_multi_scale.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] gemini_multi_scale.md: ${geminiMultiScalePrompt.length} chars")
+
         zaiBasicPrompt = PromptUtils.loadPromptFromAssets(context, "zai_basic.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] zai_basic.md: ${zaiBasicPrompt.length} chars")
+
         zaiMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "zai_multi_scale.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] zai_multi_scale.md: ${zaiMultiScalePrompt.length} chars")
+
         managerReviewPrompt = PromptUtils.loadPromptFromAssets(context, "manager_review.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] manager_review.md: ${managerReviewPrompt.length} chars")
+
         translatorRevisePrompt = PromptUtils.loadPromptFromAssets(context, "translator_revise.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] translator_revise.md: ${translatorRevisePrompt.length} chars")
+
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] Hoàn tất tải tất cả prompts!")
     }
 
     val MANAGER_SYSTEM_PROMPT: String

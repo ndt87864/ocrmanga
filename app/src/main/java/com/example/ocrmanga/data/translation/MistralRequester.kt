@@ -68,6 +68,14 @@ class MistralRequester(
         // Lấy model hiện tại cho key này (mặc định là model truyền vào, thường là large)
         val currentModel = keyToModelMap[apiKey] ?: model
 
+        // ===== DEBUG LOG: System prompt verification =====
+        val systemPrompt = messages.find { (it["role"] as? String) == "system" }?.get("content") as? String ?: ""
+        val userPrompt = messages.find { (it["role"] as? String) == "user" }?.get("content") as? String ?: ""
+        Log.d(TAG, "[DEBUG-SYSTEM] System prompt length: ${systemPrompt.length} chars")
+        Log.d(TAG, "[DEBUG-SYSTEM] System prompt preview (first 500): ${systemPrompt.take(500)}")
+        Log.d(TAG, "[DEBUG-USER] User prompt preview (first 500): ${userPrompt.take(500)}")
+        // ================================================
+
         val bodyMap = mutableMapOf<String, Any>(
             "model" to currentModel,
             "messages" to messages,
@@ -87,6 +95,11 @@ class MistralRequester(
         }
 
         val requestBodyJson = gson.toJson(bodyMap)
+        // ===== DEBUG LOG: Full request body =====
+        Log.d(TAG, "[DEBUG-REQUEST] Model: $currentModel, Temp: $temperature, FreqPen: $frequency_penalty, PrePen: $presence_penalty")
+        Log.d(TAG, "[DEBUG-REQUEST] Full request body: $requestBodyJson")
+        // ===========================================
+
         val request = Request.Builder()
             .url(mistralApiUrl)
             .addHeader("Authorization", "Bearer $apiKey")
@@ -98,6 +111,10 @@ class MistralRequester(
             val response = withContext(Dispatchers.IO) { robustClient.newCall(request).execute() }
             val responseBody = response.body?.string()
 
+            // ===== DEBUG LOG: Raw response =====
+            Log.d(TAG, "[DEBUG-RESPONSE] Raw response (first 1000): ${responseBody?.take(1000)}")
+            // =====================================
+
             if (!response.isSuccessful) {
                 Log.e(TAG, "Lỗi API Mistral (${response.code}): $responseBody")
                 if (response.code == 429) {
@@ -107,10 +124,13 @@ class MistralRequester(
                 return null
             }
 
-            parseSuccessfulResponse(responseBody)
+            val result = parseSuccessfulResponse(responseBody)
+            Log.d(TAG, "[DEBUG-RESULT] Parsed content length: ${result?.content?.length ?: 0} chars")
+            Log.d(TAG, "[DEBUG-RESULT] Parsed content preview: ${result?.content?.take(300)}")
+            return result
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi kết nối đến Mistral API", e)
-            null
+            return null
         }
     }
 

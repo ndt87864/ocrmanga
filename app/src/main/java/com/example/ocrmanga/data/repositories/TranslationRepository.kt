@@ -219,7 +219,8 @@ import kotlin.math.max
         sourceLang: String,
         targetLang: String,
         previousTranslation: List<TextBlockInfo>? = null,
-        isAncientMode: Boolean = false
+        isAncientMode: Boolean = false,
+        skipDetailedLogs: Boolean = false
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
 
@@ -253,6 +254,13 @@ import kotlin.math.max
             isAncientMode = isAncientMode
         )
 
+        // ===== DEBUG LOG: Kiểm tra instructions (system prompt) =====
+        if (!skipDetailedLogs) {
+            Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT-ZAI] Instructions length: ${instructions.length} chars")
+            Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT-ZAI] Instructions preview (first 1000):\n${instructions.take(1000)}")
+        }
+        // ==============================================================
+
         val systemMessage = mapOf(
             "role" to "system",
             "content" to instructions
@@ -261,12 +269,16 @@ import kotlin.math.max
         val dataContent = """
             === DỮ LIỆU OCR THAM KHẢO ===
             $ocrResultsText
-            
+
             === DANH SÁCH CẦN DỊCH ===
             $numberedBlocks
         """.trimIndent()
 
         val userMessage = mapOf("role" to "user", "content" to dataContent)
+
+        if (!skipDetailedLogs) {
+            Log.d("TranslationRepository", "[DEBUG-USER-PROMPT-ZAI] Data content preview (first 500):\n$dataContent.take(500)")
+        }
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
@@ -275,7 +287,21 @@ import kotlin.math.max
         )
 
         val content = response?.content ?: return null
-        return parseMultiBlockResponse(content, textBlocks)
+        val result = parseMultiBlockResponse(content, textBlocks)
+        
+        if (!skipDetailedLogs) {
+            Log.i("TranslationRepository", "[ZAI-RESULT] ===== KẾT QUẢ DỊCH Z.AI =====")
+            Log.i("TranslationRepository", "[ZAI-RESULT] Tổng số blocks: ${result.size}")
+            result.forEachIndexed { index, translation ->
+                val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
+                Log.i("TranslationRepository", "[ZAI-RESULT] Block #${index + 1}:")
+                Log.i("TranslationRepository", "[ZAI-RESULT]   Gốc: $originalText")
+                Log.i("TranslationRepository", "[ZAI-RESULT]   Dịch: $translation")
+            }
+            Log.i("TranslationRepository", "[ZAI-RESULT] ==============================")
+        }
+        
+        return result
     }
 
     private fun parseMultiBlockResponse(content: String, textBlocks: List<TextBlockInfo>): List<String> {
@@ -362,7 +388,8 @@ import kotlin.math.max
         sourceLang: String,
         targetLang: String,
         previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
-        isAncientMode: Boolean = false
+        isAncientMode: Boolean = false,
+        skipDetailedLogs: Boolean = false
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
 
@@ -431,6 +458,13 @@ import kotlin.math.max
             isAncientMode = isAncientMode
         )
 
+        // ===== DEBUG LOG: Kiểm tra instructions (system prompt) =====
+        if (!skipDetailedLogs) {
+            Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT] Instructions length: ${instructions.length} chars")
+            Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT] Instructions preview (first 1000):\n${instructions.take(1000)}")
+        }
+        // ============================================================
+
         val systemMessage = mapOf(
             "role" to "system",
             "content" to instructions
@@ -439,16 +473,20 @@ import kotlin.math.max
         val dataContent = """
             === DỮ LIỆU OCR ===
             $ocrResultsText
-            
+
             === BLOCKS CẦN DỊCH ===
             $numberedBlocks
         """.trimIndent()
 
         val userMessage = mapOf("role" to "user", "content" to dataContent)
 
+        if (!skipDetailedLogs) {
+            Log.d("TranslationRepository", "[DEBUG-USER-PROMPT] Data content preview (first 500):\n$dataContent.take(500)")
+        }
+
         val response = mistralRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
-            temperature = 0.78,
+            temperature = 0.5, // Cân bằng giữa tuân thủ prompt (0.3) và tự nhiên (0.78)
             frequency_penalty = 0.45,
             presence_penalty = 0.4
         )
@@ -461,7 +499,7 @@ import kotlin.math.max
         val lines = content.trim().split("\n")
 
         // Log nội dung trả về để debug khi có vấn đề
-        Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI (${lines.size} dòng):\n${content.take(500)}...")
+        //Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI (${lines.size} dòng):\n${content.take(500)}...")
 
         // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
         val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
@@ -541,14 +579,14 @@ import kotlin.math.max
                         (translation.startsWith("(") && translation.endsWith(")") && translation.length < 60)
                     if (isAnnotation) {
                          translation = ""
-                         Log.w("TranslationRepository", "[MISTRAL-PARSE] Block #${blockIndex + 1} bị reject vì là chú thích")
+                         //Log.w("TranslationRepository", "[MISTRAL-PARSE] Block #${blockIndex + 1} bị reject vì là chú thích")
                     }
 
                     if (blockIndex >= 0) {
                         translatedBlocksMap[blockIndex] = translation
                     }
                 } catch (e: Exception) {
-                     Log.w("TranslationRepository", "[MISTRAL-PARSE] Lỗi parse block: ${e.message}")
+                    // Log.w("TranslationRepository", "[MISTRAL-PARSE] Lỗi parse block: ${e.message}")
                 }
             }
             i++
@@ -556,7 +594,7 @@ import kotlin.math.max
 
         // Nếu không parse được theo format "Block #", thử parse theo số thứ tự đơn giản (1. 2. 3.)
         if (translatedBlocksMap.isEmpty()) {
-            Log.w("TranslationRepository", "[MISTRAL-PARSE] Không tìm thấy format 'Block #', thử parse theo số thứ tự...")
+            //Log.w("TranslationRepository", "[MISTRAL-PARSE] Không tìm thấy format 'Block #', thử parse theo số thứ tự...")
             val numberPattern = Regex("^(\\d+)[.):;]\\s*(.+)$")
             for (line in lines) {
                 val trimmedLine = line.trim()
@@ -583,20 +621,22 @@ import kotlin.math.max
                  translatedBlocks.add(trans)
             } else {
                  translatedBlocks.add(textBlocks[index].text)
-                 Log.w("TranslationRepository", "[MISTRAL-PARSE] Thiếu bản dịch cho Block #${index + 1}, dùng text gốc.")
+                 //Log.w("TranslationRepository", "[MISTRAL-PARSE] Thiếu bản dịch cho Block #${index + 1}, dùng text gốc.")
             }
         }
 
         // Log kết quả dịch của các block
-        Log.i("TranslationRepository", "[MISTRAL-RESULT] ===== KẾT QUẢ DỊCH MISTRAL =====")
-        Log.i("TranslationRepository", "[MISTRAL-RESULT] Tổng số blocks: ${translatedBlocks.size}")
-        translatedBlocks.forEachIndexed { index, translation ->
-            val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
-            Log.i("TranslationRepository", "[MISTRAL-RESULT] Block #${index + 1}:")
-            Log.i("TranslationRepository", "[MISTRAL-RESULT]   Gốc: $originalText")
-            Log.i("TranslationRepository", "[MISTRAL-RESULT]   Dịch: $translation")
+        if (!skipDetailedLogs) {
+            Log.i("TranslationRepository", "[MISTRAL-RESULT] ===== KẾT QUẢ DỊCH MISTRAL =====")
+            Log.i("TranslationRepository", "[MISTRAL-RESULT] Tổng số blocks: ${translatedBlocks.size}")
+            translatedBlocks.forEachIndexed { index, translation ->
+                val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
+                Log.i("TranslationRepository", "[MISTRAL-RESULT] Block #${index + 1}:")
+                Log.i("TranslationRepository", "[MISTRAL-RESULT]   Gốc: $originalText")
+                Log.i("TranslationRepository", "[MISTRAL-RESULT]   Dịch: $translation")
+            }
+            Log.i("TranslationRepository", "[MISTRAL-RESULT] ==============================")
         }
-        Log.i("TranslationRepository", "[MISTRAL-RESULT] ==============================")
 
         return translatedBlocks
     }
@@ -1117,7 +1157,8 @@ import kotlin.math.max
                             sourceLang = detectLanguage(joinedSourceText) ?: "zh",
                             targetLang = "vi",
                             previousTranslation = previousTranslation,
-                            isAncientMode = isAncientMode
+                            isAncientMode = isAncientMode,
+                            skipDetailedLogs = true
                         ) ?: sourceTexts.map { "" }
                     }
                     TranslationMode.GEMINI -> {
@@ -1131,7 +1172,8 @@ import kotlin.math.max
                             sourceLang = detectLanguage(joinedSourceText) ?: "zh",
                             targetLang = "vi",
                             previousTranslation = previousTranslation,
-                            isAncientMode = isAncientMode
+                            isAncientMode = isAncientMode,
+                            skipDetailedLogs = true
                         ) ?: sourceTexts.map { "" }
                     }
                     TranslationMode.ZAI -> {
@@ -1145,7 +1187,8 @@ import kotlin.math.max
                             sourceLang = detectLanguage(joinedSourceText) ?: "zh",
                             targetLang = "vi",
                             previousTranslation = previousTranslation,
-                            isAncientMode = isAncientMode
+                            isAncientMode = isAncientMode,
+                            skipDetailedLogs = true
                         ) ?: sourceTexts.map { "" }
                     }
                     else -> {
@@ -1154,7 +1197,13 @@ import kotlin.math.max
                     }
                 }
                 
-                Log.i("TranslationRepository", "[REUSE-PARSE] Got ${translatedLines.size} translated lines for ${reuseExistingBlocks.size} blocks")
+                val modelTag = when(mode) {
+                    TranslationMode.MISTRAL -> "MISTRAL"
+                    TranslationMode.GEMINI -> "GEMINI"
+                    TranslationMode.ZAI -> "ZAI"
+                    else -> "OCR"
+                }
+                Log.i("TranslationRepository", "[REUSE-$modelTag-PARSE] Got ${translatedLines.size} translated lines for ${reuseExistingBlocks.size} blocks")
 
                 val finalBlocks = reuseExistingBlocks.mapIndexed { index, block ->
                     val cleanOriginalText = block.originalText ?: block.text
@@ -1169,10 +1218,11 @@ import kotlin.math.max
                 
                 cache[cacheKey] = fullText to finalBlocks
 
+
                 // LOG CHI TIẾT KẾT QUẢ REUSE-OCR
-                Log.i("TranslationRepository", "===== KẾT QUẢ DỊCH (REUSE-OCR - NO MERGE) =====")
+                Log.i("TranslationRepository", "===== KẾT QUẢ DỊCH (REUSE-$modelTag) =====")
                 finalBlocks.forEachIndexed { index, block ->
-                    Log.i("TranslationRepository", "[REUSE-BLOCK] #$index:")
+                    Log.i("TranslationRepository", "[REUSE-$modelTag] #$index:")
                     Log.i("TranslationRepository", "    + Bounds: ${block.bounds}")
                     Log.i("TranslationRepository", "    + Gốc: '${block.originalText}'")
                     Log.i("TranslationRepository", "    + Dịch: '${block.text}'")
@@ -3240,7 +3290,8 @@ import kotlin.math.max
         sourceLang: String,
         targetLang: String,
         previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
-        isAncientMode: Boolean = false
+        isAncientMode: Boolean = false,
+        skipDetailedLogs: Boolean = false
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
 
@@ -3334,6 +3385,13 @@ import kotlin.math.max
                     isAncientMode = isAncientMode
                 )
 
+                // ===== DEBUG LOG: Kiểm tra instructions (system prompt) =====
+                if (!skipDetailedLogs) {
+                    Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT-GEMINI] Instructions length: ${instructions.length} chars")
+                    Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT-GEMINI] Instructions preview (first 1000):\n${instructions.take(1000)}")
+                }
+                // ===============================================================
+
                 val generativeModel = GenerativeModel(
                     modelName = modelName,
                     apiKey = useKey,
@@ -3341,14 +3399,18 @@ import kotlin.math.max
                     generationConfig = config,
                     systemInstruction = content { text(instructions) }
                 )
-                
+
                 val dataContent = """
                     === DỮ LIỆU OCR ===
                     $ocrResultsText
-                    
+
                     === BLOCKS CẦN DỊCH ===
                     $numberedBlocks
                 """.trimIndent()
+
+                if (!skipDetailedLogs) {
+                    Log.d("TranslationRepository", "[DEBUG-USER-PROMPT-GEMINI] Data content preview (first 500):\n$dataContent.take(500)")
+                }
                 
                 val response = generativeModel.generateContent(dataContent)
                 val content = response.text?.trim()
@@ -3511,15 +3573,17 @@ import kotlin.math.max
                 }
                 
                 // Log kết quả dịch của các block
-                Log.i("TranslationRepository", "[GEMINI-RESULT] ===== KẾT QUẢ DỊCH GEMINI =====")
-                Log.i("TranslationRepository", "[GEMINI-RESULT] Tổng số blocks: ${translatedBlocks.size}")
-                translatedBlocks.forEachIndexed { index, translation ->
-                    val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
-                    Log.i("TranslationRepository", "[GEMINI-RESULT] Block #${index + 1}:")
-                    Log.i("TranslationRepository", "[GEMINI-RESULT]   Gốc: $originalText")
-                    Log.i("TranslationRepository", "[GEMINI-RESULT]   Dịch: $translation")
+                if (!skipDetailedLogs) {
+                    Log.i("TranslationRepository", "[GEMINI-RESULT] ===== KẾT QUẢ DỊCH GEMINI =====")
+                    Log.i("TranslationRepository", "[GEMINI-RESULT] Tổng số blocks: ${translatedBlocks.size}")
+                    translatedBlocks.forEachIndexed { index, translation ->
+                        val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
+                        Log.i("TranslationRepository", "[GEMINI-RESULT] Block #${index + 1}:")
+                        Log.i("TranslationRepository", "[GEMINI-RESULT]   Gốc: $originalText")
+                        Log.i("TranslationRepository", "[GEMINI-RESULT]   Dịch: $translation")
+                    }
+                    Log.i("TranslationRepository", "[GEMINI-RESULT] ==============================")
                 }
-                Log.i("TranslationRepository", "[GEMINI-RESULT] ==============================")
                 
                 return translatedBlocks
             } catch (e: Exception) {
