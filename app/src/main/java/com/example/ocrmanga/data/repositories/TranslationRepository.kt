@@ -240,9 +240,21 @@ import kotlin.math.max
             "- Lần quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
         }.joinToString("\n")
 
+        // Đánh số và sắp xếp các text blocks gốc theo thứ tự đọc Manga (Phải -> Trái, Trên -> Dưới)
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
-            // Chuẩn hóa text: gộp các dòng lẻ thành một câu duy nhất để AI dịch mượt hơn
             val normalizedText = block.text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+            Triple(index, block, normalizedText)
+        }.sortedWith(Comparator { a, b ->
+            val boundsA = a.second.bounds
+            val boundsB = b.second.bounds
+            val centerXA = boundsA.centerX()
+            val centerXB = boundsB.centerX()
+            if (abs(centerXA - centerXB) > 100) {
+                centerXB.compareTo(centerXA)
+            } else {
+                boundsA.top.compareTo(boundsB.top)
+            }
+        }).map { (index, _, normalizedText) ->
             "Block #${index + 1}: $normalizedText"
         }.joinToString("\n")
 
@@ -374,10 +386,10 @@ import kotlin.math.max
 
         val response = mistralRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
-            temperature = 0.78, // Giữ nguyên mức này theo yêu cầu tối ưu cho manga
-            frequency_penalty = 0.45,
-            presence_penalty = 0.4,
-            top_p=1.0,
+            temperature = 0.4,
+            frequency_penalty = 0.0,
+            presence_penalty = 0.0,
+            top_p=0.9,
             max_tokens=6000
         )
 
@@ -445,10 +457,21 @@ import kotlin.math.max
             "Kết quả quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
         }.joinToString("\n\n")
 
-        // Đánh số các text blocks gốc
+        // Đánh số và sắp xếp các text blocks gốc theo thứ tự đọc Manga (Phải -> Trái, Trên -> Dưới)
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
-            // Chuẩn hóa text: gộp các dòng lẻ thành một câu duy nhất để AI dịch mượt hơn
             val normalizedText = block.text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+            Triple(index, block, normalizedText)
+        }.sortedWith(Comparator { a, b ->
+            val boundsA = a.second.bounds
+            val boundsB = b.second.bounds
+            val centerXA = boundsA.centerX()
+            val centerXB = boundsB.centerX()
+            if (abs(centerXA - centerXB) > 100) {
+                centerXB.compareTo(centerXA)
+            } else {
+                boundsA.top.compareTo(boundsB.top)
+            }
+        }).map { (index, _, normalizedText) ->
             "Block #${index + 1}: $normalizedText"
         }.joinToString("\n")
 
@@ -488,10 +511,10 @@ import kotlin.math.max
 
         val response = mistralRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
-            temperature = 0.78,
-            frequency_penalty = 0.35,
-            presence_penalty = 0.35,
-            top_p=1.0,
+            temperature = 0.4,
+            frequency_penalty = 0.0,
+            presence_penalty = 0.0,
+            top_p=0.9,
             max_tokens=6000
         )
 
@@ -549,7 +572,7 @@ import kotlin.math.max
                     } else {
                         // Priority 2: If no arrow, try to find a line that is NOT the source text.
                         val candidateLines = blockLines.map { it.trim() }
-                            .filter { it.isNotBlank() }
+                            .filter { it.isNotBlank() && !it.matches(Regex("""^[-=*_]{3,}$""")) }
 
                         // If we have multiple lines, filter out those that look like source (wrapped in *)
                         // unless that's all we have.
@@ -4206,7 +4229,7 @@ import kotlin.math.max
 
             val response = mistralRequester.executeChatCompletion(
                 messages = listOf(systemMessage, userMessage),
-                temperature = 0.4,
+                temperature = 0.7,
                 top_p = 0.9,
                 max_tokens = 6000
             )

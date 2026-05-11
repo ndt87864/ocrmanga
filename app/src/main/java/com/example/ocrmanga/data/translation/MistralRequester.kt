@@ -50,8 +50,8 @@ class MistralRequester(
     suspend fun executeChatCompletion(
         messages: List<Map<String, Any>>,
         model: String = DEFAULT_MODEL,
-        temperature: Double = 0.7,
-        top_p: Double = 1.0,
+        temperature: Double = 0.4,
+        top_p: Double = 0.9,
         top_k: Int = 40,
         max_tokens: Int = 2048,
         frequency_penalty: Double = 0.0,
