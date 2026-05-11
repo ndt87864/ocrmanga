@@ -1773,8 +1773,14 @@ fun calculateWindowedOverlayBounds(
     }
 
     if (optimalFontSize < targetMinFontSize) {
-        // Nếu UI tính ra optimalFontSize nhỏ hơn mức cho phép, ta vẫn force sử dụng targetMinFontSize
-        optimalFontSize = targetMinFontSize
+        // Nếu là solid bubble (thường là bong bóng thoại), ta ưu tiên việc text "nằm lọt" trong overlay.
+        // Cho phép co nhỏ text xuống đến minLimit (15f) thay vì force theo targetMinFontSize (thường là size gốc).
+        if (isSolidBubble) {
+            optimalFontSize = maxOf(optimalFontSize, minLimit)
+        } else {
+            // Trường hợp khác (văn bản trên nền artwork), giữ targetMinFontSize để không bị quá nhỏ khó đọc.
+            optimalFontSize = targetMinFontSize
+        }
     }
 
     // 4. Measure text size với optimal font size

@@ -3040,8 +3040,8 @@ import kotlin.math.max
             // Chọn scale nhỏ hơn để đảm bảo vừa
             val finalScale = minOf(widthScale, heightScale, 1.0f)
             
-            // Tăng giới hạn tối thiểu fontSize lên 50% fontSize gốc cho vertical để text không quá to
-            val minFontSize = originalFontSize * 0.5f
+            // Tăng giới hạn tối thiểu fontSize lên 30% fontSize gốc cho vertical để text không quá to
+            val minFontSize = maxOf(originalFontSize * 0.3f, 15f)
             val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
             
             return newFontSize
@@ -3095,8 +3095,8 @@ import kotlin.math.max
         // Chọn scale nhỏ hơn để đảm bảo vừa cả width và height
         val finalScale = minOf(widthScale, heightScale, 1.0f)
         
-    // Giới hạn tối thiểu fontSize bằng 50% fontSize gốc để text không bị quá to gây tràn khung
-    val minFontSize = originalFontSize * 0.5f
+    // Giới hạn tối thiểu fontSize bằng 30% fontSize gốc (nhưng không dưới 15f) để text không bị quá nhỏ mà vẫn vừa khung
+    val minFontSize = maxOf(originalFontSize * 0.3f, 15f)
     val newFontSize = (originalFontSize * finalScale).coerceAtLeast(minFontSize)
 //        Log.i("TranslationRepository", "[FONT-ADJUST-HORIZONTAL] Original: '${originalText.take(30)}...', " +
 //            "Translated: '${translatedText.take(30)}...', " +

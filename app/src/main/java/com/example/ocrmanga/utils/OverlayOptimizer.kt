@@ -532,6 +532,18 @@ object OverlayOptimizer {
         val origText = block.originalText?.replace("\n", " ") ?: ""
         val transText = newText.replace("\n", " ")
 
+        // RÀNG BUỘC: Đảm bảo fontSize không vượt quá kích thước vùng chứa (bounds)
+        // Capping ở mức 70% chiều cao hoặc chiều rộng (tùy cái nào nhỏ hơn) để tránh tràn
+        val minDim = minOf(newBounds.width(), newBounds.height()).toFloat()
+        val fontSizeLimit = minDim * 0.7f
+        if (newFontSize > fontSizeLimit) {
+            newFontSize = fontSizeLimit
+        }
+        // Giới hạn dưới tuyệt đối (15f) để đảm bảo đọc được
+        if (newFontSize < 15f) {
+            newFontSize = 15f
+        }
+
         if (!result.needsTransparency) {
             val logMessage = """
                 |[TH1] Block $blockIdentifier

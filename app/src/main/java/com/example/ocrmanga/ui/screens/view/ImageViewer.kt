@@ -285,6 +285,7 @@ fun ImageViewer(
                             ),
                             fontSize = null,
                             rotation = block.rotation ?: 0f,
+                            overlayRotation = block.overlayRotation,
                             whiteoutColor = Color(overlayInt),
                             textColor = Color(textInt),
                             overlayAlpha = block.overlayAlpha,
@@ -869,27 +870,41 @@ fun ImageViewer(
                                             }) { drawBorder() } else drawBorder()
                                         }
                                         // Text vẽ trong OUTER bounds để không bị ảnh hưởng bởi inset
-                                        val tL =
-                                            clampedOuterBounds.left + clampedOuterBounds.width * (if (isOval) 0.125f else 0f)
-                                        val tT =
-                                            clampedOuterBounds.top + clampedOuterBounds.height * (if (isOval) 0.025f else 0f)
-                                        val tW =
-                                            clampedOuterBounds.width * (if (isOval) 0.75f else 1f)
-                                        val tH =
-                                            clampedOuterBounds.height * (if (isOval) 0.95f else 1f)
+                                        // Sử dụng wrappedText để giới hạn text trong bounds
+                                        val wrappedText = region.wrappedText ?: block.text
+                                        val wrappedLines = wrappedText.split("\n")
+
+                                        // Tính toán text area với padding phù hợp với windowedResult
+                                        val textPadding = 8f.coerceAtMost(optimalFontSize * 0.3f)
+                                        val textAreaLeft = clampedOuterBounds.left + textPadding
+                                        val textAreaTop = clampedOuterBounds.top + textPadding
+                                        val textAreaRight = clampedOuterBounds.right - textPadding
+                                        val textAreaBottom = clampedOuterBounds.bottom - textPadding
+                                        val textAreaWidth = textAreaRight - textAreaLeft
+                                        val textAreaHeight = textAreaBottom - textAreaTop
+
+                                        // Tính toán chiều cao tổng của wrapped text
+                                        val lineHeight = optimalFontSize * (1.3f + (region.lineSpacing - 1f))
+                                        val totalTextHeight = wrappedLines.size * lineHeight
+                                        val totalTextWidth = textAreaWidth // Max width
+
+                                        // Center text trong text area
+                                        val textX = textAreaLeft
+                                        val textY = textAreaTop + (textAreaHeight - totalTextHeight) / 2
+
                                         withTransform({
                                             if (region.rotation != 0f) rotate(
                                                 region.rotation,
-                                                Offset(tL + tW / 2, tT + tH / 2)
+                                                Offset(textX + totalTextWidth / 2, textY + totalTextHeight / 2)
                                             )
                                         }) {
                                             drawTextOnCanvas(
                                                 drawScope = this,
-                                                text = block.text,
-                                                x = tL,
-                                                y = tT,
-                                                width = tW,
-                                                height = tH,
+                                                text = wrappedText,
+                                                x = textX,
+                                                y = textY,
+                                                width = totalTextWidth,
+                                                height = totalTextHeight,
                                                 color = region.textColor ?: Color.Black,
                                                 fontSize = optimalFontSize,
                                                 isVertical = block.isVertical,
@@ -909,7 +924,7 @@ fun ImageViewer(
                                                 textGradientColors = region.textGradientColors,
                                                 textGradientOffsets = region.textGradientOffsets,
                                                 textGradientType = region.textGradientType,
-                                                precomputedWrappedText = region.wrappedText,
+                                                precomputedWrappedText = wrappedText,
                                                 precomputedOptimalFontSize = optimalFontSize
                                             )
                                         }
