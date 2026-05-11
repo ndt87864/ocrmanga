@@ -206,8 +206,8 @@ import kotlin.math.max
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(userMessage),
-            temperature = 1.0, // Đặt mức tối đa để AI dịch linh hoạt như curl
-            max_tokens = 4096
+            temperature = 1.0,
+            max_tokens=6000
         )
 
         return response?.content
@@ -282,8 +282,8 @@ import kotlin.math.max
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
-            temperature = 0.7, // Giảm temperature một chút để ổn định hơn
-            max_tokens = 4096
+            temperature = 0.7,
+            max_tokens=6000
         )
 
         val content = response?.content ?: return null
@@ -376,7 +376,9 @@ import kotlin.math.max
             messages = listOf(systemMessage, userMessage),
             temperature = 0.78, // Giữ nguyên mức này theo yêu cầu tối ưu cho manga
             frequency_penalty = 0.45,
-            presence_penalty = 0.4
+            presence_penalty = 0.4,
+            top_p=1.0,
+            max_tokens=6000
         )
 
         return response?.content
@@ -486,9 +488,11 @@ import kotlin.math.max
 
         val response = mistralRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
-            temperature = 0.5, // Cân bằng giữa tuân thủ prompt (0.3) và tự nhiên (0.78)
-            frequency_penalty = 0.45,
-            presence_penalty = 0.4
+            temperature = 0.78,
+            frequency_penalty = 0.35,
+            presence_penalty = 0.35,
+            top_p=1.0,
+            max_tokens=6000
         )
 
         val content = response?.content ?: return null
@@ -3237,7 +3241,7 @@ import kotlin.math.max
                     temperature = 1.0f
                     topP = 1.0f
                     topK = 90
-                    maxOutputTokens = 4096
+                    maxOutputTokens = 6000
                 }
 
                 val generativeModel = GenerativeModel(
@@ -3374,7 +3378,7 @@ import kotlin.math.max
                     temperature = 1.0f
                     topP = 1.0f
                     topK = 90
-                    maxOutputTokens = 4096
+                    maxOutputTokens = 6000
                 }
 
                 val instructions = TranslationPrompts.getGeminiMultiScalePrompt(
@@ -4204,7 +4208,7 @@ import kotlin.math.max
                 messages = listOf(systemMessage, userMessage),
                 temperature = 0.4,
                 top_p = 0.9,
-                max_tokens = 4096
+                max_tokens = 6000
             )
 
             if (response == null) {
@@ -4241,7 +4245,7 @@ import kotlin.math.max
             val response = zaiRequester.executeChatCompletion(
                 messages = listOf(systemMessage, userMessage),
                 temperature = 0.4,
-                max_tokens = 4096
+                max_tokens=6000
             )
 
             if (response == null) {
