@@ -78,20 +78,32 @@ Block #1: Mày đang làm gì đấy?
 Block #2: Tao không làm gì cả.
 ```
 
-**TH: Độc thoại nội tâm (Dùng ngôi thứ 3)**
+**TH: Độc thoại nội tâm (KHÔNG thêm nhãn "Suy nghĩ" vào bản dịch)**
+- Trong manga, độc thoại được nhận biết qua HÌNH DẠNG BUBBLE (thought bubble vs speech bubble)
+- KHÔNG thêm "(Suy nghĩ)", "(内心)", hay bất kỳ nhãn nào vào bản dịch
+- Chỉ cần dùng ngôi thứ 3 phù hợp trong nội dung
 
 Input:
 ```
-Block #1: (内心)あいつ是谁だっけ...
+Block #1: -c:不对 他好像是 我 五年前做家數时 教过的最后一个学生…
+Block #2: 在我认识的人里 有这么一号人来者吗
 ```
 
 Output (ĐÚNG):
 ```
-Block #1: (Suy nghĩ) Thằng/người đó là ai nhỉ...
+Block #1: Không phải, hình như cậu là học sinh cuối cùng cô dạy kèm cách đây năm năm...
+Block #2: Trong số người quen của mình, có ai như cậu ta không nhỉ?
+```
+
+Output (SAI - KHÔNG DÙNG):
+```
+Block #1: (Suy nghĩ) Không phải, hình như cậu là...
+Block #2: (Suy nghĩ) Trong số người quen...
 ```
 
 [CRITICAL - LỖI THƯỜNG GẶP]
-1. Khi thấy "老师" hoặc "先生" trong block:
+1. KHÔNG thêm "(Suy nghĩ)" hay bất kỳ nhãn nào vào đầu bản dịch - độc thoại được nhận biết qua hình dạng bubble, không cần đánh dấu trong text
+2. Khi thấy "老师" hoặc "先生" trong block:
    - Người nói phải xưng "Em" (nếu là học sinh) hoặc "Tôi" (nếu là giáo viên)
    - Gọi giáo viên là "Cô" hoặc "Thầy"
    - TUYỆT ĐỐI KHÔNG dùng "Tớ" cho học sinh khi nói chuyện với giáo viên
