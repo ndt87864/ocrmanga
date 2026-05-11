@@ -3125,6 +3125,52 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 blocks.map { state ->
                     // copy visual edits from DragBlockState into TextBlockInfo so they persist
                     val b = state.block
+                    
+                    // Logic: Đảm bảo font size được lưu vào DB là font size đã được giới hạn để "nằm lọt" trong khung.
+                    // Chỉ thực hiện nếu người dùng không chỉnh sửa font size thủ công (state.fontSize == null)
+                    // và đây là một "solid bubble" (bong bóng thoại có nền).
+                    var persistedFontSize = state.fontSize ?: b.fontSize
+                    if (state.fontSize == null && state.overlayAlpha >= 0.95f && b.text.isNotBlank()) {
+                        try {
+                            val context = getApplication<Application>()
+                            // Tính toán scale factor tham chiếu dựa trên chiều rộng ảnh gốc so với màn hình tham chiếu 360dp
+                            val originalW = b.originalImageWidth?.toFloat() ?: 1280f
+                            val referenceScale = originalW / 360f
+                            
+                            // Chuyển đổi bounds sang Compose Rect
+                            val composeRect = androidx.compose.ui.geometry.Rect(
+                                b.bounds.left.toFloat(),
+                                b.bounds.top.toFloat(),
+                                b.bounds.right.toFloat(),
+                                b.bounds.bottom.toFloat()
+                            )
+                            
+                            // Gọi logic tính toán optimal font size (đã bao gồm giới hạn co nhỏ)
+                            val windowedResult = com.example.ocrmanga.ui.screens.view.calculateWindowedOverlayBounds(
+                                originalBounds = composeRect,
+                                text = b.text,
+                                baseFontSize = b.fontSize,
+                                isVertical = b.isVertical,
+                                context = context,
+                                fontFamilyName = b.fontFamily,
+                                lineSpacing = state.lineSpacing,
+                                shapeType = b.shapeType,
+                                // Inset đã ở đơn vị gốc (original pixels), không cần scale thêm.
+                                overlayInsetHorizontal = state.overlayInsetHorizontal,
+                                overlayInsetVertical = state.overlayInsetVertical,
+                                horizontalPadding = 4f * referenceScale,
+                                verticalPadding = 4f * referenceScale,
+                                boldness = state.textBoldness,
+                                originalFontSize = b.originalFontSize,
+                                isSolidBubble = true
+                            )
+                            persistedFontSize = windowedResult.optimalFontSize
+                            // Log.i("ViewerViewModel", "Persisting optimized fontSize: ${b.fontSize} -> $persistedFontSize for block in ${uri}")
+                        } catch (e: Exception) {
+                            Log.e("ViewerViewModel", "Error calculating optimal font size for persistence", e)
+                        }
+                    }
+
                     b.copy(
                         rotation = state.rotation,
                         overlayRotation = state.overlayRotation, // ✅ Copy overlay rotation
@@ -3151,9 +3197,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         lineSpacing = state.lineSpacing,
                         // Persist alignment
                         textAlign = state.textAlign,
-                        // Log the resulting TextBlockInfo shadow values for debugging
-                        // (log after copy isn't trivial here; include in-line values)
-                        fontSize = state.fontSize ?: b.fontSize,
+                        fontSize = persistedFontSize,
                         // Set applyMerge = false vì đây là save sau khi edit
                         applyMerge = false
                     )
