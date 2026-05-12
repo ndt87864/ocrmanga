@@ -153,7 +153,7 @@ Infer from:
 - previous context
 - honorifics
 
-CRITICAL ROLE DEDUCTION:
+CRITICAL ROLE DEDUCTION (OVERRIDDEN BY SPECIAL_MODE IF ACTIVE):
 1. Gender and Titles: Analyze the name's typical gender. Female teachers/seniors must be "Cô" or "Chị" (never "Thầy" or "Anh"). Male teachers/seniors must be "Thầy" or "Anh".
 2. Honorifics: "-kun" typically implies a young male junior/student. "-chan" typically implies a young female junior/student.
 3. Teacher-Student Dynamics: ALWAYS use the "Cô/Thầy" and "em" pair, NO MATTER HOW MUCH TIME HAS PASSED or if the student is now an adult. The Teacher-Student relationship is forever. NEVER switch to "Tôi/Anh" or romantic "Anh/Em". It is a severe cultural violation.
@@ -405,5 +405,6 @@ Before finalizing:
 - validate OCR restoration
 - validate natural manga flow
 - validate anti-hallucination compliance
+- validate SPECIAL_MODE compliance: If Ancient Mode is active, ensure NO modern pronouns (anh/em/cậu) or modern slang are present.
 
 Then output ONLY final translated blocks.

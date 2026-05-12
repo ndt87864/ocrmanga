@@ -119,7 +119,18 @@ object TranslationPrompts {
         isAncientMode: Boolean = false
     ): String {
         val ancientInstruction = if (isAncientMode) {
-            "[CHẾ ĐỘ CỔ TRANG] Văn phong Hán Việt, cổ trang, kiếm hiệp. Xưng hô: ta/ngươi, tại hạ/các hạ, huynh/đệ, cô nương/tiểu tử, bổn toạ, lão phu, bần đạo. Cấm từ hiện đại: anh/em/cậu/tớ/mình/bạn."
+            """
+            [CHẾ ĐỘ CỔ TRANG - ƯU TIÊN CAO NHẤT]
+            - Bối cảnh: Cổ đại, tiên hiệp, kiếm hiệp, lịch sử.
+            - Văn phong: Sử dụng từ Hán Việt trang trọng, nhã nhặn hoặc uy dũng tùy nhân vật. Tuyệt đối tránh từ ngữ hiện đại, từ lóng gen Z.
+            - Xưng hô (Dialogue Pronouns):
+                + Ngôi thứ nhất: Ta, tại hạ, bần đạo, lão phu, bổn tọa, bổn cung, trẫm, thần, muội, tỷ, huynh.
+                + Ngôi thứ hai: Ngươi, các hạ, vị này, huynh đệ, nương tử, phu quân, cô nương, công tử, đại hiệp, tiểu hữu, chư vị.
+                + Ngôi thứ ba: Hắn, thị, y, bọn chúng, chúng nhân.
+            - CẤM DÙNG: anh, em, cậu, tớ, mình, bạn, mày, tao (trừ khi có quan hệ gia đình cực kỳ gần gũi như huynh-muội).
+            - Độc thoại (Inner Monologue): Sử dụng "ta" hoặc "mình" (nếu nhẹ nhàng) cho bản thân, dùng "hắn/thị/y/vị này" cho người khác.
+            - SFX: Chuyển sang âm Hán Việt (ví dụ: "Bùm" -> "Oanh", "Xoẹt" -> "Xoát", "Vèo" -> "Tốc", "Choảng" -> "Keng").
+            """.trimIndent()
         } else ""
 
         return mistralMultiScalePromptOptimized
