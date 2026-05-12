@@ -159,6 +159,7 @@ fun ImageViewer(
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> },
     brushSize: Float = 40f,
     onBrushSizeChange: (Float) -> Unit = {},
+    onOptimizeImageOverlay: (Uri) -> Unit = {},
     translationVersion: Int = 0
 ) {
     val context = LocalContext.current
@@ -470,6 +471,7 @@ fun ImageViewer(
                                     onSaveTranslation(uri, blocksToSave)
                                     onEditTranslationModeToggle(false)
                                 },
+                                onSmartOptimize = { onOptimizeImageOverlay(uri) },
                                 isTextRemovalMode = isTextRemovalMode,
                                 onToggleTextRemovalMode = onToggleTextRemovalMode
                             )

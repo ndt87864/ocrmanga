@@ -207,6 +207,17 @@ fun Dialogs(
 
                     Spacer(Modifier.height(16.dp))
 
+                    Button(
+                        onClick = {
+                            imageMenuUri?.let { viewModel.optimizeImageOverlay(it) }
+                            onImageMenuDismiss()
+                            Toast.makeText(context, "Đã tối ưu hiển thị overlay", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Tối ưu hiển thị overlay") }
+
+                    Spacer(Modifier.height(16.dp))
+
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
 

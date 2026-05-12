@@ -790,6 +790,37 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /**
+     * Tối ưu hiển thị overlay cho một ảnh cụ thể
+     */
+    fun optimizeImageOverlay(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val currentPair = _uiState.value.translatedTexts[uri] ?: return@launch
+            val (originalText, blocks) = currentPair
+            if (blocks.isEmpty()) return@launch
+
+            val optimizedBlocks = autoOptimizeOverlay(uri, blocks)
+
+            withContext(Dispatchers.Main) {
+                _uiState.update { state ->
+                    val newMap = state.translatedTexts.toMutableMap()
+                    newMap[uri] = originalText to optimizedBlocks
+                    state.copy(
+                        translatedTexts = newMap,
+                        translationVersion = state.translationVersion + 1
+                    )
+                }
+
+                dirtyUris.add(uri)
+                val rid = _uiState.value.roomId
+                val imageId = uriToImageId[uri]
+                if (rid != null && imageId != null) {
+                    databaseHelper.markImageChanged(imageId, rid)
+                }
+            }
+        }
+    }
+
     private suspend fun autoOptimizeOverlay(uri: Uri, blocks: List<TextBlockInfo>): List<TextBlockInfo> {
         val context = getApplication<Application>()
         val bitmap = try {
