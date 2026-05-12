@@ -967,8 +967,7 @@ fun ViewerScreen(
                     }
                 },
                 brushSize = brushSize,
-                onBrushSizeChange = { brushSize = it },
-                onOptimizeImageOverlay = { uri -> viewModel.optimizeImageOverlay(uri) }
+                onBrushSizeChange = { brushSize = it }
             )
         } else {
             // Horizontal mode
@@ -1069,8 +1068,7 @@ fun ViewerScreen(
                 translationVersion = uiState.translationVersion,
                 autoScrollEnabled = autoScrollEnabled,
                 scrollSpeed = scrollSpeed,
-                onAutoScrollToggle = { autoScrollEnabled = it },
-                onOptimizeImageOverlay = { uri -> viewModel.optimizeImageOverlay(uri) }
+                onAutoScrollToggle = { autoScrollEnabled = it }
             )
         }
         Dialogs(

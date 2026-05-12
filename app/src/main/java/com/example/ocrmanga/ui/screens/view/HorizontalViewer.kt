@@ -61,7 +61,6 @@ fun HorizontalViewer(
     onRemoveTextWithMask: (Uri, Bitmap) -> Unit,
     brushSize: Float,
     onBrushSizeChange: (Float) -> Unit,
-    onOptimizeImageOverlay: (Uri) -> Unit = {},
     autoScrollEnabled: Boolean = false,
     scrollSpeed: Float = 5f,
     onAutoScrollToggle: (Boolean) -> Unit = {},
@@ -125,7 +124,6 @@ fun HorizontalViewer(
                         onRemoveTextWithMask = onRemoveTextWithMask,
                         brushSize = brushSize,
                         onBrushSizeChange = onBrushSizeChange,
-                        onOptimizeImageOverlay = onOptimizeImageOverlay,
                         // reserve space so controls can appear below image without being clipped
                         // when isTextRemovalMode=true, ImageViewer will use imageMaxHeight to shrink image
                         // so controls fit under it.

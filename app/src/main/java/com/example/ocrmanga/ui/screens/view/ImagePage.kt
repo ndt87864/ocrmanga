@@ -37,7 +37,6 @@ fun ImagePage(
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit,
     brushSize: Float,
     onBrushSizeChange: (Float) -> Unit,
-    onOptimizeImageOverlay: (Uri) -> Unit = {},
     imageMaxHeight: Dp? = null,
     lazyListState: LazyListState = rememberLazyListState(),
     translationVersion: Int = 0
@@ -79,7 +78,6 @@ fun ImagePage(
         onRemoveTextWithMask = onRemoveTextWithMask,
         brushSize = brushSize,
         onBrushSizeChange = onBrushSizeChange,
-        onOptimizeImageOverlay = onOptimizeImageOverlay,
         translationVersion = translationVersion
     )
 }

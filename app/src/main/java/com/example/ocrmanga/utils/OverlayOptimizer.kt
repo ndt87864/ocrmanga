@@ -307,7 +307,7 @@ object OverlayOptimizer {
             // - Hình Chữ Nhật (Rect): Mặc định đã che hết text gốc (origBounds). Nên giới hạn mở rộng là 20% tổng (tức 10% mỗi bên -> 0.1f).
             // - Hình Bầu Dục (Oval): Để một hình oval nội tiếp có thể che trọn 4 góc của hình chữ nhật, nó phải lớn hơn hình chữ nhật đó ít nhất căn(2) lần (tức ~1.414 lần).
             //   Do đó, nó CẦN phải mở rộng thêm 41.4% tổng (tức ~21% mỗi bên -> 0.21f) thì mới "che hết text gốc".
-            val limitFactor = if (shapeToUse == 1) 0.21f else 0.10f
+            val limitFactor = if (shapeToUse == 1) 0.21f else 0.20f
             val limitL = (origBounds.left - origBounds.width() * limitFactor).toInt().coerceAtLeast(0)
             val limitR = (origBounds.right + origBounds.width() * limitFactor).toInt().coerceAtMost(imageBitmap.width - 1)
             val limitT = (origBounds.top - origBounds.height() * limitFactor).toInt().coerceAtLeast(0)
@@ -364,11 +364,12 @@ object OverlayOptimizer {
             var shrinkTop = true
             var shrinkBottom = true
 
-            // Max shrink is 10% of original bounds, to prevent eating too much text in worst cases
-            val shrinkLimitL = (origBounds.left + origBounds.width() * 0.1f).toInt().coerceAtMost(imageBitmap.width - 1)
-            val shrinkLimitR = (origBounds.right - origBounds.width() * 0.1f).toInt().coerceAtLeast(0)
-            val shrinkLimitT = (origBounds.top + origBounds.height() * 0.1f).toInt().coerceAtMost(imageBitmap.height - 1)
-            val shrinkLimitB = (origBounds.bottom - origBounds.height() * 0.1f).toInt().coerceAtLeast(0)
+            // ĐẢM BẢO: Không bao giờ co lại nhỏ hơn vùng text gốc (origBounds)
+            // Điều này đảm bảo luôn che hết text cũ.
+            val shrinkLimitL = origBounds.left
+            val shrinkLimitR = origBounds.right
+            val shrinkLimitT = origBounds.top
+            val shrinkLimitB = origBounds.bottom
 
             while (shrinkLeft || shrinkRight || shrinkTop || shrinkBottom) {
                 if (shrinkLeft && l < shrinkLimitL) {

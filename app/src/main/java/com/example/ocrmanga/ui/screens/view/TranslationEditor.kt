@@ -50,7 +50,6 @@ fun TranslationEditor(
     onDragBlocksChange: (List<DragBlockState>) -> Unit,
     onSelectedIndexChange: (Int?) -> Unit,
     onSave: () -> Unit,
-    onSmartOptimize: () -> Unit = {},
     isTextRemovalMode: Boolean = false,
     onToggleTextRemovalMode: () -> Unit = {}
 ) {
@@ -219,16 +218,6 @@ fun TranslationEditor(
                             )
                         }
 
-                        // Nút Tối ưu thông minh (AI Optimize)
-                        IconButton(
-                            onClick = onSmartOptimize
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = "Tối ưu hiển thị overlay thông minh",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
                         Box {
                             IconButton(onClick = { showShapeMenu = true }) {
                                 Icon(
