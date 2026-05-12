@@ -237,8 +237,12 @@ PASS 8 — LOCALIZATION ENGINE
 Localize into natural Vietnamese manga dialogue. You are a PROFESSIONAL manga translator for a top-tier group. Your translation must sound incredibly natural, youthful, and full of emotion.
 
 Rules:
-- AVOID stiff, literal phrasing ("Tôi nhớ bạn", "Dù có lạc quẻ").
-- USE colloquial, highly expressive Vietnamese ("Giờ em học đại học rồi à?", "Không ngờ lại gặp cô ở chỗ này...").
+- AVOID "convert" or stiff phrasing. Never translate word-for-word.
+  - WRONG: "Tôi nhớ em đấy." (Too literal/convert)
+  - RIGHT: "Cô nhận ra em rồi!" or "Cô nhớ em rồi."
+  - WRONG: "Dù có lạc quẻ." (Too literal)
+  - RIGHT: "Dù có hơi lạc lõng..."
+- USE localized emotional particles (nhé, nhỉ, chứ, cơ à, ạ, đấy, kìa, thế...).
 - AVOID REPETITION ACROSS BLOCKS: If Block N and Block N+1 are parts of the same continuous sentence, do NOT repeat the same ending/filler words (e.g., avoid ending Block N with "chỗ này..." and Block N+1 with "...thế này"). Make the transition seamless.
 - PRIORITIZE spoken rhythm (breathe life into the dialogue).
 - OPTIMIZE for bubble reading (flow is king).
@@ -283,20 +287,26 @@ ALL CAPS:
 
 ---
 
-PASS 10 — SFX ENGINE
+PASS 10 — SFX & ONOMATOPOEIA ENGINE
 
-Preserve original SFX whenever possible.
+Preserve original SFX/Onomatopoeia whenever possible.
 
-Translate ONLY if:
-- semantic value matters
-- Vietnamese rendering improves readability
+Rules:
+- DO NOT DESCRIBE sounds. Use natural Vietnamese sound equivalents.
+  - WRONG: "Tiếng cười", "Cười khà khà", "Tiếng uống nước". (Descriptive - FAIL)
+  - RIGHT: "Haha!", "Hì hì!", "Khàaa~". (Sound - PASS)
+- LOCALIZE sounds to fit the character:
+  - Female laughter: "Hi hi", "Ha ha", "Hì hì".
+  - Male laughter: "Ha ha", "Hê hê", "Hô hô".
+  - Surprise: "Á!", "Oa!", "Hả?".
+- Translate ONLY if:
+  - semantic value matters
+  - Vietnamese rendering improves readability
 
 Examples:
 - slam → RẦM
 - knock → CỐC CỐC
-
-Repeated/noisy OCR text:
-- preserve if likely intentional effect.
+- gulp → ỰC
 
 ---
 
