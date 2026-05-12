@@ -469,9 +469,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     
                     //Log.i(TAG, "[RETRANSLATE] About to update UI state with ${fixedBlocks.size} blocks")
                     
+                    // Tự động tối ưu hóa overlay ngay sau khi dịch để đảm bảo "Safety First" (che phủ text gốc tuyệt đối)
+                    val optimizedBlocks = autoOptimizeOverlay(uri, fixedBlocks)
+
                     _uiState.update {
                         it.copy(
-                            translatedTexts = it.translatedTexts + (uri to (originalText to fixedBlocks)),
+                            translatedTexts = it.translatedTexts + (uri to (originalText to optimizedBlocks)),
                             translatedStatus = it.translatedStatus + (uri to true),
                             translationEnabled = true, // Bật hiển thị dịch cho UI nếu cần
                             // Tăng translationVersion để force UI update blocks mới
@@ -799,7 +802,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val (originalText, blocks) = currentPair
             if (blocks.isEmpty()) return@launch
 
-            val optimizedBlocks = autoOptimizeOverlay(uri, blocks)
+            val optimizedBlocks = autoOptimizeOverlay(uri, blocks, forceSolid = true)
 
             withContext(Dispatchers.Main) {
                 _uiState.update { state ->
@@ -821,7 +824,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private suspend fun autoOptimizeOverlay(uri: Uri, blocks: List<TextBlockInfo>): List<TextBlockInfo> {
+    private suspend fun autoOptimizeOverlay(uri: Uri, blocks: List<TextBlockInfo>, forceSolid: Boolean = false): List<TextBlockInfo> {
         val context = getApplication<Application>()
         val bitmap = try {
             val inputStream = context.contentResolver.openInputStream(uri)
@@ -834,7 +837,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val imgH = bitmap?.height ?: 640
 
         val (optimizedBlocks, _) = com.example.ocrmanga.utils.OverlayOptimizer.analyzeAndOptimize(
-            blocks, bitmap, imgW, imgH
+            blocks, bitmap, imgW, imgH, forceSolid
         )
 
         return optimizedBlocks
@@ -2180,10 +2183,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                     )
                                 }
                                 
-                        // Lưu lại bản dịch mới nhất để truyền cho ảnh tiếp theo trong batch sau
-                        lastTranslatedBlocks = fixedBlocks
+                        // Tự động tối ưu hóa overlay cho ảnh trong hàng loạt (batch) để đảm bảo che phủ text gốc tuyệt đối
+                        val optimizedBlocks = autoOptimizeOverlay(uri, fixedBlocks)
 
-                        translatedTexts[uri] = original to fixedBlocks
+                        // Lưu lại bản dịch mới nhất để truyền cho ảnh tiếp theo trong batch sau
+                        lastTranslatedBlocks = optimizedBlocks
+
+                        translatedTexts[uri] = original to optimizedBlocks
 
                         sourceLanguages[uri] = sourceLang as String
                         completedCount++
@@ -3026,6 +3032,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             // This prevents unnecessary deletion and re-insertion of translations
             databaseHelper.updateMangaRoom(roomId, currentState.imageUris, updatedTranslatedTexts)
         }
+        // Update UI state with persisted values and increment version to trigger UI refresh
+        _uiState.update { state ->
+            state.copy(
+                translatedTexts = updatedTranslatedTexts,
+                translationVersion = state.translationVersion + 1
+            )
+        }
         // If dirtyUris is empty and image count hasn't changed, no update needed
     }
 
@@ -3151,9 +3164,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     }
 
+                    // Tự động tối ưu hóa overlay trong chế độ "Dịch tất cả" để đảm bảo che phủ text gốc tuyệt đối
+                    val optimizedBlocks = autoOptimizeOverlay(uri, fixedBlocks)
+
                     _uiState.update {
                         it.copy(
-                            translatedTexts = it.translatedTexts + (uri to (originalText to fixedBlocks)),
+                            translatedTexts = it.translatedTexts + (uri to (originalText to optimizedBlocks)),
                             translatedStatus = it.translatedStatus + (uri to true),
                             translationEnabled = true,
                             translationVersion = it.translationVersion + 1

@@ -10,7 +10,7 @@ import com.example.ocrmanga.data.ocr.models.TextContainerType
 
 /**
  * Tối ưu hiển thị overlay translation tự động.
- * 
+ *
  * Quy tắc đơn giản:
  * 1. Bubble/hộp thoại đơn sắc (trắng hoặc đen) với viền khác màu background:
  *    → Overlay đục, inset hợp lý để che hết text mà không lẹm viền.
@@ -61,10 +61,11 @@ object OverlayOptimizer {
         blocks: List<TextBlockInfo>,
         imageBitmap: Bitmap?,
         imageWidth: Int,
-        imageHeight: Int
+        imageHeight: Int,
+        forceSolid: Boolean = false
     ): Pair<List<TextBlockInfo>, List<OptimizationResult>> {
         val results = blocks.mapIndexed { index, block ->
-            optimizeBlock(block, index, imageBitmap, imageWidth, imageHeight)
+            optimizeBlock(block, index, imageBitmap, imageWidth, imageHeight, forceSolid)
         }
         val optimizedBlocks = blocks.mapIndexed { index, block ->
             applyResult(block, results[index], index)
@@ -110,11 +111,14 @@ object OverlayOptimizer {
         index: Int,
         imageBitmap: Bitmap?,
         imageWidth: Int,
-        imageHeight: Int
+        imageHeight: Int,
+        forceSolid: Boolean = false
     ): OptimizationResult {
+        // [SAFETY FIRST] Ưu tiên phủ đục tuyệt đối nếu có bất kỳ dấu hiệu nào của Bubble đơn sắc.
         val isSolidBubble = isSolidColorBubble(block, imageBitmap)
+        val isSolidBg = isSolidBackground(block)
 
-        return if (isSolidBubble) {
+        return if (forceSolid || isSolidBubble || isSolidBg) {
             optimizeForSolidBubble(block, index, imageWidth, imageHeight, imageBitmap)
         } else {
             optimizeForTransparent(block, index, imageWidth, imageHeight)
@@ -178,9 +182,10 @@ object OverlayOptimizer {
                     // Nếu pixel có màu rõ rệt -> Tính vào nhóm xám/màu (mid)
                     midCount++
                 } else {
-                    if (brightness > 220) {
+                    // Mở rộng dải màu để nhận diện bubble trong manga cũ hoặc scan chất lượng thấp (trắng hơi xám hoặc đen hơi xám)
+                    if (brightness > 200) {
                         lightCount++
-                    } else if (brightness < 45) {
+                    } else if (brightness < 65) {
                         darkCount++
                     } else {
                         midCount++ // Các sắc xám (screentones, shading)
@@ -194,11 +199,10 @@ object OverlayOptimizer {
             val darkRatio = darkCount.toFloat() / totalCount
 
             // Bong bóng thoại TH1: Nền trắng chữ đen, hoặc nền đen chữ trắng.
-            // Điều quan trọng là số lượng pixel xám/màu (mid) ở rìa rất ít.
-            // Có thể lẹm 1 chút vào viền đen của bong bóng (khiến darkRatio tăng khi nền trắng),
-            // nhưng lightRatio vẫn sẽ chiếm ưu thế.
-            val isSolidWhite = lightRatio > 0.60f && midRatio < 0.25f
-            val isSolidBlack = darkRatio > 0.60f && midRatio < 0.25f
+            // Nới lỏng tối đa ngưỡng để ưu tiên Safety First (tự động mở rộng tối ưu).
+            // Ưu tiên tỷ lệ màu sáng/tối so với màu đối nghịch để nhận diện bubble ngay cả khi có screentone (midRatio cao).
+            val isSolidWhite = lightRatio > 0.30f && lightRatio > darkRatio * 2.0f
+            val isSolidBlack = darkRatio > 0.30f && darkRatio > lightRatio * 2.0f
 
             return isSolidWhite || isSolidBlack
 
@@ -226,11 +230,10 @@ object OverlayOptimizer {
 
             // Gần trắng: RGB đều > 220
             val isNearWhite = r > 220 && g > 220 && b > 220
+            // Gần đen: RGB đều < 45
+            val isNearBlack = r < 45 && g < 45 && b < 45
 
-            // Text trên nền đen thường là text trên ảnh/quần áo (TH2) chứ không phải bong bóng thoại.
-            // Do đó loại bỏ kiểm tra isNearBlack ở đây để tránh nhận nhầm TH1.
-
-            if (isNearWhite) {
+            if (isNearWhite || isNearBlack) {
                 return true
             }
         }
@@ -243,7 +246,7 @@ object OverlayOptimizer {
 
     /**
      * Tối ưu cho bubble đơn sắc trắng/đen.
-     * 
+     *
      * Mục tiêu:
      * - Overlay đục (alpha = 1.0)
      * - Inset vừa đủ để không lẹm viền bubble
@@ -275,10 +278,20 @@ object OverlayOptimizer {
         val shapeToUse = block.shapeType
         val containerType = if (shapeToUse == 1) ContainerType.BUBBLE_OVAL else ContainerType.BUBBLE_RECT
 
-        var newBounds = Rect(block.bounds)
+        val origBounds = block.bounds
         var newFontSize = block.fontSize
-        var insetH = 0f
-        var insetV = 0f
+        val insetH = 0f
+        val insetV = 0f
+
+        // [SAFETY FIRST] Luôn áp dụng lề an toàn tối thiểu và mở rộng cho hình Oval
+        // đảm bảo che phủ text gốc tuyệt đối ngay cả khi không có bitmap.
+        val minSafePadding = 10 // Tăng lên 10px để chắc chắn che text gốc ngay từ đầu
+        val ovalFactor = 0.45f
+
+        var l = (origBounds.left - minSafePadding).coerceAtLeast(0)
+        var t = (origBounds.top - minSafePadding).coerceAtLeast(0)
+        var r = (origBounds.right + minSafePadding).coerceAtMost(imageWidth - 1)
+        var b = (origBounds.bottom + minSafePadding).coerceAtMost(imageHeight - 1)
 
         if (imageBitmap != null) {
             // Define border pixel: significantly different brightness from background
@@ -288,30 +301,21 @@ object OverlayOptimizer {
                 val blue = Color.blue(p)
                 val brightness = (red + green + blue) / 3
                 return if (isDarkBg) {
-                    brightness > 120 // Border of dark bubble is light
+                    brightness > 90 // Nhạy hơn với viền sáng trên nền tối
                 } else {
-                    brightness < 120 // Border of light bubble is dark
+                    brightness < 160 // Nhạy hơn với viền tối trên nền sáng (manga thường là nền trắng viền đen)
                 }
             }
 
-            val origBounds = block.bounds
+            // PHASE: DYNAMIC EXPAND OUTWARDS
+            // Tiếp tục mở rộng nếu vùng xung quanh vẫn là màu nền đơn sắc (trắng/đen)
+            var maxLimitFactor = 1.0f // Cho phép mở rộng tối đa 100% kích thước để đảm bảo che hết text
+            if (shapeToUse == 1) maxLimitFactor += ovalFactor
 
-            // Instead of originalTouchesBorder, we use a more robust two-phase approach (Expand then Shrink)
-            // with different hit thresholds to distinguish between text and bubble borders.
-            var l = origBounds.left.coerceIn(0, imageBitmap.width - 1)
-            var t = origBounds.top.coerceIn(0, imageBitmap.height - 1)
-            var r = origBounds.right.coerceIn(0, imageBitmap.width - 1)
-            var b = origBounds.bottom.coerceIn(0, imageBitmap.height - 1)
-
-            // Yêu cầu của người dùng: "nếu đã che hết text gốc -> vẫn giữu giới hạn 20%; ngược lại thì giới hạn là che hết text gốc trước đã"
-            // - Hình Chữ Nhật (Rect): Mặc định đã che hết text gốc (origBounds). Nên giới hạn mở rộng là 20% tổng (tức 10% mỗi bên -> 0.1f).
-            // - Hình Bầu Dục (Oval): Để một hình oval nội tiếp có thể che trọn 4 góc của hình chữ nhật, nó phải lớn hơn hình chữ nhật đó ít nhất căn(2) lần (tức ~1.414 lần).
-            //   Do đó, nó CẦN phải mở rộng thêm 41.4% tổng (tức ~21% mỗi bên -> 0.21f) thì mới "che hết text gốc".
-            val limitFactor = if (shapeToUse == 1) 0.21f else 0.20f
-            val limitL = (origBounds.left - origBounds.width() * limitFactor).toInt().coerceAtLeast(0)
-            val limitR = (origBounds.right + origBounds.width() * limitFactor).toInt().coerceAtMost(imageBitmap.width - 1)
-            val limitT = (origBounds.top - origBounds.height() * limitFactor).toInt().coerceAtLeast(0)
-            val limitB = (origBounds.bottom + origBounds.height() * limitFactor).toInt().coerceAtMost(imageBitmap.height - 1)
+            val limitL = (origBounds.left - (origBounds.width() * maxLimitFactor).toInt()).coerceAtLeast(0)
+            val limitR = (origBounds.right + (origBounds.width() * maxLimitFactor).toInt()).coerceAtMost(imageBitmap.width - 1)
+            val limitT = (origBounds.top - (origBounds.height() * maxLimitFactor).toInt()).coerceAtLeast(0)
+            val limitB = (origBounds.bottom + (origBounds.height() * maxLimitFactor).toInt()).coerceAtMost(imageBitmap.height - 1)
 
             var expandLeft = true
             var expandRight = true
@@ -320,104 +324,73 @@ object OverlayOptimizer {
             val maxStep = (imageBitmap.width + imageBitmap.height) / 4
             var step = 0
 
-            // PHASE 1: EXPAND OUTWARDS
-            // We use a low threshold (e.g. 2 hits) to stop exactly at the tips of jagged borders.
+            // Ngưỡng dừng: Nhạy hơn (chỉ cần 2px viền hoặc 8% kích thước) để tránh lẹm vào viền mảnh
+            val stopThresholdH = (origBounds.height() * 0.08f).toInt().coerceIn(2, 8)
+            val stopThresholdV = (origBounds.width() * 0.08f).toInt().coerceIn(2, 8)
+
             while (step < maxStep && (expandLeft || expandRight || expandTop || expandBottom)) {
                 if (expandLeft && l > limitL) {
                     var hits = 0
                     val checkX = l - 1
                     for (y in t..b) if (isBorderPixel(imageBitmap.getPixel(checkX, y))) hits++
-                    if (hits > 2) expandLeft = false else l--
+                    if (hits >= stopThresholdH) {
+                        expandLeft = false
+                        l += 2 // Safety retreat 2px để chắc chắn không đè lên viền
+                    } else l--
                 } else expandLeft = false
 
                 if (expandRight && r < limitR) {
                     var hits = 0
                     val checkX = r + 1
                     for (y in t..b) if (isBorderPixel(imageBitmap.getPixel(checkX, y))) hits++
-                    if (hits > 2) expandRight = false else r++
+                    if (hits >= stopThresholdH) {
+                        expandRight = false
+                        r -= 2 // Safety retreat
+                    } else r++
                 } else expandRight = false
 
                 if (expandTop && t > limitT) {
                     var hits = 0
                     val checkY = t - 1
                     for (x in l..r) if (isBorderPixel(imageBitmap.getPixel(x, checkY))) hits++
-                    if (hits > 2) expandTop = false else t--
+                    if (hits >= stopThresholdV) {
+                        expandTop = false
+                        t += 2 // Safety retreat
+                    } else t--
                 } else expandTop = false
 
                 if (expandBottom && b < limitB) {
                     var hits = 0
                     val checkY = b + 1
                     for (x in l..r) if (isBorderPixel(imageBitmap.getPixel(x, checkY))) hits++
-                    if (hits > 2) expandBottom = false else b++
+                    if (hits >= stopThresholdV) {
+                        expandBottom = false
+                        b -= 2 // Safety retreat
+                    } else b++
                 } else expandBottom = false
 
                 step++
             }
+        }
 
-            // PHASE 2: SHRINK INWARDS
-            // If the original bounds overlapped a thick or jagged border, Phase 1 wouldn't have expanded.
-            // We shrink inwards to clear the border. Since Phase 1 guarantees we are either on the border
-            // or in the white gap, we can safely use a low threshold (hits > 2) to perfectly clear jagged tips
-            // without worrying about hitting text (unless the text physically touches the border).
-            var shrinkLeft = true
-            var shrinkRight = true
-            var shrinkTop = true
-            var shrinkBottom = true
+        val finalBounds = Rect(l, t, r, b)
 
-            // ĐẢM BẢO: Không bao giờ co lại nhỏ hơn vùng text gốc (origBounds)
-            // Điều này đảm bảo luôn che hết text cũ.
-            val shrinkLimitL = origBounds.left
-            val shrinkLimitR = origBounds.right
-            val shrinkLimitT = origBounds.top
-            val shrinkLimitB = origBounds.bottom
+        // Cập nhật lại fontSize dựa trên vùng bao mới để text trông cân đối hơn
+        if (finalBounds.width() > origBounds.width() || finalBounds.height() > origBounds.height()) {
+            val scaleFactor = minOf(
+                finalBounds.width().toFloat() / origBounds.width().toFloat(),
+                finalBounds.height().toFloat() / origBounds.height().toFloat()
+            ).coerceIn(1f, 1.2f)
 
-            while (shrinkLeft || shrinkRight || shrinkTop || shrinkBottom) {
-                if (shrinkLeft && l < shrinkLimitL) {
-                    var hits = 0
-                    for (y in t..b) if (isBorderPixel(imageBitmap.getPixel(l, y))) hits++
-                    if (hits > 2) l++ else shrinkLeft = false
-                } else shrinkLeft = false
-
-                if (shrinkRight && r > shrinkLimitR) {
-                    var hits = 0
-                    for (y in t..b) if (isBorderPixel(imageBitmap.getPixel(r, y))) hits++
-                    if (hits > 2) r-- else shrinkRight = false
-                } else shrinkRight = false
-
-                if (shrinkTop && t < shrinkLimitT) {
-                    var hits = 0
-                    for (x in l..r) if (isBorderPixel(imageBitmap.getPixel(x, t))) hits++
-                    if (hits > 2) t++ else shrinkTop = false
-                } else shrinkTop = false
-
-                if (shrinkBottom && b > shrinkLimitB) {
-                    var hits = 0
-                    for (x in l..r) if (isBorderPixel(imageBitmap.getPixel(x, b))) hits++
-                    if (hits > 2) b-- else shrinkBottom = false
-                } else shrinkBottom = false
-            }
-
-            newBounds = Rect(l, t, r, b)
-            insetH = 0f
-            insetV = 0f
-
-            // Scale text size proportional to the expanded bounds, capping at 20% increase
-            if (newBounds.width() > origBounds.width() || newBounds.height() > origBounds.height()) {
-                val scaleFactor = minOf(
-                    newBounds.width().toFloat() / origBounds.width().toFloat(),
-                    newBounds.height().toFloat() / origBounds.height().toFloat()
-                ).coerceIn(1f, 1.2f)
-
-                newFontSize = block.fontSize * scaleFactor
-            }
+            newFontSize = block.fontSize * scaleFactor
         }
 
         return OptimizationResult(
             overlayInsetHorizontal = insetH,
             overlayInsetVertical = insetV,
             overlayAlpha = 1.0f, // Đục hoàn toàn
-            overlayColor = block.customOverlayColor ?: block.averageBackgroundColor ?: Color.WHITE,
-            textColor = block.customTextColor ?: block.originalTextColor ?: Color.BLACK,
+            overlayColor = overlayColor,
+            textColor = textColor,
             borderColor = null,
             borderThickness = 0f,
             needsTransparency = false,
@@ -426,7 +399,7 @@ object OverlayOptimizer {
             containerType = containerType,
             reason = "Solid ${if (isDarkBg) "dark" else "light"} bubble, optimized bounds",
             shapeType = shapeToUse,
-            newBounds = newBounds,
+            newBounds = finalBounds,
             newFontSize = newFontSize
         )
     }
@@ -435,7 +408,7 @@ object OverlayOptimizer {
 
     /**
      * Tối ưu cho các trường hợp khác: chuyển overlay về dạng trong suốt.
-     * 
+     *
      * Mục tiêu:
      * - Overlay trong suốt (alpha thấp) để không che mất artwork
      * - Text vẫn đọc được nhờ border/shadow hoặc semi-transparent background
@@ -470,9 +443,6 @@ object OverlayOptimizer {
         val insetV = 0f
 
         val containerType = classifyNonBubble(block)
-
-        val originalAlpha = block.overlayAlpha
-        // Log được chuyển sang applyResult
 
         return OptimizationResult(
             overlayInsetHorizontal = insetH,
@@ -525,9 +495,9 @@ object OverlayOptimizer {
     ): TextBlockInfo {
         var newText = formatPunctuationSpacing(block.text)
         var newFontSize = result.newFontSize ?: block.fontSize
-        var newBounds = result.newBounds ?: Rect(block.bounds)
-        var newInsetH = result.overlayInsetHorizontal
-        var newInsetV = result.overlayInsetVertical
+        val newBounds = result.newBounds ?: Rect(block.bounds)
+        val newInsetH = result.overlayInsetHorizontal
+        val newInsetV = result.overlayInsetVertical
 
         val blockIdentifier = if (index >= 0) "$index" else "${block.bubbleId ?: "?"}"
         val origText = block.originalText?.replace("\n", " ") ?: ""

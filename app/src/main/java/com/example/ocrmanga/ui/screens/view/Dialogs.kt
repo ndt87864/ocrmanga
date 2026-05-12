@@ -5,6 +5,8 @@ import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Image
@@ -185,7 +187,7 @@ fun Dialogs(
             onDismissRequest = onImageMenuDismiss,
             title = { Text("Tùy chọn ảnh") },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Button(
                         onClick = {
                             imageMenuUri?.let { onRemoveImage(it) }
@@ -210,13 +212,14 @@ fun Dialogs(
                     Button(
                         onClick = {
                             imageMenuUri?.let { viewModel.optimizeImageOverlay(it) }
+                            Toast.makeText(context, "Đang tối ưu hiển thị...", Toast.LENGTH_SHORT).show()
                             onImageMenuDismiss()
-                            Toast.makeText(context, "Đã tối ưu hiển thị overlay", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Tối ưu hiển thị overlay") }
 
                     Spacer(Modifier.height(16.dp))
+
 
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))

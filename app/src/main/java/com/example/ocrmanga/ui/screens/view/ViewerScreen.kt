@@ -581,12 +581,11 @@ fun ViewerScreen(
                                 }
                             }
                         )
-
                         DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.AutoFixHigh, null, modifier = Modifier.padding(end = 8.dp))
-                                    Text("Tối ưu hiển thị overlay")
+                                    Text("Tối ưu tất cả overlay")
                                 }
                             },
                             onClick = {

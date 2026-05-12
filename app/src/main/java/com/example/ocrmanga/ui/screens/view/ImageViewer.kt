@@ -432,15 +432,7 @@ fun ImageViewer(
 
                 Column(
                     modifier = Modifier.fillMaxWidth()
-                        .pointerInput(uri, editTranslationMode, isTextRemovalMode) {
-                            if (!isTextRemovalMode && !editTranslationMode) {
-                                detectTapGestures(onLongPress = {
-                                    onImageMenuUriChange(uri); onShowImageMenuChange(
-                                    true
-                                )
-                                })
-                            }
-                        }) {
+                ) {
                     if (editTranslationMode) {
                         Box(
                             modifier = Modifier
@@ -969,7 +961,14 @@ fun ImageViewer(
                                 imageWidth,
                                 imageHeight
                             ) {
-                                if (isTextRemovalMode || editTranslationMode) {
+                                if (!isTextRemovalMode && !editTranslationMode) {
+                                    detectTapGestures(
+                                        onLongPress = {
+                                            onImageMenuUriChange(uri)
+                                            onShowImageMenuChange(true)
+                                        }
+                                    )
+                                } else {
                                     awaitPointerEventScope {
                                         while (true) {
                                             val event = awaitPointerEvent()
