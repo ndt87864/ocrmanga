@@ -17,17 +17,9 @@ object TranslationPrompts {
      * Khởi tạo prompt từ assets
      */
     fun initialize(context: Context) {
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] Bắt đầu tải prompts từ assets...")
-
-        managerSystemPrompt = PromptUtils.loadPromptFromAssets(context, "manager_system.md")
-        translatorSystemPrompt = PromptUtils.loadPromptFromAssets(context, "translator_system.md")
         mistralBasicPrompt = PromptUtils.loadPromptFromAssets(context, "mistral_basic.md")
         multiScalePrompt = PromptUtils.loadPromptFromAssets(context, "translation_prompt.md")
         zaiBasicPrompt = PromptUtils.loadPromptFromAssets(context, "zai_basic.md")
-        managerReviewPrompt = PromptUtils.loadPromptFromAssets(context, "manager_review.md")
-        translatorRevisePrompt = PromptUtils.loadPromptFromAssets(context, "translator_revise.md")
-
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] Hoàn tất tải các prompts cần thiết!")
     }
 
     val MANAGER_SYSTEM_PROMPT: String
