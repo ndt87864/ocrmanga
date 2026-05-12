@@ -277,19 +277,7 @@ import kotlin.math.max
 
         val content = response?.content ?: return null
         val result = parseMultiBlockResponse(content, textBlocks)
-        
-        if (!skipDetailedLogs) {
-            Log.i("TranslationRepository", "[ZAI-RESULT] ===== KẾT QUẢ DỊCH Z.AI =====")
-            Log.i("TranslationRepository", "[ZAI-RESULT] Tổng số blocks: ${result.size}")
-            result.forEachIndexed { index, translation ->
-                val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
-                Log.i("TranslationRepository", "[ZAI-RESULT] Block #${index + 1}:")
-                Log.i("TranslationRepository", "[ZAI-RESULT]   Gốc: $originalText")
-                Log.i("TranslationRepository", "[ZAI-RESULT]   Dịch: $translation")
-            }
-            Log.i("TranslationRepository", "[ZAI-RESULT] ==============================")
-        }
-        
+
         return result
     }
 
@@ -3089,10 +3077,18 @@ import kotlin.math.max
                 val prompt = TranslationPrompts.getMistralBasicPrompt(originalText)
 
                 val response = generativeModel.generateContent(prompt)
-                val translatedText = response.text?.trim()
-                    ?.removeSurrounding("\"")
-                    ?.removeSurrounding("'")
-                    ?.trim() ?: originalText
+                val content = response.text?.trim() ?: ""
+                val translatedText = content.trim()
+                    .removeSurrounding("\"")
+                    .removeSurrounding("'")
+                    .trim()
+
+                val analysisText = Regex("\\[ANALYSIS\\][\\s\\S]*?(\\[END ANALYSIS\\]|\\[/ANALYSIS\\])").find(content)?.value
+                    ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(content)?.value
+                    ?: "Không tìm thấy [ANALYSIS]"
+                val translationResult = content.replace(analysisText, "").trim()
+                Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
+                Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
 
                 // Nếu dịch thành công và khác với gốc thì trả về luôn
                 if (!translatedText.equals(originalText, ignoreCase = true)) {
@@ -3247,6 +3243,13 @@ import kotlin.math.max
                     continue
                 }
 
+                val analysisText = Regex("\\[ANALYSIS\\][\\s\\S]*?(\\[END ANALYSIS\\]|\\[/ANALYSIS\\])").find(content)?.value
+                    ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(content)?.value
+                    ?: "Không tìm thấy [ANALYSIS]"
+                val translationResult = content.replace(analysisText, "").trim()
+                Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
+                Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
+
                 // Báo cáo số token
                 try {
                     val usage = response.usageMetadata
@@ -3301,8 +3304,16 @@ import kotlin.math.max
 
         return try {
             val response = client.generateContent(prompt)
-            val translatedText = response.text
-            if (translatedText != null) {
+            val content = response.text ?: ""
+
+            val analysisText = Regex("\\[ANALYSIS\\][\\s\\S]*?(\\[END ANALYSIS\\]|\\[/ANALYSIS\\])").find(content)?.value
+                ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(content)?.value
+                ?: "Không tìm thấy [ANALYSIS]"
+            val translationResult = content.replace(analysisText, "").trim()
+            Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
+            Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
+
+            if (content.isNotEmpty()) {
                 // Báo cáo số token
                 try {
                     val usage = response.usageMetadata
@@ -3313,7 +3324,7 @@ import kotlin.math.max
                     Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini: ${e.message}")
                 }
             }
-            translatedText
+            translationResult
         } catch (e: Exception) {
             Log.e("TranslationRepository", "Error during translation: ${e.message}")
             null

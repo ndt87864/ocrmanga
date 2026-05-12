@@ -118,8 +118,12 @@ class ZAiRequester(
 
                 val result = parseSuccessfulResponse(responseBody)
                 val text = result?.content ?: ""
-                val analysisText = Regex("\\[ANALYSIS\\][\\s\\S]*?(\\[END ANALYSIS\\]|\\[/ANALYSIS\\])").find(text)?.value ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #0)").find(text)?.value ?: "Không tìm thấy [ANALYSIS]"
+                val analysisText = Regex("\\[ANALYSIS\\][\\s\\S]*?(\\[END ANALYSIS\\]|\\[/ANALYSIS\\])").find(text)?.value
+                    ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(text)?.value
+                    ?: "Không tìm thấy [ANALYSIS]"
+                val translationResult = text.replace(analysisText, "").trim()
                 Log.d(TAG, "[DEBUG-RESULT] $analysisText")
+                Log.d(TAG, "KẾT QUẢ DỊCH:\n$translationResult")
                 return@withContext result
             }
         } catch (e: Exception) {
