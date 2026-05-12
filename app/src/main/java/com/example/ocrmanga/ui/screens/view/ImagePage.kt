@@ -5,6 +5,8 @@ import androidx.compose.runtime.Composable
 import com.example.ocrmanga.viewmodels.ViewerViewModel
 
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 
@@ -73,11 +75,13 @@ fun ImagePage(
         onClearReopenEditorUri = onClearReopenEditorUri,
         onRequestOpenEditor = onRequestOpenEditor,
         isTextRemovalMode = isTextRemovalMode,
-        imageMaxHeight = androidx.compose.ui.unit.Dp.Unspecified,
+        imageMaxHeight = imageMaxHeight ?: androidx.compose.ui.unit.Dp.Unspecified,
         onToggleTextRemovalMode = onToggleTextRemovalMode,
         onRemoveTextWithMask = onRemoveTextWithMask,
         brushSize = brushSize,
         onBrushSizeChange = onBrushSizeChange,
-        translationVersion = translationVersion
+        translationVersion = translationVersion,
+        verticalArrangement = Arrangement.Center,
+        contentScale = ContentScale.Fit
     )
 }

@@ -159,7 +159,9 @@ fun ImageViewer(
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> },
     brushSize: Float = 40f,
     onBrushSizeChange: (Float) -> Unit = {},
-    translationVersion: Int = 0
+    translationVersion: Int = 0,
+    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(0.dp),
+    contentScale: ContentScale = ContentScale.FillWidth
 ) {
     val context = LocalContext.current
     val readPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -258,7 +260,7 @@ fun ImageViewer(
             state = lazyListState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = if (isTextRemovalMode) 96.dp else 0.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
+            verticalArrangement = verticalArrangement
         ) {
             itemsIndexed(items = imageUris, key = { index, uri ->
                 val id = getImageIdForUri(uri)
@@ -530,6 +532,20 @@ fun ImageViewer(
                         val _conf = LocalConfiguration.current;
                         val _sw = _conf.screenWidthDp.toFloat()
 
+                        val contentScaleVal = remember(contentScale, editTranslationMode, isTextRemovalMode, imageMaxHeight) {
+                            if (imageMaxHeight != null && imageMaxHeight != androidx.compose.ui.unit.Dp.Unspecified) {
+                                if (editTranslationMode) {
+                                    ContentScale.FillWidth
+                                } else if (isTextRemovalMode) {
+                                    ContentScale.Crop
+                                } else {
+                                    contentScale
+                                }
+                            } else {
+                                contentScale
+                            }
+                        }
+
                         // Last computation time for debouncing
                         var lastComputeTime by remember { mutableStateOf(0L) }
 
@@ -541,7 +557,9 @@ fun ImageViewer(
                             imageHeight,
                             isInWindow,
                             _sw,
-                            isScrollingFast
+                            isScrollingFast,
+                            contentScaleVal,
+                            editTranslationMode
                         ) {
                             // Skip tính toán nặng khi đang scroll nhanh
                             if (isScrollingFast && !editTranslationMode) {
@@ -562,17 +580,26 @@ fun ImageViewer(
                                             dragBlock.block; if (block.text.isBlank()) return@mapNotNull null
                                         val blockImageWidth = block.originalImageWidth?.toFloat()
                                             ?: originalImageWidth
-                                        val scale =
-                                            if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
-                                        val offsetY =
-                                            if (imageHeight > (block.originalImageHeight?.toFloat()
-                                                    ?: originalImageHeight) * scale
-                                            ) (imageHeight - (block.originalImageHeight?.toFloat()
-                                                ?: originalImageHeight) * scale) / 2 else 0f
+                                        val blockImageHeight = block.originalImageHeight?.toFloat()
+                                            ?: originalImageHeight
+
+                                        val scaleW = if (blockImageWidth > 0f) imageWidth / blockImageWidth else 1f
+                                        val scaleH = if (blockImageHeight > 0f) imageHeight / blockImageHeight else 1f
+
+                                        // Use min scale for Fit, or scaleW for FillWidth
+                                        val scale = if (contentScaleVal == ContentScale.Fit) {
+                                            minOf(scaleW, scaleH)
+                                        } else {
+                                            scaleW
+                                        }
+
+                                        val offsetX = (imageWidth - blockImageWidth * scale) / 2
+                                        val offsetY = (imageHeight - blockImageHeight * scale) / 2
+
                                         val rect = Rect(
-                                            (block.bounds.left * scale) + dragBlock.offset.x,
+                                            (block.bounds.left * scale) + offsetX + dragBlock.offset.x,
                                             (block.bounds.top * scale) + offsetY + dragBlock.offset.y,
-                                            (block.bounds.right * scale) + dragBlock.offset.x,
+                                            (block.bounds.right * scale) + offsetX + dragBlock.offset.x,
                                             (block.bounds.bottom * scale) + offsetY + dragBlock.offset.y
                                         )
                                         val fontSize =
@@ -712,22 +739,28 @@ fun ImageViewer(
                         }
 
                         // Content Layer (Zoomable)
-                        Box(modifier = Modifier.fillMaxWidth().graphicsLayer {
-                            scaleX = zoomScale; scaleY = zoomScale
-                            translationX = zoomOffset.x; translationY = zoomOffset.y
-                        }) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    scaleX = zoomScale; scaleY = zoomScale
+                                    translationX = zoomOffset.x; translationY = zoomOffset.y
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
                             var imageModifier = Modifier.fillMaxWidth()
-                            var contentScaleVal = ContentScale.FillWidth
                             // If caller provided imageMaxHeight, adjust image rendering when in edit or text-removal modes
                             if (imageMaxHeight != null && imageMaxHeight != androidx.compose.ui.unit.Dp.Unspecified) {
                                 if (editTranslationMode) {
                                     // In edit mode, keep full-width rendering so long images remain scrollable vertically.
                                     // Do not cap height here: LazyColumn must be able to scroll through the full image.
-                                    contentScaleVal = ContentScale.FillWidth
                                 } else if (isTextRemovalMode) {
                                     // In text removal mode: crop image to reserve space for controls below
                                     imageModifier = imageModifier.height(imageMaxHeight).clipToBounds()
-                                    contentScaleVal = ContentScale.Crop
+                                } else {
+                                    // Normal view mode: respect max height if provided (e.g. in horizontal/paging mode)
+                                    // but use heightIn to allow smaller images to stay small and long images to be capped
+                                    imageModifier = imageModifier.heightIn(max = imageMaxHeight).clipToBounds()
                                 }
                             }
                             AsyncImage(
@@ -1062,13 +1095,24 @@ fun ImageViewer(
                                                         val idx = dragBlocks.indexOfLast { db ->
                                                             val b = db.block
                                                             val bw = b.originalImageWidth?.toFloat() ?: originalImageWidth
-                                                            val s = if (bw > 0f) imageWidth / bw else 1f
-                                                            val h = (b.originalImageHeight?.toFloat() ?: originalImageHeight) * s
-                                                            val oY = if (imageHeight > h) (imageHeight - h) / 2 else 0f
+                                                            val bh = b.originalImageHeight?.toFloat() ?: originalImageHeight
+
+                                                            val scaleW = if (bw > 0f) imageWidth / bw else 1f
+                                                            val scaleH = if (bh > 0f) imageHeight / bh else 1f
+
+                                                            val s = if (contentScaleVal == ContentScale.Fit) {
+                                                                minOf(scaleW, scaleH)
+                                                            } else {
+                                                                scaleW
+                                                            }
+
+                                                            val oX = (imageWidth - bw * s) / 2
+                                                            val oY = (imageHeight - bh * s) / 2
+
                                                             val blockRect = Rect(
-                                                                (b.bounds.left * s) + db.offset.x,
+                                                                (b.bounds.left * s) + oX + db.offset.x,
                                                                 (b.bounds.top * s) + oY + db.offset.y,
-                                                                (b.bounds.right * s) + db.offset.x,
+                                                                (b.bounds.right * s) + oX + db.offset.x,
                                                                 (b.bounds.bottom * s) + oY + db.offset.y
                                                             )
                                                             isPointInBlock(blockRect, b.shapeType, pos)
@@ -1097,7 +1141,17 @@ fun ImageViewer(
                                                     draggingIndex?.let { idx ->
                                                         val db = dragBlocks[idx]
                                                         val bw = db.block.originalImageWidth?.toFloat() ?: originalImageWidth
-                                                        val s = if (bw > 0f) imageWidth / bw else 1f
+                                                        val bh = db.block.originalImageHeight?.toFloat() ?: originalImageHeight
+
+                                                        val scaleW = if (bw > 0f) imageWidth / bw else 1f
+                                                        val scaleH = if (bh > 0f) imageHeight / bh else 1f
+
+                                                        val s = if (contentScaleVal == ContentScale.Fit) {
+                                                            minOf(scaleW, scaleH)
+                                                        } else {
+                                                            scaleW
+                                                        }
+
                                                         val updatedBounds = android.graphics.Rect(db.block.bounds).apply {
                                                             offset(
                                                                 (db.offset.x / s).toInt(),

@@ -127,12 +127,17 @@ fun HorizontalViewer(
                         // reserve space so controls can appear below image without being clipped
                         // when isTextRemovalMode=true, ImageViewer will use imageMaxHeight to shrink image
                         // so controls fit under it.
-                        imageMaxHeight = if (isTextRemovalMode) {
-                            // compute available height: screen height - toolbar (56dp) - controls (72dp) - padding
-                            val conf = LocalConfiguration.current
+                        imageMaxHeight = run {
                             val screenH = conf.screenHeightDp.dp
-                            (screenH - 56.dp - 72.dp - 32.dp).coerceAtLeast(100.dp)
-                        } else androidx.compose.ui.unit.Dp.Unspecified,
+                            if (isTextRemovalMode) {
+                                // compute available height: screen height - toolbar (56dp) - controls (72dp) - padding
+                                (screenH - 56.dp - 72.dp - 32.dp).coerceAtLeast(100.dp)
+                            } else {
+                                // In normal horizontal mode, cap to screen height to ensure vertical centering
+                                // of both landscape and portrait images.
+                                screenH
+                            }
+                        },
                         lazyListState = pageState,
                         translationVersion = translationVersion
                     )
