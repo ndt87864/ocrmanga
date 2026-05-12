@@ -254,13 +254,6 @@ import kotlin.math.max
             isAncientMode = isAncientMode
         )
 
-        // ===== DEBUG LOG: Kiểm tra instructions (system prompt) =====
-        if (!skipDetailedLogs) {
-            Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT-ZAI] Instructions length: ${instructions.length} chars")
-            Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT-ZAI] Instructions preview (first 1000):\n${instructions.take(1000)}")
-        }
-        // ==============================================================
-
         val systemMessage = mapOf(
             "role" to "system",
             "content" to instructions
@@ -275,10 +268,6 @@ import kotlin.math.max
         """.trimIndent()
 
         val userMessage = mapOf("role" to "user", "content" to dataContent)
-
-        if (!skipDetailedLogs) {
-            Log.d("TranslationRepository", "[DEBUG-USER-PROMPT-ZAI] Data content preview (first 500):\n$dataContent.take(500)")
-        }
 
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
@@ -3180,13 +3169,6 @@ import kotlin.math.max
                     isAncientMode = isAncientMode
                 )
 
-                // ===== DEBUG LOG: Kiểm tra instructions (system prompt) =====
-                if (!skipDetailedLogs) {
-                    Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT-GEMINI] Instructions length: ${instructions.length} chars")
-                    Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT-GEMINI] Instructions preview (first 1000):\n${instructions.take(1000)}")
-                }
-                // ===============================================================
-
                 val generativeModel = GenerativeModel(
                     modelName = modelName,
                     apiKey = useKey,
@@ -3202,10 +3184,6 @@ import kotlin.math.max
                     === BLOCKS CẦN DỊCH ===
                     $numberedBlocks
                 """.trimIndent()
-
-                if (!skipDetailedLogs) {
-                    Log.d("TranslationRepository", "[DEBUG-USER-PROMPT-GEMINI] Data content preview (first 500):\n$dataContent.take(500)")
-                }
                 
                 val response = generativeModel.generateContent(dataContent)
                 val content = response.text?.trim()
@@ -3229,7 +3207,9 @@ import kotlin.math.max
                 val translatedBlocksMap = mutableMapOf<Int, String>()
                 val lines = content.split("\n")
                 
-                Log.i("TranslationRepository", "[GEMINI-PARSE] Nội dung trả về từ AI:\n$content")
+                val text = content ?: ""
+                val analysisText = Regex("\\[ANALYSIS\\][\\s\\S]*?(\\[END ANALYSIS\\]|\\[/ANALYSIS\\])").find(text)?.value ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #0)").find(text)?.value ?: "Không tìm thấy [ANALYSIS]"
+                Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
 
                 // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", "Block #1 Text" etc.
                 // Separator là tùy chọn (?:...)?, thêm dấu gạch ngang - vào danh sách separator

@@ -83,14 +83,6 @@ class ZAiRequester(
         }
         val apiKey = rawKey.trim()
 
-        // ===== DEBUG LOG: System prompt verification =====
-        val systemPrompt = messages.find { (it["role"] as? String) == "system" }?.get("content") as? String ?: ""
-        val userPrompt = messages.find { (it["role"] as? String) == "user" }?.get("content") as? String ?: ""
-        Log.d(TAG, "[DEBUG-SYSTEM] System prompt length: ${systemPrompt.length} chars")
-        Log.d(TAG, "[DEBUG-SYSTEM] System prompt preview (first 500): ${systemPrompt.take(500)}")
-        Log.d(TAG, "[DEBUG-USER] User prompt preview (first 500): ${userPrompt.take(500)}")
-        // ================================================
-
         val bodyMap = mapOf(
             "model" to model,
             "messages" to messages,
@@ -99,11 +91,6 @@ class ZAiRequester(
             "top_p" to 0.9 // Mặc định dùng 0.9 cho ổn định
         )
         val rawJsonBody = gson.toJson(bodyMap)
-
-        // ===== DEBUG LOG: Full request body =====
-        Log.d(TAG, "[DEBUG-REQUEST] Model: $model, Temp: $temperature, MaxTokens: $max_tokens")
-        Log.d(TAG, "[DEBUG-REQUEST] Full request body: $rawJsonBody")
-        // ===========================================
 
         val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
         val body = rawJsonBody.toRequestBody(mediaType)
@@ -124,18 +111,15 @@ class ZAiRequester(
 
                 val responseBody = response.body?.string()
 
-                // ===== DEBUG LOG: Raw response =====
-                Log.d(TAG, "[DEBUG-RESPONSE] Raw response (first 1000): ${responseBody?.take(1000)}")
-                // =====================================
-
                 if (!response.isSuccessful) {
                     Log.e(TAG, "Lỗi API Z.AI ($responseCode): $responseBody")
                     return@withContext null
                 }
 
                 val result = parseSuccessfulResponse(responseBody)
-                Log.d(TAG, "[DEBUG-RESULT] Parsed content length: ${result?.content?.length ?: 0} chars")
-                Log.d(TAG, "[DEBUG-RESULT] Parsed content preview: ${result?.content?.take(300)}")
+                val text = result?.content ?: ""
+                val analysisText = Regex("\\[ANALYSIS\\][\\s\\S]*?(\\[END ANALYSIS\\]|\\[/ANALYSIS\\])").find(text)?.value ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #0)").find(text)?.value ?: "Không tìm thấy [ANALYSIS]"
+                Log.d(TAG, "[DEBUG-RESULT] $analysisText")
                 return@withContext result
             }
         } catch (e: Exception) {

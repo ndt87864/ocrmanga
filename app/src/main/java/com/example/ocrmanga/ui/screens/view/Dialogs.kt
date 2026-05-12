@@ -290,7 +290,8 @@ fun Dialogs(
                                             }
                                             targetUri != null -> {
                                                 val existingBlocks = viewModel.getExistingBlocksForUri(targetUri)
-                                                if (existingBlocks.isNotEmpty() && mode != TranslationMode.OFF) {
+                                                val hasOriginalText = existingBlocks.any { !it.originalText.isNullOrBlank() }
+                                                if (existingBlocks.isNotEmpty() && hasOriginalText && mode != TranslationMode.OFF) {
                                                     // Có original đã lưu → hỏi user chọn OCR lại hay giữ
                                                     pendingReTranslateMode = mode
                                                     currentUri = targetUri
