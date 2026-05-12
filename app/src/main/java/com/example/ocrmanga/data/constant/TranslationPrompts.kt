@@ -31,27 +31,27 @@ object TranslationPrompts {
     }
 
     val MANAGER_SYSTEM_PROMPT: String
-        get() = managerSystemPrompt
+        get() = ""
 
     val TRANSLATOR_SYSTEM_PROMPT: String
-        get() = translatorSystemPrompt
+        get() = ""
 
     /**
      * Prompt cơ bản cho Mistral - dịch đơn giản một đoạn văn bản
      */
     fun getMistralBasicPrompt(text: String, isAncientMode: Boolean = false): String {
-        val ancientInstruction = if (isAncientMode) {
-            """
-            [CHẾ ĐỘ CỔ TRANG]
-            - Văn phong: Hán Việt, cổ trang, kiếm hiệp.
-            - Xưng hô: ta/ngươi, tại hạ/các hạ, huynh/đệ, cô nương/tiểu tử, bổn toạ, lão phu, bần đạo...
-            - Cấm dùng từ hiện đại: anh, em, cậu, tớ, mình, bạn.
-            """
-        } else ""
-
         return mistralBasicPrompt
             .replace("{{text}}", text)
-            .replace("{{ancientInstruction}}", ancientInstruction)
+            .replace("{{ancientInstruction}}", if (isAncientMode) "[CHẾ ĐỘ CỔ TRANG] Dùng văn phong Hán Việt, xưng hô ta/ngươi." else "")
+    }
+
+    /**
+     * Prompt cơ bản cho Z.AI - dịch đơn giản một đoạn văn bản
+     */
+    fun getZAiBasicPrompt(text: String, isAncientMode: Boolean = false): String {
+        return zaiBasicPrompt
+            .replace("{{text}}", text)
+            .replace("{{ancientInstruction}}", if (isAncientMode) "[CHẾ ĐỘ CỔ TRANG] Dùng văn phong Hán Việt, xưng hô ta/ngươi." else "")
     }
 
     /**
@@ -64,21 +64,7 @@ object TranslationPrompts {
         previousContextText: String = "",
         isAncientMode: Boolean = false
     ): String {
-        val ancientInstruction = if (isAncientMode) {
-            """
-            [CHẾ ĐỘ CỔ TRANG]
-            - Văn phong: Hán Việt, cổ trang, kiếm hiệp. Câu văn trang trọng, cổ kính.
-            - Xưng hô: ta/ngươi, tại hạ/các hạ, huynh/đệ, muội/tỷ, cô nương/tiểu tử, bổn toạ, lão phu, bần đạo, phu quân/nương tử, chủ nhân/nô tỳ...
-            - Cấm dùng từ hiện đại: anh, em, cậu, tớ, mình, bạn.
-            """
-        } else ""
-
-        return multiScalePrompt
-            .replace("{{previousContextText}}", previousContextText)
-            .replace("{{ocrResultsText}}", ocrResultsText)
-            .replace("{{numberedBlocks}}", numberedBlocks)
-            .replace("{{blockCount}}", blockCount.toString())
-            .replace("{{ancientInstruction}}", ancientInstruction)
+        return getMistralMultiScalePromptOptimized(ocrResultsText, numberedBlocks, blockCount, previousContextText, isAncientMode)
     }
 
     /**
@@ -195,19 +181,6 @@ object TranslationPrompts {
     }
 
     /**
-     * Prompt cơ bản cho Z.AI - dịch đơn giản một đoạn văn bản
-     */
-    fun getZAiBasicPrompt(text: String, isAncientMode: Boolean = false): String {
-        val ancientInstruction = if (isAncientMode) {
-            "Văn phong: Hán Việt, cổ trang. Xưng hô: ta/ngươi, tại hạ/các hạ, huynh/đệ..."
-        } else ""
-
-        return zaiBasicPrompt
-            .replace("{{text}}", text)
-            .replace("{{ancientInstruction}}", ancientInstruction)
-    }
-
-    /**
      * Prompt chuyên dụng cho Z.AI Multi-Scale
      */
     fun getZAiMultiScalePrompt(
@@ -220,46 +193,5 @@ object TranslationPrompts {
         return getMistralMultiScalePromptOptimized(
             ocrResultsText, numberedBlocks, blockCount, previousContextText, isAncientMode
         )
-    }
-
-    /**
-     * Prompt cho Manager review toàn bộ bản dịch của một trang
-     */
-    fun getReviewPrompt(
-        textBlocks: List<com.example.ocrmanga.data.models.TextBlockInfo>,
-        translations: List<String>,
-        isAncientMode: Boolean = false
-    ): String {
-        val numberedTranslations = translations.mapIndexed { index, s ->
-            "Block #${index + 1}: [GỐC: ${textBlocks[index].text}] -> [DỊCH: $s]"
-        }.joinToString("\n")
-
-        val ancientInstruction = if (isAncientMode) {
-            "LƯU Ý: Phải tuân thủ văn phong CỔ TRANG (ta/ngươi, tại hạ, huynh/đệ...)."
-        } else ""
-
-        return managerReviewPrompt
-            .replace("{{numberedTranslations}}", numberedTranslations)
-            .replace("{{ancientInstruction}}", ancientInstruction)
-    }
-
-    /**
-     * Prompt cho Translator dịch lại một block dựa trên feedback của Manager
-     */
-    fun getRevisePrompt(
-        originalText: String,
-        currentTranslation: String,
-        feedback: String,
-        isAncientMode: Boolean = false
-    ): String {
-        val ancientInstruction = if (isAncientMode) {
-            "[CHẾ ĐỘ CỔ TRANG]: Dùng từ Hán Việt, xưng hô cổ (ta/ngươi, tại hạ...)."
-        } else ""
-
-        return translatorRevisePrompt
-            .replace("{{originalText}}", originalText)
-            .replace("{{currentTranslation}}", currentTranslation)
-            .replace("{{feedback}}", feedback)
-            .replace("{{ancientInstruction}}", ancientInstruction)
     }
 }

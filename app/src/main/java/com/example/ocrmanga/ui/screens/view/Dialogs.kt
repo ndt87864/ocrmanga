@@ -45,16 +45,12 @@ fun Dialogs(
     onImageMenuDismiss: () -> Unit,
     onRemoveImage: (Uri) -> Unit,
     onRetranslateImage: (Uri, TranslationMode) -> Unit,
-    onOptimizeTranslation: ((Uri, TranslationMode) -> Unit)? = null,
     imageUris: List<Uri>,
     viewModel: ViewerViewModel
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // State cho dialog chọn model AI tối ưu
-    var showOptimizeDialog by remember { mutableStateOf(false) }
-    var selectedMode by remember { mutableStateOf<TranslationMode?>(null) }
     var currentUri by remember { mutableStateOf<Uri?>(null) }
 
     // State cho dialog chọn OCR lại / giữ OCR cũ khi retranslate
@@ -211,26 +207,6 @@ fun Dialogs(
 
                     Spacer(Modifier.height(16.dp))
 
-                    // Nút tối ưu bản dịch
-                    Button(
-                        onClick = {
-                            if (blocks.isEmpty()) {
-                                Toast.makeText(context, "Ảnh này chưa có bản dịch", Toast.LENGTH_SHORT).show()
-                            } else {
-                                showOptimizeDialog = true
-                                currentUri = uri
-                                onImageMenuDismiss()
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Tối ưu bản dịch (Overlay)")
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
 
@@ -377,93 +353,7 @@ fun Dialogs(
         )
     }
 
-    // Dialog chọn model AI để tối ưu bản dịch
-    if (showOptimizeDialog && currentUri != null) {
-        AlertDialog(
-            onDismissRequest = { showOptimizeDialog = false },
-            title = { Text("Tối ưu bản dịch") },
-            text = {
-                Column {
-                    Text("Chọn cách tối ưu bản dịch:", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.height(16.dp))
 
-                    listOf(
-                        Triple(TranslationMode.GEMINI, "Gemini AI - AI Translation", "Tối ưu cả bản dịch và overlay hiển thị"),
-                        Triple(TranslationMode.MISTRAL, "Mistral AI - AI Translation", "Tối ưu cả bản dịch và overlay hiển thị"),
-                        Triple(TranslationMode.ZAI, "Z.AI (GLM-4) - AI Translation", "Tối ưu cả bản dịch và overlay hiển thị"),
-                        Triple(TranslationMode.OFF, "Auto-Optimize Overlay Only", "Chỉ tối ưu overlay hiển thị không cần API")
-                    ).forEach { (mode, name, description) ->
-                        val hasKey = when (mode) {
-                            TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys()
-                            TranslationMode.MISTRAL -> viewModel.hasMistralApiKeys()
-                            TranslationMode.ZAI -> viewModel.hasZAiApiKeys()
-                            else -> false
-                        }
-                        val isEnabled = hasKey
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(enabled = isEnabled) {
-                                    selectedMode = mode
-                                }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            RadioButton(
-                                selected = selectedMode == mode,
-                                onClick = { if (isEnabled) selectedMode = mode },
-                                enabled = isEnabled
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    name,
-                                    color = if (isEnabled) MaterialTheme.colorScheme.onSurface
-                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                )
-                                Text(
-                                    description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isEnabled) MaterialTheme.colorScheme.onSurfaceVariant
-                                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            }
-                            if (!hasKey && mode != TranslationMode.OFF) {
-                                Text(
-                                    "Cần API key",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        selectedMode?.let { mode ->
-                            val uri = currentUri
-                            if (uri != null) {
-                                onOptimizeTranslation?.invoke(uri, mode)
-                            }
-                        }
-                        showOptimizeDialog = false
-                        selectedMode = null
-                    },
-                    enabled = selectedMode != null
-                ) {
-                    Text("Áp dụng")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showOptimizeDialog = false }) {
-                    Text("Hủy")
-                }
-            }
-        )
-    }
 
     // Dialog chọn OCR lại từ đầu hoặc giữ OCR cũ khi retranslate
     if (showReTranslateDialog && currentUri != null && pendingReTranslateMode != null) {

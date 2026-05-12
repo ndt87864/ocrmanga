@@ -69,7 +69,7 @@ fun ViewerScreen(
     var isRemovingText by remember { mutableStateOf(false) }
     var removingTextLocalProgress by remember { mutableStateOf("") }
     var brushSize by remember { mutableStateOf(40f) }
-    var showOptimizeSelectionDialog by remember { mutableStateOf(false) }
+
 
     val uiState by viewModel.uiState.collectAsState()
     val allRoomIds by viewModel.allRoomIds.collectAsState()
@@ -805,14 +805,7 @@ fun ViewerScreen(
                                 showTranslationMenu = false
                             }
                         )
-                        DropdownMenuItem(
-                            text = {Text("Tối ưu bản dịch")},
-                            onClick = {
-                                showOptimizeSelectionDialog = true
-                                showTranslationMenu = false
-                            },
-                            leadingIcon = { Icon(Icons.Default.AutoFixHigh, null) }
-                        )
+
                         DropdownMenuItem(
                             text = { Text("Tắt") },
                             onClick = {
@@ -1137,9 +1130,7 @@ fun ViewerScreen(
                     Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
                 }
             },
-            onOptimizeTranslation = { uri, mode ->
-                viewModel.optimizeTranslation(uri, mode)
-            },
+
             imageUris = uiState.imageUris,
             viewModel = viewModel
         )
@@ -1302,93 +1293,7 @@ fun ViewerScreen(
         }
     }
 
-    // AI Selection Dialog for Room Optimization
-    if (showOptimizeSelectionDialog) {
-        var selectedMode by remember { mutableStateOf<TranslationMode?>(null) }
-        
-        AlertDialog(
-            onDismissRequest = { showOptimizeSelectionDialog = false },
-            title = { Text("Chọn AI tối ưu toàn bộ phòng") },
-            text = {
-                Column {
-                    Text("Chọn dịch vụ AI bạn muốn sử dụng để thực hiện tối ưu bản dịch cho toàn bộ phòng (2 ảnh mỗi lượt):", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    val options = listOf(
-                        Triple(TranslationMode.GEMINI, "Gemini AI", "Dịch nhanh, chính xác"),
-                        Triple(TranslationMode.MISTRAL, "Mistral AI", "Ngữ pháp tự nhiên"),
-                        Triple(TranslationMode.ZAI, "Z.AI (GLM-4)", "Sáng tạo, linh hoạt")
-                    )
-                    
-                    options.forEach { (mode, name, description) ->
-                        val hasKey = when (mode) {
-                            TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys()
-                            TranslationMode.MISTRAL -> viewModel.hasMistralApiKeys()
-                            TranslationMode.ZAI -> viewModel.hasZAiApiKeys()
-                            else -> false
-                        }
-                        val isEnabled = hasKey
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(enabled = isEnabled) {
-                                    selectedMode = mode
-                                }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            RadioButton(
-                                selected = selectedMode == mode,
-                                onClick = { if (isEnabled) selectedMode = mode },
-                                enabled = isEnabled
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    name,
-                                    color = if (isEnabled) MaterialTheme.colorScheme.onSurface
-                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                )
-                                Text(
-                                    description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (isEnabled) MaterialTheme.colorScheme.onSurfaceVariant
-                                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            }
-                            if (!hasKey) {
-                                Text(
-                                    "Cần API key",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        selectedMode?.let { mode ->
-                            viewModel.optimizeAllImagesInRoom(mode)
-                        }
-                        showOptimizeSelectionDialog = false
-                        selectedMode = null
-                    },
-                    enabled = selectedMode != null
-                ) {
-                    Text("Bắt đầu")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showOptimizeSelectionDialog = false }) {
-                    Text("Hủy")
-                }
-            }
-        )
-    }
 
     } // end Box
 }
