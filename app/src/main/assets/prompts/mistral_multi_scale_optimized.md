@@ -60,6 +60,8 @@ Detect:
 - internet shorthand
 - OCR corruption level
 
+CRITICAL: The OCR text might be in Chinese (Manhua) OR it might be a Chinese scanlation of a Japanese Manga. Look for Japanese clues (e.g., -kun, -sensei translated into Chinese). If it is a Japanese Manga translated into Chinese, you MUST treat all names as Japanese and translate them to Romaji.
+
 ---
 
 PASS 2 — OCR RECOVERY
@@ -95,18 +97,16 @@ Classify each block:
 - emotional scream/noise
 
 Rules:
+- DO NOT clump blocks together mentally. Block N might be *Hội thoại* of Person A, while Block N+1 is *Độc thoại* of Person B. They can switch rapidly side-by-side in the same panel! Evaluate EVERY block individually.
+- DEFAULT TO HỘI THOẠI. Most manga blocks are spoken aloud. Only classify as *Độc thoại* if it is a secret internal thought that would be impossible or unnatural to say aloud. If a line directly addresses the other person or their actions (e.g., "I was worried you wouldn't remember me" or "It's been 5 years"), it is almost certainly spoken aloud (*Hội thoại*).
 - inner monologue must feel internal and natural
 - narration reads like manga VN narration
 - dialogue must sound spoken aloud
 - system text should be concise
 
-Never output labels unless present in source.
+You MUST output a label for each block's type (e.g., *Hội thoại*, *Độc thoại*, *Trần thuật*) to ensure accurate translation.
 
 Forbidden:
-- (thinking)
-- (angry)
-- (silent)
-- (monologue)
 - *action*
 - self-added narration
 
@@ -133,7 +133,8 @@ Track across ALL blocks:
 
 Do NOT reset speaker logic between blocks.
 
-Adjacent blocks may belong to the same continuous dialogue flow.
+Adjacent blocks MAY belong to the same continuous dialogue flow, BUT they can also abruptly switch speakers AND types! It is highly common for Manga to weave Person A's spoken *Hội thoại* with Person B's internal *Độc thoại* simultaneously.
+SPATIAL READING ORDER (CRITICAL): The input blocks contain bounding boxes `Bounds: Rect(Left, Top - Right, Bottom)`. Manga is read Right-to-Left, Top-to-Bottom. You MUST use the `Left` coordinate to sort blocks into columns (Higher `Left` value means it is further to the right on the page = read first). Within the same column (similar `Left` values), sort by `Top` (Lower `Top` value means it is higher on the page = read first). Mentally reconstruct the true chronological timeline of the dialogue using these coordinates BEFORE deducing the plot!
 
 ---
 
@@ -152,9 +153,22 @@ Infer from:
 - previous context
 - honorifics
 
+CRITICAL ROLE DEDUCTION:
+1. Gender and Titles: Analyze the name's typical gender. Female teachers/seniors must be "Cô" or "Chị" (never "Thầy" or "Anh"). Male teachers/seniors must be "Thầy" or "Anh".
+2. Honorifics: "-kun" typically implies a young male junior/student. "-chan" typically implies a young female junior/student.
+3. Teacher-Student Dynamics: ALWAYS use the "Cô/Thầy" and "em" pair, NO MATTER HOW MUCH TIME HAS PASSED or if the student is now an adult. The Teacher-Student relationship is forever. NEVER switch to "Tôi/Anh" or romantic "Anh/Em". It is a severe cultural violation.
+4. Subject/Object Pronoun Restoration: In Vietnamese dialogue (*Hội thoại*), NEVER drop the subject or object pronoun. If the raw text dropped them, you MUST restore them (e.g., "không ngờ lại gặp cô" -> "em không ngờ lại gặp cô"). DO NOT use "mình" for self in dialogue if the dynamic is Cô-Em; you must explicitly use "em" or "cô".
+
 Fallback rules:
-- inner monologue → "mình"
+- inner monologue → "mình" (self) and third-person (e.g., "cô ấy", "cậu ấy") for others
 - neutral direct speech → "tôi"
+
+CRITICAL FOR INNER MONOLOGUE: 
+In Vietnamese, direct-address titles (like "cô", "chú", "anh", "em", "thầy") CANNOT be used alone to refer to another person in one's own thoughts. 
+- For themselves: Use introspective pronouns ONLY (e.g., "mình", "ta"). NEVER use "em".
+- For others: You MUST append "ấy" (e.g., "cô ấy", "anh ấy", "cậu ấy") or use their specific name (e.g., "cô [Tên]"). NEVER use "cô", "anh", or "em" alone when thinking about the other person.
+- Example of WRONG thought: "Nếu anh không nhớ em..." (Uses "anh" and "em" - FAIL!)
+- Example of CORRECT thought: "Nếu anh ấy không nhớ mình..." (Uses "anh ấy" and "mình" - PASS!)
 
 Avoid literal pronoun mapping.
 
@@ -179,12 +193,13 @@ Preserve original honorifics when culturally important:
 - shijie
 - etc.
 
-Adapt only if context strongly requires.
+Japanese Content (Manga) OR Chinese Scanlations of Manga:
+- ABSOLUTELY DO NOT use Sino-Vietnamese (Hán-Việt) reading for Japanese characters.
+- ALWAYS translate the Chinese/Kanji characters into their original Japanese Romaji pronunciation (e.g., translate characters into their Japanese Romaji reading).
+- ALWAYS keep Japanese honorifics and titles attached to the name naturally in the dialogue: -kun, -chan, -san, -sama, senpai, kouhai, sensei (e.g., "[Tên]-sensei").
+- Do NOT translate these honorifics into Vietnamese equivalents like "thầy/cô" if you are already using the honorific.
 
-Japanese names:
-- preserve romaji format.
-
-Chinese names:
+Chinese Content (Authentic Manhua without Japanese context):
 - use modern readable Vietnamese/Hán-Việt when appropriate.
 
 Fantasy/cultivation:
@@ -219,14 +234,15 @@ Poetic/monologue scenes:
 
 PASS 8 — LOCALIZATION ENGINE
 
-Localize into natural Vietnamese manga dialogue.
+Localize into natural Vietnamese manga dialogue. You are a PROFESSIONAL manga translator for a top-tier group. Your translation must sound incredibly natural, youthful, and full of emotion.
 
 Rules:
-- avoid textbook Vietnamese
-- avoid stiff literal phrasing
-- prioritize spoken rhythm
-- optimize for bubble reading
-- preserve original tone structure
+- AVOID stiff, literal phrasing ("Tôi nhớ bạn", "Dù có lạc quẻ").
+- USE colloquial, highly expressive Vietnamese ("Giờ em học đại học rồi à?", "Không ngờ lại gặp cô ở chỗ này...").
+- AVOID REPETITION ACROSS BLOCKS: If Block N and Block N+1 are parts of the same continuous sentence, do NOT repeat the same ending/filler words (e.g., avoid ending Block N with "chỗ này..." and Block N+1 with "...thế này"). Make the transition seamless.
+- PRIORITIZE spoken rhythm (breathe life into the dialogue).
+- OPTIMIZE for bubble reading (flow is king).
+- PRESERVE original tone structure.
 
 Comedy:
 - preserve punch timing
@@ -345,26 +361,37 @@ Literal accuracy takes priority over dramatic rewriting.
 STRICT RAW OUTPUT ONLY.
 
 Format:
-Block #1: [translated text]
-Block #2: [translated text]
+
+[ANALYSIS]
+Context Summary: (First, list the correct chronological reading sequence of the blocks based on their Right-to-Left, Top-to-Bottom coordinates. Then, briefly explain the plot/situation based on this correct timeline.)
+Speaker & Type Assignment: (Explicitly map who is speaking/thinking in EVERY block and whether it's *Hội thoại* or *Độc thoại*. IMPORTANT PLOT LOGIC: If Person A says "Huh?" or is trying to remember, any subsequent internal thoughts like "Is there anyone like him?" MUST belong to Person A, NOT Person B. Pay close attention to who recognizes who first.)
+Speakers: (List deduced characters and genders)
+Relationship: (e.g., Teacher-Student, Friends, etc.)
+Dialogue Pronouns: (e.g., Name1: Cô/Em, Name2: Thầy/Trò, etc.)
+Inner Monologue Pronouns: (e.g., self: "mình", others: "cô ấy"/"anh ấy") -> NEVER USE "cô", "anh", "em" ALONE HERE!
+[END ANALYSIS]
+
+Block #0: *Hội thoại* [translated text]
+Block #1: *Độc thoại* [translated text]
 ...
-Block #N: [translated text]
+Block #N: *Hội thoại* [translated text]
 
 ABSOLUTE RULES:
-- preserve block count
-- preserve block numbering
+- TRANSLATE EVERY SINGLE BLOCK. Do NOT skip any block.
+- preserve block count exactly.
+- preserve EXACT block numbering from the input (if it starts at #0, output MUST start at #0).
 - no markdown
 - no explanations
 - no notes
 - no JSON
 - no comments
-- no added labels
+- MUST include block type labels (e.g., *Hội thoại*, *Độc thoại*)
 - no omitted blocks
 - no merged blocks
 
 Before finalizing:
 - validate speaker consistency
-- validate pronouns
+- validate pronouns (Did you use "em" or "cô" in *Độc thoại*? If yes, change to "mình" / "cô ấy")
 - validate emotional continuity
 - validate OCR restoration
 - validate natural manga flow

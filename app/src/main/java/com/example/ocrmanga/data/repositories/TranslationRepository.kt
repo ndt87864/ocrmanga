@@ -360,6 +360,7 @@ import kotlin.math.max
                     }
 
                     translation = translation.replace("**", "").replace("*", "").trim()
+                    translation = translation.replace(Regex("""^(Độc thoại|Hội thoại|Trần thuật)[:\-\s]*""", RegexOption.IGNORE_CASE), "")
                     // Loại bỏ ảo giác nếu AI lặp lại Block header trong phần nội dung
                     if (translation.startsWith("Block #", ignoreCase = true) || translation.startsWith("Block ", ignoreCase = true)) {
                         translation = translation.replace(Regex("""^[Bb]lock\s*#?\d+[:.)\->\s]+\s*"""), "").trim()
@@ -588,7 +589,7 @@ import kotlin.math.max
                     // Cleanup formatting (**bold**, *italics*, quotes)
                     translation = translation.replace("**", "").replace("*", "").trim()
                     translation = translation.trimEnd('*').trim()
-                    translation = translation.replace(Regex("^\\*?(Độc thoại|Hội thoại|Trần thuật)\\*?\\s*"), "")
+                    translation = translation.replace(Regex("""^(Độc thoại|Hội thoại|Trần thuật)[:\-\s]*""", RegexOption.IGNORE_CASE), "")
                     // Clean up "Dịch:", "Gốc:", "Dịch (Cổ trang):" prefixes
                     translation = translation.replace(Regex("""^(Dịch|Translation|Gốc|Original)(\s*\(.*?\))?\s*:\s*""", RegexOption.IGNORE_CASE), "")
 

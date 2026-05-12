@@ -75,3 +75,4 @@ app/release/*
 app/local.properties
 .mcp.json
 /openspec
+test_mistral.py
