@@ -34,9 +34,9 @@ object TranslationPrompts {
         mistralMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "mistral_multi_scale.md")
         com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] mistral_multi_scale.md: ${mistralMultiScalePrompt.length} chars")
 
-        mistralMultiScalePromptOptimized = PromptUtils.loadPromptFromAssets(context, "mistral_multi_scale_optimized.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] mistral_multi_scale_optimized.md: ${mistralMultiScalePromptOptimized.length} chars")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] mistral_multi_scale_optimized.md preview:\n${mistralMultiScalePromptOptimized.take(500)}")
+        mistralMultiScalePromptOptimized = PromptUtils.loadPromptFromAssets(context, "translation_prompt.md")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] translation_prompt.md: ${mistralMultiScalePromptOptimized.length} chars")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] translation_prompt.md preview:\n${mistralMultiScalePromptOptimized.take(500)}")
 
         geminiMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "gemini_multi_scale.md")
         com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] gemini_multi_scale.md: ${geminiMultiScalePrompt.length} chars")
