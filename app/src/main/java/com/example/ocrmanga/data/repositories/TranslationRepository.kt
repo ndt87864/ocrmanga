@@ -3259,19 +3259,6 @@ import kotlin.math.max
 
                 val translatedBlocks = parseMultiBlockResponse(content, textBlocks)
 
-                // Log kết quả dịch của các block
-                if (!skipDetailedLogs) {
-                    Log.i("TranslationRepository", "[GEMINI-RESULT] ===== KẾT QUẢ DỊCH GEMINI =====")
-                    Log.i("TranslationRepository", "[GEMINI-RESULT] Tổng số blocks: ${translatedBlocks.size}")
-                    translatedBlocks.forEachIndexed { index, translation ->
-                        val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
-                        Log.i("TranslationRepository", "[GEMINI-RESULT] Block #${index + 1}:")
-                        Log.i("TranslationRepository", "[GEMINI-RESULT]   Gốc: $originalText")
-                        Log.i("TranslationRepository", "[GEMINI-RESULT]   Dịch: $translation")
-                    }
-                    Log.i("TranslationRepository", "[GEMINI-RESULT] ==============================")
-                }
-
                 return translatedBlocks
             } catch (e: Exception) {
                 val msg = e.message?.lowercase() ?: ""
