@@ -207,7 +207,7 @@ import kotlin.math.max
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(userMessage),
             temperature = 1.0,
-            max_tokens=6000
+            max_tokens=2048
         )
 
         return response?.content
@@ -243,19 +243,7 @@ import kotlin.math.max
         // Đánh số và sắp xếp các text blocks gốc theo thứ tự đọc Manga (Phải -> Trái, Trên -> Dưới)
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
             val normalizedText = block.text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
-            Triple(index, block, normalizedText)
-        }.sortedWith(Comparator { a, b ->
-            val boundsA = a.second.bounds
-            val boundsB = b.second.bounds
-            val centerXA = boundsA.centerX()
-            val centerXB = boundsB.centerX()
-            if (abs(centerXA - centerXB) > 100) {
-                centerXB.compareTo(centerXA)
-            } else {
-                boundsA.top.compareTo(boundsB.top)
-            }
-        }).map { (index, _, normalizedText) ->
-            "Block #${index + 1}: $normalizedText"
+            "Block #$index: Text='$normalizedText' Bounds: Rect(${block.bounds.left}, ${block.bounds.top} - ${block.bounds.right}, ${block.bounds.bottom})"
         }.joinToString("\n")
 
         val instructions = TranslationPrompts.getZAiMultiScalePrompt(
@@ -295,7 +283,7 @@ import kotlin.math.max
         val response = zaiRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
             temperature = 0.7,
-            max_tokens=6000
+            max_tokens=2048
         )
 
         val content = response?.content ?: return null
@@ -319,7 +307,7 @@ import kotlin.math.max
     private fun parseMultiBlockResponse(content: String, textBlocks: List<TextBlockInfo>): List<String> {
         val translatedBlocksMap = mutableMapOf<Int, String>()
         val lines = content.trim().split("\n")
-        // Regex hỗ trợ cả dấu ":" và "->" của Z.AI
+        // Support various formats: "Block #0:", "**Block #0**:", "Block 0 ->", etc.
         val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)\->\s]+\s*(.*)$""")
 
         var i = 0
@@ -329,10 +317,11 @@ import kotlin.math.max
             if (match != null) {
                 try {
                     val blockNumber = match.groupValues[1].toInt()
-                    val blockIndex = blockNumber - 1
+                    // Both Mistral and ZAI now receive 0-based IDs from our 'numberedBlocks' generation
+                    val blockIndex = blockNumber
                     var translation = match.groupValues[2].trim()
 
-                    // Xóa ký tự mũi tên dư thừa nếu có ở đầu
+                    // Remove redundant arrow if it exists at start
                     if (translation.startsWith("->")) {
                         translation = translation.substring(2).trim()
                     }
@@ -355,18 +344,18 @@ import kotlin.math.max
                         else arrowLine.substringAfter("->").trim()
                     } else {
                         val candidateLines = blockLines.map { it.trim() }.filter { it.isNotBlank() }
+                        // Filter out metadata labels or original text wrapped in *
                         val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
                         translation = if (cleanLines.isNotEmpty()) cleanLines.last() else candidateLines.lastOrNull() ?: ""
                     }
 
+                    // Final cleanup
                     translation = translation.replace("**", "").replace("*", "").trim()
                     translation = translation.replace(Regex("""^(Độc thoại|Hội thoại|Trần thuật)[:\-\s]*""", RegexOption.IGNORE_CASE), "")
-                    // Loại bỏ ảo giác nếu AI lặp lại Block header trong phần nội dung
-                    if (translation.startsWith("Block #", ignoreCase = true) || translation.startsWith("Block ", ignoreCase = true)) {
-                        translation = translation.replace(Regex("""^[Bb]lock\s*#?\d+[:.)\->\s]+\s*"""), "").trim()
+                    
+                    if (blockIndex >= 0 && blockIndex < textBlocks.size) {
+                        translatedBlocksMap[blockIndex] = translation
                     }
-
-                    if (blockIndex >= 0) translatedBlocksMap[blockIndex] = translation
                 } catch (e: Exception) { }
             }
             i++
@@ -391,7 +380,7 @@ import kotlin.math.max
             frequency_penalty = 0.0,
             presence_penalty = 0.0,
             top_p=0.9,
-            max_tokens=6000
+            max_tokens=2048
         )
 
         return response?.content
@@ -402,272 +391,51 @@ import kotlin.math.max
         ocrResults: List<Pair<Float, String>>,
         sourceLang: String,
         targetLang: String,
-        previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
+        previousTranslation: List<TextBlockInfo>? = null,
         isAncientMode: Boolean = false,
         skipDetailedLogs: Boolean = false
     ): List<String>? {
         if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
 
-        // Tạo context từ bản dịch ảnh trước (nếu có)
         val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
-            Log.i("TranslationRepository", "[MISTRAL-PREV] Có bản dịch tham khảo với ${previousTranslation.size} blocks")
-
-            // Phân tích và log ngôi xưng hô từ ảnh trước
-            val allText = previousTranslation.joinToString(" ") { it.text.uppercase() }
-            val pronouns = mutableListOf<String>()
-            val hasToi = allText.contains(" TÔI ") || allText.contains("TÔI ")
-            val hasMinh = allText.contains(" MÌNH ") || allText.contains("MÌNH ")
-            val hasTao = allText.contains(" TAO ") || allText.contains("TAO ")
-            val hasCau = allText.contains(" CẬU ") || allText.contains("CẬU ")
-            val hasMay = allText.contains(" MÀY ") || allText.contains("MÀY ")
-            val hasAnh = allText.contains(" ANH ") || allText.contains("ANH ")
-            val hasEm = allText.contains(" EM ")
-
-            if (hasToi) pronouns.add("TÔI")
-            if (hasMinh) pronouns.add("MÌNH")
-            if (hasTao) pronouns.add("TAO")
-            if (hasCau) pronouns.add("CẬU")
-            if (hasMay) pronouns.add("MÀY")
-            if (hasAnh) pronouns.add("ANH")
-            if (hasEm) pronouns.add("EM")
-
-            // Xác định cặp ngôi chính
-            val mainPair = when {
-                hasToi && hasCau -> "TÔI-CẬU"
-                hasMinh && hasCau -> "MÌNH-CẬU"
-                hasTao && hasMay -> "TAO-MÀY"
-                hasToi && hasAnh -> "TÔI-ANH"
-                hasEm && hasAnh -> "EM-ANH"
-                hasToi -> "TÔI"
-                hasMinh -> "MÌNH"
-                hasTao -> "TAO"
-                else -> "không xác định"
-            }
-
-            Log.i("TranslationRepository", "[MISTRAL-PREV] Đại từ phát hiện: ${pronouns.joinToString(", ")}")
-            Log.i("TranslationRepository", "[MISTRAL-PREV] Cặp ngôi xưng hô chính: $mainPair")
-
             TranslationPrompts.getPreviousContextText(previousTranslation)
-        } else {
-            Log.i("TranslationRepository", "[MISTRAL-PREV] Không có bản dịch tham khảo")
-            ""
-        }
+        } else ""
 
-        // Tạo prompt với tất cả kết quả OCR từ các scale khác nhau
-        val ocrResultsText = ocrResults.mapIndexed { index, (scale, text) ->
-            "Kết quả quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
-        }.joinToString("\n\n")
-
-        // Đánh số và sắp xếp các text blocks gốc theo thứ tự đọc Manga (Phải -> Trái, Trên -> Dưới)
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
             val normalizedText = block.text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
-            Triple(index, block, normalizedText)
-        }.sortedWith(Comparator { a, b ->
-            val boundsA = a.second.bounds
-            val boundsB = b.second.bounds
-            val centerXA = boundsA.centerX()
-            val centerXB = boundsB.centerX()
-            if (abs(centerXA - centerXB) > 100) {
-                centerXB.compareTo(centerXA)
-            } else {
-                boundsA.top.compareTo(boundsB.top)
-            }
-        }).map { (index, _, normalizedText) ->
-            "Block #${index + 1}: $normalizedText"
+            "Block #$index: Text='$normalizedText' Bounds: Rect(${block.bounds.left}, ${block.bounds.top} - ${block.bounds.right}, ${block.bounds.bottom})"
         }.joinToString("\n")
 
         val instructions = TranslationPrompts.getMistralMultiScalePromptOptimized(
-            ocrResultsText = "DỮ LIỆU ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
-            numberedBlocks = "DANH SÁCH ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
-            blockCount = textBlocks.size,
+            ocrResultsText = "{{ocrResultsText}}",
+            numberedBlocks = "{{numberedBlocks}}",
+            blockCount = 0,
             previousContextText = previousContextText,
             isAncientMode = isAncientMode
-        )
-
-        // ===== DEBUG LOG: Kiểm tra instructions (system prompt) =====
-        if (!skipDetailedLogs) {
-            Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT] Instructions length: ${instructions.length} chars")
-            Log.d("TranslationRepository", "[DEBUG-SYSTEM-PROMPT] Instructions preview (first 1000):\n${instructions.take(1000)}")
-        }
-        // ============================================================
+        ).replace("0", "{{blockCount}}")
 
         val systemMessage = mapOf(
             "role" to "system",
             "content" to instructions
         )
 
-        val dataContent = """
-            === DỮ LIỆU OCR ===
-            $ocrResultsText
-
-            === BLOCKS CẦN DỊCH ===
-            $numberedBlocks
-        """.trimIndent()
+        val dataContent = "=== DỮ LIỆU OCR ===\n$numberedBlocks\n"
 
         val userMessage = mapOf("role" to "user", "content" to dataContent)
-
-        if (!skipDetailedLogs) {
-            Log.d("TranslationRepository", "[DEBUG-USER-PROMPT] Data content preview (first 500):\n$dataContent.take(500)")
-        }
 
         val response = mistralRequester.executeChatCompletion(
             messages = listOf(systemMessage, userMessage),
             temperature = 0.4,
             frequency_penalty = 0.0,
             presence_penalty = 0.0,
-            top_p=0.9,
-            max_tokens=6000
+            top_p = 0.9,
+            max_tokens = 2048
         )
 
         val content = response?.content ?: return null
-
-        // Parse kết quả theo định dạng "Block #N: <bản dịch>"
-        // Sử dụng Map để lưu trữ bản dịch theo index để tránh sai lệch thứ tự nếu AI trả về không tuần tự hoặc thiếu
-        val translatedBlocksMap = mutableMapOf<Int, String>()
-        val lines = content.trim().split("\n")
-
-        // Log nội dung trả về để debug khi có vấn đề
-        //Log.i("TranslationRepository", "[MISTRAL-PARSE] Nội dung trả về từ AI (${lines.size} dòng):\n${content.take(500)}...")
-
-        // Regex để parse nhiều format: "Block #1:", "**Block #1:**", "Block #1.", etc.
-        val blockPattern = Regex("""^\*{0,2}[Bb]lock\s*#?(\d+)\**[:.)]\**\s*(.*)$""")
-
-        var i = 0
-        while (i < lines.size) {
-            val trimmedLine = lines[i].trim()
-            val match = blockPattern.find(trimmedLine)
-            if (match != null) {
-                try {
-                    val blockNumber = match.groupValues[1].toInt()
-                    val blockIndex = blockNumber - 1
-
-                    // Found a block header
-                    var translation = match.groupValues[2].trim()
-
-                    // Collect all lines belonging to this block (until next Block header or end)
-                    val blockLines = mutableListOf<String>()
-                    if (translation.isNotEmpty()) blockLines.add(translation)
-
-                    var j = i + 1
-                    while (j < lines.size) {
-                        val nextLine = lines[j].trim()
-                        if (blockPattern.matches(nextLine)) break // Next block started
-                        if (nextLine.isNotEmpty()) {
-                            blockLines.add(nextLine)
-                        }
-                        j++
-                    }
-
-                    // Advance main loop index
-                    i = j - 1
-
-                    // Process the collected lines to find the BEST translation
-                    // Priority 1: Check for arrow "->" or "→"
-                    val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
-                    if (arrowLine != null) {
-                        translation = if (arrowLine.contains("→")) {
-                            arrowLine.substringAfter("→").trim()
-                        } else {
-                            arrowLine.substringAfter("->").trim()
-                        }
-                    } else {
-                        // Priority 2: If no arrow, try to find a line that is NOT the source text.
-                        val candidateLines = blockLines.map { it.trim() }
-                            .filter { it.isNotBlank() && !it.matches(Regex("""^[-=*_]{3,}$""")) }
-
-                        // If we have multiple lines, filter out those that look like source (wrapped in *)
-                        // unless that's all we have.
-                        val cleanLines = candidateLines.filter { !it.matches(Regex("""^\*+[^*]+\*+$""")) }
-
-                        translation = if (cleanLines.isNotEmpty()) {
-                            cleanLines.last() // Take the last clean line (often source first, translation last)
-                        } else {
-                            candidateLines.lastOrNull() ?: ""
-                        }
-                    }
-
-                    // Cleanup formatting (**bold**, *italics*, quotes)
-                    translation = translation.replace("**", "").replace("*", "").trim()
-                    translation = translation.trimEnd('*').trim()
-                    translation = translation.replace(Regex("""^(Độc thoại|Hội thoại|Trần thuật)[:\-\s]*""", RegexOption.IGNORE_CASE), "")
-                    // Clean up "Dịch:", "Gốc:", "Dịch (Cổ trang):" prefixes
-                    translation = translation.replace(Regex("""^(Dịch|Translation|Gốc|Original)(\s*\(.*?\))?\s*:\s*""", RegexOption.IGNORE_CASE), "")
-
-                    // Reject analysis/notes -> use empty string which will fallback later
-                    val isAnnotation = translation.contains("-> Block #") ||
-                        translation.startsWith("(Lưu ý:") ||
-                        translation.contains("Lưu ý: Tôi buộc phải") ||
-                        translation.matches(Regex("""^\(.*[Gg]ộp.*[Bb]lock.*\)$""")) ||
-                        translation.matches(Regex("""^\(.*[Xx]em.*[Bb]lock.*\)$""")) ||
-                        translation.matches(Regex("""^\(.*[Kk]hông dịch.*\)$""")) ||
-                        translation.matches(Regex("""^\(.*[Bb]ỏ qua.*\)$""")) ||
-                        translation.matches(Regex("""^\(.*[Tt]ham chiếu.*\)$""")) ||
-                        translation.matches(Regex("""^\(.*[Mm]erged.*\)$""")) ||
-                        translation.matches(Regex("""^\(.*[Ss]ee.*[Bb]lock.*\)$""")) ||
-                        (translation.startsWith("(") && translation.endsWith(")") && translation.length < 60)
-                    if (isAnnotation) {
-                         translation = ""
-                         //Log.w("TranslationRepository", "[MISTRAL-PARSE] Block #${blockIndex + 1} bị reject vì là chú thích")
-                    }
-
-                    if (blockIndex >= 0) {
-                        translatedBlocksMap[blockIndex] = translation
-                    }
-                } catch (e: Exception) {
-                    // Log.w("TranslationRepository", "[MISTRAL-PARSE] Lỗi parse block: ${e.message}")
-                }
-            }
-            i++
-        }
-
-        // Nếu không parse được theo format "Block #", thử parse theo số thứ tự đơn giản (1. 2. 3.)
-        if (translatedBlocksMap.isEmpty()) {
-            //Log.w("TranslationRepository", "[MISTRAL-PARSE] Không tìm thấy format 'Block #', thử parse theo số thứ tự...")
-            val numberPattern = Regex("^(\\d+)[.):;]\\s*(.+)$")
-            for (line in lines) {
-                val trimmedLine = line.trim()
-                val match = numberPattern.find(trimmedLine)
-                if (match != null) {
-                    try {
-                        val blockNumber = match.groupValues[1].toInt()
-                        val translation = match.groupValues[2].trim()
-                        if (blockNumber > 0) {
-                            translatedBlocksMap[blockNumber - 1] = translation
-                        }
-                    } catch (e: Exception) {
-                        // Ignore
-                    }
-                }
-            }
-        }
-
-        // Construct final list ensuring size matches textBlocks
-        val translatedBlocks = mutableListOf<String>()
-        for (index in 0 until textBlocks.size) {
-            val trans = translatedBlocksMap[index]
-            if (!trans.isNullOrBlank()) {
-                 translatedBlocks.add(trans)
-            } else {
-                 translatedBlocks.add(textBlocks[index].text)
-                 //Log.w("TranslationRepository", "[MISTRAL-PARSE] Thiếu bản dịch cho Block #${index + 1}, dùng text gốc.")
-            }
-        }
-
-        // Log kết quả dịch của các block
-        if (!skipDetailedLogs) {
-            Log.i("TranslationRepository", "[MISTRAL-RESULT] ===== KẾT QUẢ DỊCH MISTRAL =====")
-            Log.i("TranslationRepository", "[MISTRAL-RESULT] Tổng số blocks: ${translatedBlocks.size}")
-            translatedBlocks.forEachIndexed { index, translation ->
-                val originalText = if (index < textBlocks.size) textBlocks[index].text else "N/A"
-                Log.i("TranslationRepository", "[MISTRAL-RESULT] Block #${index + 1}:")
-                Log.i("TranslationRepository", "[MISTRAL-RESULT]   Gốc: $originalText")
-                Log.i("TranslationRepository", "[MISTRAL-RESULT]   Dịch: $translation")
-            }
-            Log.i("TranslationRepository", "[MISTRAL-RESULT] ==============================")
-        }
-
-        return translatedBlocks
+        return parseMultiBlockResponse(content, textBlocks)
     }
+
 
 
 
@@ -1186,7 +954,7 @@ import kotlin.math.max
                             targetLang = "vi",
                             previousTranslation = previousTranslation,
                             isAncientMode = isAncientMode,
-                            skipDetailedLogs = true
+                            skipDetailedLogs = false
                         ) ?: sourceTexts.map { "" }
                     }
                     TranslationMode.GEMINI -> {
@@ -1201,7 +969,7 @@ import kotlin.math.max
                             targetLang = "vi",
                             previousTranslation = previousTranslation,
                             isAncientMode = isAncientMode,
-                            skipDetailedLogs = true
+                            skipDetailedLogs = false
                         ) ?: sourceTexts.map { "" }
                     }
                     TranslationMode.ZAI -> {
@@ -1216,7 +984,7 @@ import kotlin.math.max
                             targetLang = "vi",
                             previousTranslation = previousTranslation,
                             isAncientMode = isAncientMode,
-                            skipDetailedLogs = true
+                            skipDetailedLogs = false
                         ) ?: sourceTexts.map { "" }
                     }
                     else -> {
@@ -3378,9 +3146,8 @@ import kotlin.math.max
         
         // Đánh số các text blocks gốc
         val numberedBlocks = textBlocks.mapIndexed { index, block ->
-            // Chuẩn hóa text: gộp các dòng lẻ thành một câu duy nhất để AI dịch mượt hơn
             val normalizedText = block.text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
-            "Block #${index + 1}: $normalizedText"
+            "Block #$index: Text='$normalizedText' Bounds: Rect(${block.bounds.left}, ${block.bounds.top} - ${block.bounds.right}, ${block.bounds.bottom})"
         }.joinToString("\n")
         
         var attempt = 0
@@ -4269,7 +4036,7 @@ import kotlin.math.max
             val response = zaiRequester.executeChatCompletion(
                 messages = listOf(systemMessage, userMessage),
                 temperature = 0.4,
-                max_tokens=6000
+                max_tokens=2048
             )
 
             if (response == null) {
@@ -4292,3 +4059,4 @@ import kotlin.math.max
         }
     }
 }
+
