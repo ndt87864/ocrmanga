@@ -8,11 +8,8 @@ object TranslationPrompts {
     private var managerSystemPrompt: String = ""
     private var translatorSystemPrompt: String = ""
     private var mistralBasicPrompt: String = ""
-    private var mistralMultiScalePrompt: String = ""
-    private var mistralMultiScalePromptOptimized: String = ""
-    private var geminiMultiScalePrompt: String = ""
+    private var multiScalePrompt: String = ""
     private var zaiBasicPrompt: String = ""
-    private var zaiMultiScalePrompt: String = ""
     private var managerReviewPrompt: String = ""
     private var translatorRevisePrompt: String = ""
 
@@ -23,37 +20,14 @@ object TranslationPrompts {
         com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] Bắt đầu tải prompts từ assets...")
 
         managerSystemPrompt = PromptUtils.loadPromptFromAssets(context, "manager_system.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] manager_system.md: ${managerSystemPrompt.length} chars")
-
         translatorSystemPrompt = PromptUtils.loadPromptFromAssets(context, "translator_system.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] translator_system.md: ${translatorSystemPrompt.length} chars")
-
         mistralBasicPrompt = PromptUtils.loadPromptFromAssets(context, "mistral_basic.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] mistral_basic.md: ${mistralBasicPrompt.length} chars")
-
-        mistralMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "mistral_multi_scale.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] mistral_multi_scale.md: ${mistralMultiScalePrompt.length} chars")
-
-        mistralMultiScalePromptOptimized = PromptUtils.loadPromptFromAssets(context, "translation_prompt.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] translation_prompt.md: ${mistralMultiScalePromptOptimized.length} chars")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] translation_prompt.md preview:\n${mistralMultiScalePromptOptimized.take(500)}")
-
-        geminiMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "gemini_multi_scale.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] gemini_multi_scale.md: ${geminiMultiScalePrompt.length} chars")
-
+        multiScalePrompt = PromptUtils.loadPromptFromAssets(context, "translation_prompt.md")
         zaiBasicPrompt = PromptUtils.loadPromptFromAssets(context, "zai_basic.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] zai_basic.md: ${zaiBasicPrompt.length} chars")
-
-        zaiMultiScalePrompt = PromptUtils.loadPromptFromAssets(context, "zai_multi_scale.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] zai_multi_scale.md: ${zaiMultiScalePrompt.length} chars")
-
         managerReviewPrompt = PromptUtils.loadPromptFromAssets(context, "manager_review.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] manager_review.md: ${managerReviewPrompt.length} chars")
-
         translatorRevisePrompt = PromptUtils.loadPromptFromAssets(context, "translator_revise.md")
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] translator_revise.md: ${translatorRevisePrompt.length} chars")
 
-        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] Hoàn tất tải tất cả prompts!")
+        com.example.ocrmanga.utils.AppLogger.d("TranslationPrompts", "[INIT] Hoàn tất tải các prompts cần thiết!")
     }
 
     val MANAGER_SYSTEM_PROMPT: String
@@ -99,7 +73,7 @@ object TranslationPrompts {
             """
         } else ""
 
-        return mistralMultiScalePrompt
+        return multiScalePrompt
             .replace("{{previousContextText}}", previousContextText)
             .replace("{{ocrResultsText}}", ocrResultsText)
             .replace("{{numberedBlocks}}", numberedBlocks)
@@ -133,7 +107,7 @@ object TranslationPrompts {
             """.trimIndent()
         } else ""
 
-        return mistralMultiScalePromptOptimized
+        return multiScalePrompt
             .replace("{{previousContextText}}", previousContextText)
             .replace("{{ocrResultsText}}", ocrResultsText)
             .replace("{{numberedBlocks}}", numberedBlocks)
@@ -215,13 +189,9 @@ object TranslationPrompts {
         previousContextText: String = "",
         isAncientMode: Boolean = false
     ): String {
-        // Lấy prompt cơ bản từ Mistral
-        val basePrompt = getMistralMultiScalePrompt(ocrResultsText, numberedBlocks, blockCount, previousContextText, isAncientMode)
-
-        // Thêm hướng dẫn định dạng nghiêm ngặt cho Gemini (vì Gemini không dùng system prompt như Mistral)
-        return geminiMultiScalePrompt
-            .replace("{{basePrompt}}", basePrompt)
-            .replace("{{blockCount}}", blockCount.toString())
+        return getMistralMultiScalePromptOptimized(
+            ocrResultsText, numberedBlocks, blockCount, previousContextText, isAncientMode
+        )
     }
 
     /**
@@ -247,16 +217,9 @@ object TranslationPrompts {
         previousContextText: String = "",
         isAncientMode: Boolean = false
     ): String {
-        val ancientInstruction = if (isAncientMode) {
-            "[CHẾ ĐỘ CỔ TRANG] Văn phong Hán Việt, cổ trang. Xưng hô: ta/ngươi, tại hạ/các hạ, huynh/đệ. Cấm dùng từ hiện đại: anh/em/cậu/tớ."
-        } else ""
-
-        return zaiMultiScalePrompt
-            .replace("{{previousContextText}}", previousContextText)
-            .replace("{{ocrResultsText}}", ocrResultsText)
-            .replace("{{numberedBlocks}}", numberedBlocks)
-            .replace("{{blockCount}}", blockCount.toString())
-            .replace("{{ancientInstruction}}", ancientInstruction)
+        return getMistralMultiScalePromptOptimized(
+            ocrResultsText, numberedBlocks, blockCount, previousContextText, isAncientMode
+        )
     }
 
     /**
