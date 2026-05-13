@@ -622,7 +622,7 @@ fun ViewerScreen(
                                         }
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Lưu bộ ảnh")
+                                    Text("Lưu dữ liệu")
                                 }
                             },
                             onClick = {
@@ -681,7 +681,7 @@ fun ViewerScreen(
                                         }
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Xuất phòng (ZIP)")
+                                    Text("Xuất ảnh (ZIP)")
                                 }
                             },
                             onClick = {
@@ -721,7 +721,7 @@ fun ViewerScreen(
                                 text = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.Edit, null, modifier = Modifier.padding(end = 8.dp))
-                                        Text("Đổi tên phòng")
+                                        Text("Đổi tên truyện")
                                     }
                                 },
                                 onClick = {
