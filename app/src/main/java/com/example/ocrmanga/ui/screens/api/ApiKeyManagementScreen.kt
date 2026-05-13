@@ -28,8 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.surfaceColorAtElevation
+import androidx.compose.material3.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,9 +41,8 @@ import com.example.ocrmanga.viewmodels.ApiKey
 import com.example.ocrmanga.viewmodels.ApiKeyManagementViewModel
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Checkbox
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ApiKeyManagementScreen(
     viewModel: ApiKeyManagementViewModel = ApiKeyManagementViewModel(LocalContext.current)
@@ -67,143 +65,148 @@ fun ApiKeyManagementScreen(
 
     val context = LocalContext.current
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-        ) {
-            Text("API Key Management", style = MaterialTheme.typography.titleLarge)
-            Divider()
-
-            Row(
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Quản lý API Key") }
+            )
+        }
+    ) { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxSize()
+                    .padding(16.dp)
             ) {
-                Text("Chọn loại key hiển thị:", modifier = Modifier.padding(end = 8.dp))
-                DropdownMenuType(
-                    selectedType = selectedDisplayType,
-                    onTypeSelected = {
-                        selectedDisplayType = it
-                        selectedType = it
-                        viewModel.setDefaultKeyType(it)
-                    })
-            }
-
-            androidx.compose.foundation.rememberScrollState().let { scrollState ->
-                Column(
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(scrollState)
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isSelectionMode && displayedCardIds.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = selectedCardIds.containsAll(displayedCardIds),
-                                onCheckedChange = { checked ->
-                                    selectedCardIds = if (checked) displayedCardIds.toSet() else selectedCardIds - displayedCardIds.toSet()
+                    Text("Chọn loại key hiển thị:", modifier = Modifier.padding(end = 8.dp))
+                    DropdownMenuType(
+                        selectedType = selectedDisplayType,
+                        onTypeSelected = {
+                            selectedDisplayType = it
+                            selectedType = it
+                            viewModel.setDefaultKeyType(it)
+                        })
+                }
+
+                androidx.compose.foundation.rememberScrollState().let { scrollState ->
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(scrollState)
+                    ) {
+                        if (isSelectionMode && displayedCardIds.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selectedCardIds.containsAll(displayedCardIds),
+                                    onCheckedChange = { checked ->
+                                        selectedCardIds = if (checked) displayedCardIds.toSet() else selectedCardIds - displayedCardIds.toSet()
+                                    }
+                                )
+                                Text("Chọn tất cả", style = MaterialTheme.typography.bodyMedium)
+                                IconButton(onClick = { isDeleteMultiConfirmationVisible = true }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = Color.Red)
                                 }
-                            )
-                            Text("Chọn tất cả", style = MaterialTheme.typography.bodyMedium)
-                            IconButton(onClick = { isDeleteMultiConfirmationVisible = true }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = Color.Red)
                             }
                         }
-                    }
 
-                    displayedApiKeys.forEachIndexed { index, apiKey ->
-                        val cardId = apiKey.key + ":" + apiKey.type
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp)
-                                .combinedClickable(
-                                    onClick = {
-                                        if (isSelectionMode) {
-                                            selectedCardIds = if (selectedCardIds.contains(cardId))
-                                                selectedCardIds - cardId else selectedCardIds + cardId
+                        displayedApiKeys.forEachIndexed { index, apiKey ->
+                            val cardId = apiKey.key + ":" + apiKey.type
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp)
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (isSelectionMode) {
+                                                selectedCardIds = if (selectedCardIds.contains(cardId))
+                                                    selectedCardIds - cardId else selectedCardIds + cardId
+                                            }
+                                        },
+                                        onLongClick = { selectedCardIds = selectedCardIds + cardId }
+                                    ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(0.dp)) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${index + 1}",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        // Nút edit
+                                        Box(
+                                            modifier = Modifier.size(28.dp).background(Color.White, RoundedCornerShape(6.dp)).clickable {
+                                                isPopupVisible = true
+                                                isEditing = true
+                                                editingApiKey = apiKey
+                                                newApiKey = apiKey.key
+                                                selectedType = apiKey.type
+                                            },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Sửa", tint = Color.Blue, modifier = Modifier.size(14.dp))
                                         }
-                                    },
-                                    onLongClick = { selectedCardIds = selectedCardIds + cardId }
-                                ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                        ) {
-                            Column(modifier = Modifier.fillMaxWidth().padding(0.dp)) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
-                                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "${index + 1}",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    // Nút edit
-                                    Box(
-                                        modifier = Modifier.size(28.dp).background(Color.White, RoundedCornerShape(6.dp)).clickable {
-                                            isPopupVisible = true
-                                            isEditing = true
-                                            editingApiKey = apiKey
-                                            newApiKey = apiKey.key
-                                            selectedType = apiKey.type
-                                        },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Sửa", tint = Color.Blue, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        // Nút xóa
+                                        Box(
+                                            modifier = Modifier.size(28.dp).background(Color.White, RoundedCornerShape(6.dp)).clickable {
+                                                isDeleteConfirmationVisible = true
+                                                apiKeyToDelete = apiKey
+                                            },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = Color.Red, modifier = Modifier.size(10.dp))
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    // Nút xóa
-                                    Box(
-                                        modifier = Modifier.size(28.dp).background(Color.White, RoundedCornerShape(6.dp)).clickable {
-                                            isDeleteConfirmationVisible = true
-                                            apiKeyToDelete = apiKey
-                                        },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Xóa", tint = Color.Red, modifier = Modifier.size(10.dp))
+                                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                                        Text("Key: ${apiKey.key}", style = MaterialTheme.typography.bodyMedium)
+                                        Text("Loại: ${apiKey.type}", style = MaterialTheme.typography.bodySmall)
+                                        Text(
+                                            "Trạng thái: ${if (apiKey.isActive) "Hoạt động" else "Tắt"}",
+                                            color = if (apiKey.isActive) Color(0xFF4CAF50) else Color.Gray,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                        Text("Ngày thêm: ${apiKey.createdDate}", style = MaterialTheme.typography.bodySmall)
                                     }
-                                }
-                                Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                                    Text("Key: ${apiKey.key}", style = MaterialTheme.typography.bodyMedium)
-                                    Text("Loại: ${apiKey.type}", style = MaterialTheme.typography.bodySmall)
-                                    Text(
-                                        "Trạng thái: ${if (apiKey.isActive) "Hoạt động" else "Tắt"}",
-                                        color = if (apiKey.isActive) Color(0xFF4CAF50) else Color.Gray,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    Text("Ngày thêm: ${apiKey.createdDate}", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
-        Box(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
-            contentAlignment = Alignment.BottomEnd
-        ) {
-            IconButton(
-                onClick = {
-                    isPopupVisible = true
-                    isEditing = false
-                    newApiKey = ""
-                    selectedType = selectedDisplayType
-                },
-                modifier = Modifier.size(56.dp).background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium)
+            Box(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                contentAlignment = Alignment.BottomEnd
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Thêm", tint = Color.White)
+                IconButton(
+                    onClick = {
+                        isPopupVisible = true
+                        isEditing = false
+                        newApiKey = ""
+                        selectedType = selectedDisplayType
+                    },
+                    modifier = Modifier.size(56.dp).background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Thêm", tint = Color.White)
+                }
             }
         }
     }
@@ -250,6 +253,31 @@ fun ApiKeyManagementScreen(
                 }) { Text("Xóa") }
             },
             dismissButton = { TextButton(onClick = { isDeleteConfirmationVisible = false }) { Text("Hủy") } }
+        )
+    }
+
+    if (isDeleteMultiConfirmationVisible) {
+        AlertDialog(
+            onDismissRequest = { isDeleteMultiConfirmationVisible = false },
+            title = { Text("Xác nhận xóa nhiều") },
+            text = { Text("Bạn có chắc chắn muốn xóa ${selectedCardIds.size} API Key đã chọn không?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteApiKeys(selectedCardIds.toList())
+                        selectedCardIds = emptySet()
+                        isDeleteMultiConfirmationVisible = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("Xóa tất cả", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { isDeleteMultiConfirmationVisible = false }) {
+                    Text("Hủy")
+                }
+            }
         )
     }
 }

@@ -48,7 +48,6 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ThemeSettingsScreen(
-    onNavigateBack: () -> Unit = {},
     viewModel: ThemeSettingsViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -61,11 +60,6 @@ fun ThemeSettingsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Cài đặt giao diện") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Quay lại")
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )

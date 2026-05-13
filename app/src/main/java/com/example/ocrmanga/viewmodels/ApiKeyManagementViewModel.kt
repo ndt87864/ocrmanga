@@ -103,4 +103,15 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
             loadApiKeysFromDatabase()
         }
     }
+
+    fun deleteApiKeys(cardIds: List<String>) {
+        cardIds.forEach { cardId ->
+            val parts = cardId.split(":")
+            if (parts.isNotEmpty()) {
+                val key = parts[0]
+                databaseHelper.deleteApiKey(key)
+            }
+        }
+        loadApiKeysFromDatabase()
+    }
 }

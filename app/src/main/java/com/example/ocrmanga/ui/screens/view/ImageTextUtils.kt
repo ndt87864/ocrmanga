@@ -555,7 +555,6 @@ fun drawTextOnCanvas(drawScope: DrawScope,
 ) {
     val whenAligned = textAlign
 
-    // ...existing code...
     // Tạo paint cho viền text (nếu có yêu cầu viền)
     val borderPaint = if (borderColor != null && borderThickness != 0f) {
         androidx.compose.ui.graphics.Paint().asFrameworkPaint().apply {
@@ -696,7 +695,7 @@ fun drawTextOnCanvas(drawScope: DrawScope,
             // Start Y position: top of overlay + vertical margin - ascent to position baseline correctly
             val startY = y + verticalMargin - fontMetrics.ascent
 
-                    var currentY = startY
+            var currentY = startY
             for ((index, line) in lines.withIndex()) {
                 if (line.isNotBlank()) {
                     val centerX = x + width / 2

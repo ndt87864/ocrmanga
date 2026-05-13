@@ -17,9 +17,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,14 +37,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Palette
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-// ...existing code...
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
 import com.example.ocrmanga.ui.components.*
@@ -67,11 +62,8 @@ import java.io.IOException
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryScreen(
-    onNavigateBack: () -> Unit,
     onNavigateToViewer: (List<String>) -> Unit,
     onNavigateToRoom: (Long) -> Unit,
-    onNavigateToApiKeyManagement: () -> Unit,
-    onNavigateToThemeSettings: () -> Unit,
     viewModel: GalleryViewModel = viewModel()
 ) {
     // Khi quay lại gallery, luôn xóa dữ liệu session (selectedImages)
@@ -244,19 +236,16 @@ fun GalleryScreen(
         }
     )
 
-    Scaffold(
-    ) { paddingValues ->
-        Box(
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
                 var searchQuery by remember { mutableStateOf("") }
                 var filterType by remember { mutableStateOf(0) } // 0: Mới nhất, 1: Cũ nhất
                 val filterOptions = listOf("Mới nhất", "Cũ nhất")
@@ -585,8 +574,7 @@ fun GalleryScreen(
             // Đã chuyển icon Drive/avatar lên hàng search, bỏ nút + upload ở đây
             // Đã bỏ hiển thị text tên tài khoản nếu đã đăng nhập
             // Nút thêm (giữ nguyên nếu có)
-            // ...existing code...
-            // Nút thêm và nút settings ở góc phải dưới
+            // Nút thêm ở góc phải dưới
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -634,61 +622,6 @@ fun GalleryScreen(
                         )
                     }
                 }
-                // Combined settings button with dropdown menu
-                Box {
-                    var showSettingsMenu by remember { mutableStateOf(false) }
-                    
-                    ModernIconButton(
-                        onClick = { showSettingsMenu = true },
-                        icon = Icons.Default.Settings,
-                        contentDescription = "Cài đặt",
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                    
-                    DropdownMenu(
-                        expanded = showSettingsMenu,
-                        onDismissRequest = { showSettingsMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { 
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Palette,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Text("Cài đặt giao diện")
-                                }
-                            },
-                            onClick = {
-                                onNavigateToThemeSettings()
-                                showSettingsMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { 
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Settings,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Text("Quản lý API Key")
-                                }
-                            },
-                            onClick = {
-                                onNavigateToApiKeyManagement()
-                                showSettingsMenu = false
-                            }
-                        )
-                    }
-                }
             }
         }
 
@@ -709,7 +642,7 @@ fun GalleryScreen(
             )
         }
     }
-}
+
 // Hàm tiện ích để lấy tên tệp từ URI
 fun getFileNameFromUri(context: Context, uri: Uri): String? {
     val projection = arrayOf(MediaStore.Images.Media.DISPLAY_NAME)
