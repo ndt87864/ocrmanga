@@ -868,7 +868,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun openBulkExternalTranslationDialog() {
+    fun openBulkExternalTranslationDialog(reuseExistingOcr: Boolean = true) {
         _uiState.update { it.copy(
             showExternalTranslationDialog = true,
             isBulkExternalTranslation = true,
@@ -881,7 +881,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val allUris = _uiState.value.imageUris + _uiState.value.remainingImages
         val imagesToScan = allUris.filter { uri ->
             val status = _uiState.value.translatedStatus[uri] ?: false
-            !status
+            if (reuseExistingOcr && hasReusableOcrForUri(uri)) {
+                false
+            } else {
+                !status || (!reuseExistingOcr && hasReusableOcrForUri(uri))
+            }
         }
         if (imagesToScan.isNotEmpty()) {
             runBulkOcrScanning(imagesToScan)
@@ -933,12 +937,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun openExternalTranslationDialog(uri: android.net.Uri) {
+    fun openExternalTranslationDialog(uri: android.net.Uri, reuseExistingOcr: Boolean = true) {
         _uiState.update { it.copy(showExternalTranslationDialog = true, externalTranslationUri = uri, isBulkExternalTranslation = false) }
 
         // Nếu chưa được quét (translatedStatus = false), tự động chạy OCR để lấy text gốc
         val isAlreadyScanned = _uiState.value.translatedStatus[uri] ?: false
-        if (!isAlreadyScanned) {
+        if (!isAlreadyScanned || (!reuseExistingOcr && hasReusableOcrForUri(uri))) {
             retranslateImage(uri, TranslationMode.OCR)
         }
     }

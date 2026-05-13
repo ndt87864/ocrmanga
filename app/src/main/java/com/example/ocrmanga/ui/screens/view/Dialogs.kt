@@ -282,7 +282,7 @@ fun Dialogs(
                                             }
                                             targetUri != null -> {
                                                 val existingBlocks = viewModel.getReusableOcrBlocksForUri(targetUri)
-                                                if (existingBlocks.isNotEmpty() && mode != TranslationMode.OFF && mode != TranslationMode.EXTERNAL) {
+                                                if (existingBlocks.isNotEmpty() && mode != TranslationMode.OFF) {
                                                     // Có original đã lưu → hỏi user chọn OCR lại hay giữ
                                                     pendingReTranslateMode = mode
                                                     currentUri = targetUri
@@ -392,6 +392,11 @@ fun Dialogs(
                     onClick = {
                         // OCR lại từ đầu
                         Toast.makeText(context, "Đang dịch lại ảnh (OCR mới)...", Toast.LENGTH_SHORT).show()
+                        if (mode == TranslationMode.EXTERNAL) {
+                            viewModel.openExternalTranslationDialog(uri, reuseExistingOcr = false)
+                            showReTranslateDialog = false
+                            return@TextButton
+                        }
                         viewModel.retranslateImage(uri, mode, reuseExistingOcr = false)
                         coroutineScope.launch {
                             while (true) {
@@ -422,6 +427,11 @@ fun Dialogs(
                         // Giữ OCR cũ
                         val existingBlocks = viewModel.getReusableOcrBlocksForUri(uri)
                         Toast.makeText(context, "Đang dịch lại ảnh (giữ OCR cũ)...", Toast.LENGTH_SHORT).show()
+                        if (mode == TranslationMode.EXTERNAL) {
+                            viewModel.openExternalTranslationDialog(uri, reuseExistingOcr = true)
+                            showReTranslateDialog = false
+                            return@TextButton
+                        }
                         viewModel.retranslateImage(uri, mode, reuseExistingOcr = true, existingBlocks = existingBlocks)
                         coroutineScope.launch {
                             while (true) {

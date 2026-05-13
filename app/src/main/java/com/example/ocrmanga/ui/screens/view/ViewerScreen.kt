@@ -98,6 +98,10 @@ fun ViewerScreen(
         reuseExistingOcr: Boolean,
         showCompletionToast: Boolean
     ) {
+        if (mode == TranslationMode.EXTERNAL) {
+            viewModel.openExternalTranslationDialog(uri, reuseExistingOcr = reuseExistingOcr)
+            return
+        }
         val reusableBlocks = if (reuseExistingOcr) viewModel.getReusableOcrBlocksForUri(uri) else emptyList()
         viewModel.retranslateImage(
             uri = uri,
@@ -115,15 +119,14 @@ fun ViewerScreen(
         mode: TranslationMode,
         showCompletionToast: Boolean = false
     ) {
-        if (mode != TranslationMode.OFF &&
-            mode != TranslationMode.EXTERNAL &&
-            viewModel.hasReusableOcrForUri(uri)
-        ) {
+        if (mode != TranslationMode.OFF && viewModel.hasReusableOcrForUri(uri)) {
             pendingOcrChoiceUri = uri
             pendingOcrChoiceMode = mode
             pendingOcrChoiceIsBulk = false
             pendingOcrChoiceShowCompletionToast = showCompletionToast
             showOcrChoiceDialog = true
+        } else if (mode == TranslationMode.EXTERNAL) {
+            viewModel.openExternalTranslationDialog(uri, reuseExistingOcr = false)
         } else {
             startSingleRetranslation(uri, mode, reuseExistingOcr = false, showCompletionToast)
         }
@@ -134,10 +137,6 @@ fun ViewerScreen(
             viewModel.setTranslationMode(mode)
             return
         }
-        if (mode == TranslationMode.EXTERNAL) {
-            viewModel.openBulkExternalTranslationDialog()
-            return
-        }
 
         val allUris = (uiState.imageUris + uiState.remainingImages).distinctBy { it.toString() }
         if (viewModel.hasReusableOcrForAny(allUris)) {
@@ -146,6 +145,8 @@ fun ViewerScreen(
             pendingOcrChoiceIsBulk = true
             pendingOcrChoiceShowCompletionToast = false
             showOcrChoiceDialog = true
+        } else if (mode == TranslationMode.EXTERNAL) {
+            viewModel.openBulkExternalTranslationDialog(reuseExistingOcr = false)
         } else {
             viewModel.setTranslationMode(mode, reuseExistingOcr = false)
         }
@@ -948,19 +949,17 @@ fun ViewerScreen(
                 onDismissRequest = { showOcrChoiceDialog = false },
                 title = { Text("Chọn dữ liệu OCR") },
                 text = {
-                    Text(
-                        if (pendingOcrChoiceIsBulk) {
-                            "Phòng này đã có dữ liệu OCR cũ trong database. Bạn muốn OCR lại từ đầu hay giữ tọa độ và original_text cũ để dịch lại?"
-                        } else {
-                            "Ảnh này đã có dữ liệu OCR cũ trong database. Bạn muốn OCR lại từ đầu hay giữ tọa độ và original_text cũ để dịch lại?"
-                        }
-                    )
+                    Text("Bạn muốn sử dụng phương thức nào để dịch lại ảnh này?")
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
                             if (pendingOcrChoiceIsBulk) {
-                                viewModel.setTranslationMode(mode, reuseExistingOcr = false)
+                                if (mode == TranslationMode.EXTERNAL) {
+                                    viewModel.openBulkExternalTranslationDialog(reuseExistingOcr = false)
+                                } else {
+                                    viewModel.setTranslationMode(mode, reuseExistingOcr = false)
+                                }
                             } else {
                                 pendingOcrChoiceUri?.let { uri ->
                                     startSingleRetranslation(
@@ -981,7 +980,11 @@ fun ViewerScreen(
                     TextButton(
                         onClick = {
                             if (pendingOcrChoiceIsBulk) {
-                                viewModel.setTranslationMode(mode, reuseExistingOcr = true)
+                                if (mode == TranslationMode.EXTERNAL) {
+                                    viewModel.openBulkExternalTranslationDialog(reuseExistingOcr = true)
+                                } else {
+                                    viewModel.setTranslationMode(mode, reuseExistingOcr = true)
+                                }
                             } else {
                                 pendingOcrChoiceUri?.let { uri ->
                                     startSingleRetranslation(
