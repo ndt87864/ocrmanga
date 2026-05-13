@@ -912,6 +912,9 @@ import kotlin.math.max
         isAncientMode: Boolean = false,
         reuseExistingBlocks: List<TextBlockInfo>? = null // Nếu không null, dùng lại blocks đã có (vị trí, text gốc) thay vì OCR mới
     ): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
+        val rotationDegrees = getRotationDegrees(imageUri)
+        Log.i("TranslationRepository", "[PIPELINE-START] uri=$imageUri, mode=$mode, rotation=$rotationDegrees")
+        
         if (mode == TranslationMode.OFF) {
             //log.i("TranslationRepository", "Chế độ dịch đã tắt, bỏ qua việc dịch cho $imageUri")
             return@withContext Triple("", emptyList(), "zh")
@@ -1077,7 +1080,7 @@ import kotlin.math.max
         var hasOCR = false
         try {
             bitmap = MediaStore.Images.Media.getBitmap(application.contentResolver, imageUri)
-            val rotationDegrees = getRotationDegrees(imageUri)
+            // rotationDegrees đã được tính ở trên
             //log.i("TranslationRepository", "[INPUT] Đang xử lý ảnh: $imageUri với góc xoay: $rotationDegrees")
 
             // Phát hiện loại ngôn ngữ trước khi quét (dựa trên bitmap)
@@ -1133,7 +1136,7 @@ import kotlin.math.max
             }
 
             // --- LOGIC MỚI CHO MISTRAL VÀ Z.AI: THU THẬP TẤT CẢ KẾT QUẢ OCR TỪ CÁC SCALE ---
-            if (mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI) {
+            if (mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.OCR) {
                 // Thu thập tất cả kết quả OCR từ các scale khác nhau
                 val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
 
@@ -1145,6 +1148,11 @@ import kotlin.math.max
 
                 val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
                 val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
+
+                // Nếu chỉ mode OCR thì trả về luôn không dịch
+                if (mode == TranslationMode.OCR) {
+                    return@withContext Triple(fullText, mergedBlocks, sourceLanguage)
+                }
 
                 // Gửi tất cả kết quả cho AI để tổng hợp và dịch
                 val translatedTexts = if (mode == TranslationMode.MISTRAL) {
@@ -1379,9 +1387,9 @@ import kotlin.math.max
                             TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
                             TranslationMode.ONLINE -> translateTextOnline(block.text, sourceLanguage)
                             TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
-                            TranslationMode.OFF -> block.text
-                            TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: "" // Không nên xảy ra vì đã xử lý ở trên
-                            TranslationMode.ZAI -> translateWithZAi(block.text, sourceLanguage, "vi") ?: "" // Không nên xảy ra vì đã xử lý ở trên
+                            TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
+                            TranslationMode.ZAI -> translateWithZAi(block.text, sourceLanguage, "vi") ?: ""
+                            else -> block.text
                         }
                         // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
                         // Tối ưu: chỉ kiểm tra lần 2 nếu text quá ngắn (có thể bị dịch sai)
@@ -1486,7 +1494,7 @@ import kotlin.math.max
                         TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                         TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
                         TranslationMode.ZAI -> translateWithZAi(block.text, sourceLanguage, "vi") ?: ""
-                        TranslationMode.OFF -> block.text
+                        else -> block.text
                     }
                     val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
                     if (detectedAfterTranslation != "vi" && mode != TranslationMode.OFF) {

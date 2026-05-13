@@ -1295,6 +1295,24 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         return blocks
     }
 
+    fun getImageIdByUri(uri: Uri): Long? {
+        val db = readableDatabase
+        val cursor = db.rawQuery("""
+            SELECT $COLUMN_IMAGE_ID
+            FROM $TABLE_IMAGES
+            WHERE $COLUMN_IMAGE_URI = ?
+        """, arrayOf(uri.toString()))
+        
+        return if (cursor.moveToFirst()) {
+            val id = cursor.getLong(0)
+            cursor.close()
+            id
+        } else {
+            cursor.close()
+            null
+        }
+    }
+
     private fun cursorToTextBlockInfo(cursor: android.database.Cursor): TextBlockInfo {
         fun idx(name: String) = try { cursor.getColumnIndexOrThrow(name) } catch (e: Exception) { -1 }
         

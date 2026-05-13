@@ -51,6 +51,9 @@ import android.text.TextPaint
 import android.os.Build
 import android.os.Environment
 import com.example.ocrmanga.data.constant.AppConfig
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.coroutineScope
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
@@ -96,12 +99,27 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 
                 // Nếu chưa có trong memory, thử lấy từ DB
                 return try {
-                    val imageId = uriToImageId[uri]
+                    var imageId = uriToImageId[uri]
+                    
+                    // Nếu không có trong cache, thử tìm trong DB bằng URI
+                    if (imageId == null) {
+                        imageId = databaseHelper.getImageIdByUri(uri)
+                        if (imageId != null) {
+                            uriToImageId[uri] = imageId
+                        }
+                    }
+                    
                     if (imageId != null) {
                         // Trả về list blocks đầy đủ từ DB
-                        databaseHelper.getBlocksForImageAsTextBlockInfo(imageId)
-                    } else emptyList()
+                        val blocks = databaseHelper.getBlocksForImageAsTextBlockInfo(imageId)
+                        Log.i("ViewerViewModel", "getExistingBlocksForUri: Found ${blocks.size} blocks in DB for imageId=$imageId, uri=$uri")
+                        blocks
+                    } else {
+                        Log.i("ViewerViewModel", "getExistingBlocksForUri: imageId not found for uri=$uri")
+                        emptyList()
+                    }
                 } catch (e: Exception) {
+                    Log.e("ViewerViewModel", "Error in getExistingBlocksForUri for $uri", e)
                     emptyList()
                 }
             }
@@ -819,6 +837,119 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val imageId = uriToImageId[uri]
                 if (rid != null && imageId != null) {
                     databaseHelper.markImageChanged(imageId, rid)
+                }
+            }
+        }
+    }
+
+    fun openExternalTranslationDialog(uri: android.net.Uri) {
+        _uiState.update { it.copy(showExternalTranslationDialog = true, externalTranslationUri = uri) }
+
+        // Nếu chưa có blocks (chưa OCR), tự động chạy OCR để lấy text gốc
+        val blocks = getExistingBlocksForUri(uri)
+        if (blocks.isEmpty()) {
+            retranslateImage(uri, TranslationMode.OCR)
+        }
+    }
+
+    fun closeExternalTranslationDialog() {
+        _uiState.update { it.copy(showExternalTranslationDialog = false, externalTranslationUri = null) }
+    }
+
+    fun exportBlocksToJson(uri: android.net.Uri): String {
+        val blocks = getExistingBlocksForUri(uri)
+        if (blocks.isEmpty()) return "[]"
+
+        val exportList = blocks.mapIndexed { index, block ->
+            mapOf(
+                "index" to index + 1,
+                "original_text" to (block.originalText ?: block.text),
+                "bounds" to mapOf(
+                    "left" to block.bounds.left,
+                    "top" to block.bounds.top,
+                    "right" to block.bounds.right,
+                    "bottom" to block.bounds.bottom
+                )
+            )
+        }
+        return GsonBuilder().setPrettyPrinting().create().toJson(exportList)
+    }
+
+    fun getExternalTranslationPrompt(uri: android.net.Uri): String {
+        val blocks = getExistingBlocksForUri(uri)
+        val json = exportBlocksToJson(uri)
+        val blockCount = blocks.size
+
+        return """
+            Bạn là một phiên dịch viên chuyên nghiệp chuyên về manga.
+            Dưới đây là danh sách $blockCount đoạn văn bản (text blocks) từ một trang truyện tranh cùng với tọa độ của chúng.
+            Hãy dịch các đoạn văn bản này sang tiếng Việt, giữ nguyên cấu trúc JSON và số thứ tự (index).
+            Chỉ trả về file JSON duy nhất, không thêm giải thích.
+
+            Cấu trúc yêu cầu:
+            [
+              {
+                "index": 1,
+                "translated_text": "bản dịch ở đây"
+              },
+              ...
+            ]
+
+            Dữ liệu gốc:
+            $json
+        """.trimIndent()
+    }
+
+    fun importTranslatedJson(uri: android.net.Uri, json: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val gson = Gson()
+                val type = object : TypeToken<List<Map<String, Any>>>() {}.type
+                val importedData = gson.fromJson<List<Map<String, Any>>>(json, type)
+                var currentBlocks = getExistingBlocksForUri(uri)
+                Log.i("ViewerViewModel", "[IMPORT-JSON] currentBlocks size for $uri: ${currentBlocks.size}")
+                
+                if (currentBlocks.isEmpty()) {
+                    Log.i("ViewerViewModel", "[IMPORT-JSON] No blocks found, triggering OCR for $uri")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(getApplication(), "Đang quét OCR để áp dụng bản dịch...", Toast.LENGTH_SHORT).show()
+                    }
+                    val result = translationRepository.translateImage(uri, TranslationMode.OCR)
+                    currentBlocks = result.second
+                    Log.i("ViewerViewModel", "[IMPORT-JSON] OCR completed, new blocks size: ${currentBlocks.size}")
+                }
+
+                if (currentBlocks.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(getApplication(), "Không tìm thấy block nào sau khi quét OCR", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val newBlocks = currentBlocks.mapIndexed { index, block ->
+                    val blockIndex = index + 1
+                    val match = importedData.find { (it["index"] as? Double)?.toInt() == blockIndex }
+                    val translatedText = match?.get("translated_text") as? String
+                    
+                    if (translatedText != null) {
+                        Log.i("ViewerViewModel", "[IMPORT-JSON] Mapping block #$blockIndex: '${block.text}' -> '$translatedText'")
+                        block.copy(text = translatedText, originalText = block.originalText ?: block.text)
+                    } else {
+                        Log.w("ViewerViewModel", "[IMPORT-JSON] No translation found for block #$blockIndex ('${block.text}')")
+                        block
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    updateTranslatedBlocks(uri, newBlocks)
+                    Log.i("ViewerViewModel", "[IMPORT-JSON] Successfully updated ${newBlocks.size} blocks for $uri")
+                    Toast.makeText(getApplication(), "Đã nhập bản dịch thành công", Toast.LENGTH_SHORT).show()
+                    closeExternalTranslationDialog()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi khi nhập JSON bản dịch", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Lỗi định dạng JSON: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -3280,5 +3411,7 @@ data class ViewerUiState(
     val textRemovalPreviewBitmap: android.graphics.Bitmap? = null, // Preview bitmap with mask overlay
     val textRemovalPreviewBlocks: List<TextBlockInfo> = emptyList(), // OCR regions used for preview and removal
     val recentlySavedUris: Set<android.net.Uri> = emptySet(), // URIs saved via editor but not yet applied in UI
-    val reopenEditorUris: Set<android.net.Uri> = emptySet() // URIs for which editor should reopen after blocks are applied
+    val reopenEditorUris: Set<android.net.Uri> = emptySet(), // URIs for which editor should reopen after blocks are applied
+    val showExternalTranslationDialog: Boolean = false,
+    val externalTranslationUri: android.net.Uri? = null
 )

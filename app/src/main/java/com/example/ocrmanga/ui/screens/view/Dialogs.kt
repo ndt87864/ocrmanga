@@ -21,6 +21,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import android.content.Intent
+import android.os.Environment
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Download
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 import com.example.ocrmanga.utils.AppLogger as Log
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.viewmodels.ViewerViewModel
@@ -48,10 +56,14 @@ fun Dialogs(
     onRemoveImage: (Uri) -> Unit,
     onRetranslateImage: (Uri, TranslationMode) -> Unit,
     imageUris: List<Uri>,
-    viewModel: ViewerViewModel
+    viewModel: ViewerViewModel,
+    showExternalTranslationDialog: Boolean = false,
+    externalTranslationUri: Uri? = null,
+    onExternalTranslationDismiss: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
 
     var currentUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -211,12 +223,11 @@ fun Dialogs(
 
                     Button(
                         onClick = {
-                            imageMenuUri?.let { viewModel.optimizeImageOverlay(it) }
-                            Toast.makeText(context, "Đang tối ưu hiển thị...", Toast.LENGTH_SHORT).show()
+                            imageMenuUri?.let { viewModel.openExternalTranslationDialog(it) }
                             onImageMenuDismiss()
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("Tối ưu hiển thị overlay") }
+                    ) { Text("Dịch bằng bản dịch ngoài") }
 
                     Spacer(Modifier.height(16.dp))
 
@@ -443,4 +454,150 @@ fun Dialogs(
             }
         )
     }
+
+    if (showExternalTranslationDialog && externalTranslationUri != null) {
+        ExternalTranslationDialog(
+            uri = externalTranslationUri,
+            viewModel = viewModel,
+            onDismiss = onExternalTranslationDismiss
+        )
+    }
+}
+
+@Composable
+fun ExternalTranslationDialog(
+    uri: android.net.Uri,
+    viewModel: ViewerViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val uiState by viewModel.uiState.collectAsState()
+
+    // Theo dõi thay đổi của blocks để cập nhật nội dung JSON/Prompt
+    val blocks = uiState.translatedTexts[uri]?.second ?: emptyList()
+    val isProcessing = uiState.translatingImages.containsKey(uri)
+
+    val jsonContent = remember(uri, blocks) { viewModel.exportBlocksToJson(uri) }
+    val promptContent = remember(uri, blocks) { viewModel.getExternalTranslationPrompt(uri) }
+
+    var translatedJson by remember { mutableStateOf("") }
+    val scrollState = rememberScrollState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Dịch bằng bản dịch ngoài") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
+            ) {
+                if (isProcessing || (blocks.isEmpty() && uiState.translatingImages.containsKey(uri))) {
+                    Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(8.dp))
+                            Text("Đang OCR để lấy text gốc...", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                } else if (blocks.isEmpty()) {
+                    Text("Không tìm thấy văn bản nào trên ảnh này để dịch.", color = MaterialTheme.colorScheme.error)
+                } else {
+                    Text("Bước 1: Tải về hoặc copy file JSON OCR", style = MaterialTheme.typography.titleSmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = jsonContent,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(8.dp),
+                            maxLines = 5
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        IconButton(onClick = {
+                            clipboardManager.setText(AnnotatedString(jsonContent))
+                            Toast.makeText(context, "Đã copy JSON", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy JSON")
+                        }
+
+                        IconButton(onClick = {
+                            try {
+                                val file = File(context.cacheDir, "ocr_data.json")
+                                FileOutputStream(file).use { it.write(jsonContent.toByteArray()) }
+                                val fileUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/json"
+                                    putExtra(Intent.EXTRA_STREAM, fileUri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Tải file JSON về"))
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Lỗi khi lưu file: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(Icons.Default.Download, contentDescription = "Tải JSON")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Bước 2: Gửi prompt cho AI (GPT, Gemini, Grok...)", style = MaterialTheme.typography.titleSmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(promptContent))
+                            Toast.makeText(context, "Đã copy Prompt", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Copy Prompt mẫu")
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Bước 3: Dán kết quả JSON đã dịch vào đây", style = MaterialTheme.typography.titleSmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = translatedJson,
+                        onValueChange = { translatedJson = it },
+                        label = { Text("JSON bản dịch từ AI") },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
+                        placeholder = { Text("Dán JSON kết quả từ AI vào đây...") }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (translatedJson.isNotBlank()) {
+                        viewModel.importTranslatedJson(uri, translatedJson)
+                    } else if (blocks.isNotEmpty()) {
+                        Toast.makeText(context, "Vui lòng dán JSON bản dịch", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                enabled = blocks.isNotEmpty()
+            ) {
+                Text("Áp dụng bản dịch")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Hủy")
+            }
+        }
+    )
 }

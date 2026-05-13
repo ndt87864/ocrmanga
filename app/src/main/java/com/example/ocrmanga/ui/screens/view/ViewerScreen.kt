@@ -1134,7 +1134,10 @@ fun ViewerScreen(
             },
 
             imageUris = uiState.imageUris,
-            viewModel = viewModel
+            viewModel = viewModel,
+            showExternalTranslationDialog = uiState.showExternalTranslationDialog,
+            externalTranslationUri = uiState.externalTranslationUri,
+            onExternalTranslationDismiss = { viewModel.closeExternalTranslationDialog() }
         )
 
         // Dialog thay đổi font cho cả phòng
