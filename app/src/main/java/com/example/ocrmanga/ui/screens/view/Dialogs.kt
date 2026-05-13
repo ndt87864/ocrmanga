@@ -221,21 +221,12 @@ fun Dialogs(
 
                     Spacer(Modifier.height(16.dp))
 
-                    Button(
-                        onClick = {
-                            imageMenuUri?.let { viewModel.openExternalTranslationDialog(it) }
-                            onImageMenuDismiss()
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Dịch bằng bản dịch ngoài") }
-
-                    Spacer(Modifier.height(16.dp))
 
 
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
 
-                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI).forEach { mode ->
+                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.OFF, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI, TranslationMode.EXTERNAL).forEach { mode ->
                         if (mode == TranslationMode.OFF) {
                             val allBlocksHidden = blocks.isNotEmpty() && blocks.all { it.pendingDelete }
                             Row(
@@ -298,6 +289,9 @@ fun Dialogs(
                                                     currentUri = targetUri
                                                     showReTranslateDialog = true
                                                 } else {
+                                                if (mode == TranslationMode.EXTERNAL) {
+                                                    viewModel.openExternalTranslationDialog(targetUri)
+                                                } else {
                                                     Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
                                                     viewModel.retranslateImage(targetUri, mode)
                                                     coroutineScope.launch {
@@ -317,6 +311,7 @@ fun Dialogs(
                                                             Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
+                                                }
                                                 }
                                             }
                                         }

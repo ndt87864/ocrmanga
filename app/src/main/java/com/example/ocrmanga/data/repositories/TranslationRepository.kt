@@ -1149,8 +1149,8 @@ import kotlin.math.max
                 val blocksWithBubble = assignSpeechBubblesToBlocks(textBlocks)
                 val mergedBlocks = mergeBlocksByBubble(blocksWithBubble, bitmap!!)
 
-                // Nếu chỉ mode OCR thì trả về luôn không dịch
-                if (mode == TranslationMode.OCR) {
+                // Nếu chỉ mode OCR hoặc EXTERNAL thì trả về luôn không dịch
+                if (mode == TranslationMode.OCR || mode == TranslationMode.EXTERNAL) {
                     return@withContext Triple(fullText, mergedBlocks, sourceLanguage)
                 }
 

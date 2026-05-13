@@ -7,7 +7,8 @@ enum class TranslationMode {
     GEMINI,       // Dịch bằng Gemini API
     MISTRAL,      // Dịch bằng Mistral API
     ZAI,          // Dịch bằng Z.AI API (GLM-4.7-flash)
-    OCR;          // Chỉ thực hiện OCR, không dịch
+    OCR,          // Chỉ thực hiện OCR, không dịch
+    EXTERNAL;     // Sử dụng bản dịch ngoài (JSON)
 
     fun getDisplayName(): String = when (this) {
         OFFLINE -> "Dịch ngoại tuyến"
@@ -17,5 +18,6 @@ enum class TranslationMode {
         MISTRAL -> "Mistral AI"
         ZAI -> "Z.AI (GLM-4)"
         OCR -> "Chỉ OCR"
+        EXTERNAL -> "Bản dịch ngoài"
     }
 }

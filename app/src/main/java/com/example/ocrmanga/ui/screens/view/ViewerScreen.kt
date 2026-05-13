@@ -806,6 +806,13 @@ fun ViewerScreen(
                                 showTranslationMenu = false
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("Bản dịch ngoài (JSON)") },
+                            onClick = {
+                                viewModel.setTranslationMode(TranslationMode.EXTERNAL)
+                                showTranslationMenu = false
+                            }
+                        )
 
                         DropdownMenuItem(
                             text = { Text("Tắt") },
