@@ -536,10 +536,11 @@ fun ViewerScreen(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
-                Box {
-                    IconButton(onClick = { showMainMenu = true }) {
-                        Icon(Icons.Default.MoreVert, "Tùy chọn", tint = MaterialTheme.colorScheme.primary)
-                    }
+                if (!editTranslationMode) {
+                    Box {
+                        IconButton(onClick = { showMainMenu = true }) {
+                            Icon(Icons.Default.MoreVert, "Tùy chọn", tint = MaterialTheme.colorScheme.primary)
+                        }
                     DropdownMenu(
                         expanded = showMainMenu,
                         onDismissRequest = { showMainMenu = false }
@@ -842,6 +843,7 @@ fun ViewerScreen(
                 }
             }
         }
+    }
         if (showRoomNav) {
             RoomNavigation(
                 allRoomIds = allRoomIds,
