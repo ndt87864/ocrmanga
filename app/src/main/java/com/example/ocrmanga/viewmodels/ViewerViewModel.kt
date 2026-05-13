@@ -123,6 +123,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     emptyList()
                 }
             }
+
+            private fun isReusableOcrBlock(block: TextBlockInfo): Boolean {
+                return !block.originalText.isNullOrBlank() &&
+                        block.bounds.width() > 0 &&
+                        block.bounds.height() > 0
+            }
+
+            fun getReusableOcrBlocksForUri(uri: Uri): List<TextBlockInfo> {
+                return getExistingBlocksForUri(uri).filter(::isReusableOcrBlock)
+            }
+
+            fun hasReusableOcrForUri(uri: Uri): Boolean {
+                return getReusableOcrBlocksForUri(uri).isNotEmpty()
+            }
+
+            fun hasReusableOcrForAny(uris: List<Uri>): Boolean {
+                return uris.distinctBy { it.toString() }.any(::hasReusableOcrForUri)
+            }
     // Chuyển đổi trạng thái pendingDelete cho block của một ảnh
     fun togglePendingDelete(uri: Uri, blockId: Int, setPending: Boolean) {
         _uiState.update { state ->
@@ -1835,13 +1853,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun setTranslationMode(mode: TranslationMode) {
+    fun setTranslationMode(mode: TranslationMode, reuseExistingOcr: Boolean = false) {
         val currentMode = uiState.value.translationMode
 
         // Prevent switching to Gemini or Mistral if API keys are missing
         val hasApiKeys = when(mode) {
             TranslationMode.GEMINI -> hasGeminiApiKeys()
             TranslationMode.MISTRAL -> hasMistralApiKeys()
+            TranslationMode.ZAI -> hasZAiApiKeys()
             else -> true
         }
 
@@ -1866,23 +1885,27 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         //log.i(TAG, "Chế độ dịch được đặt thành $mode")
 
         if (mode != TranslationMode.OFF) {
+            val allUris = (uiState.value.imageUris + uiState.value.remainingImages).distinctBy { it.toString() }
             // If switching between different translation modes (OFFLINE <-> ONLINE <-> GEMINI)
             // or turning on translation for the first time, retranslate all images
             // Skip automatic retranslation for EXTERNAL mode as it's a manual process
             val shouldRetranslate = currentMode != mode &&
                     mode != TranslationMode.EXTERNAL &&
-                    (currentMode == TranslationMode.OFF || uiState.value.imageUris.isNotEmpty())
+                    (currentMode == TranslationMode.OFF || allUris.isNotEmpty())
 
             if (shouldRetranslate) {
+                if (allUris.isNotEmpty()) {
+                    enqueueTranslation(allUris, reuseExistingOcr)
+                }
                 // ... (giữ nguyên logic cũ)
             } else if (mode != TranslationMode.EXTERNAL) {
                 // Only translate new images that haven't been translated yet
                 // Skip this for EXTERNAL mode
-                val imagesToTranslate = uiState.value.imageUris.filter { uri ->
+                val imagesToTranslate = allUris.filter { uri ->
                     !(uiState.value.translatedStatus[uri] ?: false)
                 }
                 if (imagesToTranslate.isNotEmpty()) {
-                    enqueueTranslation(imagesToTranslate)
+                    enqueueTranslation(imagesToTranslate, reuseExistingOcr)
                 }
             }
         } else { // TranslationMode.OFF
@@ -2347,18 +2370,18 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun enqueueTranslation(images: List<Uri>) {
+    private fun enqueueTranslation(images: List<Uri>, reuseExistingOcr: Boolean = false) {
         translationQueue.addAll(images)
         if (translationJob == null || translationJob?.isActive != true) {
             translationJob = viewModelScope.launch(Dispatchers.IO) {
-                processTranslationQueue()
+                processTranslationQueue(reuseExistingOcr)
             }
             translationJob?.let { registerJob(it) }
         }
     }
 
     @SuppressLint("SuspiciousIndentation")
-    private suspend fun processTranslationQueue() {
+    private suspend fun processTranslationQueue(reuseExistingOcr: Boolean = false) {
     // Khi dịch bằng Mistral/Gemini cho toàn bộ phòng, dịch song song 2 ảnh, mỗi ảnh dùng 1 key khác nhau trong lượt đó
     val isParallelKeyMode = uiState.value.translationMode == TranslationMode.MISTRAL || uiState.value.translationMode == TranslationMode.GEMINI
     val maxBatchSize = if (isParallelKeyMode) 2 else 1
@@ -2430,12 +2453,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     async(Dispatchers.IO) {
                         try {
+                            val reusableBlocks = if (reuseExistingOcr) getReusableOcrBlocksForUri(uri) else emptyList()
                             val (original, translatedBlocks, sourceLang) = translationRepository.recognizeAndTranslateText(
                                 uri,
                                 uiState.value.translationMode,
                                 statusCallback,
                                 prevTranslation, // Truyền bản dịch ảnh trước để tham khảo
-                                isAncientMode = uiState.value.isAncientTranslationMode
+                                isAncientMode = uiState.value.isAncientTranslationMode,
+                                reuseExistingBlocks = reusableBlocks.takeIf { it.isNotEmpty() }
                             )
                             Triple(uri, original, translatedBlocks to sourceLang)
                         } catch (e: Exception) {
@@ -2450,7 +2475,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val (uri, original, pair) = result
                 val (translatedBlocks, sourceLang) = pair
                 
-                if (uiState.value.imageUris.contains(uri)) {
+                if ((uiState.value.imageUris + uiState.value.remainingImages).contains(uri)) {
                     if (original.isNotEmpty() || (translatedBlocks as? List<*>)?.isNotEmpty() == true) {
                                 // Try to preserve per-block customizations (including gradients) from any existing translation
                                 val existingBlocks = _uiState.value.translatedTexts[uri]?.second ?: emptyList()
@@ -3371,7 +3396,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         return uriToImageId[uri]
     }
 
-    fun translateAllImagesInRoom(mode: TranslationMode) {
+    fun translateAllImagesInRoom(mode: TranslationMode, reuseExistingOcr: Boolean = false) {
         viewModelScope.launch {
             val hasApiKeys = when(mode) {
                 TranslationMode.GEMINI -> hasGeminiApiKeys()
@@ -3461,7 +3486,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         mode,
                         statusCallback,
                         previousTranslation,
-                        isAncientMode = uiState.value.isAncientTranslationMode
+                        isAncientMode = uiState.value.isAncientTranslationMode,
+                        reuseExistingBlocks = if (reuseExistingOcr) getReusableOcrBlocksForUri(uri).takeIf { it.isNotEmpty() } else null
                     )
 
                     val (originalText, blocks) = result

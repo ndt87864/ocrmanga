@@ -69,12 +69,87 @@ fun ViewerScreen(
     var isRemovingText by remember { mutableStateOf(false) }
     var removingTextLocalProgress by remember { mutableStateOf("") }
     var brushSize by remember { mutableStateOf(40f) }
+    var showOcrChoiceDialog by remember { mutableStateOf(false) }
+    var pendingOcrChoiceUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingOcrChoiceMode by remember { mutableStateOf<TranslationMode?>(null) }
+    var pendingOcrChoiceIsBulk by remember { mutableStateOf(false) }
+    var pendingOcrChoiceShowCompletionToast by remember { mutableStateOf(false) }
 
 
     val uiState by viewModel.uiState.collectAsState()
     val allRoomIds by viewModel.allRoomIds.collectAsState()
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    fun waitForRetranslateToast(uri: Uri) {
+        coroutineScope.launch {
+            while (true) {
+                val status = viewModel.uiState.value.translatedStatus[uri]
+                if (status == true) break
+                delay(200)
+            }
+            Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun startSingleRetranslation(
+        uri: Uri,
+        mode: TranslationMode,
+        reuseExistingOcr: Boolean,
+        showCompletionToast: Boolean
+    ) {
+        val reusableBlocks = if (reuseExistingOcr) viewModel.getReusableOcrBlocksForUri(uri) else emptyList()
+        viewModel.retranslateImage(
+            uri = uri,
+            mode = mode,
+            reuseExistingOcr = reuseExistingOcr && reusableBlocks.isNotEmpty(),
+            existingBlocks = reusableBlocks.takeIf { it.isNotEmpty() }
+        )
+        if (showCompletionToast) {
+            waitForRetranslateToast(uri)
+        }
+    }
+
+    fun requestSingleRetranslation(
+        uri: Uri,
+        mode: TranslationMode,
+        showCompletionToast: Boolean = false
+    ) {
+        if (mode != TranslationMode.OFF &&
+            mode != TranslationMode.EXTERNAL &&
+            viewModel.hasReusableOcrForUri(uri)
+        ) {
+            pendingOcrChoiceUri = uri
+            pendingOcrChoiceMode = mode
+            pendingOcrChoiceIsBulk = false
+            pendingOcrChoiceShowCompletionToast = showCompletionToast
+            showOcrChoiceDialog = true
+        } else {
+            startSingleRetranslation(uri, mode, reuseExistingOcr = false, showCompletionToast)
+        }
+    }
+
+    fun requestBulkTranslation(mode: TranslationMode) {
+        if (mode == TranslationMode.OFF) {
+            viewModel.setTranslationMode(mode)
+            return
+        }
+        if (mode == TranslationMode.EXTERNAL) {
+            viewModel.openBulkExternalTranslationDialog()
+            return
+        }
+
+        val allUris = (uiState.imageUris + uiState.remainingImages).distinctBy { it.toString() }
+        if (viewModel.hasReusableOcrForAny(allUris)) {
+            pendingOcrChoiceUri = null
+            pendingOcrChoiceMode = mode
+            pendingOcrChoiceIsBulk = true
+            pendingOcrChoiceShowCompletionToast = false
+            showOcrChoiceDialog = true
+        } else {
+            viewModel.setTranslationMode(mode, reuseExistingOcr = false)
+        }
+    }
 
     LaunchedEffect(key1 = imageUris, key2 = roomId) {
         // If the gallery passed explicit imageUris, treat this as a new temporary session
@@ -774,42 +849,42 @@ fun ViewerScreen(
                         DropdownMenuItem(
                             text = { Text("Dịch ngoại tuyến") },
                             onClick = {
-                                viewModel.setTranslationMode(TranslationMode.OFFLINE)
+                                requestBulkTranslation(TranslationMode.OFFLINE)
                                 showTranslationMenu = false
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Dịch trực tuyến") },
                             onClick = {
-                                viewModel.setTranslationMode(TranslationMode.ONLINE)
+                                requestBulkTranslation(TranslationMode.ONLINE)
                                 showTranslationMenu = false
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Dịch với Gemini AI") },
                             onClick = {
-                                viewModel.setTranslationMode(TranslationMode.GEMINI)
+                                requestBulkTranslation(TranslationMode.GEMINI)
                                 showTranslationMenu = false
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Dịch với Mistral AI") },
                             onClick = {
-                                viewModel.setTranslationMode(TranslationMode.MISTRAL)
+                                requestBulkTranslation(TranslationMode.MISTRAL)
                                 showTranslationMenu = false
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Dịch với Z.AI (GLM-4)") },
                             onClick = {
-                                viewModel.setTranslationMode(TranslationMode.ZAI)
+                                requestBulkTranslation(TranslationMode.ZAI)
                                 showTranslationMenu = false
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Bản dịch ngoài (JSON)") },
                             onClick = {
-                                viewModel.openBulkExternalTranslationDialog()
+                                requestBulkTranslation(TranslationMode.EXTERNAL)
                                 showTranslationMenu = false
                             }
                         )
@@ -817,7 +892,7 @@ fun ViewerScreen(
                         DropdownMenuItem(
                             text = { Text("Tắt") },
                             onClick = {
-                                viewModel.setTranslationMode(TranslationMode.OFF)
+                                requestBulkTranslation(TranslationMode.OFF)
                                 showTranslationMenu = false
                             }
                         )
@@ -866,6 +941,65 @@ fun ViewerScreen(
             onSpeedChange = { scrollSpeed = it },
             showSpeedSlider = showSpeedSlider
         )
+
+        if (showOcrChoiceDialog && pendingOcrChoiceMode != null) {
+            val mode = pendingOcrChoiceMode!!
+            AlertDialog(
+                onDismissRequest = { showOcrChoiceDialog = false },
+                title = { Text("Chọn dữ liệu OCR") },
+                text = {
+                    Text(
+                        if (pendingOcrChoiceIsBulk) {
+                            "Phòng này đã có dữ liệu OCR cũ trong database. Bạn muốn OCR lại từ đầu hay giữ tọa độ và original_text cũ để dịch lại?"
+                        } else {
+                            "Ảnh này đã có dữ liệu OCR cũ trong database. Bạn muốn OCR lại từ đầu hay giữ tọa độ và original_text cũ để dịch lại?"
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (pendingOcrChoiceIsBulk) {
+                                viewModel.setTranslationMode(mode, reuseExistingOcr = false)
+                            } else {
+                                pendingOcrChoiceUri?.let { uri ->
+                                    startSingleRetranslation(
+                                        uri,
+                                        mode,
+                                        reuseExistingOcr = false,
+                                        showCompletionToast = pendingOcrChoiceShowCompletionToast
+                                    )
+                                }
+                            }
+                            showOcrChoiceDialog = false
+                        }
+                    ) {
+                        Text("OCR mới")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            if (pendingOcrChoiceIsBulk) {
+                                viewModel.setTranslationMode(mode, reuseExistingOcr = true)
+                            } else {
+                                pendingOcrChoiceUri?.let { uri ->
+                                    startSingleRetranslation(
+                                        uri,
+                                        mode,
+                                        reuseExistingOcr = true,
+                                        showCompletionToast = pendingOcrChoiceShowCompletionToast
+                                    )
+                                }
+                            }
+                            showOcrChoiceDialog = false
+                        }
+                    ) {
+                        Text("Giữ OCR cũ")
+                    }
+                }
+            )
+        }
 
         if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
             ImageViewer(
@@ -930,7 +1064,7 @@ fun ViewerScreen(
                     })
                 },
                 onRetranslateImage = { uri, mode ->
-                    viewModel.retranslateImage(uri, mode)
+                    requestSingleRetranslation(uri, mode)
                 },
                 showImageMenu = showImageMenu,
                 imageMenuUri = imageMenuUri,
@@ -1024,7 +1158,7 @@ fun ViewerScreen(
                         )
                     })
                 },
-                onRetranslateImage = { uri, mode -> viewModel.retranslateImage(uri, mode) },
+                onRetranslateImage = { uri, mode -> requestSingleRetranslation(uri, mode) },
                 showImageMenu = showImageMenu,
                 imageMenuUri = imageMenuUri,
                 onImageMenuDismiss = { showImageMenu = false },
@@ -1129,7 +1263,7 @@ fun ViewerScreen(
                 Toast.makeText(context, "Đã xóa ảnh khỏi trang", Toast.LENGTH_SHORT).show()
             },
             onRetranslateImage = { uri, mode ->
-                viewModel.retranslateImage(uri, mode)
+                requestSingleRetranslation(uri, mode, showCompletionToast = true)
                 coroutineScope.launch {
                     while (true) {
                         val status = viewModel.uiState.value.translatedStatus[uri]

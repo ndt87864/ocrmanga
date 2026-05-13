@@ -281,9 +281,8 @@ fun Dialogs(
                                                 return@clickable
                                             }
                                             targetUri != null -> {
-                                                val existingBlocks = viewModel.getExistingBlocksForUri(targetUri)
-                                                val hasOriginalText = existingBlocks.any { !it.originalText.isNullOrBlank() }
-                                                if (existingBlocks.isNotEmpty() && hasOriginalText && mode != TranslationMode.OFF) {
+                                                val existingBlocks = viewModel.getReusableOcrBlocksForUri(targetUri)
+                                                if (existingBlocks.isNotEmpty() && mode != TranslationMode.OFF && mode != TranslationMode.EXTERNAL) {
                                                     // Có original đã lưu → hỏi user chọn OCR lại hay giữ
                                                     pendingReTranslateMode = mode
                                                     currentUri = targetUri
@@ -421,7 +420,7 @@ fun Dialogs(
                 TextButton(
                     onClick = {
                         // Giữ OCR cũ
-                        val existingBlocks = viewModel.getExistingBlocksForUri(uri)
+                        val existingBlocks = viewModel.getReusableOcrBlocksForUri(uri)
                         Toast.makeText(context, "Đang dịch lại ảnh (giữ OCR cũ)...", Toast.LENGTH_SHORT).show()
                         viewModel.retranslateImage(uri, mode, reuseExistingOcr = true, existingBlocks = existingBlocks)
                         coroutineScope.launch {
