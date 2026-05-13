@@ -133,6 +133,7 @@ fun ViewerScreen(
                     ) 
                 })
             }
+            isTextRemovalMode = false
             // KHÔNG clear dragBlocksMap ở đây vì LaunchedEffect rebuild sẽ chạy đồng thời
             // và có thể đọc uiState.translatedTexts cũ trước khi updateTranslatedBlocks hoàn tất
             // Thay vào đó, để LaunchedEffect rebuild tự cập nhật khi translatedTexts thay đổi
