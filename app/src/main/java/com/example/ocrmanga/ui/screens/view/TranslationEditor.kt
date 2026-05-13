@@ -163,7 +163,7 @@ fun TranslationEditor(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFF0F0F0))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(8.dp)
     ) {
 
@@ -507,7 +507,7 @@ fun TranslationEditor(
                             Icon(
                                 imageVector = Icons.Default.TextDecrease,
                                 contentDescription = "Giảm cỡ chữ",
-                                tint = if (decreaseEnabled) MaterialTheme.colorScheme.onBackground else Color.Gray
+                                tint = if (decreaseEnabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
@@ -524,7 +524,7 @@ fun TranslationEditor(
                             Icon(
                                 imageVector = Icons.Default.FormatLineSpacing,
                                 contentDescription = "Khoảng cách dòng",
-                                tint = if (isBlockSelected) MaterialTheme.colorScheme.onBackground else Color.Gray
+                                tint = if (isBlockSelected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
@@ -589,14 +589,14 @@ fun TranslationEditor(
                             Icon(
                                 Icons.Default.TextIncrease,
                                 "Tăng cỡ chữ",
-                                tint = if (increaseEnabled) MaterialTheme.colorScheme.onBackground else Color.Gray
+                                tint = if (increaseEnabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
                     // --- TRANG 3: XOAY ---
                     2 -> {
-                        
+
                             IconButton(
                                 onClick = { onSelectedIndexChange(selectedIndex?.let { maxOf(0, it - 1) } ?: 0) },
                                 enabled = dragBlocks.isNotEmpty()
@@ -604,7 +604,7 @@ fun TranslationEditor(
                                 Icon(
                                     imageVector = Icons.Default.ArrowBack,
                                     contentDescription = "Block trước",
-                                    tint = if (dragBlocks.isNotEmpty()) MaterialTheme.colorScheme.onBackground else Color.Gray
+                                    tint = if (dragBlocks.isNotEmpty()) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             IconButton(
@@ -614,10 +614,10 @@ fun TranslationEditor(
                                 Icon(
                                     imageVector = Icons.Default.ArrowForward,
                                     contentDescription = "Block tiếp theo",
-                                    tint = if (dragBlocks.isNotEmpty()) MaterialTheme.colorScheme.onBackground else Color.Gray
+                                    tint = if (dragBlocks.isNotEmpty()) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                        
+
                         // Xoay TEXT theo chiều kim đồng hồ
                         Box(
                             modifier = Modifier.size(40.dp).pointerInput(Unit) {
@@ -628,7 +628,7 @@ fun TranslationEditor(
                             },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.RotateRight, "Xoay text theo chiều kim đồng hồ", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                            Icon(Icons.Default.RotateRight, "Xoay text theo chiều kim đồng hồ", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             if (isBlockSelected) {
                                 val rot = selectedIndex?.let { dragBlocks[it].rotation } ?: 0f
                                 Text("${rot.toInt()}°", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.BottomCenter))
@@ -645,7 +645,7 @@ fun TranslationEditor(
                             },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.RotateLeft, "Xoay text ngược chiều kim đồng hồ", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                            Icon(Icons.Default.RotateLeft, "Xoay text ngược chiều kim đồng hồ", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             if (isBlockSelected) {
                                 val rot = selectedIndex?.let { dragBlocks[it].rotation } ?: 0f
                                 Text("${rot.toInt()}°", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.BottomCenter))
@@ -657,7 +657,7 @@ fun TranslationEditor(
                             modifier = Modifier
                                 .width(1.dp)
                                 .height(32.dp)
-                                .background(Color.Gray.copy(alpha = 0.3f))
+                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                         )
 
                         // Xoay OVERLAY theo chiều kim đồng hồ
@@ -670,7 +670,7 @@ fun TranslationEditor(
                             },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Crop, "Xoay overlay theo chiều kim đồng hồ", tint = if (isBlockSelected) Color(0xFF4CAF50) else Color.Gray)
+                            Icon(Icons.Default.Crop, "Xoay overlay theo chiều kim đồng hồ", tint = if (isBlockSelected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant)
                             if (isBlockSelected) {
                                 val overlayRot = selectedIndex?.let { dragBlocks[it].overlayRotation ?: 0f } ?: 0f
                                 Text("${overlayRot.toInt()}°", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.BottomCenter))
@@ -687,7 +687,7 @@ fun TranslationEditor(
                             },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.CropRotate, "Xoay overlay ngược chiều kim đồng hồ", tint = if (isBlockSelected) Color(0xFF4CAF50) else Color.Gray)
+                            Icon(Icons.Default.CropRotate, "Xoay overlay ngược chiều kim đồng hồ", tint = if (isBlockSelected) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant)
                             if (isBlockSelected) {
                                 val overlayRot = selectedIndex?.let { dragBlocks[it].overlayRotation ?: 0f } ?: 0f
                                 Text("${overlayRot.toInt()}°", style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.BottomCenter))
@@ -711,7 +711,7 @@ fun TranslationEditor(
                                     modifier = Modifier
                                         .size(24.dp)
                                         .background(currentOverlayColor, CircleShape)
-                                        .border(1.dp, Color.Gray, CircleShape)
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
                                 )
                             }
 
@@ -750,7 +750,7 @@ fun TranslationEditor(
                                                 Modifier.background(currentTextColor, CircleShape)
                                             }
                                         )
-                                        .border(1.dp, Color.Gray, CircleShape)
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
                                 )
                             }
                             
@@ -803,7 +803,7 @@ fun TranslationEditor(
                                 Icon(
                                     imageVector = Icons.Default.Crop,
                                     contentDescription = "Chỉnh overlay inset",
-                                    tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                                    tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
@@ -830,7 +830,7 @@ fun TranslationEditor(
                                 },
                                 enabled = isBlockSelected
                             ) {
-                                Icon(Icons.Default.Refresh, "Reset màu mặc định", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else Color.Gray)
+                                Icon(Icons.Default.Refresh, "Reset màu mặc định", tint = if (isBlockSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

@@ -411,7 +411,7 @@ fun ViewerScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White.copy(alpha = 0.8f)),
+                .background(MaterialTheme.colorScheme.background),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
         val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
