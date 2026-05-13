@@ -854,7 +854,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(
             showExternalTranslationDialog = true,
             isBulkExternalTranslation = true,
-            externalTranslationUri = null
+            externalTranslationUri = null,
+            translationMode = TranslationMode.EXTERNAL,
+            translationEnabled = true
         ) }
 
         // Kiểm tra xem có ảnh nào chưa được quét/dịch không (bao gồm cả ảnh chưa load hết - Lazy Loading)
@@ -978,7 +980,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         return if (!isBulk) {
             """
                 Bạn là một phiên dịch viên chuyên nghiệp chuyên về manga.
-                Hãy dịch các đoạn văn bản này sang tiếng Việt, giữ nguyên cấu trúc JSON và số thứ tự (index).
+                Hãy dịch các đoạn văn bản này sang tiếng Việt theo phong cách truyện tranh manga gần gũi với ngôn ngữ nói của người Việt Nam, giữ nguyên cấu trúc JSON và số thứ tự (index).
                 Chỉ trả về file JSON duy nhất, không thêm giải thích.
 
                 Cấu trúc yêu cầu:
@@ -997,7 +999,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             """
                 Bạn là một phiên dịch viên chuyên nghiệp chuyên về manga.
                 Dưới đây là dữ liệu văn bản từ nhiều trang truyện tranh (được đánh dấu bằng image_id).
-                Hãy dịch toàn bộ sang tiếng Việt, giữ nguyên cấu trúc JSON, image_id và index của từng block.
+                Hãy dịch các đoạn văn bản này sang tiếng Việt theo phong cách truyện tranh manga gần gũi với ngôn ngữ nói của người Việt Nam, giữ nguyên cấu trúc JSON, image_id và index của từng block.
                 Chỉ trả về file JSON duy nhất, không thêm giải thích.
 
                 Cấu trúc yêu cầu:

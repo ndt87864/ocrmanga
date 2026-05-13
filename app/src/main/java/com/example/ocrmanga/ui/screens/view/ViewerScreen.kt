@@ -809,14 +809,6 @@ fun ViewerScreen(
                         DropdownMenuItem(
                             text = { Text("Bản dịch ngoài (JSON)") },
                             onClick = {
-                                viewModel.setTranslationMode(TranslationMode.EXTERNAL)
-                                showTranslationMenu = false
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = { Text("Dịch ngoài hàng loạt (JSON)") },
-                            onClick = {
                                 viewModel.openBulkExternalTranslationDialog()
                                 showTranslationMenu = false
                             }

@@ -76,3 +76,4 @@ app/local.properties
 .mcp.json
 /openspec
 test_mistral.py
+app/src/main/res/drawable/bill.jpg
