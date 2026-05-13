@@ -82,6 +82,6 @@ fun ImagePage(
         onBrushSizeChange = onBrushSizeChange,
         translationVersion = translationVersion,
         verticalArrangement = Arrangement.Center,
-        contentScale = ContentScale.Fit
+        contentScale = ContentScale.FillWidth
     )
 }

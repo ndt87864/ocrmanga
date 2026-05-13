@@ -758,9 +758,8 @@ fun ImageViewer(
                                     // In text removal mode: crop image to reserve space for controls below
                                     imageModifier = imageModifier.height(imageMaxHeight).clipToBounds()
                                 } else {
-                                    // Normal view mode: respect max height if provided (e.g. in horizontal/paging mode)
-                                    // but use heightIn to allow smaller images to stay small and long images to be capped
-                                    imageModifier = imageModifier.heightIn(max = imageMaxHeight).clipToBounds()
+                                    // Normal view mode: allow long images to be scrollable
+                                    imageModifier = imageModifier.clipToBounds()
                                 }
                             }
                             AsyncImage(

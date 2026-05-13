@@ -133,8 +133,8 @@ fun HorizontalViewer(
                                 // compute available height: screen height - toolbar (56dp) - controls (72dp) - padding
                                 (screenH - 56.dp - 72.dp - 32.dp).coerceAtLeast(100.dp)
                             } else {
-                                // In normal horizontal mode, cap to screen height to ensure vertical centering
-                                // of both landscape and portrait images.
+                                // In normal horizontal mode, allow long images to exceed screen height
+                                // so they can be scrolled vertically.
                                 screenH
                             }
                         },
