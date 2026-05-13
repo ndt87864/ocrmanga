@@ -450,7 +450,7 @@ fun Dialogs(
         )
     }
 
-    if (showExternalTranslationDialog && externalTranslationUri != null) {
+    if (showExternalTranslationDialog) {
         ExternalTranslationDialog(
             uri = externalTranslationUri,
             viewModel = viewModel,
@@ -461,7 +461,7 @@ fun Dialogs(
 
 @Composable
 fun ExternalTranslationDialog(
-    uri: android.net.Uri,
+    uri: android.net.Uri?,
     viewModel: ViewerViewModel,
     onDismiss: () -> Unit
 ) {
@@ -469,37 +469,45 @@ fun ExternalTranslationDialog(
     val clipboardManager = LocalClipboardManager.current
     val uiState by viewModel.uiState.collectAsState()
 
-    // Theo dõi thay đổi của blocks để cập nhật nội dung JSON/Prompt
-    val blocks = uiState.translatedTexts[uri]?.second ?: emptyList()
-    val isProcessing = uiState.translatingImages.containsKey(uri)
+    val isBulk = uri == null
+    val bulkProgress = uiState.bulkScanningProgress
+    val isBulkScanning = bulkProgress.isNotEmpty()
 
-    val jsonContent = remember(uri, blocks) { viewModel.exportBlocksToJson(uri) }
-    val promptContent = remember(uri, blocks) { viewModel.getExternalTranslationPrompt(uri) }
+    // Theo dõi thay đổi của blocks để cập nhật nội dung JSON/Prompt
+    val blocks = if (uri != null) uiState.translatedTexts[uri]?.second ?: emptyList() else emptyList()
+    val isProcessing = if (uri != null) uiState.translatingImages.containsKey(uri) else false
+
+    // Sử dụng translationVersion để force recalculate JSON khi có trang mới được quét OCR xong
+    val jsonContent = remember(uri, blocks, uiState.imageUris.size, uiState.translationVersion) { viewModel.exportBlocksToJson(uri) }
+    val promptContent = remember(uri, blocks, uiState.imageUris.size, uiState.translationVersion) { viewModel.getExternalTranslationPrompt(uri) }
 
     var translatedJson by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Dịch bằng bản dịch ngoài") },
+        title = { Text(if (isBulk) "Dịch ngoài hàng loạt" else "Dịch bằng bản dịch ngoài") },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(scrollState)
             ) {
-                if (isProcessing || (blocks.isEmpty() && uiState.translatingImages.containsKey(uri))) {
+                if (isBulkScanning || isProcessing || (uri != null && blocks.isEmpty() && uiState.translatingImages.containsKey(uri))) {
                     Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(Modifier.height(8.dp))
-                            Text("Đang OCR để lấy text gốc...", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                if (isBulkScanning) bulkProgress else "Đang OCR để lấy text gốc...",
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
-                } else if (blocks.isEmpty()) {
+                } else if (!isBulk && blocks.isEmpty()) {
                     Text("Không tìm thấy văn bản nào trên ảnh này để dịch.", color = MaterialTheme.colorScheme.error)
                 } else {
-                    Text("Bước 1: Tải về hoặc copy file JSON OCR", style = MaterialTheme.typography.titleSmall)
+                    Text("Bước 1: Copy file JSON OCR", style = MaterialTheme.typography.titleSmall)
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Surface(
@@ -528,7 +536,8 @@ fun ExternalTranslationDialog(
 
                         IconButton(onClick = {
                             try {
-                                val file = File(context.cacheDir, "ocr_data.json")
+                                val fileName = if (isBulk) "ocr_bulk_data.json" else "ocr_data.json"
+                                val file = File(context.cacheDir, fileName)
                                 FileOutputStream(file).use { it.write(jsonContent.toByteArray()) }
                                 val fileUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
                                 val intent = Intent(Intent.ACTION_SEND).apply {
@@ -580,11 +589,11 @@ fun ExternalTranslationDialog(
                 onClick = {
                     if (translatedJson.isNotBlank()) {
                         viewModel.importTranslatedJson(uri, translatedJson)
-                    } else if (blocks.isNotEmpty()) {
+                    } else if (isBulk || blocks.isNotEmpty()) {
                         Toast.makeText(context, "Vui lòng dán JSON bản dịch", Toast.LENGTH_SHORT).show()
                     }
                 },
-                enabled = blocks.isNotEmpty()
+                enabled = !isBulkScanning && (isBulk || blocks.isNotEmpty())
             ) {
                 Text("Áp dụng bản dịch")
             }

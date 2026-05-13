@@ -1796,12 +1796,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         }
                     }
 
-                    // Set image-level is_translated flag based on whether we saved any blocks
+                    // Set image-level is_translated flag
+                    // Luôn đặt là 1 khi đã qua xử lý (kể cả 0 blocks) để tránh quét lại vô tận
                     try {
-                        val isTranslatedValue = if (blocksToSave.isNotEmpty()) 1 else 0
+                        val isTranslatedValue = 1
                         val isTranslatedValues = ContentValues().apply { put(COLUMN_IS_TRANSLATED, isTranslatedValue) }
                         db.update(TABLE_IMAGES, isTranslatedValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                        Log.i(TAG, "applyPendingChangesForRoom: Updated is_translated=$isTranslatedValue for imageId=$imageId")
+                        Log.i(TAG, "applyPendingChangesForRoom: Updated is_translated=1 (processed) for imageId=$imageId")
                     } catch (e: Exception) {
                         Log.w(TAG, "applyPendingChangesForRoom: Failed to update is_translated for imageId=$imageId", e)
                     }
@@ -1823,7 +1824,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         }
     }
 
-    fun saveMangaRoom(imageUris: List<Uri>, translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>, title: String? = null): Long {
+    fun saveMangaRoom(imageUris: List<Uri>, translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>, title: String? = null, translatedStatus: Map<Uri, Boolean>? = null): Long {
         if (imageUris.isEmpty()) return -1L
         val db = writableDatabase
         db.beginTransaction()
@@ -1862,7 +1863,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         put(COLUMN_ROOM_ID, roomId)
                         put(COLUMN_IMAGE_URI, newUri.toString())
                         put(COLUMN_DISPLAY_ORDER, index)
-                        put(COLUMN_IS_TRANSLATED, if (translatedTexts.containsKey(originalUri)) 1 else 0)
+                        put(COLUMN_IS_TRANSLATED, if (translatedStatus?.get(originalUri) == true || translatedTexts.containsKey(originalUri)) 1 else 0)
                         // original_text giờ lưu trong bảng translations (per-block), không cần ở images
                     }
                     val imageId = db.insert(TABLE_IMAGES, null, imageValues)
@@ -2016,7 +2017,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     /**
      * Cập nhật lại ảnh và bản dịch cho phòng đã có roomId, chỉ thay đổi những gì khác biệt
      */
-    fun updateMangaRoom(roomId: Long, imageUris: List<Uri>, translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>): Boolean {
+    fun updateMangaRoom(roomId: Long, imageUris: List<Uri>, translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>, translatedStatus: Map<Uri, Boolean>? = null): Boolean {
         if (imageUris.isEmpty()) return false
         val db = writableDatabase
         db.beginTransaction()
@@ -2153,7 +2154,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             imageInfos.forEach { info ->
                 val index = info.index
                 val uri = info.uri
-                val isTranslated = if (translatedTexts.containsKey(uri)) 1 else 0
+                val isTranslated = if (translatedStatus?.get(uri) == true || translatedTexts.containsKey(uri)) 1 else 0
                 val targetFilename = "image_${index}.webp"
                 val targetFile = File(imagesDir, targetFilename)
                 val newUri = if (targetFile.exists()) Uri.fromFile(targetFile) else uri
@@ -2605,7 +2606,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         imageUris: List<Uri>,
         translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>,
         dirtyUris: List<Uri>,
-        callerUriToImageId: Map<Uri, Long>
+        callerUriToImageId: Map<Uri, Long>,
+        translatedStatus: Map<Uri, Boolean>? = null
     ): Boolean {
         if (imageUris.isEmpty()) return false
         val db = writableDatabase
@@ -2632,7 +2634,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             // Update display order and is_translated flags for all images
             imageUris.forEachIndexed { index, uri ->
                 val uriStr = uri.toString()
-                val isTranslated = if (translatedTexts.containsKey(uri)) 1 else 0
+                val isTranslated = if (translatedStatus?.get(uri) == true || translatedTexts.containsKey(uri)) 1 else 0
                 val imageId = imageIdMap[uriStr]
                 if (imageId != null) {
                     val imageValues = ContentValues().apply {
@@ -2834,7 +2836,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 // (original_text giờ lưu trong bảng translations per-block)
                                 try {
                                     val updatedImageValues = ContentValues().apply {
-                                        put(COLUMN_IS_TRANSLATED, if (blocksToSave.isNotEmpty()) 1 else 0)
+                                        // Mark as translated (1) even if no blocks found, to prevent redundant OCR scans
+                                        put(COLUMN_IS_TRANSLATED, 1)
                                     }
                                     db.update(TABLE_IMAGES, updatedImageValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                                 } catch (e: Exception) {
