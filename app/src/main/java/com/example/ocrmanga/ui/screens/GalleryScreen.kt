@@ -929,7 +929,7 @@ private fun RoomCard(
             containerColor = MaterialTheme.colorScheme.surface
         )
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))) {
             // Cover image with shimmer placeholder
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)

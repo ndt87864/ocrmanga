@@ -340,6 +340,30 @@ fun ViewerScreen(
         }
     }
 
+    // Theo dõi vị trí scroll ngang
+    LaunchedEffect(horizontalListState) {
+        snapshotFlow {
+            val layoutInfo = horizontalListState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) 0
+            else {
+                val firstItem = visibleItems.first()
+                val scrollOffset = horizontalListState.firstVisibleItemScrollOffset
+                val itemSize = firstItem.size
+                // Với chế độ ngang, nếu đã scroll quá 50% ảnh đầu thì coi như đang ở ảnh tiếp theo
+                if (itemSize > 0 && scrollOffset > itemSize / 2) {
+                    (firstItem.index + 1).coerceAtMost(layoutInfo.totalItemsCount - 1)
+                } else {
+                    firstItem.index
+                }
+            }
+        }.collect { index ->
+            if (!isScrollingProgrammatically) {
+                viewModel.setCurrentScrollIndex(index)
+            }
+        }
+    }
+
     // Scroll đến vị trí sau khi reload từ DB
     // Chỉ trigger khi scrollToIndexAfterReload thay đổi, KHÔNG trigger lại khi imageUris.size thay đổi
     // Dùng snapshotFlow với key scrollToIndexAfterReload để tránh re-trigger khi imageUris thay đổi
@@ -546,9 +570,33 @@ fun ViewerScreen(
                     Icon(Icons.Default.KeyboardDoubleArrowLeft, "Thoát", tint = MaterialTheme.colorScheme.primary)
                 }
                 val currentDisplayIndex = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) {
-                    horizontalListState.firstVisibleItemIndex
+                    val layoutInfo = horizontalListState.layoutInfo
+                    val visibleItems = layoutInfo.visibleItemsInfo
+                    if (visibleItems.isEmpty()) 0
+                    else {
+                        val firstItem = visibleItems.first()
+                        val scrollOffset = horizontalListState.firstVisibleItemScrollOffset
+                        val itemSize = firstItem.size
+                        if (itemSize > 0 && scrollOffset > itemSize / 2) {
+                            (firstItem.index + 1).coerceAtMost(layoutInfo.totalItemsCount - 1)
+                        } else {
+                            firstItem.index
+                        }
+                    }
                 } else {
-                    lazyListState.firstVisibleItemIndex
+                    val layoutInfo = lazyListState.layoutInfo
+                    val visibleItems = layoutInfo.visibleItemsInfo
+                    if (visibleItems.isEmpty()) 0
+                    else {
+                        val firstItem = visibleItems.first()
+                        val scrollOffset = lazyListState.firstVisibleItemScrollOffset
+                        val itemSize = firstItem.size
+                        if (itemSize > 0 && scrollOffset > itemSize * 0.7f) {
+                            (firstItem.index + 1).coerceAtMost(layoutInfo.totalItemsCount - 1)
+                        } else {
+                            firstItem.index
+                        }
+                    }
                 }
                 Text(
                     text = "${(currentDisplayIndex + 1).coerceAtMost(uiState.imageUris.size)} / ${uiState.imageUris.size}",
@@ -662,9 +710,25 @@ fun ViewerScreen(
                                 coroutineScope.launch {
                                     if (!editTranslationMode) {
                                         val target = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
-                                            lazyListState.firstVisibleItemIndex
+                                            val layoutInfo = lazyListState.layoutInfo
+                                            val firstVisible = lazyListState.firstVisibleItemIndex
+                                            val scrollOffset = lazyListState.firstVisibleItemScrollOffset
+                                            val itemSize = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1
+                                            if (itemSize > 0 && scrollOffset > itemSize * 0.7f) {
+                                                (firstVisible + 1).coerceAtMost(uiState.imageUris.lastIndex.coerceAtLeast(0))
+                                            } else {
+                                                firstVisible
+                                            }
                                         } else {
-                                            horizontalListState.firstVisibleItemIndex
+                                            val layoutInfo = horizontalListState.layoutInfo
+                                            val firstVisible = horizontalListState.firstVisibleItemIndex
+                                            val scrollOffset = horizontalListState.firstVisibleItemScrollOffset
+                                            val itemSize = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1
+                                            if (itemSize > 0 && scrollOffset > itemSize / 2) {
+                                                (firstVisible + 1).coerceAtMost(uiState.imageUris.lastIndex.coerceAtLeast(0))
+                                            } else {
+                                                firstVisible
+                                            }
                                         }.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
                                         pendingInitialPage = target
                                         // ensure horizontal mode when entering edit mode
@@ -1045,7 +1109,15 @@ fun ViewerScreen(
                 onClearReopenEditorUri = { uri -> viewModel.clearReopenEditorUri(uri) },
                 onRequestOpenEditor = { uri ->
                     coroutineScope.launch {
-                        val target = lazyListState.firstVisibleItemIndex.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                        val layoutInfo = lazyListState.layoutInfo
+                        val firstVisible = lazyListState.firstVisibleItemIndex
+                        val scrollOffset = lazyListState.firstVisibleItemScrollOffset
+                        val itemSize = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1
+                        val target = if (itemSize > 0 && scrollOffset > itemSize * 0.7f) {
+                            (firstVisible + 1).coerceAtMost(uiState.imageUris.lastIndex.coerceAtLeast(0))
+                        } else {
+                            firstVisible
+                        }.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
                         pendingInitialPage = target
                         viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
                         editTranslationMode = true
@@ -1206,7 +1278,15 @@ fun ViewerScreen(
                 onClearReopenEditorUri = { uri -> viewModel.clearReopenEditorUri(uri) },
                 onRequestOpenEditor = { uri ->
                     coroutineScope.launch {
-                        val target = horizontalListState.firstVisibleItemIndex.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                        val layoutInfo = horizontalListState.layoutInfo
+                        val firstVisible = horizontalListState.firstVisibleItemIndex
+                        val scrollOffset = horizontalListState.firstVisibleItemScrollOffset
+                        val itemSize = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1
+                        val target = if (itemSize > 0 && scrollOffset > itemSize / 2) {
+                            (firstVisible + 1).coerceAtMost(uiState.imageUris.lastIndex.coerceAtLeast(0))
+                        } else {
+                            firstVisible
+                        }.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
                         pendingInitialPage = target
                         editTranslationMode = true
                     }
