@@ -203,6 +203,17 @@ class BubbleDetector {
 
             val bubbleCvRect = Imgproc.boundingRect(bestContour)
 
+            // Step 9b: Reject false positive contours on complex artwork
+            // Check color variance in the ring between text bounds and contour bounds.
+            // High variance = complex artwork/texture, not a real bubble.
+            if (isArtworkRegion(crop, bubbleCvRect, textInCrop)) {
+                Log.d(TAG, "Rejected contour: high color variance (artwork region, not a real bubble)")
+                crop.recycle()
+                gray.release()
+                bestContour.release()
+                return BubbleDetectionResult(null, null, false, 0f)
+            }
+
             // Convert back to image coordinates
             val bubbleBounds = Rect(
                 (bubbleCvRect.x + cropRect.left).coerceAtLeast(0),
@@ -450,6 +461,121 @@ class BubbleDetector {
     }
 
 
+
+    /**
+     * Check if the region between text bounds and contour bounds is complex artwork
+     * (high color variance = not a real bubble).
+     *
+     * Real manga bubbles have uniform solid-color fill (white or black) in the area
+     * surrounding the text. Artwork has varied colors/textures.
+     *
+     * @return true if the region has high color variance (artwork), reject the contour
+     */
+    private fun isArtworkRegion(
+        crop: Bitmap,
+        bubbleRect: org.opencv.core.Rect,
+        textRect: org.opencv.core.Rect
+    ): Boolean {
+        if (crop.width <= 0 || crop.height <= 0) return false
+
+        // Sample pixels in the ring between textRect and bubbleRect
+        var totalSamples = 0
+        var varianceSum = 0f
+        val mean = FloatArray(3) // Running mean for R, G, B
+        val step = 4 // Sample every 4th pixel for performance
+
+        // First pass: calculate mean color in the ring area
+        val pixelBuffer = mutableListOf<Int>()
+
+        // Top strip
+        if (bubbleRect.y < textRect.y) {
+            val startY = bubbleRect.y
+            val endY = textRect.y
+            val startX = max(bubbleRect.x, 2)
+            val endX = min(bubbleRect.x + bubbleRect.width, crop.width - 2)
+            for (y in startY until endY step step) {
+                for (x in startX until endX step step) {
+                    if (x < 0 || x >= crop.width || y < 0 || y >= crop.height) continue
+                    pixelBuffer.add(crop.getPixel(x, y))
+                }
+            }
+        }
+
+        // Bottom strip
+        val textBottom = textRect.y + textRect.height
+        val bubbleBottom = bubbleRect.y + bubbleRect.height
+        if (textBottom < bubbleBottom) {
+            val startY = textBottom
+            val endY = bubbleBottom
+            val startX = max(bubbleRect.x, 2)
+            val endX = min(bubbleRect.x + bubbleRect.width, crop.width - 2)
+            for (y in startY until endY step step) {
+                for (x in startX until endX step step) {
+                    if (x < 0 || x >= crop.width || y < 0 || y >= crop.height) continue
+                    pixelBuffer.add(crop.getPixel(x, y))
+                }
+            }
+        }
+
+        // Left strip
+        if (bubbleRect.x < textRect.x) {
+            val startY = max(bubbleRect.y, textRect.y)
+            val endY = min(bubbleRect.y + bubbleRect.height, textRect.y + textRect.height)
+            val startX = bubbleRect.x
+            val endX = textRect.x
+            for (y in startY until endY step step) {
+                for (x in startX until endX step step) {
+                    if (x < 0 || x >= crop.width || y < 0 || y >= crop.height) continue
+                    pixelBuffer.add(crop.getPixel(x, y))
+                }
+            }
+        }
+
+        // Right strip
+        val textRight = textRect.x + textRect.width
+        val bubbleRight = bubbleRect.x + bubbleRect.width
+        if (bubbleRight > textRight) {
+            val startY = max(bubbleRect.y, textRect.y)
+            val endY = min(bubbleRect.y + bubbleRect.height, textRect.y + textRect.height)
+            val startX = textRight
+            val endX = bubbleRight
+            for (y in startY until endY step step) {
+                for (x in startX until endX step step) {
+                    if (x < 0 || x >= crop.width || y < 0 || y >= crop.height) continue
+                    pixelBuffer.add(crop.getPixel(x, y))
+                }
+            }
+        }
+
+        if (pixelBuffer.size < 20) return false // Too few samples, can't determine
+
+        // Calculate mean
+        var sumR = 0f; var sumG = 0f; var sumB = 0f
+        for (pixel in pixelBuffer) {
+            sumR += android.graphics.Color.red(pixel)
+            sumG += android.graphics.Color.green(pixel)
+            sumB += android.graphics.Color.blue(pixel)
+        }
+        val n = pixelBuffer.size.toFloat()
+        val meanR = sumR / n; val meanG = sumG / n; val meanB = sumB / n
+
+        // Calculate standard deviation (variance proxy)
+        var varR = 0f; var varG = 0f; var varB = 0f
+        for (pixel in pixelBuffer) {
+            val dr = android.graphics.Color.red(pixel) - meanR
+            val dg = android.graphics.Color.green(pixel) - meanG
+            val db = android.graphics.Color.blue(pixel) - meanB
+            varR += dr * dr
+            varG += dg * dg
+            varB += db * db
+        }
+        val stdDev = kotlin.math.sqrt((varR + varG + varB) / (n * 3f))
+
+        // Low std deviation = uniform fill = real bubble
+        // High std deviation = complex artwork = false positive contour
+        // Threshold: stdDev > 40 means significant color variation (artwork/texture)
+        return stdDev > 40f
+    }
 
     /**
      * Estimate background opacity of the bubble.

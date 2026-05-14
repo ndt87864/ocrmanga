@@ -137,18 +137,20 @@ object OverlayOptimizer {
                 bubbleDetectionCache[index] = detection
             }
 
-            isSolidBubble = detection.isSolidBubble || detection.containerInfo?.let { info ->
-                // Container classification confirms bubble
-                info.type == TextContainerType.SPEECH_BUBBLE ||
-                        info.type == TextContainerType.SPEECH_FRAME
-            } ?: false
+            isSolidBubble = detection.isSolidBubble
 
             bubbleBounds = detection.bubbleBounds
         }
 
-        // Fallback to original methods if OpenCV fails or no bitmap
-        if (!isSolidBubble && imageBitmap != null) {
-            isSolidBubble = isSolidColorBubble(block, imageBitmap)
+        // [FIX] KHÔNG dùng containerInfo.type (SPEECH_BUBBLE/SPEECH_FRAME) để xác định isSolidBubble.
+        // Container type từ contour shape KHÔNG đáng tin cậy - dễ false positive trên artwork phức tạp.
+        // Dùng OR consensus giữa 2 pixel-based checks:
+        //   1. detection.isSolidBubble: OpenCV scan giữa contour bounds & text bounds (chính xác nếu contour đúng)
+        //   2. isSolidColorBubble(): Scan perimeter có margin quanh text (đã đạt >90%, luôn đáng tin cậy)
+        // Nếu một trong hai nói là solid → tin tưởng (bảo thủ: ưu tiên che phủ text hơn là để lộ)
+        if (imageBitmap != null) {
+            val legacyCheck = isSolidColorBubble(block, imageBitmap)
+            isSolidBubble = legacyCheck || isSolidBubble
         }
         val isSolidBg = if (imageBitmap == null) isSolidBackground(block) else false
 
