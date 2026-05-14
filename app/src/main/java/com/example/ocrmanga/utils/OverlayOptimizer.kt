@@ -6,20 +6,25 @@ import android.graphics.Rect
 import android.util.Log
 import com.example.ocrmanga.data.models.BackgroundType
 import com.example.ocrmanga.data.models.TextBlockInfo
+import com.example.ocrmanga.data.ocr.BubbleDetector
 import com.example.ocrmanga.data.ocr.models.TextContainerType
+import kotlin.math.abs
 
 /**
  * Tối ưu hiển thị overlay translation tự động.
  *
- * Quy tắc đơn giản:
- * 1. Bubble/hộp thoại đơn sắc (trắng hoặc đen) với viền khác màu background:
- *    → Overlay đục, inset hợp lý để che hết text mà không lẹm viền.
- * 2. Mọi trường hợp khác:
- *    → Overlay trong suốt.
+ * Sử dụng OpenCV BubbleDetector để phát hiện viền bubble chính xác,
+ * từ đó:
+ * 1. Phân loại TH1 (solid bubble) vs TH2 (complex background/artwork) chính xác hơn
+ * 2. Tính inset tự động từ bubble bounds - text bounds
+ * 3. Xác định shape type (oval vs rect) qua circularity
  */
 object OverlayOptimizer {
 
     private const val TAG = "OverlayOptimizer"
+
+    // BubbleDetector dùng OpenCV để phát hiện viền bubble
+    private val bubbleDetector = BubbleDetector()
 
     /**
      * Kết quả tối ưu overlay
@@ -64,6 +69,7 @@ object OverlayOptimizer {
         imageHeight: Int,
         forceSolid: Boolean = false
     ): Pair<List<TextBlockInfo>, List<OptimizationResult>> {
+        bubbleDetectionCache.clear()
         val results = blocks.mapIndexed { index, block ->
             optimizeBlock(block, index, imageBitmap, imageWidth, imageHeight, forceSolid)
         }
@@ -82,6 +88,7 @@ object OverlayOptimizer {
         imageWidth: Int,
         imageHeight: Int
     ): List<OptimizationResult> {
+        bubbleDetectionCache.clear()
         return blocks.mapIndexed { index, block ->
             optimizeBlock(block, index, imageBitmap, imageWidth, imageHeight)
         }
@@ -106,6 +113,9 @@ object OverlayOptimizer {
      *   → Nếu CÓ: overlay đục, tính inset hợp lý
      *   → Nếu KHÔNG: overlay trong suốt
      */
+    // Cache bubble detection results for the current batch
+    private val bubbleDetectionCache = mutableMapOf<Int, BubbleDetector.BubbleDetectionResult>()
+
     private fun optimizeBlock(
         block: TextBlockInfo,
         index: Int,
@@ -114,10 +124,32 @@ object OverlayOptimizer {
         imageHeight: Int,
         forceSolid: Boolean = false
     ): OptimizationResult {
-        val isSolidBubble = isSolidColorBubble(block, imageBitmap)
-        // Chỉ dùng isSolidBackground làm fallback khi không có bitmap.
-        // Khi có bitmap, perimeter scan (isSolidColorBubble) chính xác hơn nhiều
-        // vì backgroundType=WHITE có thể đến từ text trên artwork nền sáng, không phải bubble thật.
+        // Sử dụng BubbleDetector (OpenCV) để phát hiện bubble và container info
+        var isSolidBubble = false
+        var bubbleBounds: Rect? = null
+
+        if (imageBitmap != null) {
+            val cached = bubbleDetectionCache[index]
+            val detection = cached ?: bubbleDetector.detectBubble(
+                imageBitmap, block.bounds, imageWidth, imageHeight
+            )
+            if (cached == null) {
+                bubbleDetectionCache[index] = detection
+            }
+
+            isSolidBubble = detection.isSolidBubble || detection.containerInfo?.let { info ->
+                // Container classification confirms bubble
+                info.type == TextContainerType.SPEECH_BUBBLE ||
+                        info.type == TextContainerType.SPEECH_FRAME
+            } ?: false
+
+            bubbleBounds = detection.bubbleBounds
+        }
+
+        // Fallback to original methods if OpenCV fails or no bitmap
+        if (!isSolidBubble && imageBitmap != null) {
+            isSolidBubble = isSolidColorBubble(block, imageBitmap)
+        }
         val isSolidBg = if (imageBitmap == null) isSolidBackground(block) else false
 
         return if (forceSolid || isSolidBubble || isSolidBg) {

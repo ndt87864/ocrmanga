@@ -51,6 +51,8 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.io.StringReader
 import com.example.ocrmanga.ui.screens.view.analyzeBackgroundAndTextColor
 import com.example.ocrmanga.ui.theme.ThemePreferences
+import com.example.ocrmanga.data.ocr.BubbleDetector
+import com.example.ocrmanga.data.ocr.models.TextContainerInfo
 import kotlin.math.max
 
     class TranslationRepository(private val application: Application) {
@@ -79,6 +81,11 @@ import kotlin.math.max
     // Phase 4: Improved Block Merging
     private val blockMerger by lazy {
         com.example.ocrmanga.data.ocr.RegionBasedMerger()
+    }
+
+    // Container/Bubble Detection using OpenCV contour analysis
+    private val bubbleDetector by lazy {
+        BubbleDetector()
     }
 
     private suspend fun getDefaultFontSettings(): Map<String, Any> {
@@ -509,6 +516,13 @@ import kotlin.math.max
             Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
         }
 
+        // OpenCV Advanced Preprocessing mode (CLAHE + denoising + adaptive threshold)
+        if (enhanceMode == 3) {
+            val opencvResult = preprocessor.preprocess(upscaledBitmap)
+            if (upscaledBitmap !== bitmap) upscaledBitmap.recycle()
+            return Pair(opencvResult.bitmap, scaleFactor)
+        }
+
         // Step 1: Convert to grayscale with optimized settings
         val grayscaleBitmap = Bitmap.createBitmap(newWidth, newHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(grayscaleBitmap)
@@ -570,6 +584,21 @@ import kotlin.math.max
         grayscaleBitmap.recycle()
 
         return Pair(contrastBitmap, scaleFactor)
+    }
+
+    /**
+     * Detect container info for a text block using OpenCV BubbleDetector.
+     * Returns null if bitmap is unavailable, OpenCV fails, or detection is low-confidence.
+     */
+    private fun detectContainerInfo(bitmap: Bitmap?, bounds: Rect, imageWidth: Int, imageHeight: Int): TextContainerInfo? {
+        if (bitmap == null || bitmap.isRecycled) return null
+        return try {
+            val result = bubbleDetector.detectBubble(bitmap, bounds, imageWidth, imageHeight)
+            result.containerInfo?.takeIf { it.confidence >= 0.3f }
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "Error detecting container", e)
+            null
+        }
     }
 
     enum class TextOrientation {
@@ -1886,13 +1915,7 @@ import kotlin.math.max
                             // Phân tích màu nền và màu text
                             val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
                             // DISABLED: Container classification (OpenCV compatibility issue)
-                            // val containerInfo = try {
-                            //     containerClassifier.classifyContainer(bitmap, scaledBounds)
-                            // } catch (e: Exception) {
-                            //     Log.e("TranslationRepository", "[CONTAINER] Error classifying container", e)
-                            //     null
-                            // }
-                            val containerInfo = null  // Disabled due to OpenCV native library compatibility issue
+                            val containerInfo = detectContainerInfo(bitmap, scaledBounds, bitmap.width, bitmap.height)
                             TextBlockInfo(
                                 text = processedText,
                                 originalText = processedText,
@@ -2018,7 +2041,7 @@ import kotlin.math.max
                     // Phân tích màu nền và màu text
                     val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
                     // DISABLED: Container classification
-                    val containerInfo = null
+                    val containerInfo = detectContainerInfo(bitmap, scaledBounds, bitmap.width, bitmap.height)
                     TextBlockInfo(
                         text = processedText,
                         originalText = processedText,
@@ -2102,7 +2125,7 @@ import kotlin.math.max
                         val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
                         val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
                         // Phân loại container type (TẠM THỜI TẮT)
-                        val containerInfo = null
+                        val containerInfo = detectContainerInfo(bitmap, scaledBounds, bitmap.width, bitmap.height)
                         TextBlockInfo(
                             text = processedText,
                             originalText = processedText,
@@ -2203,7 +2226,7 @@ import kotlin.math.max
                                 val rawWordCount = rawProcessedText.split(Regex("\\s+")).filter { w -> w.isNotEmpty() }.size
                                 val (rawBgType, rawAvgColor, rawTextColor) = analyzeBackgroundAndTextColor(bitmap, rawBounds)
                                 // DISABLED: Container classification
-                                val rawContainerInfo = null
+                                val rawContainerInfo = detectContainerInfo(bitmap, rawBounds, bitmap.width, bitmap.height)
                                 mergedTextBlocks.add(TextBlockInfo(
                                     text = rawProcessedText,
                                     originalText = rawProcessedText,
@@ -2546,8 +2569,7 @@ import kotlin.math.max
 
             // Phân tích màu nền và màu text cho merged block
             val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
-            // Re-enabled: Container classification after merging for better accuracy (TẠM THỜI TẮT)
-            val containerInfo = null
+            val containerInfo = detectContainerInfo(bitmap, mergedBounds, (bitmap?.width ?: 0), (bitmap?.height ?: 0))
 
             val mergedOriginalText = sortedBlocks.joinToString("\n") { it.originalText ?: it.text }
             val mergedBlock = TextBlockInfo(
@@ -2781,7 +2803,7 @@ import kotlin.math.max
                     // Phân tích màu nền và màu text cho merged block
                     val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
                     // Re-enabled: Container classification after merging for better accuracy (TẠM THỜI TẮT)
-                    val containerInfo = null
+                    val containerInfo = detectContainerInfo(bitmap, mergedBounds, (bitmap?.width ?: 0), (bitmap?.height ?: 0))
 
                     val mergedOriginalText = subGroupBlocks.mapNotNull { it.originalText }.joinToString("\n").ifBlank { mergedText.toString() }
                     val mergedBlock = TextBlockInfo(
@@ -3703,7 +3725,7 @@ import kotlin.math.max
                         Triple(firstBlock.backgroundType, firstBlock.averageBackgroundColor, firstBlock.originalTextColor)
                     }
                     // DISABLED: Container classification
-                    val containerInfo = firstBlock.containerInfo
+                    val containerInfo = firstBlock.containerInfo ?: detectContainerInfo(bitmap, mergedBounds, (bitmap?.width ?: 0), (bitmap?.height ?: 0))
                     val mergedOriginalText = group.mapNotNull { it.originalText }.joinToString("\n").ifBlank { mergedText }
                     merged.add(
                         TextBlockInfo(
