@@ -849,7 +849,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val (originalText, blocks) = currentPair
             if (blocks.isEmpty()) return@launch
 
-            val optimizedBlocks = autoOptimizeOverlay(uri, blocks, forceSolid = true)
+            val optimizedBlocks = autoOptimizeOverlay(uri, blocks, forceSolid = false)
 
             withContext(Dispatchers.Main) {
                 _uiState.update { state ->

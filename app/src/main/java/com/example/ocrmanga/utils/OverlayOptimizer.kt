@@ -114,9 +114,11 @@ object OverlayOptimizer {
         imageHeight: Int,
         forceSolid: Boolean = false
     ): OptimizationResult {
-        // [SAFETY FIRST] Ưu tiên phủ đục tuyệt đối nếu có bất kỳ dấu hiệu nào của Bubble đơn sắc.
         val isSolidBubble = isSolidColorBubble(block, imageBitmap)
-        val isSolidBg = isSolidBackground(block)
+        // Chỉ dùng isSolidBackground làm fallback khi không có bitmap.
+        // Khi có bitmap, perimeter scan (isSolidColorBubble) chính xác hơn nhiều
+        // vì backgroundType=WHITE có thể đến từ text trên artwork nền sáng, không phải bubble thật.
+        val isSolidBg = if (imageBitmap == null) isSolidBackground(block) else false
 
         return if (forceSolid || isSolidBubble || isSolidBg) {
             optimizeForSolidBubble(block, index, imageWidth, imageHeight, imageBitmap)
@@ -182,10 +184,9 @@ object OverlayOptimizer {
                     // Nếu pixel có màu rõ rệt -> Tính vào nhóm xám/màu (mid)
                     midCount++
                 } else {
-                    // Mở rộng dải màu để nhận diện bubble trong manga cũ hoặc scan chất lượng thấp (trắng hơi xám hoặc đen hơi xám)
-                    if (brightness > 200) {
+                    if (brightness > 220) {
                         lightCount++
-                    } else if (brightness < 65) {
+                    } else if (brightness < 45) {
                         darkCount++
                     } else {
                         midCount++ // Các sắc xám (screentones, shading)
@@ -199,10 +200,11 @@ object OverlayOptimizer {
             val darkRatio = darkCount.toFloat() / totalCount
 
             // Bong bóng thoại TH1: Nền trắng chữ đen, hoặc nền đen chữ trắng.
-            // Nới lỏng tối đa ngưỡng để ưu tiên Safety First (tự động mở rộng tối ưu).
-            // Ưu tiên tỷ lệ màu sáng/tối so với màu đối nghịch để nhận diện bubble ngay cả khi có screentone (midRatio cao).
-            val isSolidWhite = lightRatio > 0.30f && lightRatio > darkRatio * 2.0f
-            val isSolidBlack = darkRatio > 0.30f && darkRatio > lightRatio * 2.0f
+            // Điều quan trọng là số lượng pixel xám/màu (mid) ở rìa rất ít.
+            // Có thể lẹm 1 chút vào viền đen của bong bóng (khiến darkRatio tăng khi nền trắng),
+            // nhưng lightRatio vẫn sẽ chiếm ưu thế.
+            val isSolidWhite = lightRatio > 0.60f && midRatio < 0.25f
+            val isSolidBlack = darkRatio > 0.60f && midRatio < 0.25f
 
             return isSolidWhite || isSolidBlack
 
@@ -230,10 +232,11 @@ object OverlayOptimizer {
 
             // Gần trắng: RGB đều > 220
             val isNearWhite = r > 220 && g > 220 && b > 220
-            // Gần đen: RGB đều < 45
-            val isNearBlack = r < 45 && g < 45 && b < 45
 
-            if (isNearWhite || isNearBlack) {
+            // Text trên nền đen thường là text trên ảnh/quần áo (TH2) chứ không phải bong bóng thoại.
+            // Do đó loại bỏ kiểm tra isNearBlack ở đây để tránh nhận nhầm TH1.
+
+            if (isNearWhite) {
                 return true
             }
         }
