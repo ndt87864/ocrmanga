@@ -56,10 +56,15 @@ import androidx.core.graphics.ColorUtils
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
+import coil.compose.rememberAsyncImagePainter
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import coil.request.ImageRequest
+import coil.size.Scale
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.data.models.TranslationStatus
+import com.example.ocrmanga.utils.ImageUtils.getImageDimensions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -185,8 +190,24 @@ fun ImageViewer(
         }
     val newlyTranslated = remember { mutableStateMapOf<Uri, Boolean>() }
     val visibleRange = remember { mutableStateOf(IntRange(0, -1)) }
-    val prefetchBuffer = 1
-    val imageLoader = remember { ImageLoader(context) }
+    val prefetchBuffer = 0 // Không preload quá xa
+    val bitmapPool = remember { com.example.ocrmanga.utils.BitmapPool.getInstance() }
+    val imageLoader = remember {
+        ImageLoader.Builder(context)
+            .memoryCache {
+                MemoryCache.Builder(context)
+                    .maxSizePercent(0.15) // 15% memory
+                    .build()
+            }
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(context.cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(100 * 1024 * 1024) // 100MB
+                    .build()
+            }
+            .respectCacheHeaders(false) // Tự quản lý cache key
+            .build()
+    }
     val suppressDiskCachePref = remember {
         try {
             val prefs =
@@ -220,8 +241,8 @@ fun ImageViewer(
                 val timeDelta = currentTime - lastScrollTime
                 lastScrollTime = currentTime
 
-                // Detect fast scrolling (more than 3 items in 100ms)
-                if (timeDelta < 100 && visibleIndices.size > 3) {
+                // Detect fast scrolling (more than 2 items in 100ms)
+                if (timeDelta < 100 && visibleIndices.size > 2) {
                     isScrollingFast = true
                 } else {
                     isScrollingFast = false
@@ -230,10 +251,19 @@ fun ImageViewer(
                 if (visibleIndices.isNotEmpty()) {
                     val min = visibleIndices.minOrNull() ?: 0
                     val max = visibleIndices.maxOrNull() ?: 0
-                    val start = (min - prefetchBuffer).coerceAtLeast(0)
-                    val end = (max + prefetchBuffer).coerceAtMost(imageUris.size - 1)
+                    // Chỉ preload ảnh đang visible + 1 ảnh sau
+                    val start = maxOf(min - 1, 0)
+                    val end = minOf(max + 1, imageUris.size - 1)
                     visibleRange.value = IntRange(start, end)
-                    for (i in start..end) {
+
+                    // Preload tối đa 3 ảnh ở 1 time
+                    val indicesToPreload = if (max - min + 1 <= 3) {
+                        (start..end)
+                    } else {
+                        listOf(min, min + 1, min + 2)
+                    }
+
+                    indicesToPreload.forEach { i ->
                         try {
                             val reloadToken = try {
                                 getReloadTokenForUri(imageUris[i]) ?: 0L
@@ -246,6 +276,8 @@ fun ImageViewer(
                                 .diskCacheKey("image-index-$i:${imageUris[i].toString()}:rt$reloadToken")
                                 .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                                 .diskCachePolicy(if (suppressDiskCachePref) coil.request.CachePolicy.DISABLED else coil.request.CachePolicy.ENABLED)
+                                .size(coil.size.Size.ORIGINAL) // Coil tự resize
+                                .scale(Scale.FIT)
                                 .build()
                             imageLoader.enqueue(prefetchReq)
                         } catch (e: Exception) {
@@ -388,6 +420,15 @@ fun ImageViewer(
                     }
                 }
 
+                // Clean up bitmap pool khi image không còn visible
+                DisposableEffect(uri, isInWindow) {
+                    onDispose {
+                        if (!isInWindow) {
+                            com.example.ocrmanga.utils.BitmapPool.getInstance().remove(uri.toString())
+                        }
+                    }
+                }
+
                 LaunchedEffect(dragBlocks, isInWindow) {
                     if (isInWindow) dragBlocksMap[uri] = dragBlocks
                 }
@@ -517,6 +558,8 @@ fun ImageViewer(
                                 .diskCacheKey("image-index-$index:${uri.toString()}:v$imageVersion:rt$reloadToken")
                                 .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                                 .diskCachePolicy(if (suppressDiskCachePref) coil.request.CachePolicy.DISABLED else coil.request.CachePolicy.ENABLED)
+                                .size(coil.size.Size.ORIGINAL)
+                                .scale(Scale.FIT)
                                 .build()
                         }
 
@@ -754,6 +797,7 @@ fun ImageViewer(
                             }
                             AsyncImage(
                                 model = imageRequest,
+                                imageLoader = imageLoader,
                                 contentDescription = null,
                                 modifier = imageModifier.onGloballyPositioned {
                                     imageWidth = it.size.width.toFloat()
@@ -763,7 +807,10 @@ fun ImageViewer(
                                     imageDisplayDimensionsMap[uri] = Pair(imageWidth, imageHeight)
                                 },
                                 contentScale = contentScaleVal,
-                                onState = { imageLoadState = it })
+                                onLoading = { imageLoadState = it },
+                                onSuccess = { imageLoadState = it },
+                                onError = { imageLoadState = it }
+                            )
                             if (isInWindow && isImageLoaded && imageLoadState is AsyncImagePainter.State.Success && (isTextRemovalMode || (translationEnabled && translatedTexts.containsKey(
                                     uri
                                 )))

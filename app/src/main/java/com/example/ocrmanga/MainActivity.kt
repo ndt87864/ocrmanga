@@ -1,6 +1,7 @@
 package com.example.ocrmanga
 
 import android.os.Bundle
+import android.os.Process
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,6 +40,10 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Init memory manager
+        com.example.ocrmanga.utils.MemoryManager.init(this)
+
         setContent {
             OCRMangaTheme {
                 Surface(
@@ -124,5 +129,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        com.example.ocrmanga.utils.MemoryManager.onAppBackgrounded()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        com.example.ocrmanga.utils.MemoryManager.onAppForegrounded()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        com.example.ocrmanga.utils.MemoryManager.trimMemory(level)
     }
 }

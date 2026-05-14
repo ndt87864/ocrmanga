@@ -18,6 +18,24 @@ import kotlin.math.min
 object ImageUtils {
 
     private const val TAG = "ImageUtils"
+    
+    /**
+     * Get image dimensions without loading the full bitmap
+     */
+    fun getImageDimensions(context: Context, uri: android.net.Uri): Pair<Int, Int> {
+        return try {
+            val options = android.graphics.BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                android.graphics.BitmapFactory.decodeStream(inputStream, null, options)
+            }
+            Pair(options.outWidth, options.outHeight)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting image dimensions: $uri", e)
+            Pair(1280, 1808) // Fallback
+        }
+    }
 
     /**
      * Load bitmap từ image_id trong database
@@ -86,6 +104,72 @@ object ImageUtils {
             Log.e(TAG, "Error decoding bitmap from bytes", e)
             null
         }
+    }
+
+    /**
+     * Decode bitmap từ URI với bitmap pool
+     */
+    fun decodeBitmapWithPool(context: android.content.Context, uri: android.net.Uri, pool: com.example.ocrmanga.utils.BitmapPool): Bitmap? {
+        // Try get from pool first
+        val poolBitmap = pool.get(uri.toString(), 0, 0)
+        if (poolBitmap != null) {
+            return poolBitmap
+        }
+
+        // Decode từ source
+        return try {
+            val dimensions = getImageDimensions(context, uri)
+            val (w, h) = dimensions
+
+            // Decode với size tối ưu
+            val options = android.graphics.BitmapFactory.Options().apply {
+                inJustDecodeBounds = false
+                inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                inSampleSize = calculateInSampleSize(w, h, 1080, 1920)
+            }
+
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream, null, options)
+            inputStream.close()
+
+            if (bitmap != null) {
+                // Decode resized version
+                val resizedBitmap = if (options.inSampleSize > 1) {
+                    val scaledW = w / options.inSampleSize
+                    val scaledH = h / options.inSampleSize
+                    android.graphics.Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+                } else {
+                    bitmap
+                }
+
+                // Put vào pool
+                pool.put(uri.toString(), resizedBitmap)
+                resizedBitmap
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error decoding bitmap with pool: $uri", e)
+            null
+        }
+    }
+
+    /**
+     * Calculate inSampleSize cho bitmap decode
+     */
+    fun calculateInSampleSize(originalWidth: Int, originalHeight: Int, reqWidth: Int, reqHeight: Int): Int {
+        var inSampleSize = 1
+
+        if (originalHeight > reqHeight || originalWidth > reqWidth) {
+            val halfHeight = originalHeight / 2
+            val halfWidth = originalWidth / 2
+
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+
+        return inSampleSize
     }
 
     /**
