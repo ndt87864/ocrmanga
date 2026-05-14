@@ -169,7 +169,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val db = writableDatabase
             val deletedCount = db.delete(TABLE_API_KEYS, "$COLUMN_API_KEY_TYPE = ?", arrayOf("nvidia"))
             if (deletedCount > 0) {
-                Log.i(TAG, "Đã dọn dẹp $deletedCount API key NVIDIA khỏi database")
+                //Log.i(TAG, "Đã dọn dẹp $deletedCount API key NVIDIA khỏi database")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Lỗi khi dọn dẹp API key NVIDIA", e)
@@ -196,7 +196,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             
             // Nếu còn cột thừa, recreate bảng translations
             if (hasRotation || hasShapeType || hasOverlayRotation) {
-                Log.i(TAG, "Phát hiện cột thừa trong translations, recreate bảng...")
+                //Log.i(TAG, "Phát hiện cột thừa trong translations, recreate bảng...")
                 try {
                     // 1. Tạo bảng mới với cấu trúc đơn giản
                     db.execSQL("DROP TABLE IF EXISTS translations_new")
@@ -249,7 +249,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_image_id ON translations($COLUMN_IMAGE_ID)")
                     db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_pending_delete ON translations($COLUMN_IMAGE_ID, pending_delete)")
                     
-                    Log.i(TAG, "Đã recreate bảng translations thành công")
+                    //Log.i(TAG, "Đã recreate bảng translations thành công")
                 } catch (e: Exception) {
                     Log.e(TAG, "Lỗi khi recreate bảng translations", e)
                 }
@@ -892,7 +892,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         if (oldVersion < 17) {
             try {
                 db.execSQL("ALTER TABLE translations ADD COLUMN overlay_rotation REAL")
-                Log.i(TAG, "Đã thêm cột overlay_rotation vào bảng translations")
+                //Log.i(TAG, "Đã thêm cột overlay_rotation vào bảng translations")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm cột overlay_rotation (có thể đã tồn tại)", e)
             }
@@ -931,7 +931,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_image_id ON translations($COLUMN_IMAGE_ID)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_translations_pending_delete ON translations($COLUMN_IMAGE_ID, pending_delete)")
                 
-                Log.i(TAG, "Đã migrate bảng translations sang cấu trúc mới (text_id, image_id, translated_text, pending_delete, apply_merge)")
+                //Log.i(TAG, "Đã migrate bảng translations sang cấu trúc mới (text_id, image_id, translated_text, pending_delete, apply_merge)")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi migrate bảng translations", e)
             }
@@ -947,7 +947,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 } catch (e: Exception) {
                     // ignore if update fails
                 }
-                Log.i(TAG, "Đã thêm cột $COLUMN_ANCIENT_TRANSLATION_ENABLED vào bảng $TABLE_ROOM_SETTINGS")
+                //Log.i(TAG, "Đã thêm cột $COLUMN_ANCIENT_TRANSLATION_ENABLED vào bảng $TABLE_ROOM_SETTINGS")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm cột ancient_translation_enabled vào $TABLE_ROOM_SETTINGS", e)
             }
@@ -958,7 +958,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_TEXT_GRADIENT_COLORS TEXT")
                 db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS TEXT")
                 db.execSQL("ALTER TABLE $TABLE_IMAGE_BLOCKS ADD COLUMN $COLUMN_BLOCK_TEXT_GRADIENT_TYPE INTEGER DEFAULT 0")
-                Log.i(TAG, "Đã thêm các cột gradient vào bảng $TABLE_IMAGE_BLOCKS")
+                //Log.i(TAG, "Đã thêm các cột gradient vào bảng $TABLE_IMAGE_BLOCKS")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm các cột gradient vào $TABLE_IMAGE_BLOCKS", e)
             }
@@ -980,7 +980,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 cursor.close()
 
                 if (hasQuotaColumns) {
-                    Log.i(TAG, "Phát hiện cột quota thừa trong api_keys, recreate bảng sang bản đơn giản...")
+                    //Log.i(TAG, "Phát hiện cột quota thừa trong api_keys, recreate bảng sang bản đơn giản...")
                     // 1. Tạo bảng tạm
                     db.execSQL("DROP TABLE IF EXISTS api_keys_new")
                     db.execSQL("""
@@ -1007,7 +1007,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     // 3. Đổi tên
                     db.execSQL("DROP TABLE $TABLE_API_KEYS")
                     db.execSQL("ALTER TABLE api_keys_new RENAME TO $TABLE_API_KEYS")
-                    Log.i(TAG, "Đã dọn dẹp bảng api_keys thành công")
+                    //Log.i(TAG, "Đã dọn dẹp bảng api_keys thành công")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi dọn dẹp bảng api_keys", e)
@@ -1018,7 +1018,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         if (oldVersion < 26) {
             try {
                 db.execSQL("ALTER TABLE translations ADD COLUMN original_text TEXT")
-                Log.i(TAG, "Đã thêm cột original_text vào bảng translations")
+                //Log.i(TAG, "Đã thêm cột original_text vào bảng translations")
             } catch (e: Exception) {
                 Log.w(TAG, "Không thể thêm cột original_text vào translations", e)
             }
@@ -1063,7 +1063,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_id ON images(room_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_order ON images(room_id, display_order)")
 
-                Log.i(TAG, "Đã xóa cột original_text khỏi bảng images (recreate table) với defer_foreign_keys")
+                //Log.i(TAG, "Đã xóa cột original_text khỏi bảng images (recreate table) với defer_foreign_keys")
             } catch (e: Exception) {
                 Log.w(TAG, "Lỗi khi xử lý migration version 27", e)
             }
@@ -1101,7 +1101,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_id ON images(room_id)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_order ON images(room_id, display_order)")
 
-                Log.i(TAG, "Đã xóa cột original_text khỏi bảng images ở version 28")
+                //Log.i(TAG, "Đã xóa cột original_text khỏi bảng images ở version 28")
             } catch (e: Exception) {
                 Log.w(TAG, "Lỗi khi xử lý migration version 28", e)
             }
@@ -1125,7 +1125,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         height = (SELECT height FROM $TABLE_IMAGE_BLOCKS WHERE $TABLE_IMAGE_BLOCKS.$COLUMN_BLOCK_ID = translations.text_id)
                     WHERE EXISTS (SELECT 1 FROM $TABLE_IMAGE_BLOCKS WHERE $TABLE_IMAGE_BLOCKS.$COLUMN_BLOCK_ID = translations.text_id)
                 """)
-                Log.i(TAG, "Đã thêm cột tọa độ vào translations và migrate dữ liệu")
+                //Log.i(TAG, "Đã thêm cột tọa độ vào translations và migrate dữ liệu")
             } catch (e: Exception) {
                 Log.w(TAG, "Lỗi migration version 29", e)
             }
@@ -1135,7 +1135,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         if (oldVersion < 30) {
             try {
                 db.execSQL("ALTER TABLE translations ADD COLUMN original_font_size REAL DEFAULT -1")
-                Log.i(TAG, "Đã thêm cột original_font_size vào bảng translations ở version 30")
+                //Log.i(TAG, "Đã thêm cột original_font_size vào bảng translations ở version 30")
             } catch (e: Exception) {
                 Log.w(TAG, "Lỗi migration version 30", e)
             }
@@ -1143,7 +1143,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        Log.i(TAG, "Hạ cấp database từ $oldVersion xuống $newVersion. Không làm gì để tránh crash.")
+        //Log.i(TAG, "Hạ cấp database từ $oldVersion xuống $newVersion. Không làm gì để tránh crash.")
     }
 
     // --- Helper methods for image blocks CRUD ---
@@ -1183,11 +1183,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     ): Long {
         val db = writableDatabase
         if (shadowColor != null || shadowAlpha != 1.0f || shadowRadius != 0f) {
-            Log.i("DatabaseHelper", "LƯU SHADOW: imageId=$imageId shadowColor=$shadowColor shadowAlpha=$shadowAlpha shadowRadius=$shadowRadius")
+            //Log.i("DatabaseHelper", "LƯU SHADOW: imageId=$imageId shadowColor=$shadowColor shadowAlpha=$shadowAlpha shadowRadius=$shadowRadius")
         }
         // Log inset values for debugging
         if (overlayInset != 0f || overlayInsetHorizontal != 0f || overlayInsetVertical != 0f) {
-            Log.i("DatabaseHelper", "LƯU INSET: imageId=$imageId x=$x y=$y w=$width h=$height inset=$overlayInset insetH=$overlayInsetHorizontal insetV=$overlayInsetVertical")
+            //Log.i("DatabaseHelper", "LƯU INSET: imageId=$imageId x=$x y=$y w=$width h=$height inset=$overlayInset insetH=$overlayInsetHorizontal insetV=$overlayInsetVertical")
         }
         val values = ContentValues().apply {
                             put(COLUMN_BLOCK_IMAGE_ID, imageId)
@@ -1232,7 +1232,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             originalHeight?.let { put(COLUMN_BLOCK_ORIGINAL_HEIGHT, it) }
                             
                             if (gradientColorsStr != null) {
-                                Log.i(TAG, "[DB-WRITE-GRADIENT] imageId=$imageId colors=$gradientColorsStr type=$textGradientType")
+                                //Log.i(TAG, "[DB-WRITE-GRADIENT] imageId=$imageId colors=$gradientColorsStr type=$textGradientType")
                             }
                         }
                         val id = db.insert(TABLE_IMAGE_BLOCKS, null, values)
@@ -1497,11 +1497,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             
             // Xóa tất cả translations của ảnh
             val deletedTranslations = db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-            Log.i(TAG, "deleteImageFromRoom: Deleted $deletedTranslations translations for imageId=$imageId")
+            //Log.i(TAG, "deleteImageFromRoom: Deleted $deletedTranslations translations for imageId=$imageId")
             
             // Xóa tất cả image_blocks của ảnh
             val deletedBlocks = db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
-            Log.i(TAG, "deleteImageFromRoom: Deleted $deletedBlocks image_blocks for imageId=$imageId")
+            //Log.i(TAG, "deleteImageFromRoom: Deleted $deletedBlocks image_blocks for imageId=$imageId")
             
             // Xóa change record nếu có
             try {
@@ -1513,7 +1513,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             
             // Xóa record trong bảng images
             val deletedImages = db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-            Log.i(TAG, "deleteImageFromRoom: Deleted $deletedImages image record for imageId=$imageId")
+            //Log.i(TAG, "deleteImageFromRoom: Deleted $deletedImages image record for imageId=$imageId")
             
             db.setTransactionSuccessful()
             
@@ -1523,7 +1523,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     val file = File(Uri.parse(imageUri).path ?: "")
                     if (file.exists()) {
                         val deleted = file.delete()
-                        Log.i(TAG, "deleteImageFromRoom: Physical file deleted=$deleted for $imageUri")
+                        //Log.i(TAG, "deleteImageFromRoom: Physical file deleted=$deleted for $imageUri")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "deleteImageFromRoom: Failed to delete physical file $imageUri", e)
@@ -1676,7 +1676,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         try {
             val values = ContentValues().apply { put("pending_delete", 0) }
             val rowsUpdated = db.update("translations", values, "$COLUMN_IMAGE_ID IN (SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ?) AND pending_delete = 1", arrayOf(roomId.toString()))
-            Log.i(TAG, "Cleared pending_delete for $rowsUpdated translations in room $roomId")
+            //Log.i(TAG, "Cleared pending_delete for $rowsUpdated translations in room $roomId")
         } catch (e: Exception) {
             Log.w(TAG, "clearPendingDeleteStatusForRoom failed for roomId=$roomId", e)
         }
@@ -1729,7 +1729,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
                     // Filter out blocks marked for deletion (pendingDelete = true)
                     val blocksToSave = textBlocks.filter { !it.pendingDelete }
-                    Log.i(TAG, "applyPendingChangesForRoom: imageId=$imageId totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
+                    //Log.i(TAG, "applyPendingChangesForRoom: imageId=$imageId totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
                     
                     // Persist each translation + image_block
                     blocksToSave.forEach { textBlock ->
@@ -1802,7 +1802,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         val isTranslatedValue = 1
                         val isTranslatedValues = ContentValues().apply { put(COLUMN_IS_TRANSLATED, isTranslatedValue) }
                         db.update(TABLE_IMAGES, isTranslatedValues, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                        Log.i(TAG, "applyPendingChangesForRoom: Updated is_translated=1 (processed) for imageId=$imageId")
+                        //Log.i(TAG, "applyPendingChangesForRoom: Updated is_translated=1 (processed) for imageId=$imageId")
                     } catch (e: Exception) {
                         Log.w(TAG, "applyPendingChangesForRoom: Failed to update is_translated for imageId=$imageId", e)
                     }
@@ -1883,7 +1883,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         
                         // Filter out blocks marked for deletion (pendingDelete = true)
                         val blocksToSave = textBlocks.filter { !it.pendingDelete }
-                        Log.i(TAG, "saveMangaRoom: imageId=$imageId totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
+                        //Log.i(TAG, "saveMangaRoom: imageId=$imageId totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
                         
                         // Lấy kích thước gốc từ textBlock đầu tiên (nếu có)
                         val originalWidth = blocksToSave.firstOrNull()?.originalImageWidth
@@ -2057,7 +2057,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     newName != null && (newName == name || newUri.toString().endsWith(name))
                 } else false
                 if (!exactPresent && !namePresent) {
-                    Log.i(TAG, "updateMangaRoom: Deleting removed image imageId=$imageId uri=$uri")
+                    //Log.i(TAG, "updateMangaRoom: Deleting removed image imageId=$imageId uri=$uri")
                     db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                     db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
                     db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
@@ -2098,9 +2098,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 imageInfos.add(ImageInfo(index, uri, isNew, existingImageId))
                 
                 if (isNew) {
-                    Log.i(TAG, "updateMangaRoom: NEW image detected at index $index, uri=$uriStr")
+                    //Log.i(TAG, "updateMangaRoom: NEW image detected at index $index, uri=$uriStr")
                 } else {
-                    Log.i(TAG, "updateMangaRoom: EXISTING image at index $index, imageId=$existingImageId, uri=$uriStr")
+                    //Log.i(TAG, "updateMangaRoom: EXISTING image at index $index, imageId=$existingImageId, uri=$uriStr")
                 }
             }
             
@@ -2130,7 +2130,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     // Copy new image to target location
                     val copied = copyImageToInternalStorage(info.uri, imagesDir, targetFilename)
                     if (copied != null) {
-                        Log.i(TAG, "updateMangaRoom: Copied new image to $targetFilename")
+                        //Log.i(TAG, "updateMangaRoom: Copied new image to $targetFilename")
                     } else {
                         Log.e(TAG, "updateMangaRoom: Failed to copy new image ${info.uri} to $targetFilename")
                     }
@@ -2142,7 +2142,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         // Delete target if exists (shouldn't happen but just in case)
                         if (targetFile.exists()) targetFile.delete()
                         if (tempFile.renameTo(targetFile)) {
-                            Log.i(TAG, "updateMangaRoom: Renamed ${tempFile.name} to $targetFilename for imageId=$imageId")
+                            //Log.i(TAG, "updateMangaRoom: Renamed ${tempFile.name} to $targetFilename for imageId=$imageId")
                         } else {
                             Log.e(TAG, "updateMangaRoom: Failed to rename ${tempFile.name} to $targetFilename")
                         }
@@ -2170,7 +2170,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     }
                     val imageId = db.insert(TABLE_IMAGES, null, imageValues)
                     if (imageId != -1L) {
-                        Log.i(TAG, "updateMangaRoom: Inserted new image with imageId=$imageId at index $index")
+                        //Log.i(TAG, "updateMangaRoom: Inserted new image with imageId=$imageId at index $index")
                         try { ensureChangeRecord(imageId, roomId) } catch (e: Exception) { /* ignore */ }
 
                         // Insert translations if any
@@ -2179,7 +2179,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
                             // Filter out blocks marked for deletion
                             val blocksToSave = textBlocks.filter { !it.pendingDelete }
-                            Log.i(TAG, "updateMangaRoom (new image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
+                            //Log.i(TAG, "updateMangaRoom (new image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
                             
                             blocksToSave.forEach { textBlock ->
                                 val origRect = textBlock.bounds
@@ -2251,7 +2251,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     // Ảnh cũ: cập nhật thứ tự, trạng thái dịch, và URI mới (sau khi rename)
                     val imageId = info.existingImageId!!
                     
-                    Log.i(TAG, "updateMangaRoom: EXISTING image at index $index, imageId=$imageId")
+                    //Log.i(TAG, "updateMangaRoom: EXISTING image at index $index, imageId=$imageId")
                     
                     // Update display_order, is_translated, AND the new URI (file was renamed)
                     val imageValues = ContentValues().apply {
@@ -2283,7 +2283,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         
                         // Filter out blocks marked for deletion (pendingDelete = true)
                         val blocksToSave = textBlocks.filter { !it.pendingDelete }
-                        Log.i(TAG, "updateMangaRoom (existing image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
+                        //Log.i(TAG, "updateMangaRoom (existing image): totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size}")
 
                         var insertedCount = 0
                         blocksToSave.forEach { textBlock ->
@@ -2452,9 +2452,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     // Delete the image record itself
                     db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                 }
-                Log.i(TAG, "cleanupDuplicateImages: Deleted ${duplicateImageIds.size} duplicate images from room $roomId")
+                //Log.i(TAG, "cleanupDuplicateImages: Deleted ${duplicateImageIds.size} duplicate images from room $roomId")
             } else {
-                Log.i(TAG, "cleanupDuplicateImages: No duplicate images found in room $roomId")
+                //Log.i(TAG, "cleanupDuplicateImages: No duplicate images found in room $roomId")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error cleaning up duplicate images for room $roomId", e)
@@ -2471,7 +2471,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     private fun cleanupDuplicateImagesStrict(roomId: Long) {
         val db = writableDatabase
         try {
-            Log.i(TAG, "cleanupDuplicateImagesStrict: Starting strict cleanup for room $roomId")
+            //Log.i(TAG, "cleanupDuplicateImagesStrict: Starting strict cleanup for room $roomId")
             
             // First, run normal cleanup
             cleanupDuplicateImages(roomId)
@@ -2538,7 +2538,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
             remainingCursor.close()
             
-            Log.i(TAG, "cleanupDuplicateImagesStrict: Completed, room $roomId now has $newOrder images")
+            //Log.i(TAG, "cleanupDuplicateImagesStrict: Completed, room $roomId now has $newOrder images")
         } catch (e: Exception) {
             Log.e(TAG, "Error in cleanupDuplicateImagesStrict for room $roomId", e)
         }
@@ -2562,7 +2562,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val actualCount = if (countCursor.moveToFirst()) countCursor.getInt(0) else 0
             countCursor.close()
             
-            Log.i(TAG, "cleanupAndSyncRoomImages: Room $roomId has $actualCount images in DB, expected $expectedCount")
+            //Log.i(TAG, "cleanupAndSyncRoomImages: Room $roomId has $actualCount images in DB, expected $expectedCount")
             
             if (actualCount > expectedCount) {
                 // More images in DB than expected - remove extras
@@ -2617,7 +2617,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             val imageIdMap = mutableMapOf<String, Long>()
             // start with caller-provided mapping (if available) to improve matching
             callerUriToImageId.forEach { (k, v) -> imageIdMap[k.toString()] = v }
-            Log.i(TAG, "updateMangaRoomSelective: callerUriToImageId has ${callerUriToImageId.size} entries")
+            //Log.i(TAG, "updateMangaRoomSelective: callerUriToImageId has ${callerUriToImageId.size} entries")
             
             val cursor = db.rawQuery("SELECT $COLUMN_IMAGE_ID, $COLUMN_IMAGE_URI FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
             var dbImageCount = 0
@@ -2628,8 +2628,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 dbImageCount++
             }
             cursor.close()
-            Log.i(TAG, "updateMangaRoomSelective: DB has $dbImageCount images for room $roomId, total imageIdMap size=${imageIdMap.size}")
-            Log.i(TAG, "updateMangaRoomSelective: dirtyUris=${dirtyUris.map { it.toString() }}")
+            //Log.i(TAG, "updateMangaRoomSelective: DB has $dbImageCount images for room $roomId, total imageIdMap size=${imageIdMap.size}")
+            //Log.i(TAG, "updateMangaRoomSelective: dirtyUris=${dirtyUris.map { it.toString() }}")
 
             // Update display order and is_translated flags for all images
             imageUris.forEachIndexed { index, uri ->
@@ -2653,7 +2653,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             dirtyUris.forEach { dirtyUri ->
                 val uriStr = dirtyUri.toString()
                 var imageId = imageIdMap[uriStr]
-                Log.i(TAG, "updateMangaRoomSelective: Processing dirtyUri=$uriStr exactMatch=${imageId != null}")
+                //Log.i(TAG, "updateMangaRoomSelective: Processing dirtyUri=$uriStr exactMatch=${imageId != null}")
                 
                 if (imageId == null) {
                     try {
@@ -2664,7 +2664,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         }
                         if (entry != null) {
                             imageId = entry.value
-                            Log.i(TAG, "updateMangaRoomSelective: Found imageId=$imageId via filename match (fileName=$fileName, matchedKey=${entry.key})")
+                            //Log.i(TAG, "updateMangaRoomSelective: Found imageId=$imageId via filename match (fileName=$fileName, matchedKey=${entry.key})")
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "updateMangaRoomSelective: Exception during filename matching for $uriStr", e)
@@ -2682,7 +2682,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                         )
                         if (orderCursor.moveToFirst()) {
                             imageId = orderCursor.getLong(0)
-                            Log.i(TAG, "updateMangaRoomSelective: Found imageId=$imageId via display_order=$index")
+                            //Log.i(TAG, "updateMangaRoomSelective: Found imageId=$imageId via display_order=$index")
                         }
                         orderCursor.close()
                     }
@@ -2727,7 +2727,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 imageIdMap[newUri.toString()] = imageId
                                 // remove original file if necessary
                                 try { deleteOriginalImage(dirtyUri) } catch (e: Exception) { /* ignore */ }
-                                Log.i(TAG, "updateMangaRoomSelective: Successfully inserted new image at index $index (imageId=$imageId)")
+                                //Log.i(TAG, "updateMangaRoomSelective: Successfully inserted new image at index $index (imageId=$imageId)")
                             } else {
                                 Log.e(TAG, "Không thể chèn ảnh mới cho uri $uriStr vào truyện $roomId")
                                 // skip processing this dirtyUri
@@ -2761,13 +2761,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     
                     // Filter out blocks that are marked for deletion (pendingDelete = true)
                     val blocksToSave = textBlocks.filter { !it.pendingDelete }
-                    Log.i(TAG, "updateMangaRoomSelective: uri=$dirtyUri totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size} (filtered ${textBlocks.size - blocksToSave.size} pendingDelete blocks)")
+                    //Log.i(TAG, "updateMangaRoomSelective: uri=$dirtyUri totalBlocks=${textBlocks.size} blocksToSave=${blocksToSave.size} (filtered ${textBlocks.size - blocksToSave.size} pendingDelete blocks)")
 
                     var insertedCount = 0
                     blocksToSave.forEachIndexed { idx, textBlock ->
                         // Log inset values being saved
                         if (textBlock.overlayInset != 0f || textBlock.overlayInsetHorizontal != 0f || textBlock.overlayInsetVertical != 0f) {
-                            Log.i(TAG, "updateMangaRoomSelective: Block[$idx] inset=${textBlock.overlayInset} insetH=${textBlock.overlayInsetHorizontal} insetV=${textBlock.overlayInsetVertical}")
+                            //Log.i(TAG, "updateMangaRoomSelective: Block[$idx] inset=${textBlock.overlayInset} insetH=${textBlock.overlayInsetHorizontal} insetV=${textBlock.overlayInsetVertical}")
                         }
                         val origRect = textBlock.bounds
                         // Use original bounds without scaling
@@ -3159,7 +3159,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 
                 // Log để debug
                 if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {
-                    Log.i(TAG, "getMangaRoom ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInset insetH=$overlayInsetH insetV=$overlayInsetV")
+                    //Log.i(TAG, "getMangaRoom ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInset insetH=$overlayInsetH insetV=$overlayInsetV")
                 }
                 
                 val finalTextColor = textColor ?: 0xFF000000.toInt()
@@ -3218,7 +3218,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
                     db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
                     db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                    Log.i(TAG, "getMangaRoom: Removed missing image from DB: imageId=$imageId")
+                    //Log.i(TAG, "getMangaRoom: Removed missing image from DB: imageId=$imageId")
                 } catch (e: Exception) {
                     Log.e(TAG, "getMangaRoom: Failed to remove missing image imageId=$imageId", e)
                 }
@@ -3598,7 +3598,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 
                 // Prioritize coordinates from translations table if available
                 val bounds = if (transData != null && transData.width > 0 && transData.height > 0) {
-                    Log.i(TAG, "[DB-READ-COORD] imageId=$imageId block=$blockIndex text='${transData.translatedText.take(20)}' FROM translations: x=${transData.x} y=${transData.y} w=${transData.width} h=${transData.height}")
+                    //Log.i(TAG, "[DB-READ-COORD] imageId=$imageId block=$blockIndex text='${transData.translatedText.take(20)}' FROM translations: x=${transData.x} y=${transData.y} w=${transData.width} h=${transData.height}")
                     Rect(transData.x, transData.y, transData.x + transData.width, transData.y + transData.height)
                 } else {
                     val x = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_X))
@@ -3674,7 +3674,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 
                 // Log chi tiết dữ liệu gradient đọc được
                 if (textGradientColors != null && textGradientColors.isNotEmpty()) {
-                    Log.i(TAG, "[DB-READ-GRADIENT] imageId=$imageId colors=$textGradientColors offsets=$textGradientOffsets type=$textGradientType")
+                    //Log.i(TAG, "[DB-READ-GRADIENT] imageId=$imageId colors=$textGradientColors offsets=$textGradientOffsets type=$textGradientType")
                 }
                 
                 // Log để debug

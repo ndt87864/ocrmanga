@@ -12,7 +12,7 @@ object AppLogger {
 
     fun i(tag: String, msg: String) {
         if (AppConfig.DEBUG_LOGGING) {
-            Log.i(tag, msg)
+            //Log.i(tag, msg)
         }
     }
 

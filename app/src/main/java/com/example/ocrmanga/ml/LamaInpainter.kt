@@ -102,13 +102,13 @@ object LamaInpainter {
             // Re-copy if file missing or size changed (model updated)
             val assetSize = context.assets.open(MODEL_PATH).use { it.available().toLong() }
             if (!modelFile.exists() || modelFile.length() != assetSize) {
-                Log.i(TAG, "Copying ONNX model to internal storage (asset=$assetSize, local=${modelFile.length()})...")
+                //Log.i(TAG, "Copying ONNX model to internal storage (asset=$assetSize, local=${modelFile.length()})...")
                 context.assets.open(MODEL_PATH).use { input ->
                     modelFile.outputStream().use { output ->
                         input.copyTo(output, bufferSize = 8192)
                     }
                 }
-                Log.i(TAG, "Model copied: ${modelFile.length()} bytes")
+                //Log.i(TAG, "Model copied: ${modelFile.length()} bytes")
             }
 
             val sessionOptions = OrtSession.SessionOptions().apply {
@@ -121,15 +121,15 @@ object LamaInpainter {
             // Log input/output info
             for ((name, info) in session.inputInfo) {
                 val tensorInfo = info.info as? ai.onnxruntime.TensorInfo
-                Log.i(TAG, "Input '$name' shape: ${tensorInfo?.shape?.contentToString()}")
+                //Log.i(TAG, "Input '$name' shape: ${tensorInfo?.shape?.contentToString()}")
             }
             for ((name, info) in session.outputInfo) {
                 val tensorInfo = info.info as? ai.onnxruntime.TensorInfo
-                Log.i(TAG, "Output '$name' shape: ${tensorInfo?.shape?.contentToString()}")
+                //Log.i(TAG, "Output '$name' shape: ${tensorInfo?.shape?.contentToString()}")
             }
 
             isInitialized = true
-            Log.i(TAG, "LamaInpainter ready (ONNX): ${inputW}x${inputH}")
+            //Log.i(TAG, "LamaInpainter ready (ONNX): ${inputW}x${inputH}")
         } catch (e: Exception) {
             Log.e(TAG, "Init failed", e)
             isInitialized = false

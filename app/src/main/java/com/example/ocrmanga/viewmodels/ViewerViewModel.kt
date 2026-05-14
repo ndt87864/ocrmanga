@@ -115,10 +115,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     if (imageId != null) {
                         // Trả về list blocks đầy đủ từ DB
                         val blocks = databaseHelper.getBlocksForImageAsTextBlockInfo(imageId)
-                        Log.i("ViewerViewModel", "getExistingBlocksForUri: Found ${blocks.size} blocks in DB for imageId=$imageId, uri=$uri")
+                        //Log.i("ViewerViewModel", "getExistingBlocksForUri: Found ${blocks.size} blocks in DB for imageId=$imageId, uri=$uri")
                         blocks
                     } else {
-                        Log.i("ViewerViewModel", "getExistingBlocksForUri: imageId not found for uri=$uri")
+                        //Log.i("ViewerViewModel", "getExistingBlocksForUri: imageId not found for uri=$uri")
                         emptyList()
                     }
                 } catch (e: Exception) {
@@ -159,7 +159,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         // Mark this URI as dirty so save will detect the change
         dirtyUris.add(uri)
-        Log.i(TAG, "togglePendingDelete: Marked uri=$uri as dirty (pendingDelete=$setPending)")
+        //Log.i(TAG, "togglePendingDelete: Marked uri=$uri as dirty (pendingDelete=$setPending)")
     }
     
     // Xóa text gốc trên ảnh sử dụng LaMa inpainting
@@ -367,7 +367,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             if (imageId != null) {
                 try {
                     databaseHelper.markTranslationsAsPendingDelete(imageId)
-                    //Log.i(TAG, "[RETRANSLATE] Marked old translations as pending_delete for imageId=$imageId")
+                    ////Log.i(TAG, "[RETRANSLATE] Marked old translations as pending_delete for imageId=$imageId")
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to mark pending delete for imageId=$imageId", e)
                 }
@@ -384,12 +384,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         // Xóa tất cả translations cho image này
                         val db = databaseHelper.writableDatabase
                         val deletedCount = db.delete("translations", "${DatabaseHelper.COLUMN_IMAGE_ID} = ?", arrayOf(imageId.toString()))
-                        Log.i(TAG, "[RETRANSLATE-OFF] Deleted $deletedCount translations from DB for imageId=$imageId")
+                        //Log.i(TAG, "[RETRANSLATE-OFF] Deleted $deletedCount translations from DB for imageId=$imageId")
                         
                         // Xóa luôn các image_blocks
                         try {
                             databaseHelper.deleteBlocksForImage(imageId)
-                            Log.i(TAG, "[RETRANSLATE-OFF] Deleted image_blocks for imageId=$imageId")
+                            //Log.i(TAG, "[RETRANSLATE-OFF] Deleted image_blocks for imageId=$imageId")
                         } catch (e: Exception) {
                             Log.w(TAG, "Failed to delete image_blocks for imageId=$imageId", e)
                         }
@@ -399,7 +399,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             put(DatabaseHelper.COLUMN_IS_TRANSLATED, 0)
                         }
                         db.update(DatabaseHelper.TABLE_IMAGES, imageValues, "${DatabaseHelper.COLUMN_IMAGE_ID} = ?", arrayOf(imageId.toString()))
-                        Log.i(TAG, "[RETRANSLATE-OFF] Marked image as untranslated in TABLE_IMAGES for imageId=$imageId")
+                        //Log.i(TAG, "[RETRANSLATE-OFF] Marked image as untranslated in TABLE_IMAGES for imageId=$imageId")
                         
                         // Clear is_changed flag to prevent this from counting as changed
                         databaseHelper.clearChangedFlagForImage(imageId)
@@ -445,7 +445,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 val translation = uiState.value.translatedTexts[prevUri]?.second
                                 if (translation != null && translation.isNotEmpty()) {
                                     foundTranslation = translation
-                                    Log.i(TAG, "[RETRANSLATE-PREV] Tìm thấy bản dịch tham khảo từ ảnh index=$i")
+                                    //Log.i(TAG, "[RETRANSLATE-PREV] Tìm thấy bản dịch tham khảo từ ảnh index=$i")
                                     break
                                 }
                             }
@@ -471,14 +471,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         uri
                     }
 
-                    Log.i(TAG, "Calling translateImage for uri=$uri (canonical=$canonicalUri, imageId=${uriToImageId[uri]}) mode=$mode reuseExistingOcr=$reuseExistingOcr")
+                    //Log.i(TAG, "Calling translateImage for uri=$uri (canonical=$canonicalUri, imageId=${uriToImageId[uri]}) mode=$mode reuseExistingOcr=$reuseExistingOcr")
 
                     // Xóa cache cũ của ảnh này để đảm bảo nó chạy lại quá trình dịch/OCR mới nhất
                     translationRepository.clearCacheForImage(canonicalUri, mode)
 
                     val result = translationRepository.translateImage(canonicalUri, mode, statusCallback, previousTranslation, isAncientMode = uiState.value.isAncientTranslationMode, reuseExistingBlocks = if (reuseExistingOcr) existingBlocks else null)
                     
-                    //Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
+                    ////Log.i(TAG, "[RETRANSLATE] Translation completed: uri=$uri, originalText=${result.first.take(50)}, blocks=${result.second.size}")
                     
                     // Ensure blocks have overlay/text colors set similarly to queued translations
                     val (originalText, blocks) = result
@@ -502,11 +502,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         fixedBlocks.forEachIndexed { i, fb ->
                             val origHex = fb.originalTextColor?.let { String.format("#%08X", it) } ?: "null"
                             val custHex = fb.customTextColor?.let { String.format("#%08X", it) } ?: "null"
-                            //Log.i(TAG, "[RETRANSLATE] Block #$i: origColor=$origHex customColor=$custHex text='${fb.text.take(40)}'")
+                            ////Log.i(TAG, "[RETRANSLATE] Block #$i: origColor=$origHex customColor=$custHex text='${fb.text.take(40)}'")
                         }
                     } catch (_: Exception) { }
                     
-                    //Log.i(TAG, "[RETRANSLATE] About to update UI state with ${fixedBlocks.size} blocks")
+                    ////Log.i(TAG, "[RETRANSLATE] About to update UI state with ${fixedBlocks.size} blocks")
                     
                     // Không tự động tối ưu hóa overlay nữa theo yêu cầu người dùng
                     // val optimizedBlocks = autoOptimizeOverlay(uri, fixedBlocks)
@@ -516,7 +516,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         updateTranslatedBlocks(uri, fixedBlocks, reopenEditor = false, originalText = originalText)
                     }
 
-                    //Log.i(TAG, "[RETRANSLATE] UI state updated successfully. translationVersion=${_uiState.value.translationVersion}")
+                    ////Log.i(TAG, "[RETRANSLATE] UI state updated successfully. translationVersion=${_uiState.value.translationVersion}")
                     
                     // Cập nhật trạng thái: hoàn tất
                     updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
@@ -527,13 +527,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     // Mark as dirty and set DB change flag if this image belongs to a saved room
                     dirtyUris.add(uri)
                     val rid = _uiState.value.roomId
-                    //Log.i(TAG, "[RETRANSLATE] Checking auto-save: uri=$uri imageId=$imageId roomId=$rid")
+                    ////Log.i(TAG, "[RETRANSLATE] Checking auto-save: uri=$uri imageId=$imageId roomId=$rid")
                     if (rid != null && imageId != null) {
                         try {
                             val numChanged = databaseHelper.markImageChanged(imageId, rid)
-                            //Log.i(TAG, "[RETRANSLATE] After markImageChanged: numChanged=$numChanged for imageId=$imageId")
+                            ////Log.i(TAG, "[RETRANSLATE] After markImageChanged: numChanged=$numChanged for imageId=$imageId")
                             if (numChanged >= 5) {
-                                //Log.i(TAG, "[RETRANSLATE] Threshold reached! Calling maybeAutoSaveChangedImages")
+                                ////Log.i(TAG, "[RETRANSLATE] Threshold reached! Calling maybeAutoSaveChangedImages")
                                 maybeAutoSaveChangedImages(rid)
                             }
                         } catch (e: Exception) { 
@@ -550,7 +550,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     if (imageId != null) {
                         try {
                             databaseHelper.clearPendingDeleteStatus(imageId)
-                            Log.i(TAG, "[RETRANSLATE-FAIL] Cleared pending_delete status for imageId=$imageId")
+                            //Log.i(TAG, "[RETRANSLATE-FAIL] Cleared pending_delete status for imageId=$imageId")
                         } catch (ex: Exception) {
                             Log.w(TAG, "Failed to clear pending delete after translation failure for imageId=$imageId", ex)
                         }
@@ -578,7 +578,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 oldBlock.bounds != finalBlock.bounds ||
                 oldBlock.rotation != finalBlock.rotation ||
                 oldBlock.fontSize != finalBlock.fontSize) {
-                Log.i(TAG, "[UPDATE] Block text='${finalBlock.text}' rotation=$rot for uri=$uri")
+                //Log.i(TAG, "[UPDATE] Block text='${finalBlock.text}' rotation=$rot for uri=$uri")
             }
             finalBlock
         }
@@ -664,12 +664,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val oldGradType = oldBlock?.textGradientType ?: 0
                 val newGradType = newBlock.textGradientType
                 
-                Log.i(TAG, "[SAVE-BLOCK-COLORS] Block[$idx] uri=$uri")
-                Log.i(TAG, "  -> TEXT COLOR: $oldColorHex -> $newColorHex")
-                Log.i(TAG, "  -> GRADIENT: $oldGradStr (Type:$oldGradType) -> $newGradStr (Type:$newGradType)")
+                //Log.i(TAG, "[SAVE-BLOCK-COLORS] Block[$idx] uri=$uri")
+                //Log.i(TAG, "  -> TEXT COLOR: $oldColorHex -> $newColorHex")
+                //Log.i(TAG, "  -> GRADIENT: $oldGradStr (Type:$oldGradType) -> $newGradStr (Type:$newGradType)")
                 
                 if (oldGrad != newGrad || oldGradType != newGradType) {
-                    Log.i(TAG, "  -> GRADIENT CHANGED detected for block $idx")
+                    //Log.i(TAG, "  -> GRADIENT CHANGED detected for block $idx")
                 }
             }
         } catch (e: Exception) {
@@ -686,7 +686,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val db = databaseHelper.writableDatabase
                 val values = android.content.ContentValues().apply { put(DatabaseHelper.COLUMN_IS_TRANSLATED, 1) }
                 db.update(DatabaseHelper.TABLE_IMAGES, values, "${DatabaseHelper.COLUMN_IMAGE_ID} = ?", arrayOf(imageId.toString()))
-                Log.i(TAG, "Marked image as temporarily translated in TABLE_IMAGES for imageId=$imageId")
+                //Log.i(TAG, "Marked image as temporarily translated in TABLE_IMAGES for imageId=$imageId")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to set is_translated in DB for imageId=$imageId", e)
             }
@@ -696,16 +696,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         if (rid != null && imageId != null) {
             try {
                 val numChanged = databaseHelper.markImageChanged(imageId, rid)
-                Log.i(TAG, "Updated translated blocks for image: $uri, total changed images: $numChanged")
+                //Log.i(TAG, "Updated translated blocks for image: $uri, total changed images: $numChanged")
                 if (numChanged >= 5) {
-                    Log.i(TAG, "Triggering auto-save after editing image: $uri, changed images: $numChanged")
+                    //Log.i(TAG, "Triggering auto-save after editing image: $uri, changed images: $numChanged")
                     maybeAutoSaveChangedImages(rid)
                 }
             } catch (e: Exception) { Log.w(TAG, "Failed to markImageChanged for imageId=$imageId", e) }
         }
-        //log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${updatedBlocks.size} blocks")
+        ////Log.i(TAG, "Đã cập nhật blocks bản dịch cho ảnh $uri với ${updatedBlocks.size} blocks")
         updatedBlocks.forEachIndexed { idx, block ->
-            //log.i(TAG, "[UPDATE] Block[$idx] rotation=${block.rotation} text='${block.text}' uri=$uri")
+            ////Log.i(TAG, "[UPDATE] Block[$idx] rotation=${block.rotation} text='${block.text}' uri=$uri")
         }
     }
 
@@ -920,7 +920,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     private suspend fun retranslateImageSync(uri: Uri, mode: TranslationMode) {
         try {
-            Log.i(TAG, "[BULK-OCR] Scanning $uri")
+            //Log.i(TAG, "[BULK-OCR] Scanning $uri")
             val result = translationRepository.translateImage(uri, mode)
             val originalText = result.first
             val blocks = result.second
@@ -1109,7 +1109,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val isAlreadyScanned = _uiState.value.translatedStatus[uri] ?: false
 
         if (currentBlocks.isEmpty() && !isAlreadyScanned) {
-            Log.i("ViewerViewModel", "[IMPORT-JSON] No blocks found and not scanned yet, triggering OCR for $uri")
+            //Log.i("ViewerViewModel", "[IMPORT-JSON] No blocks found and not scanned yet, triggering OCR for $uri")
             if (!isBulk) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Đang quét OCR để áp dụng bản dịch...", Toast.LENGTH_SHORT).show()
@@ -1153,7 +1153,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     Math.abs(block.bounds.bottom - bottom) < 15
                 }
                 if (match != null) {
-                    Log.i("ViewerViewModel", "[IMPORT-JSON] Matched block index $blockIndex by coordinates for $uri")
+                    //Log.i("ViewerViewModel", "[IMPORT-JSON] Matched block index $blockIndex by coordinates for $uri")
                 }
             }
 
@@ -1280,13 +1280,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private fun maybeAutoSaveChangedImages(roomId: Long) {
         // Skip new triggers while an auto-save is running to avoid cancelling mid-reload
         if (!autoSaveInProgress.compareAndSet(false, true)) {
-            Log.i(TAG, "Auto-save already in progress, skipping")
+            //Log.i(TAG, "Auto-save already in progress, skipping")
             return
         }
         autoSaveJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val changedIds = databaseHelper.getChangedImageIdsForRoom(roomId)
-                Log.i(TAG, "Auto-save check: ${changedIds.size} images marked as changed for room $roomId")
+                //Log.i(TAG, "Auto-save check: ${changedIds.size} images marked as changed for room $roomId")
                 if (changedIds.size >= 5) {
                     val mapping = mutableMapOf<Long, Pair<String, List<TextBlockInfo>>>()
                     val currentTranslated = _uiState.value.translatedTexts
@@ -1296,7 +1296,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             mapping[imgId] = pair
                         }
                     }
-                    Log.i(TAG, "Auto-save: Will save ${mapping.size} images (threshold: 5, changed: ${changedIds.size})")
+                    //Log.i(TAG, "Auto-save: Will save ${mapping.size} images (threshold: 5, changed: ${changedIds.size})")
                     if (mapping.isNotEmpty()) {
                         // Pass clearChangedFlag=true to clear is_changed flag after auto-save.
                         // If user wants to modify further, they can:
@@ -1315,13 +1315,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                     dirtyUris.remove(uri)
                                 }
                             }
-                            Log.i(TAG, "Auto-saved ${mapping.size} changed images for room $roomId (threshold reached), cleared from dirtyUris; skip reload to keep UI stable")
+                            //Log.i(TAG, "Auto-saved ${mapping.size} changed images for room $roomId (threshold reached), cleared from dirtyUris; skip reload to keep UI stable")
                         } else {
                             Log.w(TAG, "Auto-save failed for room $roomId mappingSize=${mapping.size}")
                         }
                     }
                 } else {
-                    Log.i(TAG, "Auto-save: Not enough changed images (${changedIds.size}/5)")
+                    //Log.i(TAG, "Auto-save: Not enough changed images (${changedIds.size}/5)")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "maybeAutoSaveChangedImages failed for room $roomId", e)
@@ -1359,7 +1359,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         // Register timer job so it will be cancelled on clear
         timerJob?.let { registerJob(it) }
-        //log.i(TAG, "Bắt đầu đếm thời gian dịch cho ảnh $imageIndex: $uri")
+        ////Log.i(TAG, "Bắt đầu đếm thời gian dịch cho ảnh $imageIndex: $uri")
     }
 
     // Dừng và reset bộ đếm thời gian dịch
@@ -1373,7 +1373,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 currentTranslatingImageIndex = 0
             ) 
         }
-        //log.i(TAG, "Dừng bộ đếm thời gian dịch")
+        ////Log.i(TAG, "Dừng bộ đếm thời gian dịch")
     }
 
     private fun loadAllRoomIds() {
@@ -1387,7 +1387,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 cursor.close()
                 _allRoomIds.value = roomIds.sorted()
-                //log.i(TAG, "Đã tải ${roomIds.size} ID truyện")
+                ////Log.i(TAG, "Đã tải ${roomIds.size} ID truyện")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi tải room IDs", e)
             }
@@ -1427,9 +1427,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             newImageUris.addAll(uris)
             // this is a new session, forget last loaded room id so we don't fall back
             lastLoadedRoomId = null
-            Log.i(TAG, "setImageUris(isNew=true): cleared translationQueue, dirtyUris, uriToImageId and lastLoadedRoomId")
+            //Log.i(TAG, "setImageUris(isNew=true): cleared translationQueue, dirtyUris, uriToImageId and lastLoadedRoomId")
         }
-        //log.i(TAG, "Đã đặt ${uris.size} URI ảnh, isNew: $isNew")
+        ////Log.i(TAG, "Đã đặt ${uris.size} URI ảnh, isNew: $isNew")
     }
 
     fun addNewImageUris(uris: List<Uri>) {
@@ -1446,7 +1446,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         // Không clear, chỉ add thêm vào để track tất cả ảnh mới
         newImageUris.addAll(newUris)
-        Log.i(TAG, "addNewImageUris: Added ${newUris.size} new URIs, total newImageUris=${newImageUris.size}")
+        //Log.i(TAG, "addNewImageUris: Added ${newUris.size} new URIs, total newImageUris=${newImageUris.size}")
 
         // Only auto-translate if both translation is enabled AND auto-translate setting is ON
         if (uiState.value.translationEnabled && 
@@ -1470,7 +1470,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         // Không clear, chỉ add thêm vào để track tất cả ảnh mới
         newImageUris.addAll(newUris)
-        Log.i(TAG, "addNewImageUrisAtStart: Added ${newUris.size} new URIs, total newImageUris=${newImageUris.size}")
+        //Log.i(TAG, "addNewImageUrisAtStart: Added ${newUris.size} new URIs, total newImageUris=${newImageUris.size}")
 
         // Only auto-translate if both translation is enabled AND auto-translate setting is ON
         if (uiState.value.translationEnabled && 
@@ -1495,7 +1495,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         // Không clear, chỉ add thêm vào để track tất cả ảnh mới
         newImageUris.addAll(newUris)
-        Log.i(TAG, "addNewImageUrisAtIndex: Added ${newUris.size} new URIs at index $insertIndex, total newImageUris=${newImageUris.size}")
+        //Log.i(TAG, "addNewImageUrisAtIndex: Added ${newUris.size} new URIs at index $insertIndex, total newImageUris=${newImageUris.size}")
 
         // Only auto-translate if both translation is enabled AND auto-translate setting is ON
         if (uiState.value.translationEnabled && 
@@ -1530,7 +1530,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun clearMemoryAndReloadRoom(roomId: Long) {
         // Lưu lại vị trí scroll để nhảy lại sau khi reload
         val scrollIndexToRestore = currentScrollIndex
-        Log.i(TAG, "clearMemoryAndReloadRoom: Clearing memory and reloading room $roomId from DB, scrollIndex=$scrollIndexToRestore")
+        //Log.i(TAG, "clearMemoryAndReloadRoom: Clearing memory and reloading room $roomId from DB, scrollIndex=$scrollIndexToRestore")
         
         // 1) Clear in-memory translation repository cache
         try {
@@ -1552,7 +1552,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val context = getApplication<Application>()
             val imageLoader = coil.Coil.imageLoader(context)
             imageLoader.memoryCache?.clear()
-            Log.i(TAG, "Cleared Coil memory cache")
+            //Log.i(TAG, "Cleared Coil memory cache")
         } catch (e: Throwable) {
             Log.w(TAG, "Failed to clear Coil memory cache", e)
         }
@@ -1583,7 +1583,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             // Tính số ảnh cần load thêm
             val additionalNeeded = scrollIndexToRestore - currentImageCount + 1
             val batchesToLoad = (additionalNeeded + BATCH_SIZE - 1) / BATCH_SIZE // Ceiling division
-            Log.i(TAG, "clearMemoryAndReloadRoom: Need to load $batchesToLoad more batches to reach scroll index $scrollIndexToRestore")
+            //Log.i(TAG, "clearMemoryAndReloadRoom: Need to load $batchesToLoad more batches to reach scroll index $scrollIndexToRestore")
             
             // Load các batch cần thiết
             repeat(batchesToLoad) {
@@ -1594,14 +1594,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         
         // 9) Set scroll index để UI nhảy đến vị trí trước khi reload
-        Log.i(TAG, "clearMemoryAndReloadRoom: Setting scrollToIndexAfterReload=$scrollIndexToRestore")
+        //Log.i(TAG, "clearMemoryAndReloadRoom: Setting scrollToIndexAfterReload=$scrollIndexToRestore")
         _uiState.update { 
             val newState = it.copy(scrollToIndexAfterReload = scrollIndexToRestore)
-            Log.i(TAG, "clearMemoryAndReloadRoom: State updated, scrollToIndexAfterReload=${newState.scrollToIndexAfterReload}")
+            //Log.i(TAG, "clearMemoryAndReloadRoom: State updated, scrollToIndexAfterReload=${newState.scrollToIndexAfterReload}")
             newState
         }
         
-        Log.i(TAG, "clearMemoryAndReloadRoom: Completed reload of room $roomId, will scroll to index $scrollIndexToRestore (total images: ${_uiState.value.imageUris.size})")
+        //Log.i(TAG, "clearMemoryAndReloadRoom: Completed reload of room $roomId, will scroll to index $scrollIndexToRestore (total images: ${_uiState.value.imageUris.size})")
     }
     
     /**
@@ -1648,7 +1648,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationVersion = it.translationVersion + 1
             )
         }
-        Log.i(TAG, "loadMoreImagesSync completed: total imageUris=${_uiState.value.imageUris.size}")
+        //Log.i(TAG, "loadMoreImagesSync completed: total imageUris=${_uiState.value.imageUris.size}")
     }
 
     /**
@@ -1680,7 +1680,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             // getMangaRoomOptimized uses batch queries (3 queries total instead of N+2)
             val (allImages, _, translations) = databaseHelper.getMangaRoomOptimized(roomId)
             
-            Log.i(TAG, "loadRoomInternal: Room $roomId has ${allImages.size} images after DB cleanup")
+            //Log.i(TAG, "loadRoomInternal: Room $roomId has ${allImages.size} images after DB cleanup")
             
             // Sort images by numeric order in filename
             fun extractImageNumber(uri: Uri): Int {
@@ -1774,7 +1774,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     roomTitle = roomTitle
                 )
             }
-            Log.i(TAG, "loadRoomInternal completed: initialBatch=${initialBatch.size} remainingImages=${remainingImages.size} total=${initialBatch.size + remainingImages.size}")
+            //Log.i(TAG, "loadRoomInternal completed: initialBatch=${initialBatch.size} remainingImages=${remainingImages.size} total=${initialBatch.size + remainingImages.size}")
             lastLoadedRoomId = roomId
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi khi tải truyện $roomId", e)
@@ -1840,7 +1840,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val existingUriStrings = it.imageUris.map { u -> u.toString() }.toSet()
                     val newBatch = batch.filter { uri -> !existingUriStrings.contains(uri.toString()) }
                     
-                    Log.i(TAG, "loadMoreImages: batch=${batch.size} newBatch=${newBatch.size} existing=${it.imageUris.size} remaining=${newRemaining.size} translations=${translations.size}")
+                    //Log.i(TAG, "loadMoreImages: batch=${batch.size} newBatch=${newBatch.size} existing=${it.imageUris.size} remaining=${newRemaining.size} translations=${translations.size}")
                     
                     it.copy(
                         imageUris = it.imageUris + newBatch,
@@ -1852,7 +1852,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         translationVersion = it.translationVersion + 1
                     )
                 }
-                Log.i(TAG, "loadMoreImages completed: total imageUris=${uiState.value.imageUris.size}")
+                //Log.i(TAG, "loadMoreImages completed: total imageUris=${uiState.value.imageUris.size}")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi tải thêm ảnh", e)
                 // Tắt loading ngay cả khi có lỗi
@@ -1892,7 +1892,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationEnabled = mode != TranslationMode.OFF
             )
         }
-        //log.i(TAG, "Chế độ dịch được đặt thành $mode")
+        ////Log.i(TAG, "Chế độ dịch được đặt thành $mode")
 
         if (mode != TranslationMode.OFF) {
             val allUris = (uiState.value.imageUris + uiState.value.remainingImages).distinctBy { it.toString() }
@@ -1932,7 +1932,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             newImageUris.clear()
             translationQueue.clear()
             translationJob?.cancel()
-            //log.i(TAG, "Đã tắt dịch và reset trạng thái")
+            ////Log.i(TAG, "Đã tắt dịch và reset trạng thái")
         }
     }
 
@@ -1946,7 +1946,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             autoSaveJob = null
             try {
             val imageCount = (uiState.value.imageUris.size + uiState.value.remainingImages.size)
-            //log.i(TAG, "Đang lưu truyện hiện tại với $imageCount ảnh")
+            ////Log.i(TAG, "Đang lưu truyện hiện tại với $imageCount ảnh")
             if (imageCount == 0) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Không có ảnh để lưu!", Toast.LENGTH_SHORT).show()
@@ -1988,7 +1988,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // Log all rotation values before saving
                 uniqueTranslatedTexts.forEach { (uri, pair) ->
                     pair.second.forEachIndexed { idx, block ->
-                        //log.i(TAG, "[SAVE ROOM] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
+                        ////Log.i(TAG, "[SAVE ROOM] Block[$idx] uri=$uri rotation=${block.rotation} text='${block.text}'")
                     }
                 }
                 val roomId: Long
@@ -2006,14 +2006,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val hasDeletedTranslations = deletedTranslationUris.isNotEmpty()
                     val hasRemovedImages = removedImageIds.isNotEmpty()
                     
-                    Log.i(TAG, "Save check: dirtyUris=${dirtyUris.size} changedImageIds=${changedImageIds.size} newImageUris=${newImageUris.size} deletedTranslations=${deletedTranslationUris.size} removedImages=${removedImageIds.size}")
+                    //Log.i(TAG, "Save check: dirtyUris=${dirtyUris.size} changedImageIds=${changedImageIds.size} newImageUris=${newImageUris.size} deletedTranslations=${deletedTranslationUris.size} removedImages=${removedImageIds.size}")
                     
                     var tempSavedCount = 0 // Track số lượng ảnh được save
                     var isRemovalOperation = false // Track if this is a removal operation
                     val updated: Boolean = when {
                         // Case 1: Có ảnh mới được thêm vào truyện → full update để add new images
                         hasNewImages -> {
-                            Log.i(TAG, "Full update: Adding ${newImageUris.size} new images to room")
+                            //Log.i(TAG, "Full update: Adding ${newImageUris.size} new images to room")
                             tempSavedCount = newImageUris.size
                             val ok = databaseHelper.updateMangaRoom(currentRoomId, uniqueImageUris, uniqueTranslatedTexts, uiState.value.translatedStatus)
                             if (ok) {
@@ -2025,7 +2025,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         }
                         // Case 2: Có ảnh bị xóa khỏi truyện → xóa trực tiếp từ DB trước rồi update
                         hasRemovedImages -> {
-                            Log.i(TAG, "Removing ${removedImageIds.size} images from room: $removedImageIds")
+                            //Log.i(TAG, "Removing ${removedImageIds.size} images from room: $removedImageIds")
                             tempSavedCount = removedImageIds.size
                             isRemovalOperation = true
                             
@@ -2033,7 +2033,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             removedImageIds.forEach { imageId ->
                                 try {
                                     databaseHelper.deleteImageFromRoom(imageId)
-                                    Log.i(TAG, "Deleted image from DB: imageId=$imageId")
+                                    //Log.i(TAG, "Deleted image from DB: imageId=$imageId")
                                 } catch (e: Exception) {
                                     Log.e(TAG, "Failed to delete image $imageId", e)
                                 }
@@ -2065,7 +2065,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 }
                             }
                             tempSavedCount = mapping.size
-                            Log.i(TAG, "Partial save: ${tempSavedCount} retranslated images (out of ${changedImageIds.size} changed)")
+                            //Log.i(TAG, "Partial save: ${tempSavedCount} retranslated images (out of ${changedImageIds.size} changed)")
                             if (mapping.isNotEmpty()) {
                                 // Only process images in mapping, not all changedImageIds
                                 databaseHelper.applyPendingChangesForRoom(currentRoomId, mapping)
@@ -2076,7 +2076,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         }
                         // Case 5: Không có gì thay đổi → skip save
                         else -> {
-                            Log.i(TAG, "No changes detected, skipping save")
+                            //Log.i(TAG, "No changes detected, skipping save")
                             tempSavedCount = -1 // Signal no changes
                             true // Không có gì để save nhưng cũng không phải lỗi
                         }
@@ -2114,7 +2114,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     // Clear memory and reload from DB to ensure clean state
                     // Only reload if there were actual changes saved (not skipped)
                     if (savedCount != -1) {
-                        Log.i(TAG, "saveCurrentRoom: Clearing memory and reloading room $roomId from DB")
+                        //Log.i(TAG, "saveCurrentRoom: Clearing memory and reloading room $roomId from DB")
                         clearMemoryAndReloadRoom(roomId)
                     }
                 } else {
@@ -2148,7 +2148,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val imageId = uriToImageId[uri]
         if (imageId != null) {
             removedImageIds.add(imageId)
-            Log.i(TAG, "Marked image for removal: imageId=$imageId uri=$uri")
+            //Log.i(TAG, "Marked image for removal: imageId=$imageId uri=$uri")
         }
         
         currentUris.remove(uri)
@@ -2245,7 +2245,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             val originalText = _uiState.value.translatedTexts[oldUri]?.first ?: ""
                             val updateMap = mapOf(imageId to (originalText to transformedBlocks!!))
                             databaseHelper.applyPendingChangesForRoom(_uiState.value.roomId!!, updateMap)
-                            Log.i(TAG, "replaceImageUri: Persisted ${transformedBlocks!!.size} scaled blocks for imageId=$imageId")
+                            //Log.i(TAG, "replaceImageUri: Persisted ${transformedBlocks!!.size} scaled blocks for imageId=$imageId")
                         }
 
                         // bump version so UI invalidates Coil cache and reloads the new file
@@ -2262,7 +2262,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 } else if (imageId != null && _uiState.value.roomId != null && !persist) {
                     // Temporary replacement for a stored image: do not write to DB. This
                     // mirrors the behavior of replacing a non-stored image in UI only.
-                    Log.i(TAG, "replaceImageUri: temporary swap for stored image imageId=$imageId")
+                    //Log.i(TAG, "replaceImageUri: temporary swap for stored image imageId=$imageId")
                     // Swap URI trong imageUris list
                     val oldIndex = _uiState.value.imageUris.indexOfFirst { it.toString() == oldUri.toString() }
                     if (oldIndex == -1) {
@@ -2303,7 +2303,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val rid = _uiState.value.roomId
                     try {
                         val numChanged = databaseHelper.markImageChanged(imageId, rid!!)
-                        Log.i(TAG, "replaceImageUri temp: marked image changed imageId=$imageId, numChanged=$numChanged")
+                        //Log.i(TAG, "replaceImageUri temp: marked image changed imageId=$imageId, numChanged=$numChanged")
                         if (numChanged >= 5) {
                             maybeAutoSaveChangedImages(rid)
                         }
@@ -2318,7 +2318,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     return@launch
                 } else {
                     // Not a stored image - swap URI directly in UI state
-                    Log.i(TAG, "replaceImageUri: imageId not found for $oldUri, swapping URI in UI state")
+                    //Log.i(TAG, "replaceImageUri: imageId not found for $oldUri, swapping URI in UI state")
                     
                     // Swap URI trong imageUris list
                     val oldIndex = _uiState.value.imageUris.indexOfFirst { it.toString() == oldUri.toString() }
@@ -2441,7 +2441,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             val translation = uiState.value.translatedTexts[prevUri]?.second
                             if (translation != null && translation.isNotEmpty()) {
                                 foundTranslation = translation
-                                Log.i(TAG, "[PREV-TRANSLATION] Tìm thấy bản dịch tham khảo từ ảnh index=$i (uri=$prevUri)")
+                                //Log.i(TAG, "[PREV-TRANSLATION] Tìm thấy bản dịch tham khảo từ ảnh index=$i (uri=$prevUri)")
                                 break
                             }
                         }
@@ -2482,7 +2482,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                     dirtyUris.add(uri)
                                     // Lưu xuống DB (không kèm DragBlockState vì chưa có)
                                     saveRoom(emptyMap())
-                                    Log.i(TAG, "[OCR-COMPLETE] Đã lưu ${ocrBlocks.size} blocks OCR cho $uri vào DB")
+                                    //Log.i(TAG, "[OCR-COMPLETE] Đã lưu ${ocrBlocks.size} blocks OCR cho $uri vào DB")
                                 }
                             )
                             Triple(uri, original, translatedBlocks to sourceLang)
@@ -2564,7 +2564,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         }
                         // Mark as dirty để hệ thống nhận ra có thay đổi khi lưu
                         dirtyUris.add(uri)
-                        Log.i(TAG, "[QUEUE] Added uri=$uri to dirtyUris after translation")
+                        //Log.i(TAG, "[QUEUE] Added uri=$uri to dirtyUris after translation")
                         
                         // Cập nhật trạng thái COMPLETED
                         updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
@@ -2610,7 +2610,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         // KHÔNG clear newImageUris ở đây vì cần giữ để save
         // newImageUris sẽ được clear sau khi save thành công
-        Log.i(TAG, "processTranslationQueue completed, keeping newImageUris=${newImageUris.size} for save")
+        //Log.i(TAG, "processTranslationQueue completed, keeping newImageUris=${newImageUris.size} for save")
         // Lưu toàn bộ kết quả final sau khi dịch xong
         saveRoom(emptyMap())
         // Xóa tất cả trạng thái dịch còn lại
@@ -2727,7 +2727,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     // to a previously loaded room. This fixes cases where selecting images creates
     // a temporary "room" but the ViewModel later reloads the lastSaved room.
     lastLoadedRoomId = null
-    Log.i(TAG, "clearSessionAndImages: cleared lastLoadedRoomId")
+    //Log.i(TAG, "clearSessionAndImages: cleared lastLoadedRoomId")
 
         // 4) Best-effort remove temporary/cache files created by the app
         viewModelScope.launch(Dispatchers.IO) {
@@ -2737,7 +2737,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     try {
                         val rid = uiState.value.roomId ?: lastLoadedRoomId
                         if (rid != null) {
-                            Log.i(TAG, "clearSessionAndImages: deleting saved room $rid as requested")
+                            //Log.i(TAG, "clearSessionAndImages: deleting saved room $rid as requested")
                             try { databaseHelper.deleteRoom(rid) } catch (e: Throwable) { Log.w(TAG, "Failed to delete room $rid", e) }
                             // Also remove images folder if exists
                             val imagesDir = File(getApplication<Application>().getExternalFilesDir(null), "images/$rid")
@@ -2792,7 +2792,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     try {
                         val prefs = app.getSharedPreferences("ocrmanga_prefs", android.content.Context.MODE_PRIVATE)
                         prefs.edit().putBoolean("suppress_coil_disk_cache", true).apply()
-                        Log.i(TAG, "Set suppress_coil_disk_cache=true after clearing session cache")
+                        //Log.i(TAG, "Set suppress_coil_disk_cache=true after clearing session cache")
                     } catch (e: Throwable) {
                         Log.w(TAG, "Failed to persist cache-suppress flag", e)
                     }
@@ -3283,7 +3283,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
 
-                Log.i(TAG, "Exported room $roomId to ${zipFile.absolutePath}")
+                //Log.i(TAG, "Exported room $roomId to ${zipFile.absolutePath}")
                 zipFile.absolutePath
             } catch (e: Exception) {
                 Log.e(TAG, "exportRoomAsZip failed for room $roomId", e)
@@ -3345,7 +3345,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 isSolidBubble = true
                             )
                             persistedFontSize = windowedResult.optimalFontSize
-                            // Log.i("ViewerViewModel", "Persisting optimized fontSize: ${b.fontSize} -> $persistedFontSize for block in ${uri}")
+                            // //Log.i("ViewerViewModel", "Persisting optimized fontSize: ${b.fontSize} -> $persistedFontSize for block in ${uri}")
                         } catch (e: Exception) {
                             Log.e("ViewerViewModel", "Error calculating optimal font size for persistence", e)
                         }
@@ -3610,7 +3610,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val app = getApplication<Application>()
             val prefs = app.getSharedPreferences("ocrmanga_prefs", android.content.Context.MODE_PRIVATE)
             prefs.edit().putBoolean("suppress_coil_disk_cache", false).apply()
-            Log.i(TAG, "Cleared suppress_coil_disk_cache flag (disk caching re-enabled)")
+            //Log.i(TAG, "Cleared suppress_coil_disk_cache flag (disk caching re-enabled)")
         } catch (e: Throwable) {
             Log.w(TAG, "Failed to clear suppress_coil_disk_cache flag", e)
         }

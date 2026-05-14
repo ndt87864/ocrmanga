@@ -562,7 +562,7 @@ object OverlayOptimizer {
                 |Orig bounds: ${block.bounds}
                 |New bounds: $newBounds
             """.trimMargin()
-            Log.i(TAG, "\n" + logMessage)
+            //Log.i(TAG, "\n" + logMessage)
         } else {
             val logMessage = """
                 |[TH2] Block $blockIdentifier
@@ -571,7 +571,7 @@ object OverlayOptimizer {
                 |Orig bounds: ${block.bounds}
                 |New bounds: $newBounds
             """.trimMargin()
-            Log.i(TAG, "\n" + logMessage)
+            //Log.i(TAG, "\n" + logMessage)
         }
 
         return block.copy(

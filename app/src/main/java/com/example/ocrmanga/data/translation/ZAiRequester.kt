@@ -103,11 +103,11 @@ class ZAiRequester(
             .build()
 
         try {
-            Log.i(TAG, "[Z.AI-REQUEST] Bắt đầu gọi API...")
+            //Log.i(TAG, "[Z.AI-REQUEST] Bắt đầu gọi API...")
 
             robustClient.newCall(request).execute().use { response ->
                 val responseCode = response.code
-                Log.i(TAG, "[Z.AI-RESPONSE] Code: $responseCode")
+                //Log.i(TAG, "[Z.AI-RESPONSE] Code: $responseCode")
 
                 val responseBody = response.body?.string()
 
@@ -145,7 +145,7 @@ class ZAiRequester(
 
             val reasoning = message["reasoning_content"]?.asString
             if (!reasoning.isNullOrEmpty()) {
-                Log.i(TAG, "[Z.AI-REASONING] Model đã suy luận: ${reasoning.take(100)}...")
+                //Log.i(TAG, "[Z.AI-REASONING] Model đã suy luận: ${reasoning.take(100)}...")
             }
 
             val finishReason = choice["finish_reason"]?.asString ?: "unknown"

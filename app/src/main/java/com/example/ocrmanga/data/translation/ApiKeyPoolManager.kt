@@ -32,7 +32,7 @@ class ApiKeyPoolManager(private val application: Application) {
             apiKeysCache[type] = keys.toMutableList()
             lastSelectionIndex.putIfAbsent(type, AtomicInteger(0))
         }
-        Log.i(TAG, "Đã tải ${allKeys.size} API keys từ database.")
+        //Log.i(TAG, "Đã tải ${allKeys.size} API keys từ database.")
     }
 
     /**

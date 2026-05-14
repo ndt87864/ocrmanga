@@ -32,7 +32,7 @@ object OpenCvInitializer {
                 if (org.opencv.android.OpenCVLoader.initLocal()) {
                     val probe = Mat()
                     probe.release()
-                    Log.i(TAG, "OpenCV native library loaded successfully via initLocal()")
+                    //Log.i(TAG, "OpenCV native library loaded successfully via initLocal()")
                     true
                 } else false
             } catch (e: Throwable) {
@@ -46,7 +46,7 @@ object OpenCvInitializer {
                     System.loadLibrary(LIB_NAME)
                     val probe = Mat()
                     probe.release()
-                    Log.i(TAG, "OpenCV native library loaded successfully via System.loadLibrary()")
+                    //Log.i(TAG, "OpenCV native library loaded successfully via System.loadLibrary()")
                     true
                 } catch (e: Throwable) {
                     Log.e(TAG, "System.loadLibrary() failed", e)
