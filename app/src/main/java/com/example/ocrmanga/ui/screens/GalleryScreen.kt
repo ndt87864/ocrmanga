@@ -540,7 +540,7 @@ fun GalleryScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = title,
+                                            text = if (!title.isNullOrBlank() && !title.matches(Regex("Phòng \\d+"))) title else "Phòng $roomId",
                                             color = Color(0xFF2D2D2D),
                                             style = MaterialTheme.typography.titleMedium,
                                             modifier = Modifier.weight(1f).padding(end = 4.dp),

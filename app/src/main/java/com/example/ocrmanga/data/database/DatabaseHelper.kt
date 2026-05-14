@@ -3976,6 +3976,19 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         return count
     }
 
+    fun getRoomTitle(roomId: Long): String? {
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT $COLUMN_TITLE FROM $TABLE_ROOMS WHERE $COLUMN_ROOM_ID = ?", arrayOf(roomId.toString()))
+        return if (cursor.moveToFirst()) {
+            val title = cursor.getString(0)
+            cursor.close()
+            title
+        } else {
+            cursor.close()
+            null
+        }
+    }
+
     fun getAllRooms(): List<Triple<Long, String, Uri>> {
         val db = readableDatabase
         val cursor = db.rawQuery("SELECT $COLUMN_ROOM_ID, $COLUMN_TITLE, $COLUMN_COVER_URI FROM $TABLE_ROOMS ORDER BY $COLUMN_ROOM_ID DESC", null)

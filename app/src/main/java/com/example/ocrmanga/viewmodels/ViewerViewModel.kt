@@ -1674,6 +1674,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val autoTranslate = databaseHelper.getAutoTranslateSetting(roomId)
             // Load ancient/"cổ trang" translation setting for this room
             val ancientMode = databaseHelper.getAncientTranslationSetting(roomId)
+            // Load room title
+            val roomTitle = databaseHelper.getRoomTitle(roomId)
             
             // getMangaRoomOptimized uses batch queries (3 queries total instead of N+2)
             val (allImages, _, translations) = databaseHelper.getMangaRoomOptimized(roomId)
@@ -1768,7 +1770,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     remainingImages = remainingImages,
                     translationVersion = it.translationVersion + 1,
                     autoTranslateEnabled = autoTranslate,
-                    isAncientTranslationMode = ancientMode
+                    isAncientTranslationMode = ancientMode,
+                    roomTitle = roomTitle
                 )
             }
             Log.i(TAG, "loadRoomInternal completed: initialBatch=${initialBatch.size} remainingImages=${remainingImages.size} total=${initialBatch.size + remainingImages.size}")
@@ -2794,6 +2797,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateRoomTitle(roomId: Long, newTitle: String) {
         databaseHelper.updateRoomTitle(roomId, newTitle)
+        _uiState.update { it.copy(roomTitle = newTitle) }
     }
 
     fun convertRoomToPDF() {
@@ -3614,6 +3618,7 @@ data class ViewerUiState(
     val isLoadingMoreImages: Boolean = false,
     val remainingImages: List<Uri> = emptyList(),
     val roomId: Long? = null,
+    val roomTitle: String? = null,
     val autoTranslateEnabled: Boolean = true, // Auto-translate new images when adding to room
     val isAncientTranslationMode: Boolean = false, // Chế độ dịch cổ trang
     val isSavingRoom: Boolean = false, // Loading state for room saving

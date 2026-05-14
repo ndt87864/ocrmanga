@@ -920,6 +920,7 @@ fun ViewerScreen(
             RoomNavigation(
                 allRoomIds = allRoomIds,
                 currentRoomId = uiState.roomId,
+                roomTitle = uiState.roomTitle,
                 onRoomSelected = { roomId -> viewModel.loadRoom(roomId) }
             )
         }
@@ -1439,6 +1440,7 @@ fun ViewerScreen(
 fun RoomNavigation(
     allRoomIds: List<Long>,
     currentRoomId: Long?,
+    roomTitle: String?,
     onRoomSelected: (Long) -> Unit
 ) {
     Row(
@@ -1460,7 +1462,7 @@ fun RoomNavigation(
         } else {
             Spacer(modifier = Modifier.width(48.dp))
         }
-        Text(text = currentRoomId?.let { "Phòng $it" } ?: "Chưa có phòng")
+        Text(text = if (roomTitle != null && !roomTitle.matches(Regex("Phòng \\d+"))) roomTitle else currentRoomId?.let { "Phòng $it" } ?: "Chưa có phòng")
         if (allRoomIds.isNotEmpty() && currentRoomId != null) {
             val currentIndex = allRoomIds.indexOf(currentRoomId)
             if (currentIndex < allRoomIds.size - 1) {
