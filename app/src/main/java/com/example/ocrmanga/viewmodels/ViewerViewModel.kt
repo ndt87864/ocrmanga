@@ -2470,7 +2470,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                 statusCallback,
                                 prevTranslation, // Truyền bản dịch ảnh trước để tham khảo
                                 isAncientMode = uiState.value.isAncientTranslationMode,
-                                reuseExistingBlocks = reusableBlocks.takeIf { it.isNotEmpty() }
+                                reuseExistingBlocks = reusableBlocks.takeIf { it.isNotEmpty() },
+                                onOcrCompleted = { ocrBlocks ->
+                                    // Lưu kết quả OCR vào DB ngay lập tức trước khi gửi cho AI
+                                    _uiState.update { state ->
+                                        val newTexts = state.translatedTexts.toMutableMap().apply {
+                                            put(uri, "" to ocrBlocks)
+                                        }
+                                        state.copy(translatedTexts = newTexts)
+                                    }
+                                    dirtyUris.add(uri)
+                                    // Lưu xuống DB (không kèm DragBlockState vì chưa có)
+                                    saveRoom(emptyMap())
+                                    Log.i(TAG, "[OCR-COMPLETE] Đã lưu ${ocrBlocks.size} blocks OCR cho $uri vào DB")
+                                }
                             )
                             Triple(uri, original, translatedBlocks to sourceLang)
                         } catch (e: Exception) {
@@ -2598,6 +2611,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         // KHÔNG clear newImageUris ở đây vì cần giữ để save
         // newImageUris sẽ được clear sau khi save thành công
         Log.i(TAG, "processTranslationQueue completed, keeping newImageUris=${newImageUris.size} for save")
+        // Lưu toàn bộ kết quả final sau khi dịch xong
+        saveRoom(emptyMap())
         // Xóa tất cả trạng thái dịch còn lại
         clearAllTranslationStatus()
     }

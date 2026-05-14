@@ -910,7 +910,8 @@ import kotlin.math.max
         onStatusUpdate: ((com.example.ocrmanga.data.models.TranslationStatus) -> Unit)? = null,
         previousTranslation: List<TextBlockInfo>? = null, // Bản dịch của ảnh trước để tham khảo
         isAncientMode: Boolean = false,
-        reuseExistingBlocks: List<TextBlockInfo>? = null // Nếu không null, dùng lại blocks đã có (vị trí, text gốc) thay vì OCR mới
+        reuseExistingBlocks: List<TextBlockInfo>? = null, // Nếu không null, dùng lại blocks đã có (vị trí, text gốc) thay vì OCR mới
+        onOcrCompleted: (suspend (List<TextBlockInfo>) -> Unit)? = null // Callback khi vừa OCR xong (trước khi dịch)
     ): Triple<String, List<TextBlockInfo>, String> = withContext(Dispatchers.IO) {
         val rotationDegrees = getRotationDegrees(imageUri)
         Log.i("TranslationRepository", "[PIPELINE-START] uri=$imageUri, mode=$mode, rotation=$rotationDegrees")
@@ -1129,6 +1130,9 @@ import kotlin.math.max
 
             sourceLanguage = detectLanguage(fullText) ?: "zh"
             //log.i("TranslationRepository", "Ngôn ngữ nguồn được phát hiện: $sourceLanguage")
+            
+            // Gọi callback khi OCR xong (để ViewerViewModel có thể lưu vào DB ngay)
+            onOcrCompleted?.invoke(textBlocks)
 
             // Thông báo: bắt đầu dịch văn bản
             withContext(Dispatchers.Main) {
