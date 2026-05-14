@@ -694,9 +694,9 @@ fun GalleryScreen(
                                 },
                                 modifier = Modifier.alpha(chipAlpha),
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                     labelColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
@@ -1018,11 +1018,12 @@ private fun RoomCard(
                             },
                             modifier = Modifier
                                 .size(56.dp)
+                                .shadow(4.dp, CircleShape)
                                 .background(
                                     color = MaterialTheme.colorScheme.errorContainer,
                                     shape = CircleShape
                                 )
-                                .shadow(4.dp, CircleShape)
+                                .clip(CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,

@@ -59,9 +59,14 @@ fun ThemeSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Cài đặt giao diện") },
+                title = {
+                    Text(
+                        "Cài đặt giao diện",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = Color.Transparent
                 )
             )
         }
@@ -192,8 +197,15 @@ fun ThemeSettingsScreen(
                                         )
                                     }
                                 },
-                                enabled = tempColor != null && "#${String.format("%08X", tempColor?.toArgb() ?: 0)}" != themeState.customPrimaryColor
+                                enabled = tempColor != null && "#${String.format("%08X", tempColor?.toArgb() ?: 0)}" != themeState.customPrimaryColor,
+                                shape = RoundedCornerShape(12.dp)
                             ) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
                                 Text("Xác nhận màu")
                             }
                         }
@@ -785,7 +797,8 @@ private fun DefaultFontSelector(
                         tempTextColor = null
                         onTextColorChanged(null)
                         onOverlayBrightnessChanged(1.0f) // Reset overlay to default bright
-                    }
+                    },
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("Reset")
                 }
@@ -804,8 +817,15 @@ private fun DefaultFontSelector(
                             }
                         }
                     },
-                    enabled = tempTextColor?.let { "#${String.format("%08X", it.toArgb())}" } != textColor
+                    enabled = tempTextColor?.let { "#${String.format("%08X", it.toArgb())}" } != textColor,
+                    shape = RoundedCornerShape(12.dp)
                 ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
                     Text("Xác nhận")
                 }
             }
@@ -1007,8 +1027,15 @@ private fun DefaultBorderSelector(
                         val hex = tempColor?.let { "#${String.format("%08X", it.toArgb())}" }
                         onBorderColorChanged(hex)
                     },
-                    enabled = tempColor?.let { "#${String.format("%08X", it.toArgb())}" } != borderColor
+                    enabled = tempColor?.let { "#${String.format("%08X", it.toArgb())}" } != borderColor,
+                    shape = RoundedCornerShape(12.dp)
                 ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
                     Text("Xác nhận")
                 }
             }
