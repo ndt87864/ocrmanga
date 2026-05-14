@@ -24,6 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -862,7 +863,24 @@ fun TranslationEditor(
             val selectedFontFamily = fontOptions.find { it.first == selectedFontName }?.second ?: fontOptions.firstOrNull()?.second ?: FontFamily.Default
             AlertDialog(
                 onDismissRequest = { showEditBlockDialog = false },
-                title = { Text("Sửa/Thêm bản dịch") },
+                shape = RoundedCornerShape(20.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                icon = {
+                    Box(
+                        modifier = Modifier.size(48.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                },
+                title = { Text("Sửa/Thêm bản dịch", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
                 text = {
                     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                         // Font selection dropdown
@@ -873,7 +891,9 @@ fun TranslationEditor(
                             if (fontDropdownExpanded) {
                                 AlertDialog(
                                     onDismissRequest = { fontDropdownExpanded = false },
-                                    title = { Text("Chọn Font") },
+                                    shape = RoundedCornerShape(20.dp),
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    title = { Text("Chọn Font", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
                                     text = {
                                         Column(
                                             modifier = Modifier
@@ -1060,7 +1080,10 @@ fun TranslationEditor(
                     }) { Text("Lưu") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showEditBlockDialog = false }) { Text("Hủy") }
+                    OutlinedButton(
+                    onClick = { showEditBlockDialog = false },
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("Hủy") }
                 }
             )
         }
@@ -1237,7 +1260,24 @@ fun TranslationEditor(
             var currentSpacing by remember(initialLineSpacing) { mutableStateOf(initialLineSpacing) }
             AlertDialog(
                 onDismissRequest = { showLineSpacingDialog = false },
-                title = { Text("Khoảng cách dòng") },
+                shape = RoundedCornerShape(20.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                icon = {
+                    Box(
+                        modifier = Modifier.size(48.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FormatLineSpacing,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                },
+                title = { Text("Khoảng cách dòng", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text("Điều chỉnh khoảng cách giữa các dòng của bản dịch", style = MaterialTheme.typography.bodyMedium)
@@ -1254,16 +1294,22 @@ fun TranslationEditor(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = {
-                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                            val old = list[idx]
-                            list[idx] = old.copy(lineSpacing = currentSpacing)
-                        })
-                        showLineSpacingDialog = false
-                    }) { Text("Áp dụng") }
+                    Button(
+                        onClick = {
+                            onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                val old = list[idx]
+                                list[idx] = old.copy(lineSpacing = currentSpacing)
+                            })
+                            showLineSpacingDialog = false
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Áp dụng") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showLineSpacingDialog = false }) { Text("Hủy") }
+                    OutlinedButton(
+                        onClick = { showLineSpacingDialog = false },
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Hủy") }
                 }
             )
         }
@@ -1280,7 +1326,24 @@ fun TranslationEditor(
             
             AlertDialog(
                 onDismissRequest = { showOverlayInsetDialog = false },
-                title = { Text("Chỉnh overlay inset") },
+                shape = RoundedCornerShape(20.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                icon = {
+                    Box(
+                        modifier = Modifier.size(48.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SpaceBar,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                },
+                title = { Text("Chỉnh overlay inset", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
                 text = {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text("Điều chỉnh khoảng cách inset của overlay (làm overlay nhỏ hơn)", style = MaterialTheme.typography.bodyMedium)
@@ -1350,20 +1413,26 @@ fun TranslationEditor(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = {
-                        onDragBlocksChange(dragBlocks.toMutableList().also { list ->
-                            val old = list[idx]
-                            list[idx] = old.copy(
-                                overlayInset = maxOf(insetValueH, insetValueV),
-                                overlayInsetHorizontal = insetValueH,
-                                overlayInsetVertical = insetValueV
-                            )
-                        })
-                        showOverlayInsetDialog = false
-                    }) { Text("Áp dụng") }
+                    Button(
+                        onClick = {
+                            onDragBlocksChange(dragBlocks.toMutableList().also { list ->
+                                val old = list[idx]
+                                list[idx] = old.copy(
+                                    overlayInset = maxOf(insetValueH, insetValueV),
+                                    overlayInsetHorizontal = insetValueH,
+                                    overlayInsetVertical = insetValueV
+                                )
+                            })
+                            showOverlayInsetDialog = false
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Áp dụng") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showOverlayInsetDialog = false }) { Text("Hủy") }
+                    OutlinedButton(
+                        onClick = { showOverlayInsetDialog = false },
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Hủy") }
                 }
             )
         }
@@ -1410,6 +1479,8 @@ fun ColorPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = { 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1677,7 +1748,10 @@ fun ColorPickerDialog(
             }
         },
         dismissButton = {       
-            TextButton(onClick = onDismiss) {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(12.dp)
+            ) {
                 Text("Hủy")
             }
         }

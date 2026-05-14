@@ -2,7 +2,9 @@ package com.example.ocrmanga.ui.screens.view
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -26,6 +29,8 @@ import android.os.Environment
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Download
 import androidx.core.content.FileProvider
 import java.io.File
@@ -115,7 +120,9 @@ fun Dialogs(
     if (showInsertAtIndexDialog) {
         AlertDialog(
             onDismissRequest = onInsertAtIndexDismiss,
-            title = { Text("Chèn ảnh vào vị trí") },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text("Chèn ảnh vào vị trí", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
             text = {
                 Column {
                     Text("Nhập vị trí (1-${imageUris.size + 1}):")
@@ -161,13 +168,40 @@ fun Dialogs(
     if (showExitConfirmDialog) {
         AlertDialog(
             onDismissRequest = onExitDismiss,
-            title = { Text("Xác nhận thoát") },
-            text = { Text("Bạn có chắc chắn muốn thoát? Tất cả ảnh và dữ liệu phiên này sẽ bị xóa.") },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.errorContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ExitToApp,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
+            title = { Text("Xác nhận thoát", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+            text = { Text("Bạn có chắc chắn muốn thoát?\nTất cả ảnh và dữ liệu phiên này sẽ bị xóa.") },
             confirmButton = {
-                TextButton(onClick = onExitConfirm) { Text("Thoát") }
+                Button(
+                    onClick = onExitConfirm,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("Thoát", color = MaterialTheme.colorScheme.onError) }
             },
             dismissButton = {
-                TextButton(onClick = onExitDismiss) { Text("Hủy") }
+                OutlinedButton(
+                    onClick = onExitDismiss,
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("Hủy") }
             }
         )
     }
@@ -175,21 +209,46 @@ fun Dialogs(
     if (showEditTitleDialog) {
         AlertDialog(
             onDismissRequest = onEditTitleDismiss,
-            title = { Text("Đổi tên phòng") },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
+            title = { Text("Đổi tên phòng", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = editTitleText,
                     onValueChange = onEditTitleChange,
                     label = { Text("Tên mới") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
                 )
             },
             confirmButton = {
-                TextButton(onClick = onEditTitleConfirm) { Text("Lưu") }
+                Button(
+                    onClick = onEditTitleConfirm,
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("Lưu") }
             },
             dismissButton = {
-                TextButton(onClick = onEditTitleDismiss) { Text("Hủy") }
+                OutlinedButton(
+                    onClick = onEditTitleDismiss,
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("Hủy") }
             }
         )
     }
@@ -200,7 +259,25 @@ fun Dialogs(
 
         AlertDialog(
             onDismissRequest = onImageMenuDismiss,
-            title = { Text("Tùy chọn ảnh") },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Translate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
+            title = { Text("Tùy chọn ảnh", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Button(
@@ -407,15 +484,31 @@ fun Dialogs(
         )
     }
 
-
-
     // Dialog chọn OCR lại từ đầu hoặc giữ OCR cũ khi retranslate
     if (showReTranslateDialog && currentUri != null && pendingReTranslateMode != null) {
         val mode = pendingReTranslateMode!!
         val uri = currentUri!!
         AlertDialog(
             onDismissRequest = { showReTranslateDialog = false },
-            title = { Text("Chọn cách dịch lại") },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Translate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
+            title = { Text("Chọn cách dịch lại", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
             text = {
                 Column {
                     Text("Bạn muốn sử dụng phương thức nào để dịch lại ảnh này?")
@@ -550,7 +643,25 @@ fun ExternalTranslationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isBulk) "Dịch ngoài hàng loạt" else "Dịch bằng bản dịch ngoài") },
+        shape = RoundedCornerShape(20.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Translate,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        },
+        title = { Text(if (isBulk) "Dịch ngoài hàng loạt" else "Dịch bằng bản dịch ngoài", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier
@@ -657,13 +768,17 @@ fun ExternalTranslationDialog(
                         Toast.makeText(context, "Vui lòng dán JSON bản dịch", Toast.LENGTH_SHORT).show()
                     }
                 },
-                enabled = !isBulkScanning && (isBulk || blocks.isNotEmpty())
+                enabled = !isBulkScanning && (isBulk || blocks.isNotEmpty()),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 Text("Áp dụng bản dịch")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(12.dp)
+            ) {
                 Text("Hủy")
             }
         }

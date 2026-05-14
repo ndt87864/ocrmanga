@@ -8,6 +8,7 @@ import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -22,6 +23,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -1318,7 +1320,25 @@ fun ViewerScreen(
 
             AlertDialog(
                 onDismissRequest = { showRoomFontDialog = false },
-                title = { Text("Thay đổi font phòng") },
+                shape = RoundedCornerShape(20.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                icon = {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FontDownload,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                },
+                title = { Text("Thay đổi font phòng", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
                 text = {
                     Column {
                         Text("Chọn font sẽ áp dụng cho tất cả bản dịch trong phòng:")
@@ -1347,13 +1367,19 @@ fun ViewerScreen(
                     }
                 },
                 confirmButton = {
-                    androidx.compose.material3.TextButton(onClick = {
-                        viewModel.updateGlobalFont(selectedFontKey)
-                        showRoomFontDialog = false
-                    }) { Text("Áp dụng") }
+                    Button(
+                        onClick = {
+                            viewModel.updateGlobalFont(selectedFontKey)
+                            showRoomFontDialog = false
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Áp dụng") }
                 },
                 dismissButton = {
-                    androidx.compose.material3.TextButton(onClick = { showRoomFontDialog = false }) { Text("Hủy") }
+                    OutlinedButton(
+                        onClick = { showRoomFontDialog = false },
+                        shape = RoundedCornerShape(12.dp)
+                    ) { Text("Hủy") }
                 }
             )
         }
@@ -1365,10 +1391,29 @@ fun ViewerScreen(
     if (uiState.showTextRemovalPreview && uiState.textRemovalPreviewBitmap != null) {
         AlertDialog(
             onDismissRequest = { viewModel.cancelTextRemovalPreview() },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.errorContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoFixHigh,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
             title = {
                 Text(
                     "Xác nhận vùng xóa text",
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                 )
             },
             text = {
@@ -1480,37 +1525,49 @@ fun RoomNavigation(
     roomTitle: String?,
     onRoomSelected: (Long) -> Unit
 ) {
-    Row(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 1.dp
     ) {
-        if (allRoomIds.isNotEmpty() && currentRoomId != null) {
-            val currentIndex = allRoomIds.indexOf(currentRoomId)
-            if (currentIndex > 0) {
-                IconButton(onClick = { onRoomSelected(allRoomIds[currentIndex - 1]) }) {
-                    Icon(Icons.Default.ArrowBack, "Quay lại", tint = MaterialTheme.colorScheme.primary)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (allRoomIds.isNotEmpty() && currentRoomId != null) {
+                val currentIndex = allRoomIds.indexOf(currentRoomId)
+                if (currentIndex > 0) {
+                    IconButton(onClick = { onRoomSelected(allRoomIds[currentIndex - 1]) }) {
+                        Icon(Icons.Default.ArrowBack, "Quay lại", tint = MaterialTheme.colorScheme.primary)
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(48.dp))
                 }
             } else {
                 Spacer(modifier = Modifier.width(48.dp))
             }
-        } else {
-            Spacer(modifier = Modifier.width(48.dp))
-        }
-        Text(text = if (roomTitle != null && !roomTitle.matches(Regex("Phòng \\d+"))) roomTitle else currentRoomId?.let { "Phòng $it" } ?: "Chưa có phòng")
-        if (allRoomIds.isNotEmpty() && currentRoomId != null) {
-            val currentIndex = allRoomIds.indexOf(currentRoomId)
-            if (currentIndex < allRoomIds.size - 1) {
-                IconButton(onClick = { onRoomSelected(allRoomIds[currentIndex + 1]) }) {
-                    Icon(Icons.Default.ArrowForward, "Tiếp theo", tint = MaterialTheme.colorScheme.primary)
+            Text(
+                text = if (roomTitle != null && !roomTitle.matches(Regex("Phòng \\d+"))) roomTitle else currentRoomId?.let { "Phòng $it" } ?: "Chưa có phòng",
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+            )
+            if (allRoomIds.isNotEmpty() && currentRoomId != null) {
+                val currentIndex = allRoomIds.indexOf(currentRoomId)
+                if (currentIndex < allRoomIds.size - 1) {
+                    IconButton(onClick = { onRoomSelected(allRoomIds[currentIndex + 1]) }) {
+                        Icon(Icons.Default.ArrowForward, "Tiếp theo", tint = MaterialTheme.colorScheme.primary)
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(48.dp))
                 }
             } else {
                 Spacer(modifier = Modifier.width(48.dp))
             }
-        } else {
-            Spacer(modifier = Modifier.width(48.dp))
         }
     }
 }

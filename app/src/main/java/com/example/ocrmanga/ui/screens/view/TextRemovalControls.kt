@@ -1,6 +1,7 @@
 package com.example.ocrmanga.ui.screens.view
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Brush
@@ -30,10 +31,11 @@ fun TextRemovalControls(
         contentAlignment = Alignment.Center
     ) {
         Card(
+            shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
             ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
         ) {
             Row(
                 modifier = Modifier.padding(8.dp),
