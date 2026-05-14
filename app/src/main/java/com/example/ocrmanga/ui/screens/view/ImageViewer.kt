@@ -185,8 +185,8 @@ fun ImageViewer(
         }
     val newlyTranslated = remember { mutableStateMapOf<Uri, Boolean>() }
     val visibleRange = remember { mutableStateOf(IntRange(0, -1)) }
-    val prefetchBuffer = 2
-    val imageLoader = ImageLoader(context)
+    val prefetchBuffer = 1
+    val imageLoader = remember { ImageLoader(context) }
     val suppressDiskCachePref = remember {
         try {
             val prefs =
@@ -267,8 +267,8 @@ fun ImageViewer(
             itemsIndexed(items = imageUris, key = { index, uri ->
                 val id = getImageIdForUri(uri)
                 if (id != null) id.toString() else "$index:${uri.toString()}"
-            }) { index, uri ->
-                val isInWindow = index in visibleRange.value
+            }, contentType = { _, _ -> "image" }) { index, uri ->
+                val isInWindow by remember(index) { derivedStateOf { index in visibleRange.value } }
 
                 // Initialization Logic
                 val currentTranslatedBlocks = if (isInWindow) translatedTexts[uri]?.second
