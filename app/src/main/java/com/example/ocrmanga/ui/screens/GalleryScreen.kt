@@ -285,8 +285,8 @@ fun GalleryScreen(
                 Box {
                     FloatingActionButton(
                         onClick = { showCreateMenu = true },
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
                             .size(64.dp)
@@ -694,8 +694,8 @@ fun GalleryScreen(
                                 },
                                 modifier = Modifier.alpha(chipAlpha),
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                     labelColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 ),
