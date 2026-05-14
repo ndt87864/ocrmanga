@@ -1,11 +1,20 @@
 package com.example.ocrmanga.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -160,5 +169,123 @@ fun ModernSwitch(
             onCheckedChange = onCheckedChange,
             enabled = enabled
         )
+    }
+}
+
+/**
+ * LoadingOverlay - Full-screen loading overlay with animated spinner and status text.
+ * Use this to wrap loading states across the app to prevent UI stuttering.
+ *
+ * @param isLoading Whether to show the overlay
+ * @param progress Optional progress text (e.g., "Đang xóa text...", "Đang dịch ảnh 3/10")
+ * @param subText Optional secondary status text
+ * @param onDismiss Optional dismiss callback (if overlay should be cancellable)
+ */
+@Composable
+fun LoadingOverlay(
+    isLoading: Boolean,
+    modifier: Modifier = Modifier,
+    progress: String = "Đang xử lý...",
+    subText: String = "Vui lòng đợi trong giây lát",
+    onDismiss: (() -> Unit)? = null
+) {
+    AnimatedVisibility(
+        visible = isLoading,
+        enter = fadeIn(animationSpec = tween(200)),
+        exit = fadeOut(animationSpec = tween(200))
+    ) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.3f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { onDismiss?.invoke() }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier
+                    .padding(32.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { }
+                    ),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 8.dp,
+                shadowElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Animated spinner
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(56.dp),
+                        strokeWidth = 5.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Main progress text
+                    Text(
+                        text = progress,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    // Sub text
+                    if (subText.isNotEmpty()) {
+                        Text(
+                            text = subText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * LoadingContent - Inline loading indicator for content areas (e.g., inside cards, lists).
+ * Shows a centered CircularProgressIndicator with optional text.
+ */
+@Composable
+fun LoadingContent(
+    isLoading: Boolean,
+    modifier: Modifier = Modifier,
+    text: String = "Đang tải..."
+) {
+    if (!isLoading) return
+
+    Box(
+        modifier = modifier.fillMaxWidth().padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 3.dp,
+                color = MaterialTheme.colorScheme.primary
+            )
+            if (text.isNotEmpty()) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ocrmanga.data.models.TranslationMode
+import com.example.ocrmanga.ui.components.LoadingOverlay
 import com.example.ocrmanga.viewmodels.ViewerViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1546,52 +1547,18 @@ fun ViewerScreen(
         )
     }
 
-    // Text Removal Loading Popup - overlays on top of Column
-    if (isRemovingText || uiState.isRemovingText) {
-        // Determine progress text: prefer ViewModel progress (auto mode), fallback to local (brush mode)
-        val progressText = when {
-            uiState.removingTextProgress.isNotEmpty() -> uiState.removingTextProgress
-            removingTextLocalProgress.isNotEmpty() -> removingTextLocalProgress
-            else -> "Đang xóa text..."
-        }
-
-        // Show scanline overlay over the whole screen; also keep the surface for progress text
-        ScanlineOverlay(modifier = Modifier.fillMaxSize(), progress = null, reversed = false, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            androidx.compose.material3.Surface(
-                modifier = Modifier.padding(32.dp),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(48.dp),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = progressText,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Vui lòng đợi trong giây lát",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
+    // Text Removal Loading Popup - sử dụng LoadingOverlay reusable
+    val isLoadingTextRemoval = isRemovingText || uiState.isRemovingText
+    val removalProgressText = when {
+        uiState.removingTextProgress.isNotEmpty() -> uiState.removingTextProgress
+        removingTextLocalProgress.isNotEmpty() -> removingTextLocalProgress
+        else -> "Đang xóa text..."
     }
+    LoadingOverlay(
+        isLoading = isLoadingTextRemoval,
+        progress = removalProgressText,
+        subText = "Vui lòng đợi trong giây lát"
+    )
 
 
 

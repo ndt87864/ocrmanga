@@ -105,8 +105,8 @@ fun ApiKeyManagementScreen(
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
         ) {
-            // ===== Filter row =====
-            Spacer(modifier = Modifier.height(8.dp))
+                // ===== Filter row =====
+                Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

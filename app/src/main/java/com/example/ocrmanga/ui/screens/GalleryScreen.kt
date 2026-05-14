@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import com.example.ocrmanga.ui.components.LoadingOverlay
 import com.example.ocrmanga.viewmodels.GalleryViewModel
 import android.provider.MediaStore
 import android.widget.Toast
@@ -134,6 +135,24 @@ fun GalleryScreen(
             Log.e(TAG, "Google Sign-In failed", e)
         }
     }
+
+    // LoadingOverlay hiển thị khi đang backup/restore Google Drive
+    val isDriveOperationInProgress = isBackupInProgress || isRestoreInProgress
+    val driveProgressText = when {
+        isBackupInProgress -> "Đang sao lưu lên Google Drive..."
+        isRestoreInProgress -> "Đang khôi phục từ Google Drive..."
+        else -> ""
+    }
+    val driveProgressSubText = when {
+        isBackupInProgress -> "${(backupProgress * 100).toInt()}% hoàn thành"
+        isRestoreInProgress -> "${(restoreProgress * 100).toInt()}% hoàn thành"
+        else -> ""
+    }
+    LoadingOverlay(
+        isLoading = isDriveOperationInProgress,
+        progress = driveProgressText,
+        subText = driveProgressSubText
+    )
 
     // Launcher chọn file để upload lên Drive
     val uploadFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
