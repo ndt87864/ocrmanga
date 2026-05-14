@@ -86,10 +86,10 @@ fun ApiKeyManagementScreen(
                 },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = CircleShape,
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .size(64.dp)
-                    .shadow(8.dp, CircleShape)
+                    .shadow(8.dp, RoundedCornerShape(16.dp))
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
