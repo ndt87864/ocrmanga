@@ -21,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -847,56 +848,43 @@ fun ViewerScreen(
                         expanded = showTranslationMenu,
                         onDismissRequest = { showTranslationMenu = false }
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Dịch ngoại tuyến") },
-                            onClick = {
-                                requestBulkTranslation(TranslationMode.OFFLINE)
-                                showTranslationMenu = false
+                        val isNetworkAvailable = viewModel.isNetworkAvailable()
+                        listOf(
+                            TranslationMode.OFFLINE to "Dịch ngoại tuyến",
+                            TranslationMode.ONLINE to "Dịch trực tuyến",
+                            TranslationMode.GEMINI to "Dịch với Gemini AI",
+                            TranslationMode.MISTRAL to "Dịch với Mistral AI",
+                            TranslationMode.ZAI to "Dịch với Z.AI (GLM-4)",
+                            TranslationMode.EXTERNAL to "Bản dịch ngoài (JSON)",
+                            TranslationMode.OFF to "Tắt"
+                        ).forEach { (mode, label) ->
+                            val isNetworkRequired = mode == TranslationMode.ONLINE || mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
+                            val (hasKey, modelName) = when(mode) {
+                                TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys() to "Gemini"
+                                TranslationMode.MISTRAL -> viewModel.hasMistralApiKeys() to "Mistral"
+                                TranslationMode.ZAI -> viewModel.hasZAiApiKeys() to "Z.AI"
+                                else -> true to ""
                             }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Dịch trực tuyến") },
-                            onClick = {
-                                requestBulkTranslation(TranslationMode.ONLINE)
-                                showTranslationMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Dịch với Gemini AI") },
-                            onClick = {
-                                requestBulkTranslation(TranslationMode.GEMINI)
-                                showTranslationMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Dịch với Mistral AI") },
-                            onClick = {
-                                requestBulkTranslation(TranslationMode.MISTRAL)
-                                showTranslationMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Dịch với Z.AI (GLM-4)") },
-                            onClick = {
-                                requestBulkTranslation(TranslationMode.ZAI)
-                                showTranslationMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Bản dịch ngoài (JSON)") },
-                            onClick = {
-                                requestBulkTranslation(TranslationMode.EXTERNAL)
-                                showTranslationMenu = false
-                            }
-                        )
+                            val isApiKeyRequired = mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
+                            val isDimmed = (isNetworkRequired && !isNetworkAvailable) || (isApiKeyRequired && !hasKey)
 
-                        DropdownMenuItem(
-                            text = { Text("Tắt") },
-                            onClick = {
-                                requestBulkTranslation(TranslationMode.OFF)
-                                showTranslationMenu = false
-                            }
-                        )
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    if (isNetworkRequired && !isNetworkAvailable) {
+                                        Toast.makeText(context, "Vui lòng kiểm tra kết nối mạng", Toast.LENGTH_SHORT).show()
+                                        return@DropdownMenuItem
+                                    }
+                                    if (isApiKeyRequired && !hasKey) {
+                                        Toast.makeText(context, "Mô hình $modelName chưa có api key", Toast.LENGTH_SHORT).show()
+                                        return@DropdownMenuItem
+                                    }
+                                    requestBulkTranslation(mode)
+                                    showTranslationMenu = false
+                                },
+                                modifier = Modifier.alpha(if (isDimmed) 0.5f else 1.0f)
+                            )
+                        }
                     }
                     DropdownMenu(
                         expanded = showAddMenu,

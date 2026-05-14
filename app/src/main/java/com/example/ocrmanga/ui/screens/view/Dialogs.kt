@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -258,36 +259,43 @@ fun Dialogs(
                                 Text(if (allBlocksHidden) "ON" else "OFF", modifier = Modifier.padding(start = 8.dp))
                             }
                         } else {
+                            val isNetworkAvailable = viewModel.isNetworkAvailable()
+                            val (hasKey, modelName) = when(mode) {
+                                TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys() to "Gemini"
+                                TranslationMode.MISTRAL -> viewModel.hasMistralApiKeys() to "Mistral"
+                                TranslationMode.ZAI -> viewModel.hasZAiApiKeys() to "Z.AI"
+                                else -> true to ""
+                            }
+                            
+                            val isNetworkRequired = mode == TranslationMode.ONLINE || mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
+                            val isApiKeyRequired = mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
+                            
+                            val isDimmed = (isNetworkRequired && !isNetworkAvailable) || (isApiKeyRequired && !hasKey)
+
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .alpha(if (isDimmed) 0.5f else 1.0f)
                                     .clickable {
+                                        if (isNetworkRequired && !isNetworkAvailable) {
+                                            Toast.makeText(context, "Vui lòng kiểm tra kết nối mạng", Toast.LENGTH_SHORT).show()
+                                            return@clickable
+                                        }
+                                        if (isApiKeyRequired && !hasKey) {
+                                            Toast.makeText(context, "Mô hình $modelName chưa có api key", Toast.LENGTH_SHORT).show()
+                                            return@clickable
+                                        }
+
                                         val targetUri = imageMenuUri
-                                        when {
-                                            mode == TranslationMode.GEMINI && !viewModel.hasGeminiApiKeys() -> {
-                                                Toast.makeText(context, "Không có API key Gemini", Toast.LENGTH_LONG).show()
-                                                onImageMenuDismiss()
-                                                return@clickable
-                                            }
-                                            mode == TranslationMode.MISTRAL && !viewModel.hasMistralApiKeys() -> {
-                                                Toast.makeText(context, "Không có API key Mistral", Toast.LENGTH_LONG).show()
-                                                onImageMenuDismiss()
-                                                return@clickable
-                                            }
-                                            mode == TranslationMode.ZAI && !viewModel.hasZAiApiKeys() -> {
-                                                Toast.makeText(context, "Không có API key Z.AI", Toast.LENGTH_LONG).show()
-                                                onImageMenuDismiss()
-                                                return@clickable
-                                            }
-                                            targetUri != null -> {
-                                                val existingBlocks = viewModel.getReusableOcrBlocksForUri(targetUri)
-                                                if (existingBlocks.isNotEmpty() && mode != TranslationMode.OFF) {
-                                                    // Có original đã lưu → hỏi user chọn OCR lại hay giữ
-                                                    pendingReTranslateMode = mode
-                                                    currentUri = targetUri
-                                                    showReTranslateDialog = true
-                                                } else {
+                                        if (targetUri != null) {
+                                            val existingBlocks = viewModel.getReusableOcrBlocksForUri(targetUri)
+                                            if (existingBlocks.isNotEmpty() && mode != TranslationMode.OFF) {
+                                                // Có original đã lưu → hỏi user chọn OCR lại hay giữ
+                                                pendingReTranslateMode = mode
+                                                currentUri = targetUri
+                                                showReTranslateDialog = true
+                                            } else {
                                                 if (mode == TranslationMode.EXTERNAL) {
                                                     viewModel.openExternalTranslationDialog(targetUri)
                                                 } else {
@@ -309,8 +317,9 @@ fun Dialogs(
                                                         if (showToast) {
                                                             Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
                                                         }
+                                                        onImageMenuDismiss()
                                                     }
-                                                }
+                                                    return@clickable
                                                 }
                                             }
                                         }

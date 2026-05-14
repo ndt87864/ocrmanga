@@ -2,6 +2,9 @@ package com.example.ocrmanga.viewmodels
 
 import android.annotation.SuppressLint
 import android.app.Application
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.graphics.Bitmap
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
@@ -3393,6 +3396,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun hasZAiApiKeys(): Boolean {
         return translationRepository.hasZAiApiKeys()
+    }
+
+    fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     // Public accessor for UI to get imageId for a given uri if available
