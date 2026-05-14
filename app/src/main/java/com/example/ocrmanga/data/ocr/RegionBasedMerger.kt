@@ -23,7 +23,7 @@ class RegionBasedMerger(
      * Merge blocks from multiple regions
      */
     fun mergeBlocks(input: MergingInput): MergedResult {
-        Log.d(TAG, "Merging blocks from ${input.ocrResults.size} regions")
+        //Log.d(TAG, "Merging blocks from ${input.ocrResults.size} regions")
 
         // Filter low confidence blocks
         val filtered = filterLowConfidenceBlocks(input)
@@ -43,7 +43,7 @@ class RegionBasedMerger(
         // Determine reading order
         val readingOrder = determineReadingOrder(allMergedBlocks)
 
-        Log.d(TAG, "Merged into ${allMergedBlocks.size} blocks")
+        //Log.d(TAG, "Merged into ${allMergedBlocks.size} blocks")
 
         return MergedResult(allMergedBlocks, readingOrder)
     }

@@ -28,7 +28,7 @@ class TextMaskGenerator(
      * Generate masks for all regions (synchronous)
      */
     fun generateMasks(bitmap: Bitmap, regions: List<TextRegion>): List<MaskedRegion> {
-        Log.d(TAG, "Generating masks for ${regions.size} regions")
+        //Log.d(TAG, "Generating masks for ${regions.size} regions")
 
         return regions.map { region ->
             generateMaskForRegion(bitmap, region)
@@ -42,7 +42,7 @@ class TextMaskGenerator(
         bitmap: Bitmap,
         regions: List<TextRegion>
     ): List<MaskedRegion> = coroutineScope {
-        Log.d(TAG, "Generating masks asynchronously for ${regions.size} regions")
+        //Log.d(TAG, "Generating masks asynchronously for ${regions.size} regions")
 
         // Process in batches to control memory
         regions.chunked(config.maxConcurrent).flatMap { batch ->
@@ -62,7 +62,7 @@ class TextMaskGenerator(
             // Check if region is too small
             if (region.bounds.width() < config.minCropWidth ||
                 region.bounds.height() < config.minCropHeight) {
-                Log.d(TAG, "Region too small, skipping masking")
+                //Log.d(TAG, "Region too small, skipping masking")
                 return MaskedRegion(
                     region = region,
                     mask = null,

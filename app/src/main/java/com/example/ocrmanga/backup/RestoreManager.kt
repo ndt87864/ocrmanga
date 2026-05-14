@@ -141,7 +141,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
             val externalImagesDir = File(externalFilesDir, "images")
             if (!externalImagesDir.exists()) {
                 val created = externalImagesDir.mkdirs()
-                Log.d("RestoreManager", "Created external images directory: $created, path: ${externalImagesDir.absolutePath}")
+                //Log.d("RestoreManager", "Created external images directory: $created, path: ${externalImagesDir.absolutePath}")
             }
             
             // Kiểm tra quyền ghi vào external storage
@@ -150,7 +150,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                 testFile.createNewFile()
                 val canWrite = testFile.exists() && testFile.canWrite()
                 testFile.delete()
-                Log.d("RestoreManager", "External storage write test: $canWrite")
+                //Log.d("RestoreManager", "External storage write test: $canWrite")
                 if (!canWrite) {
                     Log.w("RestoreManager", "Cannot write to external storage!")
                 }
@@ -177,7 +177,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                             null // Skip image files if external storage not available
                         }
                         if (targetFile != null) {
-                            Log.d("RestoreManager", "Image target path for $entryName: ${targetFile.absolutePath}")
+                            //Log.d("RestoreManager", "Image target path for $entryName: ${targetFile.absolutePath}")
                         }
                         targetFile
                     }
@@ -190,13 +190,13 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                     try {
                         if (isDir) {
                             val created = outFile.mkdirs()
-                            Log.d("RestoreManager", "Created directory $outFile: $created")
+                            //Log.d("RestoreManager", "Created directory $outFile: $created")
                         } else {
                             // Đảm bảo parent directory tồn tại
                             outFile.parentFile?.let { parent ->
                                 if (!parent.exists()) {
                                     val created = parent.mkdirs()
-                                    Log.d("RestoreManager", "Created parent directory $parent: $created")
+                                    //Log.d("RestoreManager", "Created parent directory $parent: $created")
                                 }
                             }
                             
@@ -206,7 +206,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                                     zis.copyTo(fos)
                                     fos.flush()
                                 }
-                                Log.d("RestoreManager", "Restored file: ${outFile.absolutePath}")
+                                //Log.d("RestoreManager", "Restored file: ${outFile.absolutePath}")
                             } else {
                                 Log.w("RestoreManager", "Cannot write to: ${outFile.parentFile?.absolutePath}")
                             }
@@ -303,15 +303,15 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                     when {
                         file.name.endsWith("-wal") -> {
                             val deleted = file.delete()
-                            Log.d("RestoreManager", "Deleted WAL file ${file.name}: $deleted")
+                            //Log.d("RestoreManager", "Deleted WAL file ${file.name}: $deleted")
                         }
                         file.name.endsWith("-shm") -> {
                             val deleted = file.delete()
-                            Log.d("RestoreManager", "Deleted SHM file ${file.name}: $deleted")
+                            //Log.d("RestoreManager", "Deleted SHM file ${file.name}: $deleted")
                         }
                         file.name.endsWith("-journal") -> {
                             val deleted = file.delete()
-                            Log.d("RestoreManager", "Deleted journal file ${file.name}: $deleted")
+                            //Log.d("RestoreManager", "Deleted journal file ${file.name}: $deleted")
                         }
                     }
                 }
@@ -319,9 +319,9 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
             
             // 2. Clear app preferences cache
             val sharedPrefsDir = File(context.filesDir.parentFile!!, "shared_prefs")
-            Log.d("RestoreManager", "SharedPrefs dir exists: ${sharedPrefsDir.exists()}")
+            //Log.d("RestoreManager", "SharedPrefs dir exists: ${sharedPrefsDir.exists()}")
             sharedPrefsDir.listFiles()?.forEach { file ->
-                Log.d("RestoreManager", "SharedPref file found: ${file.name}")
+                //Log.d("RestoreManager", "SharedPref file found: ${file.name}")
             }
             
             // 3. Verify image files exist and are accessible
@@ -341,7 +341,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
             // Kiểm tra images trong internal storage
             val internalImagesDir = File(context.filesDir, "images")
             scanImageFiles(internalImagesDir)
-            Log.d("RestoreManager", "Found ${imageFiles.size} image files in internal storage")
+            //Log.d("RestoreManager", "Found ${imageFiles.size} image files in internal storage")
             
             // Kiểm tra images trong external storage  
             val externalImagesDir = context.getExternalFilesDir(null)?.let { File(it, "images") }
@@ -359,15 +359,15 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                     }
                 }
                 scanExternalImageFiles(externalImagesDir)
-                Log.d("RestoreManager", "Found ${externalImageFiles.size} image files in external storage")
-                Log.d("RestoreManager", "External images dir: ${externalImagesDir.absolutePath}, exists: ${externalImagesDir.exists()}")
+                //Log.d("RestoreManager", "Found ${externalImageFiles.size} image files in external storage")
+                //Log.d("RestoreManager", "External images dir: ${externalImagesDir.absolutePath}, exists: ${externalImagesDir.exists()}")
                 
                 // List some sample files
                 externalImageFiles.take(5).forEach { file ->
-                    Log.d("RestoreManager", "External image sample: $file")
+                    //Log.d("RestoreManager", "External image sample: $file")
                 }
             } else {
-                Log.d("RestoreManager", "External files directory not available")
+                //Log.d("RestoreManager", "External files directory not available")
             }
             
             // 4. Force flush system buffers
@@ -377,7 +377,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                 Log.w("RestoreManager", "Could not sync filesystem", e)
             }
             
-            Log.d("RestoreManager", "Post-restore actions completed")
+            //Log.d("RestoreManager", "Post-restore actions completed")
             
         } catch (e: Exception) {
             Log.e("RestoreManager", "Error in post-restore actions", e)
@@ -390,11 +390,11 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
     private fun debugDatabaseAfterRestore() {
         try {
             val databasePath = File(context.filesDir.parentFile!!, "databases")
-            Log.d("RestoreManager", "Database directory exists: ${databasePath.exists()}")
+            //Log.d("RestoreManager", "Database directory exists: ${databasePath.exists()}")
             
             if (databasePath.exists()) {
                 databasePath.listFiles()?.forEach { file ->
-                    Log.d("RestoreManager", "Database file: ${file.name}, size: ${file.length()} bytes")
+                    //Log.d("RestoreManager", "Database file: ${file.name}, size: ${file.length()} bytes")
                 }
                 
                 // Thử truy cập database để kiểm tra dữ liệu
@@ -414,7 +414,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                                 tables.add(cursor.getString(0))
                             }
                             cursor.close()
-                            Log.d("RestoreManager", "Database $dbName - Tables found: $tables")
+                            //Log.d("RestoreManager", "Database $dbName - Tables found: $tables")
                             
                             // Nếu có tables hữu ích, sử dụng database này
                             if (tables.any { it.contains("room") || it.contains("image") || it.contains("manga") || it.contains("Room") || it.contains("Image") }) {
@@ -427,7 +427,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                                         val roomCursor = db.rawQuery("SELECT COUNT(*) FROM `$tableName`", null)
                                         if (roomCursor.moveToFirst()) {
                                             val roomCount = roomCursor.getInt(0)
-                                            Log.d("RestoreManager", "Table $tableName: $roomCount records")
+                                            //Log.d("RestoreManager", "Table $tableName: $roomCount records")
                                         }
                                         roomCursor.close()
                                     } catch (e: Exception) {
@@ -442,7 +442,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                                         val imageCursor = db.rawQuery("SELECT COUNT(*) FROM `$tableName`", null)
                                         if (imageCursor.moveToFirst()) {
                                             val imageCount = imageCursor.getInt(0)
-                                            Log.d("RestoreManager", "Table $tableName: $imageCount records")
+                                            //Log.d("RestoreManager", "Table $tableName: $imageCount records")
                                         }
                                         imageCursor.close()
                                     } catch (e: Exception) {
@@ -462,7 +462,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                         Log.w("RestoreManager", "No usable database found! This may cause data display issues.")
                         showToast("Cảnh báo: Database có thể chưa được restore đúng cách.")
                     } else {
-                        Log.d("RestoreManager", "Successfully found usable database: $successfulDb")
+                        //Log.d("RestoreManager", "Successfully found usable database: $successfulDb")
                     }
                     
                 } catch (e: Exception) {
@@ -508,21 +508,21 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
      */
     private fun debugDatabaseAfterRestoreWithRetry() {
         try {
-            Log.d("RestoreManager", "=== DEBUG DATABASE AFTER RESTORE WITH RETRY ===")
+            //Log.d("RestoreManager", "=== DEBUG DATABASE AFTER RESTORE WITH RETRY ===")
             
             // Retry logic với delays
             for (attempt in 1..3) {
                 try {
-                    Log.d("RestoreManager", "Database debug attempt $attempt")
+                    //Log.d("RestoreManager", "Database debug attempt $attempt")
                     
                     // Kiểm tra database directory và files
                     val databasesDir = File(context.getDatabasePath("dummy").parent)
-                    Log.d("RestoreManager", "Database directory exists: ${databasesDir.exists()}")
+                    //Log.d("RestoreManager", "Database directory exists: ${databasesDir.exists()}")
                     
                     if (databasesDir.exists()) {
                         databasesDir.listFiles()?.forEach { file ->
                             if (file.isFile()) {
-                                Log.d("RestoreManager", "Database file: ${file.name}, size: ${file.length()} bytes")
+                                //Log.d("RestoreManager", "Database file: ${file.name}, size: ${file.length()} bytes")
                             }
                         }
                     }
@@ -530,7 +530,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                     // Thử mở database với timeout ngắn
                     val mangaDbPath = context.getDatabasePath("MangaDownloader.db")
                     if (mangaDbPath.exists()) {
-                        Log.d("RestoreManager", "MangaDownloader.db exists, checking tables...")
+                        //Log.d("RestoreManager", "MangaDownloader.db exists, checking tables...")
                         
                         // Đợi một chút trước khi thử truy cập database
                         Thread.sleep((1000 * attempt).toLong())
@@ -540,7 +540,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
                         
                         break // Thành công, thoát khỏi retry loop
                     } else {
-                        Log.d("RestoreManager", "MangaDownloader.db not found")
+                        //Log.d("RestoreManager", "MangaDownloader.db not found")
                     }
                     
                 } catch (e: Exception) {
@@ -582,10 +582,10 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
             cursor.close()
             database.close()
             
-            Log.d("RestoreManager", "Database tables found: $tables")
+            //Log.d("RestoreManager", "Database tables found: $tables")
             
             if (tables.contains("rooms") && tables.contains("room_images")) {
-                Log.d("RestoreManager", "Required tables found: rooms, room_images")
+                //Log.d("RestoreManager", "Required tables found: rooms, room_images")
             } else {
                 Log.w("RestoreManager", "Missing required tables. Found: $tables")
             }

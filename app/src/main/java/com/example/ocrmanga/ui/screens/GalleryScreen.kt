@@ -391,7 +391,7 @@ fun GalleryScreen(
                     onValueChange = { searchQuery = it },
                     placeholder = {
                         Text(
-                            "Tìm kiếm phòng...",
+                            "Tìm kiếm truyện...",
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         )
                     },
@@ -687,7 +687,7 @@ fun GalleryScreen(
                 ) {
                     // Room count
                     Text(
-                        text = "${filteredRooms.size} phòng",
+                        text = "${filteredRooms.size} truyện",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -772,7 +772,7 @@ fun GalleryScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Không tìm thấy phòng nào",
+                            text = "Không tìm thấy truyện nào",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -845,14 +845,14 @@ fun GalleryScreen(
             },
             title = {
                 Text(
-                    text = "Xóa phòng",
+                    text = "Xóa truyện",
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(top = 12.dp)
                 )
             },
             text = {
                 Text(
-                    text = "Bạn có chắc chắn muốn xóa phòng này không?\nThao tác này không thể hoàn tác.",
+                    text = "Bạn có chắc chắn muốn xóa truyện này không?\nThao tác này không thể hoàn tác.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
@@ -916,7 +916,7 @@ private fun RoomCard(
     var showDeleteOverlay by remember { mutableStateOf(false) }
 
     val displayTitle = remember(title, roomId) {
-        if (!title.isNullOrBlank() && !title.matches(Regex("Phòng \\d+"))) title else "Phòng $roomId"
+        if (!title.isNullOrBlank() && !title.matches(Regex("truyện \\d+"))) title else "truyện $roomId"
     }
 
     Card(
@@ -1046,14 +1046,14 @@ private fun RoomCard(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
-                                contentDescription = "Xóa phòng",
+                                contentDescription = "Xóa truyện",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(28.dp)
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Xóa phòng",
+                            text = "Xóa truyện",
                             color = Color.White,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
@@ -1125,7 +1125,7 @@ private fun EmptyGalleryState(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = "Chưa có phòng nào",
+            text = "Chưa có truyện nào",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface

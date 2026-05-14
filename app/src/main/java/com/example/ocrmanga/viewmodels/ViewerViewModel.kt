@@ -264,7 +264,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             getApplication(),
-                            "Đã tạm xóa text gốc (chưa lưu). Lưu phòng hoặc chờ autosave để ghi vào DB.",
+                            "Đã tạm xóa text gốc (chưa lưu). Lưu truyện hoặc chờ autosave để ghi vào DB.",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -767,7 +767,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * Áp dụng kiểu overlay cho toàn bộ phòng
+     * Áp dụng kiểu overlay cho toàn bộ truyện
      */
     fun applyGlobalOverlayStyle(style: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1387,7 +1387,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 cursor.close()
                 _allRoomIds.value = roomIds.sorted()
-                //log.i(TAG, "Đã tải ${roomIds.size} ID phòng")
+                //log.i(TAG, "Đã tải ${roomIds.size} ID truyện")
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi khi tải room IDs", e)
             }
@@ -1513,7 +1513,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      */
     fun setCurrentScrollIndex(index: Int) {
         currentScrollIndex = index
-        Log.d(TAG, "setCurrentScrollIndex: $index")
+        //Log.d(TAG, "setCurrentScrollIndex: $index")
     }
     
     /**
@@ -1777,9 +1777,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             Log.i(TAG, "loadRoomInternal completed: initialBatch=${initialBatch.size} remainingImages=${remainingImages.size} total=${initialBatch.size + remainingImages.size}")
             lastLoadedRoomId = roomId
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi khi tải phòng $roomId", e)
+            Log.e(TAG, "Lỗi khi tải truyện $roomId", e)
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Tải phòng thất bại!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(getApplication(), "Tải truyện thất bại!", Toast.LENGTH_SHORT).show()
             }
             lastLoadedRoomId = null
         }
@@ -1946,7 +1946,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             autoSaveJob = null
             try {
             val imageCount = (uiState.value.imageUris.size + uiState.value.remainingImages.size)
-            //log.i(TAG, "Đang lưu phòng hiện tại với $imageCount ảnh")
+            //log.i(TAG, "Đang lưu truyện hiện tại với $imageCount ảnh")
             if (imageCount == 0) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Không có ảnh để lưu!", Toast.LENGTH_SHORT).show()
@@ -1954,7 +1954,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
             try {
-                // Lấy toàn bộ URIs trong phòng (bao gồm cả ảnh chưa load hết - Lazy Loading)
+                // Lấy toàn bộ URIs trong truyện (bao gồm cả ảnh chưa load hết - Lazy Loading)
                 val allUris = uiState.value.imageUris + uiState.value.remainingImages
                 // Loại bỏ duplicate URIs trước khi lưu
                 val uniqueImageUris = allUris.distinctBy { it.toString() }
@@ -1996,7 +1996,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val wasRemoval: Boolean
                 
                 if (currentRoomId != null) {
-                    // Nếu đã có roomId, update phòng
+                    // Nếu đã có roomId, update truyện
                     
                     // Check xem có ảnh nào thay đổi không
                     val changedImageIds = databaseHelper.getChangedImageIdsForRoom(currentRoomId)
@@ -2011,7 +2011,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     var tempSavedCount = 0 // Track số lượng ảnh được save
                     var isRemovalOperation = false // Track if this is a removal operation
                     val updated: Boolean = when {
-                        // Case 1: Có ảnh mới được thêm vào phòng → full update để add new images
+                        // Case 1: Có ảnh mới được thêm vào truyện → full update để add new images
                         hasNewImages -> {
                             Log.i(TAG, "Full update: Adding ${newImageUris.size} new images to room")
                             tempSavedCount = newImageUris.size
@@ -2023,7 +2023,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             }
                             ok
                         }
-                        // Case 2: Có ảnh bị xóa khỏi phòng → xóa trực tiếp từ DB trước rồi update
+                        // Case 2: Có ảnh bị xóa khỏi truyện → xóa trực tiếp từ DB trước rồi update
                         hasRemovedImages -> {
                             Log.i(TAG, "Removing ${removedImageIds.size} images from room: $removedImageIds")
                             tempSavedCount = removedImageIds.size
@@ -2086,7 +2086,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     savedCount = tempSavedCount
                     wasRemoval = isRemovalOperation
                 } else {
-                    // Nếu chưa có roomId, tạo phòng mới
+                    // Nếu chưa có roomId, tạo truyện mới
                     roomId = databaseHelper.saveMangaRoom(
                         uniqueImageUris,
                         uniqueTranslatedTexts,
@@ -2121,10 +2121,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     withContext(Dispatchers.Main) {
                         Toast.makeText(getApplication(), "Lưu thất bại!", Toast.LENGTH_SHORT).show()
                     }
-                    Log.e(TAG, "Lưu phòng thất bại")
+                    Log.e(TAG, "Lưu truyện thất bại")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Lỗi khi lưu phòng", e)
+                Log.e(TAG, "Lỗi khi lưu truyện", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(getApplication(), "Lưu thất bại!", Toast.LENGTH_SHORT).show()
                 }
@@ -2138,7 +2138,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * Xóa một ảnh khỏi phòng hiện tại (và DB)
+     * Xóa một ảnh khỏi truyện hiện tại (và DB)
      */
     fun removeImageFromRoom(uri: Uri) {
         val currentUris = uiState.value.imageUris.toMutableList()
@@ -2205,7 +2205,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val oldDims = getImageDimensions(getApplication(), oldUri)
                 val newDims = getImageDimensions(getApplication(), newUri)
                 
-                Log.d(TAG, "replaceImageUri: Scaling from ${oldDims.first}x${oldDims.second} to ${newDims.first}x${newDims.second}")
+                //Log.d(TAG, "replaceImageUri: Scaling from ${oldDims.first}x${oldDims.second} to ${newDims.first}x${newDims.second}")
                 
                 // Calculate scale factors
                 val scaleX = if (oldDims.first > 0) newDims.first.toFloat() / oldDims.first.toFloat() else 1.0f
@@ -2392,7 +2392,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     @SuppressLint("SuspiciousIndentation")
     private suspend fun processTranslationQueue(reuseExistingOcr: Boolean = false) {
-    // Khi dịch bằng Mistral/Gemini cho toàn bộ phòng, dịch song song 2 ảnh, mỗi ảnh dùng 1 key khác nhau trong lượt đó
+    // Khi dịch bằng Mistral/Gemini cho toàn bộ truyện, dịch song song 2 ảnh, mỗi ảnh dùng 1 key khác nhau trong lượt đó
     val isParallelKeyMode = uiState.value.translationMode == TranslationMode.MISTRAL || uiState.value.translationMode == TranslationMode.GEMINI
     val maxBatchSize = if (isParallelKeyMode) 2 else 1
     val translatedTexts = mutableMapOf<Uri, Pair<String, List<TextBlockInfo>>>()
@@ -2659,7 +2659,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * Xóa toàn bộ session, ảnh, trạng thái dịch, trạng thái phòng, v.v. (reset sạch ViewModel)
+     * Xóa toàn bộ session, ảnh, trạng thái dịch, trạng thái truyện, v.v. (reset sạch ViewModel)
      */
     /**
      * Clear session and images. If deleteSavedRoom == true and a roomId is loaded,
@@ -3571,7 +3571,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             withContext(Dispatchers.Main) {
-                Toast.makeText(getApplication(), "Đã hoàn thành dịch tất cả ảnh trong phòng.", Toast.LENGTH_LONG).show()
+                Toast.makeText(getApplication(), "Đã hoàn thành dịch tất cả ảnh trong truyện.", Toast.LENGTH_LONG).show()
             }
         }
     }

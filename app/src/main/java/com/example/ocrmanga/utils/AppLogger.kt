@@ -6,7 +6,7 @@ import com.example.ocrmanga.data.constant.AppConfig
 object AppLogger {
     fun d(tag: String, msg: String) {
         if (AppConfig.DEBUG_LOGGING) {
-            Log.d(tag, msg)
+            //Log.d(tag, msg)
         }
     }
 

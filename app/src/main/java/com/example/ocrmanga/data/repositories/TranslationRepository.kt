@@ -3121,8 +3121,8 @@ import kotlin.math.max
                     ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(content)?.value
                     ?: "Không tìm thấy [ANALYSIS]"
                 val translationResult = content.replace(analysisText, "").trim()
-                Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
-                Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
+                //Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
+                //Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
 
                 // Nếu dịch thành công và khác với gốc thì trả về luôn
                 if (!translatedText.equals(originalText, ignoreCase = true)) {
@@ -3281,8 +3281,8 @@ import kotlin.math.max
                     ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(content)?.value
                     ?: "Không tìm thấy [ANALYSIS]"
                 val translationResult = content.replace(analysisText, "").trim()
-                Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
-                Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
+                //Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
+                //Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
 
                 // Báo cáo số token
                 try {
@@ -3344,8 +3344,8 @@ import kotlin.math.max
                 ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(content)?.value
                 ?: "Không tìm thấy [ANALYSIS]"
             val translationResult = content.replace(analysisText, "").trim()
-            Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
-            Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
+            //Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
+            //Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
 
             if (content.isNotEmpty()) {
                 // Báo cáo số token
@@ -3455,7 +3455,7 @@ import kotlin.math.max
             val cjkNoiseOnly = setOf("ー", "丨", "丶")
             // Giữ tất cả CJK text trừ khi là single noise char với area cực nhỏ
             if (cleanText in cjkNoiseOnly && area < MIN_BLOCK_AREA / 2 && bounds.width() < 15 && bounds.height() < 15) {
-                Log.d("TranslationRepository", "[NOISE-FILTER] CJK noise '$text' rejected: area=$area")
+                //Log.d("TranslationRepository", "[NOISE-FILTER] CJK noise '$text' rejected: area=$area")
                 return true
             }
             // Tất cả CJK text khác: luôn giữ
@@ -3507,7 +3507,7 @@ import kotlin.math.max
         val isNoise = noiseScore >= 4
         
         if (isNoise) {
-            Log.d("TranslationRepository", "[NOISE-FILTER] Block '$text' rejected: noiseScore=$noiseScore (area=$area, confidence=$confidence, aspectRatio=$aspectRatio)")
+            //Log.d("TranslationRepository", "[NOISE-FILTER] Block '$text' rejected: noiseScore=$noiseScore (area=$area, confidence=$confidence, aspectRatio=$aspectRatio)")
         }
         
         return isNoise

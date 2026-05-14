@@ -47,7 +47,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         loadSavedRooms()
     }
 
-    // Thêm hàm xóa phòng
+    // Thêm hàm xóa truyện
     fun deleteRoom(roomId: Long) {
         viewModelScope.launch {
             databaseHelper.deleteRoom(roomId)
@@ -55,7 +55,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Thêm hàm đổi tên phòng
+    // Thêm hàm đổi tên truyện
     fun updateRoomTitle(roomId: Long, newTitle: String) {
         viewModelScope.launch {
             databaseHelper.updateRoomTitle(roomId, newTitle)

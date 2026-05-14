@@ -38,7 +38,7 @@ class TextRegionDetector(
         }
 
         try {
-            Log.d(TAG, "Starting region detection for ${bitmap.width}x${bitmap.height} image")
+            //Log.d(TAG, "Starting region detection for ${bitmap.width}x${bitmap.height} image")
 
             // Step 1: Preprocess
             val preprocessed = preprocessImage(bitmap)
@@ -58,7 +58,7 @@ class TextRegionDetector(
             // Step 6: Merge overlapping regions
             val merged = mergeOverlappingRegions(filtered)
 
-            Log.d(TAG, "Detected ${merged.size} text regions")
+            //Log.d(TAG, "Detected ${merged.size} text regions")
 
             // Release Mats
             preprocessed.release()
@@ -181,7 +181,7 @@ class TextRegionDetector(
 
         hierarchy.release()
 
-        Log.d(TAG, "Found ${contours.size} contours")
+        //Log.d(TAG, "Found ${contours.size} contours")
 
         return contours
     }

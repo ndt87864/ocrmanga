@@ -20,7 +20,7 @@ class OcrMangaApplication : Application() {
         if (!OpenCvInitializer.ensureInitialized()) {
             Log.e(TAG, "Unable to load OpenCV!")
         } else {
-            Log.d(TAG, "OpenCV loaded successfully")
+            //Log.d(TAG, "OpenCV loaded successfully")
         }
     }
 }

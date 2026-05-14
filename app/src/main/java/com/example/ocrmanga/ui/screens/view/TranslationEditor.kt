@@ -134,7 +134,7 @@ fun TranslationEditor(
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
                         val newOverlayRot = ((old.overlayRotation ?: 0f) + rotationSpeed) % 360f
-                        Log.d("TranslationEditor", "[ROTATE OVERLAY CW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
+                        //Log.d("TranslationEditor", "[ROTATE OVERLAY CW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
                         list[idx] = old.copy(overlayRotation = newOverlayRot)
                     })
                 }
@@ -151,7 +151,7 @@ fun TranslationEditor(
                     onDragBlocksChange(dragBlocks.toMutableList().also { list ->
                         val old = list[idx]
                         val newOverlayRot = ((old.overlayRotation ?: 0f) - rotationSpeed) % 360f
-                        Log.d("TranslationEditor", "[ROTATE OVERLAY CCW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
+                        //Log.d("TranslationEditor", "[ROTATE OVERLAY CCW] idx=$idx oldRot=${old.overlayRotation} newRot=$newOverlayRot")
                         list[idx] = old.copy(overlayRotation = newOverlayRot)
                     })
                 }

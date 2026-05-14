@@ -376,7 +376,7 @@ fun ViewerScreen(
             Triple(idx, size, pendingScrollIndex)
         }.collect { (targetIndex, imageCount, pending) ->
             if (targetIndex != null && targetIndex > 0 && targetIndex != pending) {
-                Log.d("ViewerScreen", "scrollToIndexAfterReload triggered: targetIndex=$targetIndex, imageCount=$imageCount")
+                //Log.d("ViewerScreen", "scrollToIndexAfterReload triggered: targetIndex=$targetIndex, imageCount=$imageCount")
                 pendingScrollIndex = targetIndex
 
                 // Đợi cho đến khi có đủ ảnh để scroll
@@ -391,7 +391,7 @@ fun ViewerScreen(
                 val finalCount = uiState.imageUris.size
                 if (finalCount > 0) {
                     val safeIndex = targetIndex.coerceIn(0, finalCount - 1)
-                    Log.d("ViewerScreen", "Scrolling to index $safeIndex (requested: $targetIndex, total: $finalCount)")
+                    //Log.d("ViewerScreen", "Scrolling to index $safeIndex (requested: $targetIndex, total: $finalCount)")
 
                     // Tạm dừng update scroll index
                     isScrollingProgrammatically = true
@@ -401,7 +401,7 @@ fun ViewerScreen(
 
                     try {
                         lazyListState.scrollToItem(safeIndex)
-                        Log.d("ViewerScreen", "Scroll completed to index $safeIndex")
+                        //Log.d("ViewerScreen", "Scroll completed to index $safeIndex")
                     } catch (e: Exception) {
                         Log.e("ViewerScreen", "Failed to scroll to index $safeIndex", e)
                     }
@@ -757,7 +757,7 @@ fun ViewerScreen(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.FontDownload, null, modifier = Modifier.padding(end = 8.dp))
-                                    Text("Thay đổi font phòng")
+                                    Text("Thay đổi font truyện")
                                 }
                             },
                             onClick = {
@@ -848,7 +848,7 @@ fun ViewerScreen(
                                     showMainMenu = false
                                     val rid = uiState.roomId
                                     if (rid == null) {
-                                        Toast.makeText(context, "Không có phòng để xuất", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Không có truyện để xuất", Toast.LENGTH_SHORT).show()
                                     } else {
                                         coroutineScope.launch {
                                             val path = viewModel.exportRoomAsZip(rid)
@@ -1128,11 +1128,11 @@ fun ViewerScreen(
                 dragBlocksMap = dragBlocksMap,
                 onEditTranslationModeToggle = { editTranslationMode = it },
                 onSaveTranslation = { uri, blocks ->
-                    Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
+                    //Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
                     blocks.forEachIndexed { idx, dragBlock ->
                         val textColorHex = try { dragBlock.textColor?.toArgb()?.let { String.format("#%08X", it) } ?: "null" } catch (_: Exception) { "err" }
                         val gradCols = dragBlock.textGradientColors?.joinToString(separator = ",") { c -> String.format("#%08X", c) } ?: "null"
-                        Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation} inset=${dragBlock.overlayInset} insetH=${dragBlock.overlayInsetHorizontal} insetV=${dragBlock.overlayInsetVertical} textColor=$textColorHex gradientColors=$gradCols")
+                        //Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation} inset=${dragBlock.overlayInset} insetH=${dragBlock.overlayInsetHorizontal} insetV=${dragBlock.overlayInsetVertical} textColor=$textColorHex gradientColors=$gradCols")
                     }
                     viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
                         // Bounds đã được cập nhật khi drag trong ImageViewer, không cần cộng offset nữa
@@ -1226,11 +1226,11 @@ fun ViewerScreen(
                 dragBlocksMap = dragBlocksMap,
                 onEditTranslationModeToggle = { editTranslationMode = it },
                 onSaveTranslation = { uri, blocks ->
-                    Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
+                    //Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
                     blocks.forEachIndexed { idx, dragBlock ->
                         val textColorHex = try { dragBlock.textColor?.toArgb()?.let { String.format("#%08X", it) } ?: "null" } catch (_: Exception) { "err" }
                         val gradCols = dragBlock.textGradientColors?.joinToString(separator = ",") { c -> String.format("#%08X", c) } ?: "null"
-                        Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation} inset=${dragBlock.overlayInset} insetH=${dragBlock.overlayInsetHorizontal} insetV=${dragBlock.overlayInsetVertical} textColor=$textColorHex gradientColors=$gradCols")
+                        //Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation} inset=${dragBlock.overlayInset} insetH=${dragBlock.overlayInsetHorizontal} insetV=${dragBlock.overlayInsetVertical} textColor=$textColorHex gradientColors=$gradCols")
                     }
                     viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
                         dragBlock.block.copy(
@@ -1393,7 +1393,7 @@ fun ViewerScreen(
             onExternalTranslationDismiss = { viewModel.closeExternalTranslationDialog() }
         )
 
-        // Dialog thay đổi font cho cả phòng
+        // Dialog thay đổi font cho cả truyện
         if (showRoomFontDialog) {
             val allBlocks = uiState.translatedTexts.values.flatMap { it.second }
             val currentMostUsed = allBlocks.groupingBy { it.fontFamily }.eachCount().maxByOrNull { it.value }?.key ?: FontRegistry.fontOptions.first().first
@@ -1419,10 +1419,10 @@ fun ViewerScreen(
                         )
                     }
                 },
-                title = { Text("Thay đổi font phòng", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+                title = { Text("Thay đổi font truyện", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
                 text = {
                     Column {
-                        Text("Chọn font sẽ áp dụng cho tất cả bản dịch trong phòng:")
+                        Text("Chọn font sẽ áp dụng cho tất cả bản dịch trong truyện:")
                         Spacer(modifier = Modifier.height(8.dp))
                         androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
                             items(FontRegistry.fontOptions.size) { idx ->
@@ -1600,7 +1600,7 @@ fun RoomNavigation(
                 Spacer(modifier = Modifier.width(48.dp))
             }
             Text(
-                text = if (roomTitle != null && !roomTitle.matches(Regex("Phòng \\d+"))) roomTitle else currentRoomId?.let { "Phòng $it" } ?: "Chưa có phòng",
+                text = if (roomTitle != null && !roomTitle.matches(Regex("truyện \\d+"))) roomTitle else currentRoomId?.let { "truyện $it" } ?: "Chưa có truyện",
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
             )
             if (allRoomIds.isNotEmpty() && currentRoomId != null) {

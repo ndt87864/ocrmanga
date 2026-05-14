@@ -313,23 +313,16 @@ fun ImageViewer(
                         )
                     } else null
 
-                var dragBlocks by remember(
-                    uri,
-                    translationVersion,
-                    translatedTexts[uri],
-                    isInWindow
-                ) {
-                    mutableStateOf(
-                        if (isInWindow) (currentTranslatedBlocks
-                            ?: emptyList()) else (dragBlocksMap[uri] ?: emptyList())
-                    )
+                val initBlocks = if (isInWindow) (currentTranslatedBlocks
+                    ?: emptyList()) else (dragBlocksMap[uri] ?: emptyList())
+                var dragBlocks by remember(uri, translationVersion) {
+                    mutableStateOf(initBlocks)
                 }
 
                 LaunchedEffect(
                     uri,
                     isInWindow,
                     translationVersion,
-                    translatedTexts[uri],
                     editTranslationMode
                 ) {
                     if (isInWindow && !editTranslationMode) {
@@ -548,32 +541,27 @@ fun ImageViewer(
                             }
                         }
 
-                        // Last computation time for debouncing
-                        var lastComputeTime by remember { mutableStateOf(0L) }
-
                         LaunchedEffect(
                             uri,
                             translationVersion,
                             dragBlocks,
-                            imageWidth,
-                            imageHeight,
                             isInWindow,
-                            _sw,
-                            isScrollingFast,
-                            contentScaleVal,
                             editTranslationMode
                         ) {
-                            // Skip tính toán nặng khi đang scroll nhanh
+                            // Skip computation when not visible
+                            if (!isInWindow || imageWidth <= 0f || imageHeight <= 0f) {
+                                precomputedRegionsState.value = emptyList(); return@LaunchedEffect
+                            }
+                            // Skip computation during fast scroll (non-edit mode)
                             if (isScrollingFast && !editTranslationMode) {
                                 return@LaunchedEffect
                             }
-
-                            // Allow immediate apply when either not in edit mode OR this uri was recently saved via editor
-                            val isRecentSave = recentlySavedUris.contains(uri)
-                            if (!isInWindow) {
-                                precomputedRegionsState.value = emptyList(); return@LaunchedEffect
+                            // Debounce: delay 50ms to batch rapid changes (e.g., during scroll)
+                            if (!editTranslationMode) {
+                                delay(50)
                             }
-                            // Allow recalculation during editing to show real-time changes
+
+                            val isRecentSave = recentlySavedUris.contains(uri)
                             val screenScaleFactor = (_sw / 360f).coerceIn(0.5f, 2.0f)
                             withContext(kotlinx.coroutines.Dispatchers.Default) {
                                 val list = dragBlocks.filter { !it.block.pendingDelete }

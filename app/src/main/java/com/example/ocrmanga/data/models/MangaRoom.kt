@@ -1,7 +1,7 @@
 package com.example.ocrmanga.data.models
 
 /**
- * Đại diện cho một bộ truyện/phòng làm việc (Manga Room).
+ * Đại diện cho một bộ truyện/truyện làm việc (Manga Room).
  */
 data class MangaRoom(
     val roomId: Long,

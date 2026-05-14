@@ -227,7 +227,7 @@ fun Dialogs(
                     )
                 }
             },
-            title = { Text("Đổi tên phòng", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
+            title = { Text("Đổi tên truyện", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = editTitleText,

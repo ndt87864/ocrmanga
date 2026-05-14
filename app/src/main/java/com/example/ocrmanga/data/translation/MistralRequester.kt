@@ -114,8 +114,8 @@ class MistralRequester(
                 ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(text)?.value
                 ?: "Không tìm thấy [ANALYSIS]"
             val translationResult = text.replace(analysisText, "").trim()
-            Log.d(TAG, "[DEBUG-RESULT] $analysisText")
-            Log.d(TAG, "KẾT QUẢ DỊCH:\n$translationResult")
+            //Log.d(TAG, "[DEBUG-RESULT] $analysisText")
+            //Log.d(TAG, "KẾT QUẢ DỊCH:\n$translationResult")
             return result
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi kết nối đến Mistral API", e)

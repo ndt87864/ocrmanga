@@ -30,7 +30,7 @@ object TextRemovalHelper {
      */
     fun initializePython(context: Context) {
         LamaInpainter.initialize(context.applicationContext)
-        Log.d(TAG, "LamaInpainter initialized")
+        //Log.d(TAG, "LamaInpainter initialized")
     }
 
     /**
@@ -64,7 +64,7 @@ object TextRemovalHelper {
                     it.overlayInsetHorizontal, it.overlayInsetVertical
                 )
             }
-            Log.d(TAG, "Removing text: ${inpaintBlocks.size} blocks, image ${bitmap.width}x${bitmap.height}")
+            //Log.d(TAG, "Removing text: ${inpaintBlocks.size} blocks, image ${bitmap.width}x${bitmap.height}")
 
             val resultBitmap = LamaInpainter.inpaintBlocks(bitmap, inpaintBlocks, onProgress)
             bitmap.recycle()
@@ -81,7 +81,7 @@ object TextRemovalHelper {
             }
             resultBitmap.recycle()
 
-            Log.d(TAG, "Text removal complete: ${outputFile.absolutePath}")
+            //Log.d(TAG, "Text removal complete: ${outputFile.absolutePath}")
             return@withContext Uri.fromFile(outputFile)
         } catch (e: Exception) {
             Log.e(TAG, "Error removing text from image", e)
@@ -114,7 +114,7 @@ object TextRemovalHelper {
                 return@withContext null
             }
 
-            Log.d(TAG, "Mask inpainting: image ${bitmap.width}x${bitmap.height}, mask ${maskBitmap.width}x${maskBitmap.height}")
+            //Log.d(TAG, "Mask inpainting: image ${bitmap.width}x${bitmap.height}, mask ${maskBitmap.width}x${maskBitmap.height}")
 
             val resultBitmap = LamaInpainter.inpaintWithMask(bitmap, maskBitmap, onProgress)
             bitmap.recycle()
@@ -131,7 +131,7 @@ object TextRemovalHelper {
             }
             resultBitmap.recycle()
 
-            Log.d(TAG, "Mask text removal complete: ${outputFile.absolutePath}")
+            //Log.d(TAG, "Mask text removal complete: ${outputFile.absolutePath}")
             return@withContext Uri.fromFile(outputFile)
         } catch (e: Exception) {
             Log.e(TAG, "Error removing text with mask", e)
@@ -225,7 +225,7 @@ object TextRemovalHelper {
                 }
             }
 
-            Log.d(TAG, "Mask preview created: ${blocks.size} regions highlighted")
+            //Log.d(TAG, "Mask preview created: ${blocks.size} regions highlighted")
             return@withContext preview
         } catch (e: Exception) {
             Log.e(TAG, "Error creating mask preview", e)

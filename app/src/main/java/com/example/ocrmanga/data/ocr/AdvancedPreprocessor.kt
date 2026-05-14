@@ -37,7 +37,7 @@ class AdvancedPreprocessor(
         }
 
         try {
-            Log.d(TAG, "Starting preprocessing")
+            //Log.d(TAG, "Starting preprocessing")
 
             // Convert to Mat
             val mat = bitmapToMat(bitmap)

@@ -207,7 +207,7 @@ class BubbleDetector {
             // Check color variance in the ring between text bounds and contour bounds.
             // High variance = complex artwork/texture, not a real bubble.
             if (isArtworkRegion(crop, bubbleCvRect, textInCrop)) {
-                Log.d(TAG, "Rejected contour: high color variance (artwork region, not a real bubble)")
+                //Log.d(TAG, "Rejected contour: high color variance (artwork region, not a real bubble)")
                 crop.recycle()
                 gray.release()
                 bestContour.release()

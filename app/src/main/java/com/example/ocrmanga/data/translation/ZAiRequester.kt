@@ -50,12 +50,12 @@ class ZAiRequester(
     class LoggingInterceptor : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             val request = chain.request()
-            Log.d("ZAiNetwork", ">>> Gửi request: ${request.url}")
+            //Log.d("ZAiNetwork", ">>> Gửi request: ${request.url}")
             val startTime = System.nanoTime()
             try {
                 val response = chain.proceed(request)
                 val elapsed = (System.nanoTime() - startTime) / 1e6
-                Log.d("ZAiNetwork", "<<< Nhận phản hồi: ${response.code} (${elapsed}ms)")
+                //Log.d("ZAiNetwork", "<<< Nhận phản hồi: ${response.code} (${elapsed}ms)")
                 return response
             } catch (e: Exception) {
                 val elapsed = (System.nanoTime() - startTime) / 1e6
@@ -122,8 +122,8 @@ class ZAiRequester(
                     ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(text)?.value
                     ?: "Không tìm thấy [ANALYSIS]"
                 val translationResult = text.replace(analysisText, "").trim()
-                Log.d(TAG, "[DEBUG-RESULT] $analysisText")
-                Log.d(TAG, "KẾT QUẢ DỊCH:\n$translationResult")
+                //Log.d(TAG, "[DEBUG-RESULT] $analysisText")
+                //Log.d(TAG, "KẾT QUẢ DỊCH:\n$translationResult")
                 return@withContext result
             }
         } catch (e: Exception) {

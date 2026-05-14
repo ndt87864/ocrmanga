@@ -155,7 +155,7 @@ object LamaInpainter {
             val clusters = createSafeClusters(paddedBlocks, image.width, image.height)
             val result = mutex.withLock { processRegionClusters(work, fullMask, clusters, onProgress) }
             fullMask.recycle()
-            Log.d(TAG, "inpaintBlocks done: ${System.currentTimeMillis() - t0}ms")
+            //Log.d(TAG, "inpaintBlocks done: ${System.currentTimeMillis() - t0}ms")
             result
         } catch (e: Exception) { Log.e(TAG, "inpaintBlocks failed", e); null }
     }
@@ -225,7 +225,7 @@ object LamaInpainter {
                 patchBmp.recycle()
             }
             fullMask.recycle()
-            Log.d(TAG, "inpaintPatchBased done: ${System.currentTimeMillis() - t0}ms")
+            //Log.d(TAG, "inpaintPatchBased done: ${System.currentTimeMillis() - t0}ms")
             result
         } catch (e: Exception) { Log.e(TAG, "inpaintPatchBased failed", e); null }
     }
@@ -251,7 +251,7 @@ object LamaInpainter {
         if (bounds == null) { normMask.recycle(); work.recycle(); return null }
         val result = mutex.withLock { processRegionClusters(work, normMask, listOf(listOf(bounds)), onProgress) }
         normMask.recycle()
-        Log.d(TAG, "inpaintWithMask done: ${System.currentTimeMillis() - t0}ms")
+        //Log.d(TAG, "inpaintWithMask done: ${System.currentTimeMillis() - t0}ms")
         return result
     }
 
@@ -355,7 +355,7 @@ object LamaInpainter {
         // Screentone should ALWAYS use neural network (not patch-based)
         val isScreentone = edgeScore > 0.4 && varianceScore < 0.3
         if (isScreentone) {
-            Log.d(TAG, "Screentone detected: variance=$avgVariance, edges=$edgeCount → forcing neural network")
+            //Log.d(TAG, "Screentone detected: variance=$avgVariance, edges=$edgeCount → forcing neural network")
             return 1.0f // Force neural network for screentone
         }
 
@@ -363,7 +363,7 @@ object LamaInpainter {
         // Increased edge weight from 0.4 to 0.7 - edges are more important indicator
         val complexityScore = (varianceScore * 0.3 + edgeScore * 0.7).toFloat()
 
-        Log.d(TAG, "Complexity analysis: variance=$avgVariance, edges=$edgeCount, score=$complexityScore")
+        //Log.d(TAG, "Complexity analysis: variance=$avgVariance, edges=$edgeCount, score=$complexityScore")
         return complexityScore
     }
 
@@ -415,7 +415,7 @@ object LamaInpainter {
                 (cb.right + pX).coerceAtMost(w), (cb.bottom + pY).coerceAtMost(h)
             )
 
-            Log.d(TAG, "Cluster $idx crop=${crop.width()}x${crop.height()}")
+            //Log.d(TAG, "Cluster $idx crop=${crop.width()}x${crop.height()}")
 
             val ci = Bitmap.createBitmap(image, crop.left, crop.top, crop.width(), crop.height())
             val cm = Bitmap.createBitmap(mask, crop.left, crop.top, crop.width(), crop.height())

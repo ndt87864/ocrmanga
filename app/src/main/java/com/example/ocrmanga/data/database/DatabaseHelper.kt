@@ -1089,7 +1089,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     )
                 """)
                 
-                // Trích xuất dữ liệu, đề phòng bảng cũ có hoặc không có original_text
+                // Trích xuất dữ liệu, đề truyện bảng cũ có hoặc không có original_text
                 db.execSQL("""
                     INSERT INTO images_new (image_id, room_id, image_uri, display_order, is_translated)
                     SELECT image_id, room_id, image_uri, display_order, is_translated FROM images
@@ -1830,7 +1830,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.beginTransaction()
         var roomId = -1L
         try {
-            val roomTitle = title ?: "Phòng " + System.currentTimeMillis()
+            val roomTitle = title ?: "truyện " + System.currentTimeMillis()
             val values = ContentValues().apply {
                 put(COLUMN_TITLE, roomTitle)
                 put(COLUMN_COVER_URI, imageUris.first().toString())
@@ -2015,7 +2015,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     /**
-     * Cập nhật lại ảnh và bản dịch cho phòng đã có roomId, chỉ thay đổi những gì khác biệt
+     * Cập nhật lại ảnh và bản dịch cho truyện đã có roomId, chỉ thay đổi những gì khác biệt
      */
     fun updateMangaRoom(roomId: Long, imageUris: List<Uri>, translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>>, translatedStatus: Map<Uri, Boolean>? = null): Boolean {
         if (imageUris.isEmpty()) return false
@@ -2371,7 +2371,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi khi cập nhật phòng $roomId", e)
+            Log.e(TAG, "Lỗi khi cập nhật truyện $roomId", e)
             return false
         } finally {
             db.endTransaction()
@@ -2729,7 +2729,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 try { deleteOriginalImage(dirtyUri) } catch (e: Exception) { /* ignore */ }
                                 Log.i(TAG, "updateMangaRoomSelective: Successfully inserted new image at index $index (imageId=$imageId)")
                             } else {
-                                Log.e(TAG, "Không thể chèn ảnh mới cho uri $uriStr vào phòng $roomId")
+                                Log.e(TAG, "Không thể chèn ảnh mới cho uri $uriStr vào truyện $roomId")
                                 // skip processing this dirtyUri
                                 return@forEach
                             }
@@ -2863,7 +2863,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi khi cập nhật phòng selective $roomId", e)
+            Log.e(TAG, "Lỗi khi cập nhật truyện selective $roomId", e)
             return false
         } finally {
             db.endTransaction()
@@ -3678,9 +3678,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 }
                 
                 // Log để debug
-                if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {
-                    Log.i(TAG, "getTranslationsForImages ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInset insetH=$overlayInsetH insetV=$overlayInsetV")
-                }
+                //if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {
+                //    Log.i(TAG, "getTranslationsForImages ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInset insetH=$overlayInsetH insetV=$overlayInsetV")
+                //}
                 
                 val finalTextColor = textColor ?: 0xFF000000.toInt()
                 val finalFontFamily = if (fontFamily.isNullOrBlank()) "mto_astro_city" else fontFamily
@@ -3952,7 +3952,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             // Try to delete the source file if it's a temporary file
             try { deleteOriginalImage(newUri) } catch (e: Exception) { /* ignore */ }
 
-            Log.d(TAG, "replaceImageFileOnly: Successfully replaced $oldFilePath with content from $newUri")
+            //Log.d(TAG, "replaceImageFileOnly: Successfully replaced $oldFilePath with content from $newUri")
             
             // Return the same URI as before (file was overwritten in place)
             return oldUri
