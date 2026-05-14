@@ -71,6 +71,8 @@ fun Dialogs(
     // State cho dialog chọn OCR lại / giữ OCR cũ khi retranslate
     var showReTranslateDialog by remember { mutableStateOf(false) }
     var pendingReTranslateMode by remember { mutableStateOf<TranslationMode?>(null) }
+    var reTranslateRemember by remember { mutableStateOf(false) }
+    val ocrPreference by ViewerPreferences.ocrPreferenceFlow(context).collectAsState(initial = false to true)
 
     // Launcher to pick a single image from file picker (OpenDocument)
     val replaceImageLauncher = rememberLauncherForActivityResult(
@@ -291,10 +293,23 @@ fun Dialogs(
                                         if (targetUri != null) {
                                             val existingBlocks = viewModel.getReusableOcrBlocksForUri(targetUri)
                                             if (existingBlocks.isNotEmpty() && mode != TranslationMode.OFF) {
-                                                // Có original đã lưu → hỏi user chọn OCR lại hay giữ
-                                                pendingReTranslateMode = mode
-                                                currentUri = targetUri
-                                                showReTranslateDialog = true
+                                                val (remember, reuse) = ocrPreference
+                                                if (remember) {
+                                                    // Sử dụng lựa chọn đã nhớ
+                                                    if (mode == TranslationMode.EXTERNAL) {
+                                                        viewModel.openExternalTranslationDialog(targetUri, reuseExistingOcr = reuse)
+                                                    } else {
+                                                        Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
+                                                        viewModel.retranslateImage(targetUri, mode, reuseExistingOcr = reuse, existingBlocks = if (reuse) existingBlocks else null)
+                                                        // (Wait logic omitted for brevity as it's the same)
+                                                    }
+                                                } else {
+                                                    // Có original đã lưu → hỏi user chọn OCR lại hay giữ
+                                                    pendingReTranslateMode = mode
+                                                    currentUri = targetUri
+                                                    reTranslateRemember = false
+                                                    showReTranslateDialog = true
+                                                }
                                             } else {
                                                 if (mode == TranslationMode.EXTERNAL) {
                                                     viewModel.openExternalTranslationDialog(targetUri)
@@ -394,11 +409,26 @@ fun Dialogs(
                 Column {
                     Text("Bạn muốn sử dụng phương thức nào để dịch lại ảnh này?")
                     Spacer(Modifier.height(16.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { reTranslateRemember = !reTranslateRemember }
+                    ) {
+                        Checkbox(
+                            checked = reTranslateRemember,
+                            onCheckedChange = { reTranslateRemember = it }
+                        )
+                        Text("Nhớ tùy chọn này", modifier = Modifier.padding(start = 8.dp))
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
+                        if (reTranslateRemember) {
+                            coroutineScope.launch {
+                                ViewerPreferences.saveOcrPreference(context, true, false)
+                            }
+                        }
                         // OCR lại từ đầu
                         Toast.makeText(context, "Đang dịch lại ảnh (OCR mới)...", Toast.LENGTH_SHORT).show()
                         if (mode == TranslationMode.EXTERNAL) {
@@ -433,6 +463,11 @@ fun Dialogs(
             dismissButton = {
                 TextButton(
                     onClick = {
+                        if (reTranslateRemember) {
+                            coroutineScope.launch {
+                                ViewerPreferences.saveOcrPreference(context, true, true)
+                            }
+                        }
                         // Giữ OCR cũ
                         val existingBlocks = viewModel.getReusableOcrBlocksForUri(uri)
                         Toast.makeText(context, "Đang dịch lại ảnh (giữ OCR cũ)...", Toast.LENGTH_SHORT).show()

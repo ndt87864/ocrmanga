@@ -74,13 +74,15 @@ fun ViewerScreen(
     var pendingOcrChoiceUri by remember { mutableStateOf<Uri?>(null) }
     var pendingOcrChoiceMode by remember { mutableStateOf<TranslationMode?>(null) }
     var pendingOcrChoiceIsBulk by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var pendingOcrChoiceShowCompletionToast by remember { mutableStateOf(false) }
+    var ocrChoiceRemember by remember { mutableStateOf(false) }
+    val ocrPreference by ViewerPreferences.ocrPreferenceFlow(context).collectAsState(initial = false to true)
 
 
     val uiState by viewModel.uiState.collectAsState()
     val allRoomIds by viewModel.allRoomIds.collectAsState()
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
 
     fun waitForRetranslateToast(uri: Uri) {
         coroutineScope.launch {
@@ -121,11 +123,17 @@ fun ViewerScreen(
         showCompletionToast: Boolean = false
     ) {
         if (mode != TranslationMode.OFF && viewModel.hasReusableOcrForUri(uri)) {
-            pendingOcrChoiceUri = uri
-            pendingOcrChoiceMode = mode
-            pendingOcrChoiceIsBulk = false
-            pendingOcrChoiceShowCompletionToast = showCompletionToast
-            showOcrChoiceDialog = true
+            val (remember, reuse) = ocrPreference
+            if (remember) {
+                startSingleRetranslation(uri, mode, reuseExistingOcr = reuse, showCompletionToast)
+            } else {
+                pendingOcrChoiceUri = uri
+                pendingOcrChoiceMode = mode
+                pendingOcrChoiceIsBulk = false
+                pendingOcrChoiceShowCompletionToast = showCompletionToast
+                ocrChoiceRemember = false
+                showOcrChoiceDialog = true
+            }
         } else if (mode == TranslationMode.EXTERNAL) {
             viewModel.openExternalTranslationDialog(uri, reuseExistingOcr = false)
         } else {
@@ -141,11 +149,17 @@ fun ViewerScreen(
 
         val allUris = (uiState.imageUris + uiState.remainingImages).distinctBy { it.toString() }
         if (viewModel.hasReusableOcrForAny(allUris)) {
-            pendingOcrChoiceUri = null
-            pendingOcrChoiceMode = mode
-            pendingOcrChoiceIsBulk = true
-            pendingOcrChoiceShowCompletionToast = false
-            showOcrChoiceDialog = true
+            val (remember, reuse) = ocrPreference
+            if (remember) {
+                viewModel.setTranslationMode(mode, reuseExistingOcr = reuse)
+            } else {
+                pendingOcrChoiceUri = null
+                pendingOcrChoiceMode = mode
+                pendingOcrChoiceIsBulk = true
+                pendingOcrChoiceShowCompletionToast = false
+                ocrChoiceRemember = false
+                showOcrChoiceDialog = true
+            }
         } else if (mode == TranslationMode.EXTERNAL) {
             viewModel.openBulkExternalTranslationDialog(reuseExistingOcr = false)
         } else {
@@ -938,11 +952,29 @@ fun ViewerScreen(
                 onDismissRequest = { showOcrChoiceDialog = false },
                 title = { Text("Chọn dữ liệu OCR") },
                 text = {
-                    Text("Bạn muốn sử dụng phương thức nào để dịch lại ảnh này?")
+                    Column {
+                        Text("Bạn muốn sử dụng phương thức nào để dịch lại ảnh này?")
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { ocrChoiceRemember = !ocrChoiceRemember }
+                        ) {
+                            Checkbox(
+                                checked = ocrChoiceRemember,
+                                onCheckedChange = { ocrChoiceRemember = it }
+                            )
+                            Text("Nhớ tùy chọn này", modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
+                            if (ocrChoiceRemember) {
+                                coroutineScope.launch {
+                                    ViewerPreferences.saveOcrPreference(context, true, false)
+                                }
+                            }
                             if (pendingOcrChoiceIsBulk) {
                                 if (mode == TranslationMode.EXTERNAL) {
                                     viewModel.openBulkExternalTranslationDialog(reuseExistingOcr = false)
@@ -968,6 +1000,11 @@ fun ViewerScreen(
                 dismissButton = {
                     TextButton(
                         onClick = {
+                            if (ocrChoiceRemember) {
+                                coroutineScope.launch {
+                                    ViewerPreferences.saveOcrPreference(context, true, true)
+                                }
+                            }
                             if (pendingOcrChoiceIsBulk) {
                                 if (mode == TranslationMode.EXTERNAL) {
                                     viewModel.openBulkExternalTranslationDialog(reuseExistingOcr = true)
