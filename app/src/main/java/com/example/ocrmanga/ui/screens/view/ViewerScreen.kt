@@ -29,6 +29,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.ColorUtils
@@ -604,6 +606,12 @@ fun ViewerScreen(
                 pendingInitialPage = null
             }
         }
+        val displayTitle = remember(uiState.roomTitle, uiState.roomId) {
+            val roomTitle = uiState.roomTitle
+            val roomId = uiState.roomId
+            if (roomTitle != null && !roomTitle.matches(Regex("Phòng \\d+"))) roomTitle else roomId?.let { "Phòng $it" } ?: ""
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -652,6 +660,7 @@ fun ViewerScreen(
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
+
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -1698,7 +1707,7 @@ fun RoomNavigation(
                 Spacer(modifier = Modifier.width(48.dp))
             }
             Text(
-                text = if (roomTitle != null && !roomTitle.matches(Regex("truyện \\d+"))) roomTitle else currentRoomId?.let { "truyện $it" } ?: "Chưa có truyện",
+                text = if (roomTitle != null && !roomTitle.matches(Regex("Phòng \\d+"))) roomTitle else currentRoomId?.let { "Phòng $it" } ?: "Chưa có phòng",
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
             )
             if (allRoomIds.isNotEmpty() && currentRoomId != null) {

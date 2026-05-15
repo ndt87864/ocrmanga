@@ -969,7 +969,7 @@ private fun RoomCard(
     var showDeleteOverlay by remember { mutableStateOf(false) }
 
     val displayTitle = remember(title, roomId) {
-        if (!title.isNullOrBlank() && !title.matches(Regex("truyện \\d+"))) title else "truyện $roomId"
+        if (!title.isNullOrBlank() && !title.matches(Regex("Phòng \\d+"))) title else "Phòng $roomId"
     }
 
     Card(

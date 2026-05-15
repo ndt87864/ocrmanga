@@ -1830,7 +1830,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         db.beginTransaction()
         var roomId = -1L
         try {
-            val roomTitle = title ?: "truyện " + System.currentTimeMillis()
+            val roomTitle = title ?: "Phòng " + System.currentTimeMillis()
             val values = ContentValues().apply {
                 put(COLUMN_TITLE, roomTitle)
                 put(COLUMN_COVER_URI, imageUris.first().toString())
