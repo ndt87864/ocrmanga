@@ -596,10 +596,11 @@ fun ImageViewer(
                             imageWidth,
                             imageHeight,
                             originalImageWidth,
-                            originalImageHeight
+                            originalImageHeight,
+                            translationEnabled
                         ) {
-                            // Skip computation when not visible
-                            if (!isInWindow || imageWidth <= 0f || imageHeight <= 0f) {
+                            // Skip computation when not visible or translation disabled
+                            if (!isInWindow || imageWidth <= 0f || imageHeight <= 0f || !translationEnabled) {
                                 precomputedRegionsState.value = emptyList(); return@LaunchedEffect
                             }
                             // Skip computation during fast scroll (non-edit mode)

@@ -159,6 +159,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 return uris.distinctBy { it.toString() }.any(::hasReusableOcrForUri)
             }
     // Chuyển đổi trạng thái pendingDelete cho block của một ảnh
+    fun toggleTranslationVisibility(enabled: Boolean) {
+        _uiState.update { state ->
+            state.copy(
+                translationEnabled = enabled,
+                translationMode = if (enabled) state.lastTranslationMode else TranslationMode.OFF,
+                translationVersion = state.translationVersion + 1
+            )
+        }
+    }
+
     fun togglePendingDelete(uri: Uri, blockId: Int, setPending: Boolean) {
         _uiState.update { state ->
             val oldPair = state.translatedTexts[uri] ?: ("" to emptyList<TextBlockInfo>())
@@ -168,7 +178,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             state.copy(
                 translatedTexts = state.translatedTexts.toMutableMap().apply {
                     put(uri, oldPair.first to blocks)
-                }
+                },
+                translationVersion = state.translationVersion + 1
             )
         }
         // Mark this URI as dirty so save will detect the change
@@ -1913,7 +1924,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update {
             it.copy(
                 translationMode = mode,
-                translationEnabled = mode != TranslationMode.OFF
+                translationEnabled = mode != TranslationMode.OFF,
+                lastTranslationMode = if (mode != TranslationMode.OFF) mode else it.lastTranslationMode,
+                translationVersion = it.translationVersion + 1
             )
         }
         ////Log.i(TAG, "Chế độ dịch được đặt thành $mode")
@@ -3653,6 +3666,7 @@ data class ViewerUiState(
     val translationVersion: Int = 0,
     val translationMode: TranslationMode = TranslationMode.OFF,
     val translationEnabled: Boolean = false,
+    val lastTranslationMode: TranslationMode = TranslationMode.ONLINE,
     val isTranslating: Boolean = false,
     val translationProgress: Int = 0,
     val totalImagesToTranslate: Int = 0,

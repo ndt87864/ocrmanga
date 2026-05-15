@@ -12,6 +12,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -343,10 +345,19 @@ fun Dialogs(
                                         }
                                         onImageMenuDismiss()
                                     }
-                                    .padding(vertical = 4.dp)
+                                    .padding(vertical = 8.dp)
                             ) {
-                                Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Text(if (allBlocksHidden) "ON" else "OFF", modifier = Modifier.padding(start = 8.dp))
+                                Icon(
+                                    imageVector = if (allBlocksHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Text(
+                                    text = if (allBlocksHidden) "Bật lại bản dịch" else "Tắt bản dịch",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(start = 12.dp),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         } else {
                             val isNetworkAvailable = viewModel.isNetworkAvailable()

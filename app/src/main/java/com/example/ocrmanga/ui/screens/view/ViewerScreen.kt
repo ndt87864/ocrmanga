@@ -814,11 +814,17 @@ fun ViewerScreen(
                                 text = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.Translate, null, modifier = Modifier.padding(end = 8.dp))
-                                        Text("Dịch")
+                                        Text(if (uiState.translationEnabled) "Dịch" else "Bật dịch")
                                     }
                                 },
                                 onClick = {
-                                    showTranslationMenu = true
+                                    if (!uiState.translationEnabled && uiState.translatedTexts.isNotEmpty()) {
+                                        // Bật lại hiển thị nếu đã có bản dịch và đang tắt
+                                        viewModel.toggleTranslationVisibility(true)
+                                    } else {
+                                        // Nếu chưa có hoặc đang bật, mở menu chọn mode (hoặc bật nhanh nếu là lần đầu)
+                                        showTranslationMenu = true
+                                    }
                                     showMainMenu = false
                                 }
                             )
@@ -1058,8 +1064,7 @@ fun ViewerScreen(
                                 TranslationMode.GEMINI to "Dịch với Gemini AI",
                                 TranslationMode.MISTRAL to "Dịch với Mistral AI",
                                 TranslationMode.ZAI to "Dịch với Z.AI (GLM-4)",
-                                TranslationMode.EXTERNAL to "Bản dịch ngoài (JSON)",
-                                TranslationMode.OFF to "Tắt"
+                                TranslationMode.EXTERNAL to "Bản dịch ngoài (JSON)"
                             ).forEach { (mode, label) ->
                                 val isNetworkRequired = mode == TranslationMode.ONLINE || mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
                                 val (hasKey, modelName) = when(mode) {
@@ -1088,6 +1093,24 @@ fun ViewerScreen(
                                     modifier = Modifier.alpha(if (isDimmed) 0.5f else 1.0f)
                                 )
                             }
+                            
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { 
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (uiState.translationEnabled) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = null,
+                                            modifier = Modifier.padding(end = 8.dp)
+                                        )
+                                        Text(if (uiState.translationEnabled) "Tắt" else "Bật") 
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.toggleTranslationVisibility(!uiState.translationEnabled)
+                                    showTranslationMenu = false
+                                }
+                            )
                         }
                         DropdownMenu(
                             expanded = showAddMenu,
