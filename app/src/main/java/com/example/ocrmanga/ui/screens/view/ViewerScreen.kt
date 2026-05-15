@@ -70,6 +70,7 @@ fun ViewerScreen(
     var showImageMenu by remember { mutableStateOf(false) }
     var imageMenuUri by remember { mutableStateOf<Uri?>(null) }
     var editTranslationMode by remember { mutableStateOf(false) }
+    var shouldSkipSaveOnExitEdit by remember { mutableStateOf(false) }
     val dragBlocksMap = remember { mutableStateMapOf<Uri, List<DragBlockState>>() }
     val lazyListState = rememberLazyListState()
     val horizontalListState = rememberLazyListState()
@@ -109,7 +110,7 @@ fun ViewerScreen(
     )
     
     val editTutorialSteps = listOf(
-        TutorialStep("Chế độ Chỉnh sửa", "Chào mừng bạn đến với trình biên tập! Tại đây bạn có thể toàn quyền thay đổi bản dịch."),
+        TutorialStep("Chế độ Chỉnh sửa", "Chào mừng bạn đến với trình biên tập! Tại đây bạn có thể toàn quyền thay đổi bản dịch. Khi lưu chỉnh sửa, hệ thống sẽ tạm thời lưu lại và chờ người dùng ấn \"Lưu dữ liệu\" để xác nhận lưu chỉnh sửa chính thức."),
         TutorialStep("Di chuyển ô dịch", "Nhấn giữ và kéo các ô văn bản để di chuyển chúng đến vị trí mong muốn."),
         TutorialStep("Cuộn trang khi Edit", "Trong chế độ này, hãy sử dụng HAI NGÓN TAY để cuộn ảnh, hoặc vuốt ở các vùng trống không có chữ."),
         TutorialStep("Zoom ảnh", "Trong chế độ này, hãy sử dụng hai ngón tay để zoom ảnh."),
@@ -235,7 +236,8 @@ fun ViewerScreen(
     // Save all dragBlocksMap to translatedTexts when exiting edit mode
     LaunchedEffect(editTranslationMode) {
         if (!editTranslationMode) {
-            dragBlocksMap.forEach { (uri, blocks) ->
+            if (!shouldSkipSaveOnExitEdit) {
+                dragBlocksMap.forEach { (uri, blocks) ->
                         viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
                         // Bounds đã được cập nhật khi drag trong ImageViewer, không cần cộng offset nữa
                         // copy() sẽ tự động copy bounds từ dragBlock.block
@@ -266,16 +268,14 @@ fun ViewerScreen(
                         textGradientColors = dragBlock.textGradientColors,
                         textGradientOffsets = dragBlock.textGradientOffsets,
                         textGradientType = dragBlock.textGradientType,
-                        applyMerge = false
-                    ) 
+                    )
                 })
             }
-            isTextRemovalMode = false
-            // KHÔNG clear dragBlocksMap ở đây vì LaunchedEffect rebuild sẽ chạy đồng thời
-            // và có thể đọc uiState.translatedTexts cũ trước khi updateTranslatedBlocks hoàn tất
-            // Thay vào đó, để LaunchedEffect rebuild tự cập nhật khi translatedTexts thay đổi
         }
+        isTextRemovalMode = false
+        shouldSkipSaveOnExitEdit = false
     }
+}
 
     // Initialize dragBlocksMap for all uris from translatedTexts
     // Ưu tiên dữ liệu mới từ translation mode thay vì giữ nguyên dragBlocksMap cũ
@@ -521,10 +521,15 @@ fun ViewerScreen(
 
     // Replace existing handleBack implementation so we NEVER persist room data when leaving Viewer
     val handleBack: () -> Unit = {
-        // Decide whether to delete saved room files too (if we opened a saved room)
-        val deleteSaved = uiState.roomId != null
-        viewModel.clearSessionAndImages(deleteSaved)
-        onNavigateBack()
+        if (editTranslationMode) {
+            shouldSkipSaveOnExitEdit = true
+            editTranslationMode = false
+        } else {
+            // Decide whether to delete saved room files too (if we opened a saved room)
+            val deleteSaved = uiState.roomId != null
+            viewModel.clearSessionAndImages(deleteSaved)
+            onNavigateBack()
+        }
     }
 
     // Tạo translatedTextsFiltered để lọc các block có pendingDelete = false
@@ -627,7 +632,11 @@ fun ViewerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = handleBack) {
-                    Icon(Icons.Default.KeyboardDoubleArrowLeft, "Thoát", tint = MaterialTheme.colorScheme.primary)
+                    Icon(
+                        Icons.Default.KeyboardDoubleArrowLeft,
+                        if (editTranslationMode) "Quay lại" else "Thoát",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
                 val currentDisplayIndex = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) {
                     val layoutInfo = horizontalListState.layoutInfo
@@ -664,451 +673,454 @@ fun ViewerScreen(
                 )
             }
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // View mode toggle
-                IconButton(onClick = {
-                    coroutineScope.launch {
-                        if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
-                            val target = lazyListState.firstVisibleItemIndex
-                            // set pending initial page so HorizontalViewer can start at correct page
-                            pendingInitialPage = target.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
-                            if (viewModeBeforeEdit.value == null) viewModeBeforeEdit.value = vmMode
-                            viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
-                        } else {
-                            val target = horizontalListState.firstVisibleItemIndex
-                            pendingInitialPage = null
-                            viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
-                            if (uiState.imageUris.isNotEmpty()) {
-                                try {
-                                    lazyListState.scrollToItem(target.coerceIn(0, uiState.imageUris.lastIndex))
-                                } catch (_: Exception) {
+            if (!editTranslationMode) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // View mode toggle
+                    IconButton(onClick = {
+                        coroutineScope.launch {
+                            if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
+                                val target = lazyListState.firstVisibleItemIndex
+                                // set pending initial page so HorizontalViewer can start at correct page
+                                pendingInitialPage = target.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                                if (viewModeBeforeEdit.value == null) viewModeBeforeEdit.value = vmMode
+                                viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
+                            } else {
+                                val target = horizontalListState.firstVisibleItemIndex
+                                pendingInitialPage = null
+                                viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
+                                if (uiState.imageUris.isNotEmpty()) {
+                                    try {
+                                        lazyListState.scrollToItem(target.coerceIn(0, uiState.imageUris.lastIndex))
+                                    } catch (_: Exception) {
+                                    }
                                 }
                             }
                         }
+                    }) {
+                        Icon(
+                            imageVector = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) Icons.Default.Fullscreen else Icons.Default.ViewList,
+                            contentDescription = "Chuyển chế độ xem",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.tutorialTag("viewer_mode") { tag, rect -> targetPositions[tag] = rect }
+                        )
                     }
-                }) {
-                    Icon(
-                        imageVector = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) Icons.Default.Fullscreen else Icons.Default.ViewList,
-                        contentDescription = "Chuyển chế độ xem",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.tutorialTag("viewer_mode") { tag, rect -> targetPositions[tag] = rect }
-                    )
-                }
-                // Hiển thị tiến độ dịch khi đang dịch
-                if (uiState.isTranslating && uiState.totalImagesToTranslate > 0) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier
-                            .background(
-                                MaterialTheme.colorScheme.primaryContainer,
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                    // Hiển thị tiến độ dịch khi đang dịch
+                    if (uiState.isTranslating && uiState.totalImagesToTranslate > 0) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .background(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
                             )
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "${uiState.translationProgress}/${uiState.totalImagesToTranslate}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-                
-                // Hiển thị tiến độ xóa text khi đang xóa
-                val isLoadingTextRemoval = isRemovingText || uiState.isRemovingText
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = isLoadingTextRemoval,
-                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
-                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
-                ) {
-                    val progressText = when {
-                        uiState.removingTextProgress.isNotEmpty() -> uiState.removingTextProgress
-                        removingTextLocalProgress.isNotEmpty() -> removingTextLocalProgress
-                        else -> "Đang xử lý..."
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier
-                            .background(
-                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                            )
-                            .border(
-                                1.dp, 
-                                MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                            )
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                        Text(
-                            text = progressText,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                        )
-                    }
-                }
-                Box(modifier = Modifier.tutorialTag("viewer_autoscroll") { tag, rect -> targetPositions[tag] = rect }) {
-                    AutoScroll(
-                        lazyListState = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) horizontalListState else lazyListState,
-                        autoScrollEnabled = autoScrollEnabled,
-                        scrollSpeed = scrollSpeed,
-                        onAutoScrollToggle = { autoScrollEnabled = it },
-                        onSpeedChange = { scrollSpeed = it },
-                        imageUris = uiState.imageUris,
-                        onLoadMoreImages = { viewModel.loadMoreImages() },
-                        onShowSpeedSliderChange = { showSpeedSlider = !showSpeedSlider },
-                        isLoadingMoreImages = uiState.isLoadingMoreImages,
-                        enableScrollLoop = vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL
-                    )
-                }
-                IconButton(
-                    onClick = { showRoomNav = !showRoomNav },
-                    modifier = Modifier.tutorialTag("viewer_room_nav") { tag, rect -> targetPositions[tag] = rect }
-                ) {
-                    Icon(
-                        imageVector = if (showRoomNav) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = if (showRoomNav) "Ẩn thanh điều hướng" else "Hiện thanh điều hướng",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                if (!editTranslationMode) {
-                    Box {
-                        IconButton(onClick = { showMainMenu = true }) {
-                            Icon(
-                                Icons.Default.MoreVert, 
-                                "Tùy chọn", 
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.tutorialTag("viewer_options") { tag, rect -> targetPositions[tag] = rect }
+                            Text(
+                                text = "${uiState.translationProgress}/${uiState.totalImagesToTranslate}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
-                    DropdownMenu(
-                        expanded = showMainMenu,
-                        onDismissRequest = { showMainMenu = false }
+                    }
+                    
+                    // Hiển thị tiến độ xóa text khi đang xóa
+                    val isLoadingTextRemoval = isRemovingText || uiState.isRemovingText
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = isLoadingTextRemoval,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
+                        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
                     ) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Translate, null, modifier = Modifier.padding(end = 8.dp))
-                                    Text("Dịch")
-                                }
-                            },
-                            onClick = {
-                                showTranslationMenu = true
-                                showMainMenu = false
-                            }
+                        val progressText = when {
+                            uiState.removingTextProgress.isNotEmpty() -> uiState.removingTextProgress
+                            removingTextLocalProgress.isNotEmpty() -> removingTextLocalProgress
+                            else -> "Đang xử lý..."
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .background(
+                                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                                )
+                                .border(
+                                    1.dp, 
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f),
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                            Text(
+                                text = progressText,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+                        }
+                    }
+                    Box(modifier = Modifier.tutorialTag("viewer_autoscroll") { tag, rect -> targetPositions[tag] = rect }) {
+                        AutoScroll(
+                            lazyListState = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) horizontalListState else lazyListState,
+                            autoScrollEnabled = autoScrollEnabled,
+                            scrollSpeed = scrollSpeed,
+                            onAutoScrollToggle = { autoScrollEnabled = it },
+                            onSpeedChange = { scrollSpeed = it },
+                            imageUris = uiState.imageUris,
+                            onLoadMoreImages = { viewModel.loadMoreImages() },
+                            onShowSpeedSliderChange = { showSpeedSlider = !showSpeedSlider },
+                            isLoadingMoreImages = uiState.isLoadingMoreImages,
+                            enableScrollLoop = vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL
                         )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Edit, null, modifier = Modifier.padding(end = 8.dp))
-                                    Text("Chỉnh sửa bản dịch")
-                                }
-                            },
-                            onClick = {
-                                coroutineScope.launch {
-                                    if (!editTranslationMode) {
-                                        val target = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
-                                            val layoutInfo = lazyListState.layoutInfo
-                                            val firstVisible = lazyListState.firstVisibleItemIndex
-                                            val scrollOffset = lazyListState.firstVisibleItemScrollOffset
-                                            val itemSize = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1
-                                            if (itemSize > 0 && scrollOffset > itemSize * 0.7f) {
-                                                (firstVisible + 1).coerceAtMost(uiState.imageUris.lastIndex.coerceAtLeast(0))
-                                            } else {
-                                                firstVisible
-                                            }
-                                        } else {
-                                            val layoutInfo = horizontalListState.layoutInfo
-                                            val firstVisible = horizontalListState.firstVisibleItemIndex
-                                            val scrollOffset = horizontalListState.firstVisibleItemScrollOffset
-                                            val itemSize = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1
-                                            if (itemSize > 0 && scrollOffset > itemSize / 2) {
-                                                (firstVisible + 1).coerceAtMost(uiState.imageUris.lastIndex.coerceAtLeast(0))
-                                            } else {
-                                                firstVisible
-                                            }
-                                        }.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
-                                        pendingInitialPage = target
-                                        // ensure horizontal mode when entering edit mode
-                                        if (viewModeBeforeEdit.value == null) viewModeBeforeEdit.value = vmMode
-                                        viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
+                    }
+                    IconButton(
+                        onClick = { showRoomNav = !showRoomNav },
+                        modifier = Modifier.tutorialTag("viewer_room_nav") { tag, rect -> targetPositions[tag] = rect }
+                    ) {
+                        Icon(
+                            imageVector = if (showRoomNav) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (showRoomNav) "Ẩn thanh điều hướng" else "Hiện thanh điều hướng",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (!editTranslationMode) {
+                        Box {
+                            IconButton(onClick = { showMainMenu = true }) {
+                                Icon(
+                                    Icons.Default.MoreVert, 
+                                    "Tùy chọn", 
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.tutorialTag("viewer_options") { tag, rect -> targetPositions[tag] = rect }
+                                )
+                            }
+                        DropdownMenu(
+                            expanded = showMainMenu,
+                            onDismissRequest = { showMainMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Translate, null, modifier = Modifier.padding(end = 8.dp))
+                                        Text("Dịch")
                                     }
-                                    editTranslationMode = !editTranslationMode
+                                },
+                                onClick = {
+                                    showTranslationMenu = true
                                     showMainMenu = false
                                 }
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.AutoFixHigh, null, modifier = Modifier.padding(end = 8.dp))
-                                    Text("Tối ưu tất cả overlay")
-                                }
-                            },
-                            onClick = {
-                                viewModel.applyGlobalOverlayStyle("SMART_AUTO")
-                                showMainMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.FontDownload, null, modifier = Modifier.padding(end = 8.dp))
-                                    Text("Thay đổi font truyện")
-                                }
-                            },
-                            onClick = {
-                                showRoomFontDialog = true
-                                showMainMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(modifier = Modifier.size(24.dp)) {
-                                        if (uiState.isSavingRoom) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(20.dp),
-                                                strokeWidth = 2.dp,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        } else {
-                                            Icon(Icons.Default.Save, null, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Lưu dữ liệu")
-                                }
-                            },
-                            onClick = {
-                                if (!uiState.isSavingRoom) {
-                                    dragBlocksMap.forEach { (uri: Uri, blocks: List<DragBlockState>) ->
-                                        viewModel.updateTranslatedBlocks(
-                                            uri,
-                                            blocks.map { dragBlock ->
-                                                dragBlock.block.copy(
-                                                    fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
-                                                    rotation = dragBlock.rotation,
-                                                    overlayRotation = dragBlock.overlayRotation,
-                                                    shapeType = dragBlock.block.shapeType,
-                                                    customOverlayColor = dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor,
-                                                    customTextColor = dragBlock.textColor?.toArgb()
-                                                        ?: dragBlock.block.customTextColor
-                                                        ?: computeDefaultTextColor(dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor, dragBlock.block.averageBackgroundColor),
-                                                    overlayAlpha = dragBlock.overlayAlpha,
-                                                    textBoldness = dragBlock.textBoldness,
-                                                    overlaySaturation = dragBlock.overlaySaturation,
-                                                    textSaturation = dragBlock.textSaturation,
-                                                    overlayInset = dragBlock.overlayInset,
-                                                    overlayInsetHorizontal = dragBlock.overlayInsetHorizontal,
-                                                    overlayInsetVertical = dragBlock.overlayInsetVertical,
-                                                    customBorderColor = dragBlock.textBorderColor?.toArgb(),
-                                                    borderThickness = dragBlock.textBorderThickness,
-                                                    borderAlpha = dragBlock.textBorderAlpha,
-                                                    // persist shadow edits too
-                                                    customShadowColor = dragBlock.textShadowColor?.toArgb(),
-                                                    shadowAlpha = dragBlock.textShadowAlpha,
-                                                    shadowRadius = dragBlock.textShadowRadius,
-                                                    textGradientColors = dragBlock.textGradientColors,
-                                                    textGradientOffsets = dragBlock.textGradientOffsets,
-                                                    textGradientType = dragBlock.textGradientType
-                                                )
-                                            }
-                                        )
-                                    }
-                                    viewModel.saveCurrentRoom()
-                                    showMainMenu = false
-                                }
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(modifier = Modifier.size(24.dp)) {
-                                        if (uiState.isExportingRoom) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(20.dp),
-                                                strokeWidth = 2.dp,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        } else {
-                                            Icon(Icons.Default.Share, null, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Xuất ảnh (ZIP)")
-                                }
-                            },
-                            onClick = {
-                                if (!uiState.isExportingRoom) {
-                                    // Export current room's translated images as a zip
-                                    showMainMenu = false
-                                    val rid = uiState.roomId
-                                    if (rid == null) {
-                                        Toast.makeText(context, "Không có truyện để xuất", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        coroutineScope.launch {
-                                            val path = viewModel.exportRoomAsZip(rid)
-                                            if (path != null) {
-                                                Toast.makeText(context, "Đã xuất: $path", Toast.LENGTH_LONG).show()
-                                            } else {
-                                                Toast.makeText(context, "Không có ảnh đã dịch để xuất hoặc xuất thất bại", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Add, null, modifier = Modifier.padding(end = 8.dp))
-                                    Text("Thêm ảnh")
-                                }
-                            },
-                            onClick = {
-                                showAddMenu = true
-                                showMainMenu = false
-                            }
-                        )
-                        if (uiState.roomId != null) {
+                            )
                             DropdownMenuItem(
                                 text = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.Edit, null, modifier = Modifier.padding(end = 8.dp))
-                                        Text("Đổi tên truyện")
+                                        Text("Chỉnh sửa bản dịch")
                                     }
                                 },
                                 onClick = {
-                                    showEditTitleDialog = true
+                                    coroutineScope.launch {
+                                        if (!editTranslationMode) {
+                                            val target = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
+                                                val layoutInfo = lazyListState.layoutInfo
+                                                val firstVisible = lazyListState.firstVisibleItemIndex
+                                                val scrollOffset = lazyListState.firstVisibleItemScrollOffset
+                                                val itemSize = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1
+                                                if (itemSize > 0 && scrollOffset > itemSize * 0.7f) {
+                                                    (firstVisible + 1).coerceAtMost(uiState.imageUris.lastIndex.coerceAtLeast(0))
+                                                } else {
+                                                    firstVisible
+                                                }
+                                            } else {
+                                                val layoutInfo = horizontalListState.layoutInfo
+                                                val firstVisible = horizontalListState.firstVisibleItemIndex
+                                                val scrollOffset = horizontalListState.firstVisibleItemScrollOffset
+                                                val itemSize = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 1
+                                                if (itemSize > 0 && scrollOffset > itemSize / 2) {
+                                                    (firstVisible + 1).coerceAtMost(uiState.imageUris.lastIndex.coerceAtLeast(0))
+                                                } else {
+                                                    firstVisible
+                                                }
+                                            }.coerceIn(0, uiState.imageUris.lastIndex.coerceAtLeast(0))
+                                            pendingInitialPage = target
+                                            // ensure horizontal mode when entering edit mode
+                                            if (viewModeBeforeEdit.value == null) viewModeBeforeEdit.value = vmMode
+                                            viewModel.setViewMode(com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL)
+                                        }
+                                        editTranslationMode = !editTranslationMode
+                                        showMainMenu = false
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.AutoFixHigh, null, modifier = Modifier.padding(end = 8.dp))
+                                        Text("Tối ưu tất cả overlay")
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.applyGlobalOverlayStyle("SMART_AUTO")
                                     showMainMenu = false
                                 }
                             )
                             DropdownMenuItem(
                                 text = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            if (uiState.autoTranslateEnabled) Icons.Default.CheckCircle else Icons.Default.Cancel,
-                                            null,
-                                            modifier = Modifier.padding(end = 8.dp),
-                                            tint = if (uiState.autoTranslateEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                        )
-                                        Text(if (uiState.autoTranslateEnabled) "Tự động dịch ảnh mới: BẬT" else "Tự động dịch ảnh mới: TẮT")
+                                        Icon(Icons.Default.FontDownload, null, modifier = Modifier.padding(end = 8.dp))
+                                        Text("Thay đổi font truyện")
                                     }
                                 },
                                 onClick = {
-                                    viewModel.toggleAutoTranslate()
+                                    showRoomFontDialog = true
                                     showMainMenu = false
                                 }
                             )
-
-                            // Chế độ dịch cổ trang (Ancient mode) - hiển thị dưới tùy chọn Tự động dịch
                             DropdownMenuItem(
                                 text = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            if (uiState.isAncientTranslationMode) Icons.Default.CheckCircle else Icons.Default.Cancel,
-                                            null,
-                                            modifier = Modifier.padding(end = 8.dp),
-                                            tint = if (uiState.isAncientTranslationMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                                        )
-                                        Text(if (uiState.isAncientTranslationMode) "Chế độ dịch cổ trang: BẬT" else "Chế độ dịch cổ trang: TẮT")
+                                        Box(modifier = Modifier.size(24.dp)) {
+                                            if (uiState.isSavingRoom) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(20.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            } else {
+                                                Icon(Icons.Default.Save, null, modifier = Modifier.size(20.dp))
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Lưu dữ liệu")
                                     }
                                 },
                                 onClick = {
-                                    viewModel.toggleAncientTranslationMode()
+                                    if (!uiState.isSavingRoom) {
+                                        dragBlocksMap.forEach { (uri: Uri, blocks: List<DragBlockState>) ->
+                                            viewModel.updateTranslatedBlocks(
+                                                uri,
+                                                blocks.map { dragBlock ->
+                                                    dragBlock.block.copy(
+                                                        fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
+                                                        rotation = dragBlock.rotation,
+                                                        overlayRotation = dragBlock.overlayRotation,
+                                                        shapeType = dragBlock.block.shapeType,
+                                                        customOverlayColor = dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor,
+                                                        customTextColor = dragBlock.textColor?.toArgb()
+                                                            ?: dragBlock.block.customTextColor
+                                                            ?: computeDefaultTextColor(dragBlock.whiteoutColor?.toArgb() ?: dragBlock.block.customOverlayColor, dragBlock.block.averageBackgroundColor),
+                                                        overlayAlpha = dragBlock.overlayAlpha,
+                                                        textBoldness = dragBlock.textBoldness,
+                                                        overlaySaturation = dragBlock.overlaySaturation,
+                                                        textSaturation = dragBlock.textSaturation,
+                                                        overlayInset = dragBlock.overlayInset,
+                                                        overlayInsetHorizontal = dragBlock.overlayInsetHorizontal,
+                                                        overlayInsetVertical = dragBlock.overlayInsetVertical,
+                                                        customBorderColor = dragBlock.textBorderColor?.toArgb(),
+                                                        borderThickness = dragBlock.textBorderThickness,
+                                                        borderAlpha = dragBlock.textBorderAlpha,
+                                                        // persist shadow edits too
+                                                        customShadowColor = dragBlock.textShadowColor?.toArgb(),
+                                                        shadowAlpha = dragBlock.textShadowAlpha,
+                                                        shadowRadius = dragBlock.textShadowRadius,
+                                                        textGradientColors = dragBlock.textGradientColors,
+                                                        textGradientOffsets = dragBlock.textGradientOffsets,
+                                                        textGradientType = dragBlock.textGradientType
+                                                    )
+                                                }
+                                            )
+                                        }
+                                        viewModel.saveCurrentRoom()
+                                        showMainMenu = false
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(modifier = Modifier.size(24.dp)) {
+                                            if (uiState.isExportingRoom) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(20.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            } else {
+                                                Icon(Icons.Default.Share, null, modifier = Modifier.size(20.dp))
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Xuất ảnh (ZIP)")
+                                    }
+                                },
+                                onClick = {
+                                    if (!uiState.isExportingRoom) {
+                                        // Export current room's translated images as a zip
+                                        showMainMenu = false
+                                        val rid = uiState.roomId
+                                        if (rid == null) {
+                                            Toast.makeText(context, "Không có truyện để xuất", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            coroutineScope.launch {
+                                                val path = viewModel.exportRoomAsZip(rid)
+                                                if (path != null) {
+                                                    Toast.makeText(context, "Đã xuất: $path", Toast.LENGTH_LONG).show()
+                                                } else {
+                                                    Toast.makeText(context, "Không có ảnh đã dịch để xuất hoặc xuất thất bại", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Add, null, modifier = Modifier.padding(end = 8.dp))
+                                        Text("Thêm ảnh")
+                                    }
+                                },
+                                onClick = {
+                                    showAddMenu = true
                                     showMainMenu = false
                                 }
                             )
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = showTranslationMenu,
-                        onDismissRequest = { showTranslationMenu = false }
-                    ) {
-                        val isNetworkAvailable = viewModel.isNetworkAvailable()
-                        listOf(
-                            TranslationMode.OFFLINE to "Dịch ngoại tuyến",
-                            TranslationMode.ONLINE to "Dịch trực tuyến",
-                            TranslationMode.GEMINI to "Dịch với Gemini AI",
-                            TranslationMode.MISTRAL to "Dịch với Mistral AI",
-                            TranslationMode.ZAI to "Dịch với Z.AI (GLM-4)",
-                            TranslationMode.EXTERNAL to "Bản dịch ngoài (JSON)",
-                            TranslationMode.OFF to "Tắt"
-                        ).forEach { (mode, label) ->
-                            val isNetworkRequired = mode == TranslationMode.ONLINE || mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
-                            val (hasKey, modelName) = when(mode) {
-                                TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys() to "Gemini"
-                                TranslationMode.MISTRAL -> viewModel.hasMistralApiKeys() to "Mistral"
-                                TranslationMode.ZAI -> viewModel.hasZAiApiKeys() to "Z.AI"
-                                else -> true to ""
+                            if (uiState.roomId != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Edit, null, modifier = Modifier.padding(end = 8.dp))
+                                            Text("Đổi tên truyện")
+                                        }
+                                    },
+                                    onClick = {
+                                        showEditTitleDialog = true
+                                        showMainMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                if (uiState.autoTranslateEnabled) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                                                null,
+                                                modifier = Modifier.padding(end = 8.dp),
+                                                tint = if (uiState.autoTranslateEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                            )
+                                            Text(if (uiState.autoTranslateEnabled) "Tự động dịch ảnh mới: BẬT" else "Tự động dịch ảnh mới: TẮT")
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.toggleAutoTranslate()
+                                        showMainMenu = false
+                                    }
+                                )
+    
+                                // Chế độ dịch cổ trang (Ancient mode) - hiển thị dưới tùy chọn Tự động dịch
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                if (uiState.isAncientTranslationMode) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                                                null,
+                                                modifier = Modifier.padding(end = 8.dp),
+                                                tint = if (uiState.isAncientTranslationMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                            )
+                                            Text(if (uiState.isAncientTranslationMode) "Chế độ dịch cổ trang: BẬT" else "Chế độ dịch cổ trang: TẮT")
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.toggleAncientTranslationMode()
+                                        showMainMenu = false
+                                    }
+                                )
                             }
-                            val isApiKeyRequired = mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
-                            val isDimmed = (isNetworkRequired && !isNetworkAvailable) || (isApiKeyRequired && !hasKey)
-
+                        }
+                        DropdownMenu(
+                            expanded = showTranslationMenu,
+                            onDismissRequest = { showTranslationMenu = false }
+                        ) {
+                            val isNetworkAvailable = viewModel.isNetworkAvailable()
+                            listOf(
+                                TranslationMode.OFFLINE to "Dịch ngoại tuyến",
+                                TranslationMode.ONLINE to "Dịch trực tuyến",
+                                TranslationMode.GEMINI to "Dịch với Gemini AI",
+                                TranslationMode.MISTRAL to "Dịch với Mistral AI",
+                                TranslationMode.ZAI to "Dịch với Z.AI (GLM-4)",
+                                TranslationMode.EXTERNAL to "Bản dịch ngoài (JSON)",
+                                TranslationMode.OFF to "Tắt"
+                            ).forEach { (mode, label) ->
+                                val isNetworkRequired = mode == TranslationMode.ONLINE || mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
+                                val (hasKey, modelName) = when(mode) {
+                                    TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys() to "Gemini"
+                                    TranslationMode.MISTRAL -> viewModel.hasMistralApiKeys() to "Mistral"
+                                    TranslationMode.ZAI -> viewModel.hasZAiApiKeys() to "Z.AI"
+                                    else -> true to ""
+                                }
+                                val isApiKeyRequired = mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
+                                val isDimmed = (isNetworkRequired && !isNetworkAvailable) || (isApiKeyRequired && !hasKey)
+    
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        if (isNetworkRequired && !isNetworkAvailable) {
+                                            Toast.makeText(context, "Vui lòng kiểm tra kết nối mạng", Toast.LENGTH_SHORT).show()
+                                            return@DropdownMenuItem
+                                        }
+                                        if (isApiKeyRequired && !hasKey) {
+                                            Toast.makeText(context, "Mô hình $modelName chưa có api key", Toast.LENGTH_SHORT).show()
+                                            return@DropdownMenuItem
+                                        }
+                                        requestBulkTranslation(mode)
+                                        showTranslationMenu = false
+                                    },
+                                    modifier = Modifier.alpha(if (isDimmed) 0.5f else 1.0f)
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showAddMenu,
+                            onDismissRequest = { showAddMenu = false }
+                        ) {
                             DropdownMenuItem(
-                                text = { Text(label) },
+                                text = { Text("Thêm vào đầu") },
                                 onClick = {
-                                    if (isNetworkRequired && !isNetworkAvailable) {
-                                        Toast.makeText(context, "Vui lòng kiểm tra kết nối mạng", Toast.LENGTH_SHORT).show()
-                                        return@DropdownMenuItem
-                                    }
-                                    if (isApiKeyRequired && !hasKey) {
-                                        Toast.makeText(context, "Mô hình $modelName chưa có api key", Toast.LENGTH_SHORT).show()
-                                        return@DropdownMenuItem
-                                    }
-                                    requestBulkTranslation(mode)
-                                    showTranslationMenu = false
-                                },
-                                modifier = Modifier.alpha(if (isDimmed) 0.5f else 1.0f)
+                                    pickImagesAtStartLauncher.launch(arrayOf("image/*"))
+                                    showAddMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Thêm vào cuối") },
+                                onClick = {
+                                    pickImagesAtEndLauncher.launch(arrayOf("image/*"))
+                                    showAddMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Thêm tại vị trí") },
+                                onClick = {
+                                    showInsertAtIndexDialog = true
+                                    showAddMenu = false
+                                }
                             )
                         }
-                    }
-                    DropdownMenu(
-                        expanded = showAddMenu,
-                        onDismissRequest = { showAddMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Thêm vào đầu") },
-                            onClick = {
-                                pickImagesAtStartLauncher.launch(arrayOf("image/*"))
-                                showAddMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Thêm vào cuối") },
-                            onClick = {
-                                pickImagesAtEndLauncher.launch(arrayOf("image/*"))
-                                showAddMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Thêm tại vị trí") },
-                            onClick = {
-                                showInsertAtIndexDialog = true
-                                showAddMenu = false
-                            }
-                        )
                     }
                 }
             }
         }
     }
+
         if (showRoomNav) {
             RoomNavigation(
                 allRoomIds = allRoomIds,
@@ -1796,3 +1808,4 @@ fun RoomNavigation(
         }
     }
 }
+
