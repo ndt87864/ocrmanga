@@ -6,7 +6,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import android.content.Intent
 import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -15,6 +17,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -715,6 +718,47 @@ fun ViewerScreen(
                             text = "${uiState.translationProgress}/${uiState.totalImagesToTranslate}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+                
+                // Hiển thị tiến độ xóa text khi đang xóa
+                val isLoadingTextRemoval = isRemovingText || uiState.isRemovingText
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isLoadingTextRemoval,
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
+                ) {
+                    val progressText = when {
+                        uiState.removingTextProgress.isNotEmpty() -> uiState.removingTextProgress
+                        removingTextLocalProgress.isNotEmpty() -> removingTextLocalProgress
+                        else -> "Đang xử lý..."
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                            )
+                            .border(
+                                1.dp, 
+                                MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Text(
+                            text = progressText,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                         )
                     }
                 }
@@ -1578,13 +1622,31 @@ fun ViewerScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     
-                    Text(
-                        "⚠️ Lưu ý: không khuyến khích sử dụng chức năng này cho thiết bị yếu hơn snapdragon 845, 8gb ram",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "⚠️",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Không khuyến khích sử dụng cho thiết bị yếu hơn Snapdragon 845, 8GB RAM",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
 
                     // Preview image with mask overlay - scrollable
                     Box(
