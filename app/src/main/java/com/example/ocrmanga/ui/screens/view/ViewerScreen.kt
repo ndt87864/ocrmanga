@@ -98,8 +98,8 @@ fun ViewerScreen(
 
     val tutorialSteps = listOf(
         TutorialStep("Chế độ đọc", "Bạn có thể chuyển đổi giữa chế độ đọc Dọc (cuộn liên tục) và Ngang (lật trang như sách) tại đây.", "viewer_mode"),
-        TutorialStep("Tự động cuộn", "Bật chế độ này để app tự động cuộn trang truyện. Bạn có thể chỉnh tốc độ cuộn tùy ý.", "viewer_autoscroll"),
-        TutorialStep("Chuyển tập/phòng", "Nhấn vào đây để hiện danh sách các tập truyện khác hoặc chuyển nhanh giữa các phòng đọc.", "viewer_room_nav"),
+        TutorialStep("Tự động cuộn", "Bật chế độ này để app tự động cuộn trang truyện. Bạn có thể chỉnh tốc độ cuộn tùy ý: mức độ càng cao thì tốc độc cuộn ( dọc ) càng nhanh, thời gian chờ giữa các lần chuyển ảnh ( ngang ) càng ít", "viewer_autoscroll"),
+        TutorialStep("Chuyển phòng", "Nhấn vào đây để hiện danh sách các tập truyện khác hoặc chuyển nhanh giữa các phòng đọc.", "viewer_room_nav"),
         TutorialStep("Tùy chọn nâng cao", "Mở menu này để vào chế độ Dịch thuật AI hoặc Chỉnh sửa bản dịch.", "viewer_options")
     )
     
@@ -107,7 +107,8 @@ fun ViewerScreen(
         TutorialStep("Chế độ Chỉnh sửa", "Chào mừng bạn đến với trình biên tập! Tại đây bạn có thể toàn quyền thay đổi bản dịch."),
         TutorialStep("Di chuyển ô dịch", "Nhấn giữ và kéo các ô văn bản để di chuyển chúng đến vị trí mong muốn."),
         TutorialStep("Cuộn trang khi Edit", "Trong chế độ này, hãy sử dụng HAI NGÓN TAY để cuộn ảnh, hoặc vuốt ở các vùng trống không có chữ."),
-        TutorialStep("Xóa text gốc", "Sử dụng công cụ xóa (tẩy) để xóa bỏ hoàn toàn chữ tiếng Nhật/Trung gốc phía dưới.", "viewer_remove")
+        TutorialStep("Zoom ảnh", "Trong chế độ này, hãy sử dụng hai ngón tay để zoom ảnh."),
+        TutorialStep("Xóa text gốc", "Sử dụng công cụ xóa (tẩy) để xóa bỏ khu vực mong muốn.", "viewer_remove")
     )
     var pendingOcrChoiceShowCompletionToast by remember { mutableStateOf(false) }
     var ocrChoiceRemember by remember { mutableStateOf(false) }
