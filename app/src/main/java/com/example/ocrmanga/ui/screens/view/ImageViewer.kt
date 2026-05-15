@@ -589,7 +589,11 @@ fun ImageViewer(
                             translationVersion,
                             dragBlocks,
                             isInWindow,
-                            editTranslationMode
+                            editTranslationMode,
+                            imageWidth,
+                            imageHeight,
+                            originalImageWidth,
+                            originalImageHeight
                         ) {
                             // Skip computation when not visible
                             if (!isInWindow || imageWidth <= 0f || imageHeight <= 0f) {

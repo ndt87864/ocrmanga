@@ -41,15 +41,17 @@ fun ImagePage(
     onBrushSizeChange: (Float) -> Unit,
     imageMaxHeight: Dp? = null,
     lazyListState: LazyListState = rememberLazyListState(),
-    translationVersion: Int = 0
+    translationVersion: Int = 0,
+    translatedTexts: Map<Uri, Pair<String, List<com.example.ocrmanga.data.models.TextBlockInfo>>> = emptyMap(),
+    translationEnabled: Boolean = false
 ) {
     val list = listOf(uri)
     val state = lazyListState
 
     ImageViewer(
         imageUris = list,
-        translatedTexts = viewModel.uiState.value.translatedTexts,
-        translationEnabled = viewModel.uiState.value.translationEnabled,
+        translatedTexts = translatedTexts,
+        translationEnabled = translationEnabled,
         translatedStatus = viewModel.uiState.value.translatedStatus,
         editTranslationMode = editTranslationMode,
         dragBlocksMap = dragBlocksMap,

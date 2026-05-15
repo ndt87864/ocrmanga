@@ -65,7 +65,9 @@ fun HorizontalViewer(
     scrollSpeed: Float = 5f,
     onAutoScrollToggle: (Boolean) -> Unit = {},
     initialPageIndex: Int? = null,
-    translationVersion: Int = 0
+    translationVersion: Int = 0,
+    translatedTexts: Map<Uri, Pair<String, List<com.example.ocrmanga.data.models.TextBlockInfo>>> = emptyMap(),
+    translationEnabled: Boolean = false
 ) {
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
     val state = horizontalListState ?: rememberLazyListState()
@@ -139,7 +141,9 @@ fun HorizontalViewer(
                             }
                         },
                         lazyListState = pageState,
-                        translationVersion = translationVersion
+                        translationVersion = translationVersion,
+                        translatedTexts = translatedTexts,
+                        translationEnabled = translationEnabled
                     )
                 }
             }

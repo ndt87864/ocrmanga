@@ -1100,7 +1100,7 @@ fun ViewerScreen(
         if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
             ImageViewer(
                 imageUris = uiState.imageUris,
-                translatedTexts = uiState.translatedTexts,
+                translatedTexts = translatedTextsFiltered,
                 translationEnabled = uiState.translationEnabled,
                 translatedStatus = uiState.translatedStatus,
                 translatingImages = uiState.translatingImages,
@@ -1323,7 +1323,9 @@ fun ViewerScreen(
                 translationVersion = uiState.translationVersion,
                 autoScrollEnabled = autoScrollEnabled,
                 scrollSpeed = scrollSpeed,
-                onAutoScrollToggle = { autoScrollEnabled = it }
+                onAutoScrollToggle = { autoScrollEnabled = it },
+                translatedTexts = translatedTextsFiltered,
+                translationEnabled = uiState.translationEnabled
             )
         }
         Dialogs(
