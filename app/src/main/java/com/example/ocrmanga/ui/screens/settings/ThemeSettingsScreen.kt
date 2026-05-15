@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.compose.runtime.*
@@ -317,6 +318,38 @@ fun ThemeSettingsScreen(
                             }
                         }
                     )
+                }
+            }
+
+            // Help & Guides Section
+            item {
+                ModernCard(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    SectionHeader(
+                        title = "Trợ giúp & Hướng dẫn",
+                        subtitle = "Xem lại các hướng dẫn sử dụng ứng dụng"
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                com.example.ocrmanga.ui.screens.view.ViewerPreferences.resetAllTutorials(context)
+                                android.widget.Toast.makeText(context, "Đã reset hướng dẫn. Quay lại các màn hình để xem lại.", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    ) {
+                        Icon(Icons.Default.Info, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Xem lại hướng dẫn")
+                    }
                 }
             }
 

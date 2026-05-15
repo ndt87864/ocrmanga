@@ -41,6 +41,7 @@ import androidx.compose.ui.res.fontResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ocrmanga.R
+import com.example.ocrmanga.ui.components.tutorialTag
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -52,7 +53,8 @@ fun TranslationEditor(
     onSelectedIndexChange: (Int?) -> Unit,
     onSave: () -> Unit,
     isTextRemovalMode: Boolean = false,
-    onToggleTextRemovalMode: () -> Unit = {}
+    onToggleTextRemovalMode: () -> Unit = {},
+    onTagReported: (String, androidx.compose.ui.geometry.Rect) -> Unit = { _, _ -> }
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     
@@ -210,7 +212,8 @@ fun TranslationEditor(
 
                         // Nút bật/tắt chế độ xóa text thủ công (cục tẩy)
                         IconButton(
-                            onClick = onToggleTextRemovalMode
+                            onClick = onToggleTextRemovalMode,
+                            modifier = Modifier.tutorialTag("viewer_remove", onTagReported)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.AutoFixHigh,

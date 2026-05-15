@@ -14,6 +14,12 @@ object ViewerPreferences {
     private val KEY_VIEW_MODE = stringPreferencesKey("viewer_view_mode")
     private val KEY_OCR_PREF_REMEMBER = booleanPreferencesKey("ocr_pref_remember")
     private val KEY_OCR_PREF_REUSE = booleanPreferencesKey("ocr_pref_reuse")
+    
+    // Tutorial flags
+    private val KEY_TUTORIAL_GALLERY = booleanPreferencesKey("tutorial_gallery_done")
+    private val KEY_TUTORIAL_VIEWER = booleanPreferencesKey("tutorial_viewer_done")
+    private val KEY_TUTORIAL_API = booleanPreferencesKey("tutorial_api_done")
+    private val KEY_TUTORIAL_EDIT_MODE = booleanPreferencesKey("tutorial_edit_mode_done")
 
     suspend fun saveViewMode(context: Context, mode: ViewMode) {
         context.dataStore.edit { prefs ->
@@ -40,6 +46,38 @@ object ViewerPreferences {
             val remember = prefs[KEY_OCR_PREF_REMEMBER] ?: false
             val reuse = prefs[KEY_OCR_PREF_REUSE] ?: true
             remember to reuse
+        }
+    }
+
+    // Tutorial helpers
+    suspend fun setTutorialDone(context: Context, key: String) {
+        val prefKey = when(key) {
+            "gallery" -> KEY_TUTORIAL_GALLERY
+            "viewer" -> KEY_TUTORIAL_VIEWER
+            "api" -> KEY_TUTORIAL_API
+            "edit_mode" -> KEY_TUTORIAL_EDIT_MODE
+            else -> return
+        }
+        context.dataStore.edit { it[prefKey] = true }
+    }
+
+    fun isTutorialDoneFlow(context: Context, key: String): Flow<Boolean> {
+        val prefKey = when(key) {
+            "gallery" -> KEY_TUTORIAL_GALLERY
+            "viewer" -> KEY_TUTORIAL_VIEWER
+            "api" -> KEY_TUTORIAL_API
+            "edit_mode" -> KEY_TUTORIAL_EDIT_MODE
+            else -> return kotlinx.coroutines.flow.flowOf(true)
+        }
+        return context.dataStore.data.map { it[prefKey] ?: false }
+    }
+    
+    suspend fun resetAllTutorials(context: Context) {
+        context.dataStore.edit {
+            it[KEY_TUTORIAL_GALLERY] = false
+            it[KEY_TUTORIAL_VIEWER] = false
+            it[KEY_TUTORIAL_API] = false
+            it[KEY_TUTORIAL_EDIT_MODE] = false
         }
     }
 }

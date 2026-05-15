@@ -43,7 +43,8 @@ fun ImagePage(
     lazyListState: LazyListState = rememberLazyListState(),
     translationVersion: Int = 0,
     translatedTexts: Map<Uri, Pair<String, List<com.example.ocrmanga.data.models.TextBlockInfo>>> = emptyMap(),
-    translationEnabled: Boolean = false
+    translationEnabled: Boolean = false,
+    onTagReported: (String, androidx.compose.ui.geometry.Rect) -> Unit = { _, _ -> }
 ) {
     val list = listOf(uri)
     val state = lazyListState
@@ -83,6 +84,7 @@ fun ImagePage(
         brushSize = brushSize,
         onBrushSizeChange = onBrushSizeChange,
         translationVersion = translationVersion,
+        onTagReported = onTagReported,
         verticalArrangement = Arrangement.Center,
         contentScale = ContentScale.FillWidth
     )

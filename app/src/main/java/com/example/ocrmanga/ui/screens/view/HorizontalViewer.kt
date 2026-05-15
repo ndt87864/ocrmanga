@@ -67,7 +67,8 @@ fun HorizontalViewer(
     initialPageIndex: Int? = null,
     translationVersion: Int = 0,
     translatedTexts: Map<Uri, Pair<String, List<com.example.ocrmanga.data.models.TextBlockInfo>>> = emptyMap(),
-    translationEnabled: Boolean = false
+    translationEnabled: Boolean = false,
+    onTagReported: (String, androidx.compose.ui.geometry.Rect) -> Unit = { _, _ -> }
 ) {
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
     val state = horizontalListState ?: rememberLazyListState()
@@ -143,7 +144,8 @@ fun HorizontalViewer(
                         lazyListState = pageState,
                         translationVersion = translationVersion,
                         translatedTexts = translatedTexts,
-                        translationEnabled = translationEnabled
+                        translationEnabled = translationEnabled,
+                        onTagReported = onTagReported
                     )
                 }
             }

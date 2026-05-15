@@ -166,7 +166,9 @@ fun ImageViewer(
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> },
     brushSize: Float = 40f,
     onBrushSizeChange: (Float) -> Unit = {},
+    initialPageIndex: Int? = null,
     translationVersion: Int = 0,
+    onTagReported: (String, Rect) -> Unit = { _, _ -> },
     verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(0.dp),
     contentScale: ContentScale = ContentScale.FillWidth
 ) {
@@ -501,7 +503,8 @@ fun ImageViewer(
                                     onEditTranslationModeToggle(false)
                                 },
                                 isTextRemovalMode = isTextRemovalMode,
-                                onToggleTextRemovalMode = onToggleTextRemovalMode
+                                onToggleTextRemovalMode = onToggleTextRemovalMode,
+                                onTagReported = onTagReported
                             )
                         }
                     }

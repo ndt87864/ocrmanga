@@ -56,6 +56,10 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.example.ocrmanga.ui.components.LoadingOverlay
 import com.example.ocrmanga.viewmodels.GalleryViewModel
+import com.example.ocrmanga.ui.components.AppTutorialOverlay
+import com.example.ocrmanga.ui.components.TutorialStep
+import com.example.ocrmanga.ui.components.tutorialTag
+import com.example.ocrmanga.ui.screens.view.ViewerPreferences
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -98,6 +102,21 @@ fun GalleryScreen(
     var showDeleteDialog by remember { mutableStateOf<Long?>(null) }
     var showCreateMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    
+    // Tutorial State
+    var tutorialDone by remember { mutableStateOf(true) }
+    val targetPositions = remember { mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>() }
+    
+    LaunchedEffect(Unit) {
+        ViewerPreferences.isTutorialDoneFlow(context, "gallery").collect { tutorialDone = it }
+    }
+
+    val tutorialSteps = listOf(
+        TutorialStep("Chào mừng!", "Đây là nơi quản lý tất cả bộ truyện manga của bạn. Hãy cùng khám phá các tính năng chính nhé!"),
+        TutorialStep("Thêm truyện mới", "Nhấn vào nút '+' này để thêm truyện từ thư viện ảnh hoặc thư mục trong máy.", "gallery_add"),
+        TutorialStep("Sao lưu Drive", "Bạn có thể sao lưu dữ liệu lên Google Drive để không bị mất khi đổi máy.", "gallery_drive"),
+        TutorialStep("Tìm kiếm", "Dễ dàng tìm thấy bộ truyện yêu thích bằng cách nhập tên tại đây.", "gallery_search")
+    )
     val coroutineScope = rememberCoroutineScope()
 
     // Google Sign-In state
@@ -310,6 +329,7 @@ fun GalleryScreen(
                         modifier = Modifier
                             .size(64.dp)
                             .shadow(8.dp, RoundedCornerShape(16.dp))
+                            .tutorialTag("gallery_add") { tag, rect -> targetPositions[tag] = rect }
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -423,7 +443,8 @@ fun GalleryScreen(
                         focusedBorderColor = Color.Transparent,
                         cursorColor = MaterialTheme.colorScheme.primary
                     ),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f)
+                        .tutorialTag("gallery_search") { tag, rect -> targetPositions[tag] = rect },
                     singleLine = true,
                     interactionSource = remember { MutableInteractionSource() }.also { src ->
                         LaunchedEffect(src) {
@@ -452,6 +473,7 @@ fun GalleryScreen(
                                         )
                                     )
                                 )
+                                .tutorialTag("gallery_drive") { tag, rect -> targetPositions[tag] = rect }
                         ) {
                             val photoUrl = googleAccount?.photoUrl?.toString()
                             if (photoUrl != null) {
@@ -903,6 +925,19 @@ fun GalleryScreen(
                     Text("Hủy")
                 }
             }
+        )
+    }
+
+    // Display Tutorial Overlay if not done
+    if (!tutorialDone) {
+        AppTutorialOverlay(
+            steps = tutorialSteps,
+            onComplete = {
+                coroutineScope.launch {
+                    ViewerPreferences.setTutorialDone(context, "gallery")
+                }
+            },
+            targetPositions = targetPositions
         )
     }
 }

@@ -35,6 +35,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.example.ocrmanga.viewmodels.ApiKey
 import com.example.ocrmanga.viewmodels.ApiKeyManagementViewModel
+import com.example.ocrmanga.ui.components.AppTutorialOverlay
+import com.example.ocrmanga.ui.components.TutorialStep
+import com.example.ocrmanga.ui.components.tutorialTag
+import com.example.ocrmanga.ui.screens.view.ViewerPreferences
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +66,22 @@ fun ApiKeyManagementScreen(
 
     // Dropdown expanded state
     var dropdownExpanded by remember { mutableStateOf(false) }
+    
+    // Tutorial State
+    var tutorialDone by remember { mutableStateOf(true) }
+    val targetPositions = remember { mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>() }
+    val coroutineScope = rememberCoroutineScope()
+    
+    LaunchedEffect(Unit) {
+        ViewerPreferences.isTutorialDoneFlow(context, "api").collect { tutorialDone = it }
+    }
+
+    val tutorialSteps = listOf(
+        TutorialStep("Quản lý API", "Để app có thể dịch được, bạn cần thêm API Key từ các dịch vụ như Google Gemini."),
+        TutorialStep("Chọn loại AI", "Chọn dịch vụ AI bạn có Key tại đây.", "api_type"),
+        TutorialStep("Thêm Key mới", "Nhấn vào nút '+' để nhập Key mới vào hệ thống.", "api_add"),
+        TutorialStep("Danh sách Key", "Các Key của bạn sẽ hiển thị ở khu vực này.", "api_list")
+    )
 
     Scaffold(
         topBar = {
@@ -90,6 +111,7 @@ fun ApiKeyManagementScreen(
                 modifier = Modifier
                     .size(64.dp)
                     .shadow(8.dp, RoundedCornerShape(16.dp))
+                    .tutorialTag("api_add") { tag, rect -> targetPositions[tag] = rect }
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
@@ -126,6 +148,7 @@ fun ApiKeyManagementScreen(
                         onClick = { dropdownExpanded = true },
                         shape = RoundedCornerShape(12.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.tutorialTag("api_type") { tag, rect -> targetPositions[tag] = rect },
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp, MaterialTheme.colorScheme.outlineVariant
                         )
@@ -230,6 +253,7 @@ fun ApiKeyManagementScreen(
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = 96.dp) // space for FAB
+                    .tutorialTag("api_list") { tag, rect -> targetPositions[tag] = rect }
             ) {
                 if (displayedApiKeys.isEmpty()) {
                     // Empty state
@@ -669,6 +693,19 @@ fun ApiKeyManagementScreen(
                     Text("Hủy")
                 }
             }
+        )
+    }
+
+    // Display Tutorial Overlay if not done
+    if (!tutorialDone) {
+        AppTutorialOverlay(
+            steps = tutorialSteps,
+            onComplete = {
+                coroutineScope.launch {
+                    ViewerPreferences.setTutorialDone(context, "api")
+                }
+            },
+            targetPositions = targetPositions
         )
     }
 }

@@ -35,6 +35,10 @@ import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ocrmanga.data.models.TranslationMode
 import com.example.ocrmanga.ui.components.LoadingOverlay
+import com.example.ocrmanga.ui.components.AppTutorialOverlay
+import com.example.ocrmanga.ui.components.TutorialStep
+import com.example.ocrmanga.ui.components.tutorialTag
+import com.example.ocrmanga.ui.screens.view.ViewerPreferences
 import com.example.ocrmanga.viewmodels.ViewerViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -79,6 +83,32 @@ fun ViewerScreen(
     var pendingOcrChoiceIsBulk by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    
+    // Tutorial State
+    var tutorialDone by remember { mutableStateOf(true) }
+    var editTutorialDone by remember { mutableStateOf(true) }
+    val targetPositions = remember { mutableStateMapOf<String, androidx.compose.ui.geometry.Rect>() }
+    
+    LaunchedEffect(Unit) {
+        ViewerPreferences.isTutorialDoneFlow(context, "viewer").collect { tutorialDone = it }
+    }
+    LaunchedEffect(Unit) {
+        ViewerPreferences.isTutorialDoneFlow(context, "edit_mode").collect { editTutorialDone = it }
+    }
+
+    val tutorialSteps = listOf(
+        TutorialStep("Chế độ đọc", "Bạn có thể chuyển đổi giữa chế độ đọc Dọc (cuộn liên tục) và Ngang (lật trang như sách) tại đây.", "viewer_mode"),
+        TutorialStep("Tự động cuộn", "Bật chế độ này để app tự động cuộn trang truyện. Bạn có thể chỉnh tốc độ cuộn tùy ý.", "viewer_autoscroll"),
+        TutorialStep("Chuyển tập/phòng", "Nhấn vào đây để hiện danh sách các tập truyện khác hoặc chuyển nhanh giữa các phòng đọc.", "viewer_room_nav"),
+        TutorialStep("Tùy chọn nâng cao", "Mở menu này để vào chế độ Dịch thuật AI hoặc Chỉnh sửa bản dịch.", "viewer_options")
+    )
+    
+    val editTutorialSteps = listOf(
+        TutorialStep("Chế độ Chỉnh sửa", "Chào mừng bạn đến với trình biên tập! Tại đây bạn có thể toàn quyền thay đổi bản dịch."),
+        TutorialStep("Di chuyển ô dịch", "Nhấn giữ và kéo các ô văn bản để di chuyển chúng đến vị trí mong muốn."),
+        TutorialStep("Cuộn trang khi Edit", "Trong chế độ này, hãy sử dụng HAI NGÓN TAY để cuộn ảnh, hoặc vuốt ở các vùng trống không có chữ."),
+        TutorialStep("Xóa text gốc", "Sử dụng công cụ xóa (tẩy) để xóa bỏ hoàn toàn chữ tiếng Nhật/Trung gốc phía dưới.", "viewer_remove")
+    )
     var pendingOcrChoiceShowCompletionToast by remember { mutableStateOf(false) }
     var ocrChoiceRemember by remember { mutableStateOf(false) }
     val ocrPreference by ViewerPreferences.ocrPreferenceFlow(context).collectAsState(initial = false to true)
@@ -650,7 +680,8 @@ fun ViewerScreen(
                     Icon(
                         imageVector = if (vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) Icons.Default.Fullscreen else Icons.Default.ViewList,
                         contentDescription = "Chuyển chế độ xem",
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.tutorialTag("viewer_mode") { tag, rect -> targetPositions[tag] = rect }
                     )
                 }
                 // Hiển thị tiến độ dịch khi đang dịch
@@ -677,19 +708,24 @@ fun ViewerScreen(
                         )
                     }
                 }
-                AutoScroll(
-                    lazyListState = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) horizontalListState else lazyListState,
-                    autoScrollEnabled = autoScrollEnabled,
-                    scrollSpeed = scrollSpeed,
-                    onAutoScrollToggle = { autoScrollEnabled = it },
-                    onSpeedChange = { scrollSpeed = it },
-                    imageUris = uiState.imageUris,
-                    onLoadMoreImages = { viewModel.loadMoreImages() },
-                    onShowSpeedSliderChange = { showSpeedSlider = !showSpeedSlider },
-                    isLoadingMoreImages = uiState.isLoadingMoreImages,
-                    enableScrollLoop = vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL
-                )
-                IconButton(onClick = { showRoomNav = !showRoomNav }) {
+                Box(modifier = Modifier.tutorialTag("viewer_autoscroll") { tag, rect -> targetPositions[tag] = rect }) {
+                    AutoScroll(
+                        lazyListState = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) horizontalListState else lazyListState,
+                        autoScrollEnabled = autoScrollEnabled,
+                        scrollSpeed = scrollSpeed,
+                        onAutoScrollToggle = { autoScrollEnabled = it },
+                        onSpeedChange = { scrollSpeed = it },
+                        imageUris = uiState.imageUris,
+                        onLoadMoreImages = { viewModel.loadMoreImages() },
+                        onShowSpeedSliderChange = { showSpeedSlider = !showSpeedSlider },
+                        isLoadingMoreImages = uiState.isLoadingMoreImages,
+                        enableScrollLoop = vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL
+                    )
+                }
+                IconButton(
+                    onClick = { showRoomNav = !showRoomNav },
+                    modifier = Modifier.tutorialTag("viewer_room_nav") { tag, rect -> targetPositions[tag] = rect }
+                ) {
                     Icon(
                         imageVector = if (showRoomNav) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                         contentDescription = if (showRoomNav) "Ẩn thanh điều hướng" else "Hiện thanh điều hướng",
@@ -699,7 +735,12 @@ fun ViewerScreen(
                 if (!editTranslationMode) {
                     Box {
                         IconButton(onClick = { showMainMenu = true }) {
-                            Icon(Icons.Default.MoreVert, "Tùy chọn", tint = MaterialTheme.colorScheme.primary)
+                            Icon(
+                                Icons.Default.MoreVert, 
+                                "Tùy chọn", 
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.tutorialTag("viewer_options") { tag, rect -> targetPositions[tag] = rect }
+                            )
                         }
                     DropdownMenu(
                         expanded = showMainMenu,
@@ -1231,7 +1272,8 @@ fun ViewerScreen(
                     }
                 },
                 brushSize = brushSize,
-                onBrushSizeChange = { brushSize = it }
+                onBrushSizeChange = { brushSize = it },
+                onTagReported = { tag, rect -> targetPositions[tag] = rect }
             )
         } else {
             // Horizontal mode
@@ -1342,7 +1384,8 @@ fun ViewerScreen(
                 scrollSpeed = scrollSpeed,
                 onAutoScrollToggle = { autoScrollEnabled = it },
                 translatedTexts = translatedTextsFiltered,
-                translationEnabled = uiState.translationEnabled
+                translationEnabled = uiState.translationEnabled,
+                onTagReported = { tag, rect -> targetPositions[tag] = rect }
             )
         }
         Dialogs(
@@ -1589,6 +1632,32 @@ fun ViewerScreen(
             else -> "Đang khởi tạo..."
         }
     )
+
+    // Display Tutorial Overlay if not done
+    if (!tutorialDone) {
+        AppTutorialOverlay(
+            steps = tutorialSteps,
+            onComplete = {
+                coroutineScope.launch {
+                    ViewerPreferences.setTutorialDone(context, "viewer")
+                }
+            },
+            targetPositions = targetPositions
+        )
+    }
+
+    // Display Edit Mode Tutorial Overlay if not done and in edit mode
+    if (editTranslationMode && !editTutorialDone) {
+        AppTutorialOverlay(
+            steps = editTutorialSteps,
+            onComplete = {
+                coroutineScope.launch {
+                    ViewerPreferences.setTutorialDone(context, "edit_mode")
+                }
+            },
+            targetPositions = targetPositions
+        )
+    }
 
     } // end Box
 }
