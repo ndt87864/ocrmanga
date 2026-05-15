@@ -1577,6 +1577,15 @@ fun ViewerScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    
+                    Text(
+                        "⚠️ Lưu ý: không khuyến khích sử dụng chức năng này cho thiết bị yếu hơn snapdragon 845, 8gb ram",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+
                     // Preview image with mask overlay - scrollable
                     Box(
                         modifier = Modifier

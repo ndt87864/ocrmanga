@@ -212,7 +212,12 @@ fun TranslationEditor(
 
                         // Nút bật/tắt chế độ xóa text thủ công (cục tẩy)
                         IconButton(
-                            onClick = onToggleTextRemovalMode,
+                            onClick = {
+                                if (!isTextRemovalMode) {
+                                    android.widget.Toast.makeText(context, "Không khuyến khích sử dụng chức năng này cho thiết bị yếu hơn snapdragon 845, 8gb ram", android.widget.Toast.LENGTH_LONG).show()
+                                }
+                                onToggleTextRemovalMode()
+                            },
                             modifier = Modifier.tutorialTag("viewer_remove", onTagReported)
                         ) {
                             Icon(
