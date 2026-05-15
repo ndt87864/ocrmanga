@@ -490,7 +490,7 @@ fun ViewerScreen(
         pair.copy(second = pair.second.filter { !it.pendingDelete })
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
     // Wrap the main content area with AnimatedContent to animate mode transitions
     val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
     val modeIsHorizontal = vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
@@ -1562,7 +1562,11 @@ fun ViewerScreen(
         subText = "Vui lòng đợi trong giây lát"
     )
 
-
+    // Global loading overlay for room loading/mode switching
+    LoadingOverlay(
+        isLoading = uiState.isLoading,
+        progress = if (uiState.roomId != null) "Đang tải truyện..." else "Đang khởi tạo..."
+    )
 
     } // end Box
 }

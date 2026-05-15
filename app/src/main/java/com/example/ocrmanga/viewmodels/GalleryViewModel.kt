@@ -32,12 +32,13 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     fun loadSavedRooms() {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
             try {
                 val rooms = databaseHelper.getAllRooms()
-                _uiState.update { it.copy(savedRooms = rooms) }
+                _uiState.update { it.copy(savedRooms = rooms, isLoading = false) }
             } catch (e: Exception) {
                 Log.e("GalleryViewModel", "Error loading rooms", e)
-                _uiState.update { it.copy(savedRooms = emptyList()) }
+                _uiState.update { it.copy(savedRooms = emptyList(), isLoading = false) }
             }
         }
     }
@@ -66,5 +67,6 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
 data class GalleryUiState(
     val selectedImages: List<Uri> = emptyList(),
-    val savedRooms: List<Triple<Long, String, Uri>> = emptyList() // roomId, title, coverUri
+    val savedRooms: List<Triple<Long, String, Uri>> = emptyList(), // roomId, title, coverUri
+    val isLoading: Boolean = false
 )

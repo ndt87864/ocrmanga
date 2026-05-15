@@ -29,6 +29,9 @@ import com.example.ocrmanga.ui.screens.view.ViewerScreen
 import com.example.ocrmanga.ui.theme.OCRMangaTheme
 import com.example.ocrmanga.ui.screens.settings.ThemeSettingsScreen
 import com.example.ocrmanga.ui.screens.DonateScreen
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.activity.viewModels
+import com.example.ocrmanga.viewmodels.GalleryViewModel
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Gallery : Screen("gallery", "Trang chủ", Icons.Default.Home)
@@ -38,8 +41,16 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
 }
 
 class MainActivity : ComponentActivity() {
+    private val galleryViewModel: GalleryViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        
+        // Keep the splash screen on-screen until the first batch of rooms is loaded
+        splashScreen.setKeepOnScreenCondition {
+            galleryViewModel.uiState.value.isLoading && galleryViewModel.uiState.value.savedRooms.isEmpty()
+        }
 
         // Init memory manager
         com.example.ocrmanga.utils.MemoryManager.init(this)
@@ -92,6 +103,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             composable("gallery") {
                                 GalleryScreen(
+                                    viewModel = galleryViewModel,
                                     onNavigateToViewer = { imageUris: List<String> ->
                                         navController.currentBackStackEntry?.savedStateHandle?.set("imageUris", imageUris)
                                         navController.currentBackStackEntry?.savedStateHandle?.remove<Long>("roomId")

@@ -1398,6 +1398,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         // Basic UI state reset for the provided URIs
         _uiState.update {
             it.copy(
+                isLoading = true,
                 imageUris = uris,
                 translatedTexts = emptyMap(),
                 sourceLanguages = emptyMap(),
@@ -1412,6 +1413,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // Reset translation version so UI clears blocks
                 translationVersion = it.translationVersion + 1
             )
+        }
+        
+        // Short delay to let UI show loading if needed, though this is usually fast
+        viewModelScope.launch {
+            delay(100)
+            _uiState.update { it.copy(isLoading = false) }
         }
 
         // Clear in-memory session lists and jobs for a truly new session
@@ -1655,6 +1662,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      * Internal function to load room from DB. Used by both loadRoom() and clearMemoryAndReloadRoom().
      */
     private suspend fun loadRoomInternal(roomId: Long) {
+        _uiState.update { it.copy(isLoading = true) }
         try {
             // Clear all is_changed flags for this room to start fresh
             databaseHelper.clearAllChangedFlagsForRoom(roomId)
@@ -1759,6 +1767,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
             _uiState.update {
                 it.copy(
+                    isLoading = false,
                     imageUris = initialBatch,
                     translatedTexts = translationsForBatch,
                     translationEnabled = fixedTranslations.isNotEmpty(),
@@ -1781,6 +1790,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             withContext(Dispatchers.Main) {
                 Toast.makeText(getApplication(), "Tải truyện thất bại!", Toast.LENGTH_SHORT).show()
             }
+            _uiState.update { it.copy(isLoading = false) }
             lastLoadedRoomId = null
         }
     }
@@ -3617,6 +3627,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 }
 data class ViewerUiState(
+    val isLoading: Boolean = false,
     val imageUris: List<Uri> = emptyList(),
     val translatedTexts: Map<Uri, Pair<String, List<TextBlockInfo>>> = emptyMap(),
     val sourceLanguages: Map<Uri, String> = emptyMap(),

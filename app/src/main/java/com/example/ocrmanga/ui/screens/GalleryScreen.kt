@@ -733,7 +733,25 @@ fun GalleryScreen(
             }
 
             // ===== CONTENT AREA =====
-            if (uiState.savedRooms.isEmpty()) {
+            if (uiState.isLoading && uiState.savedRooms.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "Đang tải truyện...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else if (uiState.savedRooms.isEmpty()) {
                 // Empty state - no rooms at all
                 Box(
                     modifier = Modifier
