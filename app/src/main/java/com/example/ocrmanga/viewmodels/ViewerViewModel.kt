@@ -80,13 +80,15 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun setViewMode(mode: com.example.ocrmanga.ui.screens.view.ViewMode) {
         viewModelScope.launch {
             _uiState.update { it.copy(isTransitioningMode = true) }
+            // Cho UI 100ms để hiển thị overlay mượt mà trước khi thực hiện chuyển đổi nặng
+            delay(100)
             try {
                 com.example.ocrmanga.ui.screens.view.ViewerPreferences.saveViewMode(getApplication(), mode)
             } catch (_: Exception) {
             }
             _viewMode.value = mode
-            // Thêm delay ngắn để UI kịp render trạng thái trung gian
-            delay(500)
+            // Thêm delay để giữ overlay trong khi UI đang tái cấu trúc
+            delay(600)
             _uiState.update { it.copy(isTransitioningMode = false) }
         }
     }
@@ -1426,12 +1428,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 translationVersion = it.translationVersion + 1
             )
         }
-        
-        // Short delay to let UI show loading if needed, though this is usually fast
-        viewModelScope.launch {
-            delay(100)
-            _uiState.update { it.copy(isLoading = false) }
-        }
 
         // Clear in-memory session lists and jobs for a truly new session
         newImageUris.clear()
@@ -1446,7 +1442,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             newImageUris.addAll(uris)
             // this is a new session, forget last loaded room id so we don't fall back
             lastLoadedRoomId = null
-            //Log.i(TAG, "setImageUris(isNew=true): cleared translationQueue, dirtyUris, uriToImageId and lastLoadedRoomId")
+        }
+        
+        // Ensure loading stays visible for at least 300ms for visual continuity
+        viewModelScope.launch {
+            delay(300)
+            _uiState.update { it.copy(isLoading = false) }
         }
         ////Log.i(TAG, "Đã đặt ${uris.size} URI ảnh, isNew: $isNew")
     }
@@ -1675,6 +1676,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      */
     private suspend fun loadRoomInternal(roomId: Long) {
         _uiState.update { it.copy(isLoading = true) }
+        delay(100) // Give UI time to show overlay
         try {
             // Clear all is_changed flags for this room to start fresh
             databaseHelper.clearAllChangedFlagsForRoom(roomId)

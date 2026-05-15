@@ -14,7 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Color  
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -198,6 +199,7 @@ fun LoadingOverlay(
             modifier = modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.3f))
+                .graphicsLayer(clip = true)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -215,8 +217,8 @@ fun LoadingOverlay(
                     ),
                 shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 8.dp,
-                shadowElevation = 8.dp
+                tonalElevation = 4.dp,
+                shadowElevation = 4.dp
             ) {
                 Column(
                     modifier = Modifier.padding(32.dp),
