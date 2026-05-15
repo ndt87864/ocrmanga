@@ -524,7 +524,7 @@ fun ViewerScreen(
     }
 
     androidx.compose.animation.AnimatedContent(
-        targetState = Pair(modeIsHorizontal, editMode),
+        targetState = Triple(modeIsHorizontal, editMode, uiState.isTransitioningMode),
         transitionSpec = {
             com.example.ocrmanga.ui.animation.AnimationUtils.chooseContentTransform(
                 oldIsEdit = initialState.second,
@@ -532,14 +532,24 @@ fun ViewerScreen(
                 oldModeHorizontal = initialState.first,
                 newModeHorizontal = targetState.first
             )
-        }
-    ) { _state ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        },
+        label = "modeTransition"
+    ) { (isHorizontal, isEdit, isTransitioning) ->
+        if (isTransitioning) {
+            // Khi đang trong quá trình chuyển đổi, hiển thị một Box rỗng để giảm tải cho UI thread
+            // Giúp hiệu ứng loading quay mượt mà hơn
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
         val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
         val effectiveViewMode = if (editTranslationMode) {
             com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
@@ -1474,9 +1484,6 @@ fun ViewerScreen(
             )
         }
 
-    } // end Column
-    } // end AnimatedContent
-
     // Text Removal Preview Dialog - shows mask overlay before confirming removal
     if (uiState.showTextRemovalPreview && uiState.textRemovalPreviewBitmap != null) {
         AlertDialog(
@@ -1568,6 +1575,10 @@ fun ViewerScreen(
         progress = removalProgressText,
         subText = "Vui lòng đợi trong giây lát"
     )
+
+        } // end Column
+    } // end else
+} // end AnimatedContent
 
     // Global loading overlay for room loading/mode switching
     LoadingOverlay(

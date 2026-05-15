@@ -1,9 +1,10 @@
 package com.example.ocrmanga.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -11,13 +12,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color  
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -225,14 +230,44 @@ fun LoadingOverlay(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Animated spinner
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(56.dp),
-                        strokeWidth = 5.dp,
-                        color = MaterialTheme.colorScheme.primary
+                    // Ultra-lightweight spinning animation using graphicsLayer to AVOID recompositions
+                    val infiniteTransition = rememberInfiniteTransition(label = "loading")
+                    val rotation = infiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "rotation"
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    val primaryColor = MaterialTheme.colorScheme.primary
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .graphicsLayer { 
+                                // This lambda avoids recomposing the Box/Canvas; 
+                                // it only triggers a redraw of this layer.
+                                rotationZ = rotation.value 
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            drawArc(
+                                color = primaryColor,
+                                startAngle = 0f,
+                                sweepAngle = 280f,
+                                useCenter = false,
+                                style = Stroke(
+                                    width = 5.dp.toPx(),
+                                    cap = StrokeCap.Round
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Main progress text
                     Text(
