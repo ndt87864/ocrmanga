@@ -316,6 +316,13 @@ fun GalleryScreen(
 
     val gridState = rememberLazyGridState()
 
+    // Scroll to top when filter or search changes
+    LaunchedEffect(filterType, searchQuery) {
+        if (filteredRooms.isNotEmpty()) {
+            gridState.scrollToItem(0)
+        }
+    }
+
     // ============ MAIN UI ============
     Scaffold(
         floatingActionButton = {
