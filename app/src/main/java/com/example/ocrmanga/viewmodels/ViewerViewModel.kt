@@ -79,12 +79,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setViewMode(mode: com.example.ocrmanga.ui.screens.view.ViewMode) {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
             try {
                 com.example.ocrmanga.ui.screens.view.ViewerPreferences.saveViewMode(getApplication(), mode)
             } catch (_: Exception) {
             }
             _viewMode.value = mode
+            // Thêm delay ngắn để UI kịp render trạng thái trung gian
+            delay(400)
+            _uiState.update { it.copy(isLoading = false) }
         }
+    }
+
+    fun setLoading(loading: Boolean) {
+        _uiState.update { it.copy(isLoading = loading) }
     }
             // Trả về số lượng ảnh đã thay đổi trong room
             fun getNumChangedImages(roomId: Long): Int {

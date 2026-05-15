@@ -189,6 +189,13 @@ fun ViewerScreen(
         }
     }
 
+    // Hiển thị loading khi chuyển đổi chế độ chỉnh sửa
+    LaunchedEffect(editTranslationMode) {
+        viewModel.setLoading(true)
+        delay(400)
+        viewModel.setLoading(false)
+    }
+
     // Save all dragBlocksMap to translatedTexts when exiting edit mode
     LaunchedEffect(editTranslationMode) {
         if (!editTranslationMode) {
