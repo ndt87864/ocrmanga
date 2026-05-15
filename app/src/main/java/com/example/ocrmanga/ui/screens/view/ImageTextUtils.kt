@@ -473,9 +473,9 @@ fun calculateOptimalFontSize(
     var optimalFontSize = safeMinFontSize
 
     // Điều chỉnh hệ số scale cho hình oval để text vừa vặn
-    // Tăng vùng text trong oval lên tối đa: 99% chiều dọc, 93% chiều ngang
-    val widthScale = if (shapeType == 1) 0.75f else 0.95f
-    val heightScale = if (shapeType == 1) 0.95f else 0.98f
+    // Đối với Oval, ta cho phép wrap rộng hơn một chút nhưng kiểm soát chặt chẽ bằng phương trình Ellipse ở bước kiểm tra fit
+    val widthScale = if (shapeType == 1) 0.82f else 0.95f
+    val heightScale = if (shapeType == 1) 0.82f else 0.98f
 
     // Compute available drawing area after applying explicit paddings.
     val safeWidth = (width - (horizontalPadding * 2f)).coerceAtLeast(1f)
@@ -494,15 +494,21 @@ fun calculateOptimalFontSize(
             paint.measureText(line)
         } ?: 0f
 
-        // Prefer height fit: if the text block height fits the safeHeight, allow
-        // increasing font size even when lines reach left/right edges. This
-        // supports translated text that is shorter than the original and can be
-        // rendered larger until top/bottom are touched.
-        val heightFits = textHeight <= safeHeight * heightScale
-        val widthFits = maxLineWidth <= safeWidth * widthScale
-
         // MỤC TIÊU: Đảm bảo text KHÔNG bao giờ tràn ra ngoài vùng chứa
-        if (heightFits && widthFits) {
+        val fits = if (shapeType == 1) {
+            // Kiểm tra 4 góc của text block (hình chữ nhật) có nằm trong Ellipse an toàn không
+            // Phương trình Ellipse: (wRatio^2 + hRatio^2) <= 1.0
+            val wRatio = maxLineWidth / safeWidth
+            val hRatio = textHeight / safeHeight
+            // Sử dụng ngưỡng 0.96 (thay vì 1.0) để tạo lề an toàn nhỏ, tránh chạm sát viền
+            (wRatio * wRatio + hRatio * hRatio) <= 0.96f
+        } else {
+            val heightFits = textHeight <= safeHeight * heightScale
+            val widthFits = maxLineWidth <= safeWidth * widthScale
+            heightFits && widthFits
+        }
+
+        if (fits) {
             optimalFontSize = mid
             low = mid + 0.1f
         } else {
@@ -1659,8 +1665,8 @@ fun measureTextActualSize(
         }
     }
 
-    // Với oval, thu hẹp vùng wrap như khi vẽ (75% width)
-    val wrapWidth = if (shapeType == 1) maxWidth * 0.75f else maxWidth * 0.95f
+    // Với oval, thu hẹp vùng wrap (82% width) để cân đối trong ellipse
+    val wrapWidth = if (shapeType == 1) maxWidth * 0.82f else maxWidth * 0.95f
     val lines = wrapText(text, wrapWidth, fontSize, context, fontFamilyName, boldness)
     val fontMetrics = paint.fontMetrics
     val lineHeight = (fontMetrics.descent - fontMetrics.ascent) * lineSpacing
