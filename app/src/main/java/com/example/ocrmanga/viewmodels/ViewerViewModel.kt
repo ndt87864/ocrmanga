@@ -79,20 +79,24 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setViewMode(mode: com.example.ocrmanga.ui.screens.view.ViewMode) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            _uiState.update { it.copy(isTransitioningMode = true) }
             try {
                 com.example.ocrmanga.ui.screens.view.ViewerPreferences.saveViewMode(getApplication(), mode)
             } catch (_: Exception) {
             }
             _viewMode.value = mode
             // Thêm delay ngắn để UI kịp render trạng thái trung gian
-            delay(400)
-            _uiState.update { it.copy(isLoading = false) }
+            delay(500)
+            _uiState.update { it.copy(isTransitioningMode = false) }
         }
     }
 
     fun setLoading(loading: Boolean) {
         _uiState.update { it.copy(isLoading = loading) }
+    }
+
+    fun setTransitioningMode(transitioning: Boolean) {
+        _uiState.update { it.copy(isTransitioningMode = transitioning) }
     }
             // Trả về số lượng ảnh đã thay đổi trong room
             fun getNumChangedImages(roomId: Long): Int {
@@ -3602,6 +3606,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(translationVersion = it.translationVersion + 1) }
     }
 
+    fun setIsTransitioningMode(isTransitioning: Boolean) {
+        _uiState.update { it.copy(isTransitioningMode = isTransitioning) }
+    }
+
     // Public accessor for UI to get version for a uri (based on mapped imageId)
     fun getImageVersionForUri(uri: Uri): Int? {
         val id = uriToImageId.entries.find { it.key.toString() == uri.toString() }?.value
@@ -3674,5 +3682,6 @@ data class ViewerUiState(
     val externalTranslationUri: android.net.Uri? = null,
     val isBulkExternalTranslation: Boolean = false,
     val bulkExternalTranslationUris: List<android.net.Uri> = emptyList(),
-    val bulkScanningProgress: String = ""
+    val bulkScanningProgress: String = "",
+    val isTransitioningMode: Boolean = false
 )

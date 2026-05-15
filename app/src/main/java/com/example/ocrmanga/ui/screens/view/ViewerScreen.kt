@@ -191,9 +191,9 @@ fun ViewerScreen(
 
     // Hiển thị loading khi chuyển đổi chế độ chỉnh sửa
     LaunchedEffect(editTranslationMode) {
-        viewModel.setLoading(true)
-        delay(400)
-        viewModel.setLoading(false)
+        viewModel.setIsTransitioningMode(true)
+        delay(600)
+        viewModel.setIsTransitioningMode(false)
     }
 
     // Save all dragBlocksMap to translatedTexts when exiting edit mode
@@ -1571,8 +1571,12 @@ fun ViewerScreen(
 
     // Global loading overlay for room loading/mode switching
     LoadingOverlay(
-        isLoading = uiState.isLoading,
-        progress = if (uiState.roomId != null) "Đang tải truyện..." else "Đang khởi tạo..."
+        isLoading = uiState.isLoading || uiState.isTransitioningMode,
+        progress = when {
+            uiState.isTransitioningMode -> "Đang chuyển chế độ..."
+            uiState.roomId != null -> "Đang tải truyện..."
+            else -> "Đang khởi tạo..."
+        }
     )
 
     } // end Box
