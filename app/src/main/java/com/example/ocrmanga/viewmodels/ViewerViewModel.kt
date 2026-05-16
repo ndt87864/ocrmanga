@@ -910,13 +910,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
         // Kiểm tra xem có ảnh nào chưa được quét/dịch không (bao gồm cả ảnh chưa load hết - Lazy Loading)
         val allUris = _uiState.value.imageUris + _uiState.value.remainingImages
-        val imagesToScan = allUris.filter { uri ->
-            val status = _uiState.value.translatedStatus[uri] ?: false
-            if (reuseExistingOcr && hasReusableOcrForUri(uri)) {
-                false
-            } else {
-                !status || (!reuseExistingOcr && hasReusableOcrForUri(uri))
-            }
+        val imagesToScan = if (reuseExistingOcr) {
+            allUris.filter { !(_uiState.value.translatedStatus[it] ?: false) }
+        } else {
+            allUris
         }
         if (imagesToScan.isNotEmpty()) {
             runBulkOcrScanning(imagesToScan)
@@ -986,9 +983,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             translationEnabled = true
         ) }
 
-        // Nếu chưa được quét (translatedStatus = false), tự động chạy OCR để lấy text gốc
+        // Nếu chưa được quét hoặc yêu cầu OCR mới, tiến hành quét
         val isAlreadyScanned = _uiState.value.translatedStatus[uri] ?: false
-        if (!isAlreadyScanned || (!reuseExistingOcr && hasReusableOcrForUri(uri))) {
+        if (!isAlreadyScanned || !reuseExistingOcr) {
             retranslateImage(uri, TranslationMode.OCR)
         }
     }
@@ -1117,18 +1114,39 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val type = object : TypeToken<List<Map<String, Any>>>() {}.type
                     val importedData = gson.fromJson<List<Map<String, Any>>>(json, type)
                     processImportSingle(uri, importedData)
+                    
+                    withContext(Dispatchers.Main) {
+                        closeExternalTranslationDialog()
+                    }
                 } else {
                     // Bulk import
                     val type = object : TypeToken<List<Map<String, Any>>>() {}.type
                     val bulkData = gson.fromJson<List<Map<String, Any>>>(json, type)
                     val allUris = _uiState.value.imageUris + _uiState.value.remainingImages
+                    val total = bulkData.size
 
-                    bulkData.forEach { pageData ->
-                        val imageId = (pageData["image_id"] as? Double)?.toInt() ?: return@forEach
-                        val pageUri = allUris.getOrNull(imageId - 1) ?: return@forEach
-                        val blocksData = pageData["blocks"] as? List<Map<String, Any>> ?: return@forEach
+                    // HIỆU ỨNG POPUP: Đang chuẩn bị...
+                    _uiState.update { it.copy(bulkScanningProgress = "Đang chuẩn bị áp dụng bản dịch...") }
 
-                        processImportSingle(pageUri, blocksData, isBulk = true)
+                    try {
+                        bulkData.chunked(2).forEachIndexed { index, chunk ->
+                            if (!isActive) return@launch
+                            val processedCount = index * 2
+                            _uiState.update { it.copy(bulkScanningProgress = "Đang áp dụng bản dịch $processedCount/$total trang...") }
+
+                            coroutineScope {
+                                chunk.map { pageData ->
+                                    async {
+                                        val imageId = (pageData["image_id"] as? Double)?.toInt() ?: return@async
+                                        val pageUri = allUris.getOrNull(imageId - 1) ?: return@async
+                                        val blocksData = pageData["blocks"] as? List<Map<String, Any>> ?: return@async
+                                        processImportSingle(pageUri, blocksData, isBulk = true)
+                                    }
+                                }.awaitAll()
+                            }
+                        }
+                    } finally {
+                        _uiState.update { it.copy(bulkScanningProgress = "") }
                     }
 
                     withContext(Dispatchers.Main) {
