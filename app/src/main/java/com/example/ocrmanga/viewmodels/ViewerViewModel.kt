@@ -400,7 +400,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             
             // Cập nhật trạng thái dịch - bắt đầu quét ảnh
             updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.SCANNING)
-            _uiState.update { it.copy(translatedStatus = it.translatedStatus + (uri to false)) }
+            _uiState.update { it.copy(
+                translatedStatus = it.translatedStatus + (uri to false),
+                translatedTexts = it.translatedTexts + (uri to ("" to emptyList())) // Clear old data immediately
+            ) }
 
             if (mode == TranslationMode.OFF) {
                 // User chọn OFF → XÓA HOÀN TOÀN tất cả translations của ảnh này khỏi DB
@@ -944,6 +947,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun retranslateImageSync(uri: Uri, mode: TranslationMode) {
+        updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.SCANNING)
+        _uiState.update { state ->
+            state.copy(
+                translatedStatus = state.translatedStatus + (uri to false),
+                translatedTexts = state.translatedTexts + (uri to ("" to emptyList())) // Clear old data
+            )
+        }
         try {
             //Log.i(TAG, "[BULK-OCR] Scanning $uri")
             val result = translationRepository.translateImage(uri, mode)
@@ -962,11 +972,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
         } catch (e: Exception) {
             Log.e(TAG, "[BULK-OCR] Error scanning $uri", e)
+        } finally {
+            clearTranslationStatus(uri)
         }
     }
 
     fun openExternalTranslationDialog(uri: android.net.Uri, reuseExistingOcr: Boolean = true) {
-        _uiState.update { it.copy(showExternalTranslationDialog = true, externalTranslationUri = uri, isBulkExternalTranslation = false) }
+        _uiState.update { it.copy(
+            showExternalTranslationDialog = true, 
+            externalTranslationUri = uri, 
+            isBulkExternalTranslation = false,
+            translationMode = TranslationMode.EXTERNAL,
+            translationEnabled = true
+        ) }
 
         // Nếu chưa được quét (translatedStatus = false), tự động chạy OCR để lấy text gốc
         val isAlreadyScanned = _uiState.value.translatedStatus[uri] ?: false

@@ -70,6 +70,7 @@ fun Dialogs(
     onExternalTranslationDismiss: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
 
@@ -621,7 +622,11 @@ fun Dialogs(
         )
     }
 
-    if (showExternalTranslationDialog) {
+    val isExternalOcrScanning = uiState.translationMode == TranslationMode.EXTERNAL && 
+                                (uiState.bulkScanningProgress.isNotEmpty() || 
+                                 (externalTranslationUri != null && uiState.translatingImages.containsKey(externalTranslationUri)))
+
+    if (showExternalTranslationDialog && !isExternalOcrScanning) {
         ExternalTranslationDialog(
             uri = externalTranslationUri,
             viewModel = viewModel,
@@ -682,18 +687,7 @@ fun ExternalTranslationDialog(
                     .fillMaxWidth()
                     .verticalScroll(scrollState)
             ) {
-                if (isBulkScanning || isProcessing || (uri != null && blocks.isEmpty() && uiState.translatingImages.containsKey(uri))) {
-                    Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                if (isBulkScanning) bulkProgress else "Đang OCR để lấy text gốc...",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                } else if (!isBulk && blocks.isEmpty()) {
+                if (!isBulk && blocks.isEmpty() && !isProcessing) {
                     Text("Không tìm thấy văn bản nào trên ảnh này để dịch.", color = MaterialTheme.colorScheme.error)
                 } else {
                     Text("Bước 1: Copy file JSON OCR", style = MaterialTheme.typography.titleSmall)

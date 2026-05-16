@@ -1735,6 +1735,17 @@ fun ViewerScreen(
         subText = "Vui lòng đợi trong giây lát"
     )
 
+    // OCR Scanning Loading Popup for External Translation
+    val isExternalOcrScanning = uiState.translationMode == TranslationMode.EXTERNAL && 
+                                (uiState.bulkScanningProgress.isNotEmpty() || 
+                                 (uiState.externalTranslationUri != null && uiState.translatingImages.containsKey(uiState.externalTranslationUri)))
+    
+    LoadingOverlay(
+        isLoading = isExternalOcrScanning,
+        progress = if (uiState.bulkScanningProgress.isNotEmpty()) uiState.bulkScanningProgress else "Đang quét OCR để lấy text gốc...",
+        subText = "Vui lòng đợi trong giây lát"
+    )
+
         } // end Column
     } // end else
 } // end AnimatedContent
