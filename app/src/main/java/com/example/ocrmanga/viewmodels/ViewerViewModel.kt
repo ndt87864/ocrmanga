@@ -1113,7 +1113,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     // Single image import
                     val type = object : TypeToken<List<Map<String, Any>>>() {}.type
                     val importedData = gson.fromJson<List<Map<String, Any>>>(json, type)
-                    processImportSingle(uri, importedData)
+                    
+                    try {
+                        processImportSingle(uri, importedData)
+                    } finally {
+                        // Ensure status is cleared
+                        delay(800)
+                        clearTranslationStatus(uri)
+                    }
                     
                     withContext(Dispatchers.Main) {
                         closeExternalTranslationDialog()
@@ -1125,14 +1132,21 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val allUris = _uiState.value.imageUris + _uiState.value.remainingImages
                     val total = bulkData.size
 
-                    // HIỆU ỨNG POPUP: Đang chuẩn bị...
-                    _uiState.update { it.copy(bulkScanningProgress = "Đang chuẩn bị áp dụng bản dịch...") }
+                    // Thiết lập trạng thái dịch tổng thể (thanh progress trên cùng)
+                    _uiState.update { it.copy(
+                        isTranslating = true,
+                        totalImagesToTranslate = total,
+                        translationProgress = 0,
+                        bulkScanningProgress = "" // Không dùng popup thông báo riêng
+                    ) }
 
                     try {
                         bulkData.chunked(2).forEachIndexed { index, chunk ->
                             if (!isActive) return@launch
-                            val processedCount = index * 2
-                            _uiState.update { it.copy(bulkScanningProgress = "Đang áp dụng bản dịch $processedCount/$total trang...") }
+                            val currentProcessed = index * 2
+                            _uiState.update { it.copy(
+                                translationProgress = currentProcessed
+                            ) }
 
                             coroutineScope {
                                 chunk.map { pageData ->
@@ -1140,13 +1154,26 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                         val imageId = (pageData["image_id"] as? Double)?.toInt() ?: return@async
                                         val pageUri = allUris.getOrNull(imageId - 1) ?: return@async
                                         val blocksData = pageData["blocks"] as? List<Map<String, Any>> ?: return@async
-                                        processImportSingle(pageUri, blocksData, isBulk = true)
+                                        
+                                        try {
+                                            processImportSingle(pageUri, blocksData, isBulk = true)
+                                            // Giữ trạng thái Hoàn tất một lát trước khi xóa
+                                            delay(800)
+                                        } finally {
+                                            clearTranslationStatus(pageUri)
+                                        }
                                     }
                                 }.awaitAll()
                             }
+                            // Thêm delay để người dùng thấy được hiệu ứng tiến độ
+                            delay(500)
                         }
                     } finally {
-                        _uiState.update { it.copy(bulkScanningProgress = "") }
+                        _uiState.update { it.copy(
+                            isTranslating = false,
+                            translationProgress = 0,
+                            totalImagesToTranslate = 0
+                        ) }
                     }
 
                     withContext(Dispatchers.Main) {
@@ -1166,16 +1193,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private suspend fun processImportSingle(uri: Uri, importedData: List<Map<String, Any>>, isBulk: Boolean = false) {
+        // Hiển thị overlay trên ảnh
+        updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
+        
         var currentBlocks = getExistingBlocksForUri(uri)
         val isAlreadyScanned = _uiState.value.translatedStatus[uri] ?: false
 
         if (currentBlocks.isEmpty() && !isAlreadyScanned) {
-            //Log.i("ViewerViewModel", "[IMPORT-JSON] No blocks found and not scanned yet, triggering OCR for $uri")
-            if (!isBulk) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Đang quét OCR để áp dụng bản dịch...", Toast.LENGTH_SHORT).show()
-                }
-            }
+            // Đổi sang trạng thái đang quét OCR nếu cần
+            updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.SCANNING)
+            
             val result = translationRepository.translateImage(uri, TranslationMode.OCR)
             currentBlocks = result.second
 
@@ -1185,10 +1212,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     updateTranslatedBlocks(uri, emptyList(), reopenEditor = false)
                 }
             }
+            // Quay lại trạng thái đang áp dụng bản dịch
+            updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.TRANSLATING)
         }
 
         if (currentBlocks.isEmpty()) {
             Log.w("ViewerViewModel", "[IMPORT-JSON] No blocks to apply translation for $uri")
+            updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.IDLE)
             return
         }
 
@@ -1207,14 +1237,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     val right = b["right"]?.toInt() ?: -1
                     val bottom = b["bottom"]?.toInt() ?: -1
 
-                    // Kiểm tra xem tọa độ có khớp tương đối không (sai số 10 pixel)
+                    // Kiểm tra xem tọa độ có khớp tương đối không (sai số 15 pixel)
                     Math.abs(block.bounds.left - left) < 15 &&
                     Math.abs(block.bounds.top - top) < 15 &&
                     Math.abs(block.bounds.right - right) < 15 &&
                     Math.abs(block.bounds.bottom - bottom) < 15
-                }
-                if (match != null) {
-                    //Log.i("ViewerViewModel", "[IMPORT-JSON] Matched block index $blockIndex by coordinates for $uri")
                 }
             }
 
@@ -1242,6 +1269,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // Đảm bảo đánh dấu là đã thay đổi để lưu trong DB
                 databaseHelper.markImageChanged(imgId, rid)
             }
+
+            // Hiển thị trạng thái Hoàn tất trên ảnh
+            updateTranslationStatus(uri, com.example.ocrmanga.data.models.TranslationStatus.COMPLETED)
 
             if (!isBulk) {
                 Toast.makeText(getApplication(), "Đã nhập bản dịch thành công", Toast.LENGTH_SHORT).show()
