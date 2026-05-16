@@ -77,3 +77,4 @@ app/local.properties
 /openspec
 test_mistral.py
 app/src/main/res/drawable/bill.jpg
+app/debug/output-metadata.json
