@@ -196,13 +196,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val blocks = translationRepository.recognizeTextRegionsForRemoval(uri)
 
                 if (blocks.isEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            getApplication(),
-                            "Không tìm thấy vùng text OCR trên ảnh",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    showRemovalResult("Không tìm thấy vùng text OCR trên ảnh", false)
                     _uiState.update { it.copy(removingTextProgress = "") }
                     return@launch
                 }
@@ -224,24 +218,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     }
                 } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            getApplication(),
-                            "Lỗi khi tạo preview mask",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    showRemovalResult("Lỗi khi tạo preview mask", false)
                     _uiState.update { it.copy(removingTextProgress = "") }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error preparing text removal preview", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        getApplication(),
-                        "Lỗi: ${e.message}",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+                showRemovalResult("Lỗi: ${e.message}", false)
             }
         }
     }
@@ -285,36 +267,25 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                 if (resultUri != null) {
                     replaceImageUri(uri, resultUri, persist = false)
-
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            getApplication(),
-                            "Đã tạm xóa text gốc (chưa lưu). Lưu truyện hoặc chờ autosave để ghi vào DB.",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    showRemovalResult("Đã tạm xóa text gốc (chưa lưu). Lưu truyện hoặc chờ autosave để ghi vào DB.", true)
                 } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            getApplication(),
-                            "Lỗi khi xóa text gốc",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    showRemovalResult("Lỗi khi xóa text gốc", false)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error removing original text", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        getApplication(),
-                        "Lỗi: ${e.message}",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+                showRemovalResult("Lỗi: ${e.message}", false)
             } finally {
                 _uiState.update { it.copy(isRemovingText = false, removingTextProgress = "") }
             }
         }
+    }
+
+    fun dismissRemovalResult() {
+        _uiState.update { it.copy(showRemovalResultDialog = false, removalResultMessage = "") }
+    }
+
+    fun showRemovalResult(message: String, isSuccess: Boolean) {
+        _uiState.update { it.copy(showRemovalResultDialog = true, removalResultMessage = message, removalResultIsSuccess = isSuccess) }
     }
 
     // Hủy preview xóa text
@@ -346,19 +317,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                 if (resultUri != null) {
                     replaceImageUri(uri, resultUri, persist = false)
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Đã xóa vùng chọn.", Toast.LENGTH_SHORT).show()
-                    }
+                    showRemovalResult("Đã xóa vùng chọn thành công!", true)
                 } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(getApplication(), "Lỗi khi xóa vùng chọn.", Toast.LENGTH_SHORT).show()
-                    }
+                    showRemovalResult("Lỗi khi xóa vùng chọn.", false)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error removing text with mask", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(getApplication(), "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+                showRemovalResult("Lỗi: ${e.message}", false)
             }
         }
     }
@@ -3772,5 +3737,8 @@ data class ViewerUiState(
     val isBulkExternalTranslation: Boolean = false,
     val bulkExternalTranslationUris: List<android.net.Uri> = emptyList(),
     val bulkScanningProgress: String = "",
-    val isTransitioningMode: Boolean = false
+    val isTransitioningMode: Boolean = false,
+    val showRemovalResultDialog: Boolean = false,
+    val removalResultMessage: String = "",
+    val removalResultIsSuccess: Boolean = true
 )

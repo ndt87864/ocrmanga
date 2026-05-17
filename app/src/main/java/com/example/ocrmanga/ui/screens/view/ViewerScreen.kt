@@ -1432,13 +1432,13 @@ fun ViewerScreen(
                             ) { progress -> removingTextLocalProgress = progress }
                             if (resultUri != null) {
                                 viewModel.replaceImageUri(uri, resultUri, persist = false)
-                                Toast.makeText(context, "Đã xóa text thành công!", Toast.LENGTH_SHORT).show()
+                                viewModel.showRemovalResult("Đã xóa text thành công!", true)
                             } else {
-                                Toast.makeText(context, "Lỗi khi xóa text", Toast.LENGTH_SHORT).show()
+                                viewModel.showRemovalResult("Lỗi khi xóa text", false)
                             }
                         } catch (e: Exception) {
                             Log.e("ViewerScreen", "Error removing text", e)
-                            Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                            viewModel.showRemovalResult("Lỗi: ${e.message}", false)
                         } finally {
                             isRemovingText = false
                             removingTextLocalProgress = ""
@@ -1539,13 +1539,13 @@ fun ViewerScreen(
                             ) { progress -> removingTextLocalProgress = progress }
                             if (resultUri != null) {
                                 viewModel.replaceImageUri(uri, resultUri, persist = false)
-                                Toast.makeText(context, "Đã xóa text thành công!", Toast.LENGTH_SHORT).show()
+                                viewModel.showRemovalResult("Đã xóa text thành công!", true)
                             } else {
-                                Toast.makeText(context, "Lỗi khi xóa text", Toast.LENGTH_SHORT).show()
+                                viewModel.showRemovalResult("Lỗi khi xóa text", false)
                             }
                         } catch (e: Exception) {
                             Log.e("ViewerScreen", "Error removing text", e)
-                            Toast.makeText(context, "Lỗi: ${e.message}", Toast.LENGTH_SHORT).show()
+                            viewModel.showRemovalResult("Lỗi: ${e.message}", false)
                         } finally {
                             isRemovingText = false
                             removingTextLocalProgress = ""
@@ -1804,6 +1804,60 @@ fun ViewerScreen(
             dismissButton = {
                 TextButton(onClick = { viewModel.cancelTextRemovalPreview() }) {
                     Text("Hủy")
+                }
+            }
+        )
+    }
+
+    // Text Removal Result Dialog - pops up after text removal completes
+    if (uiState.showRemovalResultDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissRemovalResult() },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(
+                            if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.errorContainer
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (uiState.removalResultIsSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                        contentDescription = null,
+                        tint = if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    if (uiState.removalResultIsSuccess) "Thành công" else "Thất bại",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = uiState.removalResultMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissRemovalResult() },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Đóng", color = MaterialTheme.colorScheme.onPrimary)
                 }
             }
         )
