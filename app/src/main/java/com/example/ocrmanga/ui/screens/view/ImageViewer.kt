@@ -67,6 +67,7 @@ import com.example.ocrmanga.data.models.TranslationStatus
 import com.example.ocrmanga.utils.ImageUtils.getImageDimensions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.distinctUntilChanged
 import java.io.IOException
 
 data class DragBlockState(
@@ -238,6 +239,7 @@ fun ImageViewer(
 
     LaunchedEffect(lazyListState, imageUris) {
         snapshotFlow { lazyListState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .distinctUntilChanged()
             .collect { visibleIndices ->
                 val currentTime = System.currentTimeMillis()
                 val timeDelta = currentTime - lastScrollTime
@@ -304,10 +306,9 @@ fun ImageViewer(
             }, contentType = { _, _ -> "image" }) { index, uri ->
                 val isInWindow by remember(index) { derivedStateOf { index in visibleRange.value } }
 
-                // Initialization Logic
-                val currentTranslatedBlocks = if (isInWindow) translatedTexts[uri]?.second
-                    ?.filter { !it.pendingDelete }
-                    ?.map { block ->
+                // Optimization: Pre-map blocks but only return them when visible
+                val cachedBlocks = remember(uri, translatedTexts[uri], translationVersion) {
+                    translatedTexts[uri]?.second?.filter { !it.pendingDelete }?.map { block ->
                         val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor
                         ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
                         val textInt = (block.customTextColor ?: block.originalTextColor
@@ -345,10 +346,13 @@ fun ImageViewer(
                             textGradientOffsets = block.textGradientOffsets,
                             textGradientType = block.textGradientType
                         )
-                    } else null
+                    } ?: emptyList()
+                }
 
-                val initBlocks = if (isInWindow) (currentTranslatedBlocks
-                    ?: emptyList()) else (dragBlocksMap[uri] ?: emptyList())
+                val initBlocks = remember(isInWindow) {
+                    if (isInWindow) cachedBlocks else dragBlocksMap[uri] ?: emptyList()
+                }
+
                 var dragBlocks by remember(uri, translationVersion) {
                     mutableStateOf(initBlocks)
                 }
@@ -647,15 +651,46 @@ fun ImageViewer(
                                             (if (editTranslationMode) computeEditModeFontSize(
                                                 block,
                                                 dragBlock.fontSize
-                                            ) else block.fontSize) * screenScaleFactor
+                                            ) else (dragBlock.fontSize ?: block.fontSize)) * screenScaleFactor
 
                                         val isSolidBubble = dragBlock.overlayAlpha >= 0.95f
                                         val scaledOriginalFontSize = block.originalFontSize?.let { it * screenScaleFactor }
 
+                                        val winResult = calculateWindowedOverlayBounds(
+                                            originalBounds = rect,
+                                            text = block.text,
+                                            baseFontSize = fontSize,
+                                            isVertical = block.isVertical,
+                                            context = context,
+                                            fontFamilyName = block.fontFamily,
+                                            lineSpacing = dragBlock.lineSpacing,
+                                            shapeType = block.shapeType,
+                                            overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
+                                            overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
+                                            horizontalPadding = 4f,
+                                            verticalPadding = 4f,
+                                            boldness = dragBlock.textBoldness,
+                                            originalFontSize = scaledOriginalFontSize,
+                                            isSolidBubble = isSolidBubble
+                                        )
+
+                                        val adjResult = adjustWhiteoutBounds(
+                                            text = block.text,
+                                            initialWidth = winResult.outerBounds.width,
+                                            initialHeight = winResult.outerBounds.height,
+                                            fontSize = winResult.optimalFontSize,
+                                            isVertical = block.isVertical,
+                                            context = context,
+                                            fontFamilyName = block.fontFamily,
+                                            shapeType = block.shapeType,
+                                            lineSpacing = dragBlock.lineSpacing,
+                                            boldness = dragBlock.textBoldness
+                                        )
+
                                         PrecomputedRegion(
                                             block = block,
                                             rect = rect,
-                                            fontSize = fontSize,
+                                            fontSize = adjResult.second,
                                             rotation = dragBlock.rotation,
                                             overlayRotation = dragBlock.overlayRotation,
                                             whiteoutColor = dragBlock.whiteoutColor,
@@ -677,83 +712,8 @@ fun ImageViewer(
                                             textGradientColors = dragBlock.textGradientColors,
                                             textGradientOffsets = dragBlock.textGradientOffsets,
                                             textGradientType = dragBlock.textGradientType,
-                                            windowedResult = calculateWindowedOverlayBounds(
-                                                originalBounds = rect,
-                                                text = block.text,
-                                                baseFontSize = fontSize,
-                                                isVertical = block.isVertical,
-                                                context = context,
-                                                fontFamilyName = block.fontFamily,
-                                                lineSpacing = dragBlock.lineSpacing,
-                                                shapeType = block.shapeType,
-                                                overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
-                                                overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
-                                                horizontalPadding = 4f,
-                                                verticalPadding = 4f,
-                                                boldness = dragBlock.textBoldness,
-                                                originalFontSize = scaledOriginalFontSize,
-                                                isSolidBubble = isSolidBubble
-                                            ),
-                                            wrappedText = adjustWhiteoutBounds(
-                                                text = block.text,
-                                                initialWidth = calculateWindowedOverlayBounds(
-                                                    originalBounds = rect,
-                                                    text = block.text,
-                                                    baseFontSize = fontSize,
-                                                    isVertical = block.isVertical,
-                                                    context = context,
-                                                    fontFamilyName = block.fontFamily,
-                                                    lineSpacing = dragBlock.lineSpacing,
-                                                    shapeType = block.shapeType,
-                                                    overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
-                                                    overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
-                                                    horizontalPadding = 4f,
-                                                    verticalPadding = 4f,
-                                                    boldness = dragBlock.textBoldness,
-                                                    originalFontSize = scaledOriginalFontSize,
-                                                    isSolidBubble = isSolidBubble
-                                                ).outerBounds.width,
-                                                initialHeight = calculateWindowedOverlayBounds(
-                                                    originalBounds = rect,
-                                                    text = block.text,
-                                                    baseFontSize = fontSize,
-                                                    isVertical = block.isVertical,
-                                                    context = context,
-                                                    fontFamilyName = block.fontFamily,
-                                                    lineSpacing = dragBlock.lineSpacing,
-                                                    shapeType = block.shapeType,
-                                                    overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
-                                                    overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
-                                                    horizontalPadding = 4f,
-                                                    verticalPadding = 4f,
-                                                    boldness = dragBlock.textBoldness,
-                                                    originalFontSize = scaledOriginalFontSize,
-                                                    isSolidBubble = isSolidBubble
-                                                ).outerBounds.height,
-                                                fontSize = calculateWindowedOverlayBounds(
-                                                    originalBounds = rect,
-                                                    text = block.text,
-                                                    baseFontSize = fontSize,
-                                                    isVertical = block.isVertical,
-                                                    context = context,
-                                                    fontFamilyName = block.fontFamily,
-                                                    lineSpacing = dragBlock.lineSpacing,
-                                                    shapeType = block.shapeType,
-                                                    overlayInsetHorizontal = dragBlock.overlayInsetHorizontal * scale,
-                                                    overlayInsetVertical = dragBlock.overlayInsetVertical * scale,
-                                                    horizontalPadding = 4f,
-                                                    verticalPadding = 4f,
-                                                    boldness = dragBlock.textBoldness,
-                                                    originalFontSize = scaledOriginalFontSize,
-                                                    isSolidBubble = isSolidBubble
-                                                ).optimalFontSize,
-                                                isVertical = block.isVertical,
-                                                context = context,
-                                                fontFamilyName = block.fontFamily,
-                                                shapeType = block.shapeType,
-                                                lineSpacing = dragBlock.lineSpacing,
-                                                boldness = dragBlock.textBoldness
-                                            ).first
+                                            windowedResult = winResult,
+                                            wrappedText = adjResult.first
                                         )
                                     }
                                 precomputedRegionsState.value = list
@@ -832,7 +792,7 @@ fun ImageViewer(
                                         val windowedResult = region.windowedResult ?: return@forEach
                                         val outerBounds = windowedResult.outerBounds
                                         val innerBounds = windowedResult.innerBounds
-                                        val optimalFontSize = windowedResult.optimalFontSize
+                                        val optimalFontSize = region.fontSize
 
                                         // Clamp outer bounds vào canvas
                                         val canvasW = size.width

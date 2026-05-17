@@ -26,6 +26,7 @@ import kotlinx.coroutines.delay
 
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.example.ocrmanga.data.models.TranslationMode
@@ -68,7 +69,9 @@ fun HorizontalViewer(
     translationVersion: Int = 0,
     translatedTexts: Map<Uri, Pair<String, List<com.example.ocrmanga.data.models.TextBlockInfo>>> = emptyMap(),
     translationEnabled: Boolean = false,
-    onTagReported: (String, androidx.compose.ui.geometry.Rect) -> Unit = { _, _ -> }
+    onTagReported: (String, androidx.compose.ui.geometry.Rect) -> Unit = { _, _ -> },
+    isLoadingMoreImages: Boolean = false,
+    remainingImagesCount: Int = 0
 ) {
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
     val state = horizontalListState ?: rememberLazyListState()
@@ -145,8 +148,33 @@ fun HorizontalViewer(
                         translationVersion = translationVersion,
                         translatedTexts = translatedTexts,
                         translationEnabled = translationEnabled,
-                        onTagReported = onTagReported
                     )
+                }
+            }
+
+            // Loading item at the end of the list
+            if (isLoadingMoreImages && remainingImagesCount > 0) {
+                item {
+                    androidx.compose.foundation.layout.Box(
+                        modifier = Modifier
+                            .width(conf.screenWidthDp.dp)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.foundation.layout.Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                            )
+                            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
+                            androidx.compose.material3.Text(
+                                text = "Đang tải thêm...",
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
             }
         }

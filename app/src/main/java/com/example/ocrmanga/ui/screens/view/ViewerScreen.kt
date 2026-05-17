@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ocrmanga.data.models.TranslationMode
@@ -47,6 +48,8 @@ import com.example.ocrmanga.ui.screens.view.ViewerPreferences
 import com.example.ocrmanga.viewmodels.ViewerViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun ViewerScreen(
@@ -362,48 +365,63 @@ fun ViewerScreen(
 
     // Theo dõi vị trí scroll hiện tại và thông báo cho ViewModel
     // Chỉ update khi không đang scroll programmatically để tránh xung đột
-    LaunchedEffect(lazyListState) {
-        snapshotFlow {
-            val layoutInfo = lazyListState.layoutInfo
-            val visibleItems = layoutInfo.visibleItemsInfo
-            if (visibleItems.isEmpty()) 0
-            else {
-                val firstItem = visibleItems.first()
-                val scrollOffset = lazyListState.firstVisibleItemScrollOffset
-                val itemSize = firstItem.size
-                if (itemSize > 0 && scrollOffset > itemSize * 0.7f) {
-                    (firstItem.index + 1).coerceAtMost(layoutInfo.totalItemsCount - 1)
-                } else {
-                    firstItem.index
+    // Monitor scroll for pre-fetching more images
+    androidx.compose.runtime.LaunchedEffect(lazyListState) {
+        androidx.compose.runtime.snapshotFlow {
+            lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+        }
+        .filterNotNull()
+        .distinctUntilChanged() // Chỉ chạy khi chỉ số ảnh cuối cùng thay đổi
+        .collect { lastVisible ->
+            val state = viewModel.uiState.value
+            val total = state.imageUris.size
+            val hasRemaining = state.remainingImages.isNotEmpty()
+            val isLoading = state.isLoadingMoreImages
+
+            if (!isScrollingProgrammatically) {
+                // Update current index logic
+                // Lấy ảnh đầu tiên đang hiển thị để làm index hiện tại cho thanh tiến trình/counter
+                val firstVisible = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull()?.index
+                if (firstVisible != null) {
+                    viewModel.setCurrentScrollIndex(firstVisible)
                 }
             }
-        }.collect { index ->
-            if (!isScrollingProgrammatically) {
-                viewModel.setCurrentScrollIndex(index)
+
+            if (hasRemaining && !isLoading) {
+                val threshold = (total / 2).coerceAtMost(total - 3).coerceAtLeast(0)
+                if (lastVisible >= threshold) {
+                    viewModel.loadMoreImages()
+                }
             }
         }
     }
 
     // Theo dõi vị trí scroll ngang
-    LaunchedEffect(horizontalListState) {
-        snapshotFlow {
-            val layoutInfo = horizontalListState.layoutInfo
-            val visibleItems = layoutInfo.visibleItemsInfo
-            if (visibleItems.isEmpty()) 0
-            else {
-                val firstItem = visibleItems.first()
-                val scrollOffset = horizontalListState.firstVisibleItemScrollOffset
-                val itemSize = firstItem.size
-                // Với chế độ ngang, nếu đã scroll quá 50% ảnh đầu thì coi như đang ở ảnh tiếp theo
-                if (itemSize > 0 && scrollOffset > itemSize / 2) {
-                    (firstItem.index + 1).coerceAtMost(layoutInfo.totalItemsCount - 1)
-                } else {
-                    firstItem.index
+    // Monitor horizontal scroll for pre-fetching
+    androidx.compose.runtime.LaunchedEffect(horizontalListState) {
+        androidx.compose.runtime.snapshotFlow {
+            horizontalListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+        }
+        .filterNotNull()
+        .distinctUntilChanged()
+        .collect { lastVisible ->
+            val state = viewModel.uiState.value
+            val total = state.imageUris.size
+            val hasRemaining = state.remainingImages.isNotEmpty()
+            val isLoading = state.isLoadingMoreImages
+
+            if (!isScrollingProgrammatically) {
+                val firstVisible = horizontalListState.layoutInfo.visibleItemsInfo.firstOrNull()?.index
+                if (firstVisible != null) {
+                    viewModel.setCurrentScrollIndex(firstVisible)
                 }
             }
-        }.collect { index ->
-            if (!isScrollingProgrammatically) {
-                viewModel.setCurrentScrollIndex(index)
+            
+            if (hasRemaining && !isLoading) {
+                val threshold = (total / 2).coerceAtMost(total - 3).coerceAtLeast(0)
+                if (lastVisible >= threshold) {
+                    viewModel.loadMoreImages()
+                }
             }
         }
     }
@@ -417,7 +435,8 @@ fun ViewerScreen(
             val idx = uiState.scrollToIndexAfterReload
             val size = uiState.imageUris.size
             Triple(idx, size, pendingScrollIndex)
-        }.collect { (targetIndex, imageCount, pending) ->
+        }.distinctUntilChanged()
+        .collect { (targetIndex, imageCount, pending) ->
             if (targetIndex != null && targetIndex > 0 && targetIndex != pending) {
                 //Log.d("ViewerScreen", "scrollToIndexAfterReload triggered: targetIndex=$targetIndex, imageCount=$imageCount")
                 pendingScrollIndex = targetIndex
@@ -533,12 +552,27 @@ fun ViewerScreen(
     }
 
     // Tạo translatedTextsFiltered để lọc các block có pendingDelete = false
-    val translatedTextsFiltered = uiState.translatedTexts.mapValues { entry ->
-        val pair = entry.value
-        pair.copy(second = pair.second.filter { !it.pendingDelete })
+    // Tối ưu: Dùng remember để không phải tính toán lại mỗi khi recompose nếu data không đổi
+    val translatedTextsFiltered = androidx.compose.runtime.remember(uiState.translatedTexts) {
+        uiState.translatedTexts.mapValues { entry ->
+            val pair = entry.value
+            pair.copy(second = pair.second.filter { !it.pendingDelete })
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // LinearProgressIndicator ở trên cùng để đảm bảo luôn thấy khi đang load
+        if (uiState.isLoadingMoreImages) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .align(Alignment.TopCenter)
+                    .zIndex(3000f),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            )
+        }
     // Wrap the main content area with AnimatedContent to animate mode transitions
     val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
     val modeIsHorizontal = vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
@@ -1411,6 +1445,8 @@ fun ViewerScreen(
                     })
                 },
                 onRetranslateImage = { uri, mode -> requestSingleRetranslation(uri, mode) },
+                isLoadingMoreImages = uiState.isLoadingMoreImages,
+                remainingImagesCount = uiState.remainingImages.size,
                 showImageMenu = showImageMenu,
                 imageMenuUri = imageMenuUri,
                 onImageMenuDismiss = { showImageMenu = false },
@@ -1740,11 +1776,6 @@ fun ViewerScreen(
                                 (uiState.bulkScanningProgress.isNotEmpty() || 
                                  (uiState.externalTranslationUri != null && uiState.translatingImages.containsKey(uiState.externalTranslationUri)))
     
-    LoadingOverlay(
-        isLoading = isExternalOcrScanning,
-        progress = if (uiState.bulkScanningProgress.isNotEmpty()) uiState.bulkScanningProgress else "Đang quét OCR để lấy text gốc...",
-        subText = "Vui lòng đợi trong giây lát"
-    )
 
         } // end Column
     } // end else
@@ -1784,6 +1815,43 @@ fun ViewerScreen(
             },
             targetPositions = targetPositions
         )
+    }
+
+    // Loading more images floating indicator - hiển thị khi đang load thêm ảnh trong lúc cuộn
+    androidx.compose.animation.AnimatedVisibility(
+        visible = uiState.isLoadingMoreImages && uiState.remainingImages.isNotEmpty(),
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 },
+        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it / 2 },
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = 100.dp) // Tăng padding để không bị che bởi thanh điều hướng
+            .zIndex(1000f) // Đảm bảo luôn nằm trên cùng
+    ) {
+        Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f), // Đổi sang màu primary cho nổi bật
+            tonalElevation = 12.dp,
+            shadowElevation = 8.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.5.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Đang tải thêm ${uiState.remainingImages.size} ảnh...",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold
+                )
+            }
+        }
     }
 
     } // end Box

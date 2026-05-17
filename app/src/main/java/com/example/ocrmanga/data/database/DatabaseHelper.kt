@@ -355,7 +355,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 30
+    private const val DATABASE_VERSION = 31
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -483,6 +483,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         // Index để tăng tốc truy vấn images theo display_order trong room
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_room_order ON $TABLE_IMAGES($COLUMN_ROOM_ID, $COLUMN_DISPLAY_ORDER)")
 
+        // Index để tăng tốc truy vấn images theo URI
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_uri ON $TABLE_IMAGES($COLUMN_IMAGE_URI)")
+
         // translations: lưu translated_text VÀ original_text (per-block)
         db.execSQL("""
             CREATE TABLE translations (
@@ -597,6 +600,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 31) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_uri ON $TABLE_IMAGES($COLUMN_IMAGE_URI)")
+        }
         if (oldVersion < 2) {
             db.execSQL("ALTER TABLE $TABLE_IMAGES ADD COLUMN $COLUMN_IS_TRANSLATED INTEGER DEFAULT 0")
         }
@@ -3491,50 +3497,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     shadowAlpha = blockData.shadowAlpha,
                     shadowRadius = blockData.shadowRadius,
                     fontFamily = finalFontFamily,
-                    applyMerge = false,
                     overlayInsetHorizontal = blockData.overlayInsetH,
                     overlayInsetVertical = blockData.overlayInsetV,
                     overlayRotation = blockData.overlayRotation,
                     textGradientColors = blockData.textGradientColors,
                     textGradientOffsets = blockData.textGradientOffsets,
-                    textGradientType = blockData.textGradientType
+                    textGradientType = blockData.textGradientType,
                 ))
             }
-
-            // KHÔNG filter textBlocks rỗng - cho phép blocks có translatedText rỗng nếu originalText có giá trị
             translations[uri] = "" to textBlocks
         }
-
-        // Clean up missing images
-        if (missingImageIds.isNotEmpty()) {
-            Log.w(TAG, "getMangaRoomOptimized: Removing ${missingImageIds.size} images with missing files from DB")
-            for (imageId in missingImageIds) {
-                try {
-                    db.delete("translations", "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                    db.delete(TABLE_IMAGE_BLOCKS, "$COLUMN_BLOCK_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                    db.delete(TABLE_IMAGES, "$COLUMN_IMAGE_ID = ?", arrayOf(imageId.toString()))
-                } catch (e: Exception) {
-                    Log.e(TAG, "getMangaRoomOptimized: Failed to remove missing image imageId=$imageId", e)
-                }
-            }
-            // Re-index display_order
-            val reorderCursor = db.rawQuery(
-                "SELECT $COLUMN_IMAGE_ID FROM $TABLE_IMAGES WHERE $COLUMN_ROOM_ID = ? ORDER BY $COLUMN_DISPLAY_ORDER ASC",
-                arrayOf(roomId.toString())
-            )
-            var newOrder = 0
-            while (reorderCursor.moveToNext()) {
-                val imgId = reorderCursor.getLong(0)
-                val values = ContentValues().apply { put(COLUMN_DISPLAY_ORDER, newOrder) }
-                db.update(TABLE_IMAGES, values, "$COLUMN_IMAGE_ID = ?", arrayOf(imgId.toString()))
-                newOrder++
-            }
-            reorderCursor.close()
-        }
-
         return Triple(images, orders, translations)
     }
-
     /**
      * Load translations for a specific batch of image URIs.
      * Cấu trúc dữ liệu:
@@ -3544,25 +3518,33 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
      */
     fun getTranslationsForImages(imageUris: List<Uri>): Map<Uri, Pair<String, List<TextBlockInfo>>> {
         val db = readableDatabase
-        val translations = mutableMapOf<Uri, Pair<String, MutableList<TextBlockInfo>>>()
+        val result = mutableMapOf<Uri, Pair<String, List<TextBlockInfo>>>()
         
+        if (imageUris.isEmpty()) return result
+
+        // 1. Lấy tất cả image_id cho batch URIs
+        val uriStrings = imageUris.map { it.toString() }
+        val placeholders = uriStrings.joinToString(",") { "?" }
+        val imageIdMap = mutableMapOf<Uri, Long>()
+        
+        val imageCursor = db.rawQuery("""
+            SELECT $COLUMN_IMAGE_URI, $COLUMN_IMAGE_ID
+            FROM $TABLE_IMAGES
+            WHERE $COLUMN_IMAGE_URI IN ($placeholders)
+        """, uriStrings.toTypedArray())
+        
+        while (imageCursor.moveToNext()) {
+            val uriStr = imageCursor.getString(0)
+            val id = imageCursor.getLong(1)
+            imageIdMap[Uri.parse(uriStr)] = id
+        }
+        imageCursor.close()
+
+        // 2. Với mỗi URI tìm được image_id, lấy dữ liệu
         for (uri in imageUris) {
-            // 1. Lấy image_id từ bảng images
-            val imageCursor = db.rawQuery("""
-                SELECT $COLUMN_IMAGE_ID
-                FROM $TABLE_IMAGES
-                WHERE $COLUMN_IMAGE_URI = ?
-            """, arrayOf(uri.toString()))
+            val imageId = imageIdMap[uri] ?: continue
             
-            if (!imageCursor.moveToFirst()) {
-                imageCursor.close()
-                continue
-            }
-            
-            val imageId = imageCursor.getLong(0)
-            imageCursor.close()
-            
-            // 2. Lấy dữ liệu translation (bao gồm bounds) từ bảng translations
+            // Lấy dữ liệu translation (bao gồm bounds) từ bảng translations
             val translationsCursor = db.rawQuery("""
                 SELECT translated_text, original_text, x, y, width, height FROM translations
                 WHERE $COLUMN_IMAGE_ID = ?
@@ -3583,12 +3565,44 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
             translationsCursor.close()
 
-            // 3. Lấy TẤT CẢ dữ liệu từ bảng image_blocks (theo thứ tự block_id)
+            // 3. Lấy TẤT CẢ dữ liệu từ bảng image_blocks (theo thứ tự block_id) - Đã tối ưu batch
             val blockCursor = db.rawQuery("""
                 SELECT * FROM $TABLE_IMAGE_BLOCKS 
                 WHERE $COLUMN_BLOCK_IMAGE_ID = ?
                 ORDER BY $COLUMN_BLOCK_ID ASC
             """, arrayOf(imageId.toString()))
+            
+            // Optimization: Pre-fetch ALL column indices for speed
+            val colIdxX = blockCursor.getColumnIndex(COLUMN_BLOCK_X)
+            val colIdxY = blockCursor.getColumnIndex(COLUMN_BLOCK_Y)
+            val colIdxW = blockCursor.getColumnIndex(COLUMN_BLOCK_WIDTH)
+            val colIdxH = blockCursor.getColumnIndex(COLUMN_BLOCK_HEIGHT)
+            val colIdxOverlayColor = blockCursor.getColumnIndex(COLUMN_BLOCK_OVERLAY_COLOR)
+            val colIdxOverlayAlpha = blockCursor.getColumnIndex(COLUMN_BLOCK_OVERLAY_ALPHA)
+            val colIdxOverlaySat = blockCursor.getColumnIndex(COLUMN_BLOCK_OVERLAY_SATURATION)
+            val colIdxInset = blockCursor.getColumnIndex(COLUMN_BLOCK_OVERLAY_INSET)
+            val colIdxInsetH = blockCursor.getColumnIndex(COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL)
+            val colIdxInsetV = blockCursor.getColumnIndex(COLUMN_BLOCK_OVERLAY_INSET_VERTICAL)
+            val colIdxRot = blockCursor.getColumnIndex(COLUMN_BLOCK_OVERLAY_ROTATION)
+            val colIdxType = blockCursor.getColumnIndex(COLUMN_BLOCK_OVERLAY_TYPE)
+            val colIdxTextColor = blockCursor.getColumnIndex(COLUMN_BLOCK_TEXT_COLOR)
+            val colIdxBold = blockCursor.getColumnIndex(COLUMN_BLOCK_TEXT_BOLDNESS)
+            val colIdxTextSat = blockCursor.getColumnIndex(COLUMN_BLOCK_TEXT_SATURATION)
+            val colIdxFontSize = blockCursor.getColumnIndex(COLUMN_BLOCK_FONT_SIZE)
+            val colIdxFontFamily = blockCursor.getColumnIndex(COLUMN_BLOCK_FONT_FAMILY)
+            val colIdxRotation = blockCursor.getColumnIndex(COLUMN_BLOCK_ROTATION)
+            val colIdxLineSpacing = blockCursor.getColumnIndex(COLUMN_BLOCK_LINE_SPACING)
+            val colIdxBorderColor = blockCursor.getColumnIndex(COLUMN_BLOCK_BORDER_COLOR)
+            val colIdxBorderThickness = blockCursor.getColumnIndex(COLUMN_BLOCK_BORDER_THICKNESS)
+            val colIdxShadowColor = blockCursor.getColumnIndex(COLUMN_BLOCK_SHADOW_COLOR)
+            val colIdxShadowAlpha = blockCursor.getColumnIndex(COLUMN_BLOCK_SHADOW_ALPHA)
+            val colIdxShadowRadius = blockCursor.getColumnIndex(COLUMN_BLOCK_SHADOW_RADIUS)
+            val colIdxTextAlign = blockCursor.getColumnIndex(COLUMN_BLOCK_TEXT_ALIGN)
+            val colIdxGradientColors = blockCursor.getColumnIndex(COLUMN_BLOCK_TEXT_GRADIENT_COLORS)
+            val colIdxGradientOffsets = blockCursor.getColumnIndex(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS)
+            val colIdxGradientType = blockCursor.getColumnIndex(COLUMN_BLOCK_TEXT_GRADIENT_TYPE)
+            val colIdxOrigWidth = blockCursor.getColumnIndex(COLUMN_BLOCK_ORIGINAL_WIDTH)
+            val colIdxOrigHeight = blockCursor.getColumnIndex(COLUMN_BLOCK_ORIGINAL_HEIGHT)
             
             val textBlocks = mutableListOf<TextBlockInfo>()
             var blockIndex = 0
@@ -3598,13 +3612,12 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 
                 // Prioritize coordinates from translations table if available
                 val bounds = if (transData != null && transData.width > 0 && transData.height > 0) {
-                    //Log.i(TAG, "[DB-READ-COORD] imageId=$imageId block=$blockIndex text='${transData.translatedText.take(20)}' FROM translations: x=${transData.x} y=${transData.y} w=${transData.width} h=${transData.height}")
                     Rect(transData.x, transData.y, transData.x + transData.width, transData.y + transData.height)
                 } else {
-                    val x = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_X))
-                    val y = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_Y))
-                    val width = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_WIDTH))
-                    val height = blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_HEIGHT))
+                    val x = if (colIdxX >= 0) blockCursor.getInt(colIdxX) else 0
+                    val y = if (colIdxY >= 0) blockCursor.getInt(colIdxY) else 0
+                    val width = if (colIdxW >= 0) blockCursor.getInt(colIdxW) else 0
+                    val height = if (colIdxH >= 0) blockCursor.getInt(colIdxH) else 0
                     Rect(x, y, x + width, y + height)
                 }
                 
@@ -3615,84 +3628,50 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 } else null
                 blockIndex++
                 
-                // Lấy tất cả thuộc tính overlay từ image_blocks
-                val overlayColor = try { 
-                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_COLOR)
-                    if (!blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
-                } catch (e: Exception) { null }
+                val overlayColor = if (colIdxOverlayColor >= 0 && !blockCursor.isNull(colIdxOverlayColor)) blockCursor.getInt(colIdxOverlayColor) else null
+                val overlayAlpha = if (colIdxOverlayAlpha >= 0) blockCursor.getFloat(colIdxOverlayAlpha) else 1.0f
+                val overlaySaturation = if (colIdxOverlaySat >= 0) blockCursor.getFloat(colIdxOverlaySat) else 1.0f
+                val overlayInset = if (colIdxInset >= 0) blockCursor.getFloat(colIdxInset) else 0f
+                val overlayInsetH = if (colIdxInsetH >= 0) blockCursor.getFloat(colIdxInsetH) else overlayInset
+                val overlayInsetV = if (colIdxInsetV >= 0) blockCursor.getFloat(colIdxInsetV) else overlayInset
+                val overlayRotation = if (colIdxRot >= 0 && !blockCursor.isNull(colIdxRot)) blockCursor.getFloat(colIdxRot) else null
+                val overlayType = if (colIdxType >= 0) blockCursor.getInt(colIdxType) else 0
+                val textColor = if (colIdxTextColor >= 0 && !blockCursor.isNull(colIdxTextColor)) blockCursor.getInt(colIdxTextColor) else null
+                val textBoldness = if (colIdxBold >= 0) blockCursor.getFloat(colIdxBold) else 1.0f
+                val textSaturation = if (colIdxTextSat >= 0) blockCursor.getFloat(colIdxTextSat) else 1.0f
                 
-                val overlayAlpha = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
-                val overlaySaturation = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_SATURATION)).toFloat() } catch (e: Exception) { 1.0f }
-                val overlayInset = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET)).toFloat() } catch (e: Exception) { 0f }
-                val overlayInsetH = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL)).toFloat() } catch (e: Exception) { overlayInset }
-                val overlayInsetV = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_INSET_VERTICAL)).toFloat() } catch (e: Exception) { overlayInset }
-                val overlayRotation = try { 
-                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_ROTATION)
-                    if (!blockCursor.isNull(idx)) blockCursor.getDouble(idx).toFloat() else null
-                } catch (e: Exception) { null }
-                val overlayType = try { blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_OVERLAY_TYPE)) } catch (e: Exception) { 0 }
+                val fontSize = if (colIdxFontSize >= 0) blockCursor.getFloat(colIdxFontSize) else 14f
+                val fontFamily = if (colIdxFontFamily >= 0) blockCursor.getString(colIdxFontFamily) else null
+                val rotation = if (colIdxRotation >= 0) blockCursor.getFloat(colIdxRotation) else 0f
+                val lineSpacing = if (colIdxLineSpacing >= 0) blockCursor.getFloat(colIdxLineSpacing) else 1.0f
                 
-                val textColor = try { 
-                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_COLOR)
-                    if (!blockCursor.isNull(idx)) {
-                        val c = blockCursor.getInt(idx)
-                        if (c != 0) c else null
-                    } else null
-                } catch (e: Exception) { null }
-                val textBoldness = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_BOLDNESS)).toFloat() } catch (e: Exception) { 1.0f }
-                val textSaturation = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_SATURATION)).toFloat() } catch (e: Exception) { 1.0f }
+                val borderColor = if (colIdxBorderColor >= 0 && !blockCursor.isNull(colIdxBorderColor)) blockCursor.getInt(colIdxBorderColor) else null
+                val borderThickness = if (colIdxBorderThickness >= 0) blockCursor.getFloat(colIdxBorderThickness) else 0f
                 
-                val fontSize = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_FONT_SIZE)).toFloat() } catch (e: Exception) { 14f }
-                val fontFamily = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_FONT_FAMILY)) } catch (e: Exception) { null }
-                val rotation = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_ROTATION)).toFloat() } catch (e: Exception) { 0f }
-                val lineSpacing = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_LINE_SPACING)).toFloat() } catch (e: Exception) { 1.0f }
+                val shadowColor = if (colIdxShadowColor >= 0 && !blockCursor.isNull(colIdxShadowColor)) blockCursor.getInt(colIdxShadowColor) else null
+                val shadowAlpha = if (colIdxShadowAlpha >= 0) blockCursor.getFloat(colIdxShadowAlpha) else 1.0f
+                val shadowRadius = if (colIdxShadowRadius >= 0) blockCursor.getFloat(colIdxShadowRadius) else 0f
                 
-                val borderColor = try { 
-                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_COLOR)
-                    if (!blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
-                } catch (e: Exception) { null }
-                val borderThickness = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_BORDER_THICKNESS)).toFloat() } catch (e: Exception) { 0f }
-                
-                val shadowColor = try { 
-                    val idx = blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_COLOR)
-                    if (!blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
-                } catch (e: Exception) { null }
-                val shadowAlpha = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_ALPHA)).toFloat() } catch (e: Exception) { 1.0f }
-                val shadowRadius = try { blockCursor.getDouble(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_SHADOW_RADIUS)).toFloat() } catch (e: Exception) { 0f }
-                val textAlignStr = try { blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_ALIGN)) } catch (e: Exception) { "CENTER" }
+                val textAlignStr = if (colIdxTextAlign >= 0) blockCursor.getString(colIdxTextAlign) else "CENTER"
                 val textAlignEnum = try { com.example.ocrmanga.data.models.TextAlignMode.valueOf(textAlignStr) } catch (e: Exception) { com.example.ocrmanga.data.models.TextAlignMode.CENTER }
                 
-                val textGradientColors = try {
-                    val colorsStr = blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_COLORS))
+                val textGradientColors = if (colIdxGradientColors >= 0) {
+                    val colorsStr = blockCursor.getString(colIdxGradientColors)
                     colorsStr?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toIntOrNull() }
-                } catch (e: Exception) { null }
-                val textGradientOffsets = try {
-                    val offsetsStr = blockCursor.getString(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS))
+                } else null
+                
+                val textGradientOffsets = if (colIdxGradientOffsets >= 0) {
+                    val offsetsStr = blockCursor.getString(colIdxGradientOffsets)
                     offsetsStr?.split(",")?.filter { it.isNotBlank() }?.mapNotNull { it.toFloatOrNull() }
-                } catch (e: Exception) { null }
-                val textGradientType = try { blockCursor.getInt(blockCursor.getColumnIndexOrThrow(COLUMN_BLOCK_TEXT_GRADIENT_TYPE)) } catch (e: Exception) { 0 }
+                } else null
                 
-                // Log chi tiết dữ liệu gradient đọc được
-                if (textGradientColors != null && textGradientColors.isNotEmpty()) {
-                    //Log.i(TAG, "[DB-READ-GRADIENT] imageId=$imageId colors=$textGradientColors offsets=$textGradientOffsets type=$textGradientType")
-                }
-                
-                // Log để debug
-                //if (overlayInset != 0f || overlayInsetH != 0f || overlayInsetV != 0f) {
-                //    Log.i(TAG, "getTranslationsForImages ĐỌC INSET: imageId=$imageId bounds=$bounds inset=$overlayInset insetH=$overlayInsetH insetV=$overlayInsetV")
-                //}
+                val textGradientType = if (colIdxGradientType >= 0) blockCursor.getInt(colIdxGradientType) else 0
                 
                 val finalTextColor = textColor ?: 0xFF000000.toInt()
                 val finalFontFamily = if (fontFamily.isNullOrBlank()) "mto_astro_city" else fontFamily
                 
-                val origWidth = try { 
-                    val idx = blockCursor.getColumnIndex(COLUMN_BLOCK_ORIGINAL_WIDTH)
-                    if (idx >= 0 && !blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
-                } catch (e: Exception) { null }
-                val origHeight = try { 
-                    val idx = blockCursor.getColumnIndex(COLUMN_BLOCK_ORIGINAL_HEIGHT)
-                    if (idx >= 0 && !blockCursor.isNull(idx)) blockCursor.getInt(idx) else null
-                } catch (e: Exception) { null }
+                val origWidth = if (colIdxOrigWidth >= 0 && !blockCursor.isNull(colIdxOrigWidth)) blockCursor.getInt(colIdxOrigWidth) else null
+                val origHeight = if (colIdxOrigHeight >= 0 && !blockCursor.isNull(colIdxOrigHeight)) blockCursor.getInt(colIdxOrigHeight) else null
 
                 textBlocks.add(TextBlockInfo(
                     text = translatedText,
@@ -3732,11 +3711,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             blockCursor.close()
 
             if (textBlocks.isNotEmpty()) {
-                translations[uri] = "" to textBlocks
+                result[uri] = "" to textBlocks
             }
         }
         
-        return translations.mapValues { (_, pair) -> pair.first to pair.second.toList() }
+        return result.mapValues { (_, pair) -> pair.first to pair.second.toList() }
     }
 
     /**

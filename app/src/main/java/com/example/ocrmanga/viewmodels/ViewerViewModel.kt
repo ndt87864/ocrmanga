@@ -923,20 +923,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private fun runBulkOcrScanning(uris: List<Uri>) {
         viewModelScope.launch(Dispatchers.IO) {
             val total = uris.size
-            _uiState.update { it.copy(bulkScanningProgress = "Đang chuẩn bị quét $total trang...") }
+            // No longer using bulkScanningProgress to avoid global popup
 
             uris.chunked(2).forEachIndexed { index, chunk ->
                 if (!isActive) return@launch
-                val processedCount = index * 2
-                _uiState.update { it.copy(bulkScanningProgress = "Đang quét $processedCount/$total trang...") }
-
+                
                 // Chạy song song 2 ảnh trong chunk
                 chunk.map { uri ->
                     async { retranslateImageSync(uri, TranslationMode.OCR) }
                 }.awaitAll()
             }
 
-            _uiState.update { it.copy(bulkScanningProgress = "") }
             withContext(Dispatchers.Main) {
                 Toast.makeText(getApplication(), "Đã hoàn tất quét OCR cho $total trang.", Toast.LENGTH_SHORT).show()
             }
@@ -1422,7 +1419,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     companion object {
-        const val BATCH_SIZE = 10 // Số ảnh tải mỗi lần
+        const val BATCH_SIZE = 20 // Số ảnh tải mỗi lần
     }
 
     init {
@@ -1918,22 +1915,28 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // This ensures ALL properties (inset, overlayRotation, etc.) are loaded correctly
                 val translations = databaseHelper.getTranslationsForImages(batch)
                 
-                // Get translatedStatus and uriToImageId mapping
+                // Get translatedStatus and uriToImageId mapping in a single batch query
                 val db = databaseHelper.readableDatabase
-                batch.forEach { uri ->
-                    val cursor = db.rawQuery(
+                if (batch.isNotEmpty()) {
+                    val uriStrings = batch.map { it.toString() }
+                    val placeholders = uriStrings.joinToString(",") { "?" }
+                    val statusCursor = db.rawQuery(
                         """
-                        SELECT ${DatabaseHelper.COLUMN_IS_TRANSLATED}, ${DatabaseHelper.COLUMN_IMAGE_ID}
+                        SELECT ${DatabaseHelper.COLUMN_IMAGE_URI}, ${DatabaseHelper.COLUMN_IS_TRANSLATED}, ${DatabaseHelper.COLUMN_IMAGE_ID}
                         FROM ${DatabaseHelper.TABLE_IMAGES} 
-                        WHERE ${DatabaseHelper.COLUMN_IMAGE_URI} = ?
-                        """, arrayOf(uri.toString())
+                        WHERE ${DatabaseHelper.COLUMN_IMAGE_URI} IN ($placeholders)
+                        """, uriStrings.toTypedArray()
                     )
-                    if (cursor.moveToFirst()) {
-                        translatedStatus[uri] = cursor.getInt(0) == 1
-                        val imageId = cursor.getLong(1)
+                    while (statusCursor.moveToNext()) {
+                        val uriStr = statusCursor.getString(0)
+                        val isTranslated = statusCursor.getInt(1) == 1
+                        val imageId = statusCursor.getLong(2)
+                        
+                        val uri = Uri.parse(uriStr)
+                        translatedStatus[uri] = isTranslated
                         uriToImageId[uri] = imageId
                     }
-                    cursor.close()
+                    statusCursor.close()
                 }
 
                 _uiState.update {
