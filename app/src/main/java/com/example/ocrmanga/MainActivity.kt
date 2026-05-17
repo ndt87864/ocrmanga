@@ -75,7 +75,7 @@ class MainActivity : ComponentActivity() {
                     Scaffold(
                         bottomBar = {
                             if (currentDestination?.route in items.map { it.route }) {
-                                NavigationBar(modifier = Modifier.height(56.dp)) {
+                                NavigationBar {
                                     items.forEach { screen ->
                                         NavigationBarItem(
                                             icon = { Icon(screen.icon, contentDescription = screen.title) },
