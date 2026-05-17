@@ -20,14 +20,13 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Remove Log calls in release builds
+# Keep Log.e() for crash debugging in release builds
 -assumenosideeffects class android.util.Log {
     public static boolean isLoggable(java.lang.String, int);
     public static int v(...);
     public static int i(...);
     public static int w(...);
     public static int d(...);
-    public static int e(...);
 }
 
 # Suppress warnings from Android framework and libraries
@@ -44,4 +43,71 @@
 -dontwarn coil.**
 -dontwarn org.json.**
 -dontwarn ai.onnxruntime.**
+
+# === JGSS (referenced from Apache HTTP Client used by Google API) ===
+-dontwarn org.ietf.jgss.**
+
+# === ML Kit ===
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.vision.** { *; }
+
+# === Coil Image Loader ===
+-keep class coil.** { *; }
+
+# === ONNX Runtime ===
 -keep class ai.onnxruntime.** { *; }
+
+# === Gson (models used for JSON serialization/deserialization) ===
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class com.example.ocrmanga.data.models.** { *; }
+-keep class com.example.ocrmanga.data.ocr.models.** { *; }
+-keep class com.example.ocrmanga.ml.** { *; }
+-keep class com.google.gson.** { *; }
+-keep class com.google.gson.reflect.TypeToken { *; }
+
+# === OpenCV JNI ===
+-keep class org.opencv.** { *; }
+
+# === Room Database ===
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep class * extends androidx.room.** { *; }
+-keep @androidx.room.Database class * { *; }
+-keep @androidx.room.Dao class * { *; }
+-dontwarn androidx.room.**
+
+# === Compose Runtime ===
+-keep class androidx.compose.** { *; }
+
+# === Kotlin Serialization ===
+-keepattributes InnerClasses, EnclosingMethod
+-keep class kotlinx.serialization.** { *; }
+
+# === Google Drive API & Google API Client ===
+-keep class com.google.api.client.** { *; }
+-keep class com.google.api.services.drive.** { *; }
+-keep class com.google.api.services.drive.model.** { *; }
+
+# === Google Gemini AI SDK ===
+-keep class com.google.ai.client.generativeai.** { *; }
+
+# === Google Play Services Auth ===
+-keep class com.google.android.gms.auth.** { *; }
+-keep class com.google.android.gms.auth.api.signin.** { *; }
+
+# === OkHttp ===
+-keep class okhttp3.** { *; }
+-keep interface okhttp3.** { *; }
+-keep class okio.** { *; }
+
+# === AndroidX Datastore ===
+-keep class androidx.datastore.** { *; }
+
+# === AndroidX Navigation ===
+-keep class androidx.navigation.** { *; }
+
+# === Kotlinx Coroutines ===
+-keep class kotlinx.coroutines.** { *; }
+
+# === AndroidX ExifInterface ===
+-keep class androidx.exifinterface.** { *; }

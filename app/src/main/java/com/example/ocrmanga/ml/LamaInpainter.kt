@@ -10,7 +10,6 @@ import android.graphics.Paint
 import android.graphics.Point
 import android.graphics.Rect
 import android.graphics.RectF
-import com.google.android.gms.common.util.CollectionUtils.listOf
 import com.example.ocrmanga.utils.AppLogger as Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -485,7 +484,7 @@ object LamaInpainter {
             pyramidMaxSize = size
             pyramidWorkBuffer = FloatArray(size * 3)
         }
-        val workBuf = pyramidWorkBuffer!!
+        val workBuf = pyramidWorkBuffer ?: return
 
         val px = IntArray(size)
         result.getPixels(px, 0, cw, cropRect.left, cropRect.top, cw, ch)
@@ -549,7 +548,7 @@ object LamaInpainter {
             pyramidMaxSize = size
             pyramidWorkBuffer = FloatArray(size * 3) // R, G, B channels
         }
-        val workBuf = pyramidWorkBuffer!!
+        val workBuf = pyramidWorkBuffer ?: return intArrayOf()
 
         // Extract channels vào buffer tái sử dụng
         for (i in 0 until size) {

@@ -501,8 +501,8 @@ fun Dialogs(
 
     // Dialog chọn OCR lại từ đầu hoặc giữ OCR cũ khi retranslate
     if (showReTranslateDialog && currentUri != null && pendingReTranslateMode != null) {
-        val mode = pendingReTranslateMode!!
-        val uri = currentUri!!
+        val mode = pendingReTranslateMode ?: return
+        val uri = currentUri ?: return
         AlertDialog(
             onDismissRequest = { showReTranslateDialog = false },
             shape = RoundedCornerShape(20.dp),

@@ -40,6 +40,7 @@ android {
                 "proguard-rules.pro"
             )
             isCrunchPngs = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

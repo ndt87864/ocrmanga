@@ -1248,7 +1248,13 @@ fun ViewerScreen(
         if (showOcrChoiceDialog && pendingOcrChoiceMode != null) {
             val mode = pendingOcrChoiceMode!!
             AlertDialog(
-                onDismissRequest = { showOcrChoiceDialog = false },
+                onDismissRequest = {
+                    showOcrChoiceDialog = false
+                    pendingOcrChoiceUri = null
+                    pendingOcrChoiceMode = null
+                    pendingOcrChoiceIsBulk = false
+                    pendingOcrChoiceShowCompletionToast = false
+                },
                 title = { Text("Chọn dữ liệu OCR") },
                 text = {
                     Column {
@@ -1291,6 +1297,9 @@ fun ViewerScreen(
                                 }
                             }
                             showOcrChoiceDialog = false
+                            pendingOcrChoiceUri = null
+                            pendingOcrChoiceMode = null
+                            pendingOcrChoiceIsBulk = false
                         }
                     ) {
                         Text("OCR mới")
@@ -1321,6 +1330,9 @@ fun ViewerScreen(
                                 }
                             }
                             showOcrChoiceDialog = false
+                            pendingOcrChoiceUri = null
+                            pendingOcrChoiceMode = null
+                            pendingOcrChoiceIsBulk = false
                         }
                     ) {
                         Text("Giữ OCR cũ")

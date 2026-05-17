@@ -2354,7 +2354,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         if (transformedBlocks != null) {
                             val originalText = _uiState.value.translatedTexts[oldUri]?.first ?: ""
                             val updateMap = mapOf(imageId to (originalText to transformedBlocks!!))
-                            databaseHelper.applyPendingChangesForRoom(_uiState.value.roomId!!, updateMap)
+                            databaseHelper.applyPendingChangesForRoom(_uiState.value.roomId ?: return@launch, updateMap)
                             //Log.i(TAG, "replaceImageUri: Persisted ${transformedBlocks!!.size} scaled blocks for imageId=$imageId")
                         }
 
@@ -2412,7 +2412,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     // Also notify DB to mark image changed for autosave threshold if needed
                     val rid = _uiState.value.roomId
                     try {
-                        val numChanged = databaseHelper.markImageChanged(imageId, rid!!)
+                        val numChanged = databaseHelper.markImageChanged(imageId, rid ?: return@launch)
                         //Log.i(TAG, "replaceImageUri temp: marked image changed imageId=$imageId, numChanged=$numChanged")
                         if (numChanged >= 5) {
                             maybeAutoSaveChangedImages(rid)

@@ -1168,8 +1168,11 @@ fun ImageViewer(
                                                             (dragEvent.position.y - imageHeight / 2 - zoomOffset.y) / zoomScale + imageHeight / 2
                                                         )
                                                         val amount = pos - lastDragPos
-                                                        dragBlocks = dragBlocks.toMutableList().also {
-                                                            it[draggingIndex!!] = it[draggingIndex!!].copy(offset = it[draggingIndex!!].offset + amount)
+                                                        val dIdx = draggingIndex
+                                                        if (dIdx != null) {
+                                                            dragBlocks = dragBlocks.toMutableList().also {
+                                                                it[dIdx] = it[dIdx].copy(offset = it[dIdx].offset + amount)
+                                                            }
                                                         }
                                                         lastDragPos = pos
                                                         dragEvent.consume()
@@ -1282,7 +1285,12 @@ fun ImageViewer(
 
 
         if (isTextRemovalMode) {
-            val currentUri = imageUris.getOrNull(lazyListState.firstVisibleItemIndex)
+            // Khi isScrollable=false (trong ImagePage), mỗi ImageViewer chỉ có 1 URI
+            val currentUri = if (isScrollable) {
+                imageUris.getOrNull(lazyListState.firstVisibleItemIndex)
+            } else {
+                imageUris.firstOrNull()
+            }
             if (currentUri != null) {
                 val currentPaths = textRemovalPathsMap.getOrPut(currentUri) { mutableStateListOf() }
                 val currentRedoStack = textRemovalRedoStackMap.getOrPut(currentUri) { mutableStateListOf() }
@@ -1312,9 +1320,14 @@ fun ImageViewer(
 
                             if (originalDims != null && displayDims != null) {
                                 val (originalW, originalH) = originalDims
-                                val (displayW, _) = displayDims
+                                val (displayW, displayH) = displayDims
 
-                                if (originalW > 0 && displayW > 0) {
+                                // Kiểm tra dimensions hợp lệ
+                                if (originalW > 0f && displayW > 0f && originalH > 0f && displayH > 0f) {
+                                    // Tính scale từ display coords -> original image coords
+                                    val scaleX = originalW / displayW
+                                    val scaleY = originalH / displayH
+
                                     val maskBmp = android.graphics.Bitmap.createBitmap(
                                         originalW.toInt(),
                                         originalH.toInt(),
@@ -1322,22 +1335,29 @@ fun ImageViewer(
                                     )
                                     val canvas = android.graphics.Canvas(maskBmp)
                                         .apply { drawColor(android.graphics.Color.BLACK) }
-                                    val scale = originalW / displayW
-                                    val matrix = android.graphics.Matrix().apply { setScale(scale, scale) }
+
+                                    val matrix = android.graphics.Matrix().apply {
+                                        setScale(scaleX, scaleY)
+                                    }
+
+                                    // Sử dụng Style.STROKE với round cap/join để vẽ brush dạng đường nét đậm
                                     val paint = android.graphics.Paint().apply {
                                         color = android.graphics.Color.WHITE
                                         style = android.graphics.Paint.Style.STROKE
                                         strokeCap = android.graphics.Paint.Cap.ROUND
                                         strokeJoin = android.graphics.Paint.Join.ROUND
+                                        isAntiAlias = true
                                     }
 
                                     currentPaths.forEach { pathWithBrush ->
-                                        paint.strokeWidth = pathWithBrush.second * scale
+                                        paint.strokeWidth = pathWithBrush.second * scaleX
                                         canvas.drawPath(
                                             pathWithBrush.first.asAndroidPath().apply { transform(matrix) },
                                             paint
                                         )
                                     }
+
+                                    // Nếu mask có pixel trắng, tiến hành inpainting
                                     onRemoveTextWithMask(currentUri, maskBmp)
                                     currentPaths.clear()
                                     currentRedoStack.clear()
