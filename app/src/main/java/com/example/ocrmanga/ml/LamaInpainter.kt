@@ -246,9 +246,19 @@ object LamaInpainter {
         val t0 = System.currentTimeMillis()
         val work = image.copy(Bitmap.Config.ARGB_8888, true)
         val normMask = normalizeMask(mask, image.width, image.height)
-        val bounds = findMaskBounds(normMask)
-        if (bounds == null) { normMask.recycle(); work.recycle(); return null }
-        val result = mutex.withLock { processRegionClusters(work, normMask, listOf(listOf(bounds)), onProgress) }
+        
+        // Tìm các vùng bôi vẽ riêng biệt (không giao nhau)
+        val separateBounds = findSeparateMaskBounds(normMask)
+        if (separateBounds.isEmpty()) {
+            normMask.recycle()
+            work.recycle()
+            return null
+        }
+        
+        // Phân cụm an toàn các vùng bôi vẽ dựa trên khoảng cách và giới hạn kích thước vùng
+        val clusters = createSafeClusters(separateBounds, image.width, image.height)
+        
+        val result = mutex.withLock { processRegionClusters(work, normMask, clusters, onProgress) }
         normMask.recycle()
         //Log.d(TAG, "inpaintWithMask done: ${System.currentTimeMillis() - t0}ms")
         return result
@@ -695,6 +705,82 @@ object LamaInpainter {
             }
         }
         return if (maxX < 0) null else Rect(minX, minY, maxX + 1, maxY + 1)
+    }
+
+    /**
+     * Tìm các vùng bôi vẽ riêng biệt (không giao nhau) sử dụng thuật toán Connected Components BFS.
+     * Quét nhanh và nhóm các pixel liền kề của nét vẽ vào từng Rect riêng biệt.
+     */
+    private fun findSeparateMaskBounds(mask: Bitmap): List<Rect> {
+        val w = mask.width
+        val h = mask.height
+        val px = IntArray(w * h)
+        mask.getPixels(px, 0, w, 0, 0, w, h)
+        
+        val visited = java.util.BitSet(w * h)
+        val rects = mutableListOf<Rect>()
+        
+        val dx = intArrayOf(-1, 1, 0, 0, -1, -1, 1, 1)
+        val dy = intArrayOf(0, 0, -1, 1, -1, 1, -1, 1)
+        
+        val queue = java.util.ArrayDeque<Int>()
+        
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val idx = y * w + x
+                if (visited.get(idx)) continue
+                
+                val p = px[idx]
+                if (Color.red(p) > 10 || Color.green(p) > 10 || Color.blue(p) > 10) {
+                    var minX = x
+                    var maxX = x
+                    var minY = y
+                    var maxY = y
+                    
+                    queue.clear()
+                    queue.add(idx)
+                    visited.set(idx)
+                    
+                    while (!queue.isEmpty()) {
+                        val currIdx = queue.poll() ?: break
+                        val cx = currIdx % w
+                        val cy = currIdx / w
+                        
+                        minX = min(minX, cx)
+                        maxX = max(maxX, cx)
+                        minY = min(minY, cy)
+                        maxY = max(maxY, cy)
+                        
+                        for (d in 0 until 8) {
+                            val nx = cx + dx[d]
+                            val ny = cy + dy[d]
+                            if (nx in 0 until w && ny in 0 until h) {
+                                val nIdx = ny * w + nx
+                                if (!visited.get(nIdx)) {
+                                    val np = px[nIdx]
+                                    if (Color.red(np) > 10 || Color.green(np) > 10 || Color.blue(np) > 10) {
+                                        visited.set(nIdx)
+                                        queue.add(nIdx)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Thêm một chút padding nhỏ (ví dụ 6px) để đảm bảo bao phủ hoàn toàn nét vẽ mờ ở rìa
+                    val pad = 6
+                    val left = (minX - pad).coerceAtLeast(0)
+                    val top = (minY - pad).coerceAtLeast(0)
+                    val right = (maxX + 1 + pad).coerceAtMost(w)
+                    val bottom = (maxY + 1 + pad).coerceAtMost(h)
+                    
+                    if (right > left && bottom > top) {
+                        rects.add(Rect(left, top, right, bottom))
+                    }
+                }
+            }
+        }
+        return rects
     }
 
     // ── Resize / padding ──────────────────────────────────────────────────
