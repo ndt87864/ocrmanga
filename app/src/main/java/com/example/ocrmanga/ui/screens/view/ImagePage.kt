@@ -44,7 +44,8 @@ fun ImagePage(
     translationVersion: Int = 0,
     translatedTexts: Map<Uri, Pair<String, List<com.example.ocrmanga.data.models.TextBlockInfo>>> = emptyMap(),
     translationEnabled: Boolean = false,
-    onTagReported: (String, androidx.compose.ui.geometry.Rect) -> Unit = { _, _ -> }
+    onTagReported: (String, androidx.compose.ui.geometry.Rect) -> Unit = { _, _ -> },
+    isScrollable: Boolean = true
 ) {
     val list = listOf(uri)
     val state = lazyListState
@@ -85,7 +86,10 @@ fun ImagePage(
         onBrushSizeChange = onBrushSizeChange,
         translationVersion = translationVersion,
         onTagReported = onTagReported,
-        verticalArrangement = Arrangement.Center,
+        isScrollable = isScrollable,
+        // Khi dùng trong VerticalViewer (danh sách dọc): ảnh xếp từ trên xuống, chiều rộng đầy đủ
+        // Khi dùng trong HorizontalViewer (1 ảnh): ảnh căn giữa
+        verticalArrangement = if (imageMaxHeight != null && imageMaxHeight != androidx.compose.ui.unit.Dp.Unspecified) Arrangement.Center else Arrangement.Top,
         contentScale = ContentScale.FillWidth
     )
 }

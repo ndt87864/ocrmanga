@@ -50,6 +50,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun ViewerScreen(
@@ -126,6 +127,39 @@ fun ViewerScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val allRoomIds by viewModel.allRoomIds.collectAsState()
+    val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
+    val effectiveViewMode = if (editTranslationMode) {
+        com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
+    } else {
+        vmMode
+    }
+    var isFastScrolling by remember { mutableStateOf(false) }
+
+    LaunchedEffect(lazyListState, horizontalListState, effectiveViewMode) {
+        val listState = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) lazyListState else horizontalListState
+        var lastIndex = listState.firstVisibleItemIndex
+        var lastTime = System.currentTimeMillis()
+        
+        snapshotFlow { Triple(listState.firstVisibleItemIndex, listState.isScrollInProgress, listState.firstVisibleItemScrollOffset) }
+            .collectLatest { (currentIndex, isScrolling, offset) ->
+                val now = System.currentTimeMillis()
+                val timeDiff = now - lastTime
+                val indexDiff = Math.abs(currentIndex - lastIndex)
+                
+                if (indexDiff > 0) {
+                    if (timeDiff < 300) {
+                        isFastScrolling = true
+                    }
+                    lastIndex = currentIndex
+                    lastTime = now
+                }
+                
+                if (!isScrolling) {
+                    delay(200) // Đợi 200ms không có chuyển động cuộn mới
+                    isFastScrolling = false
+                }
+            }
+    }
 
     fun waitForRetranslateToast(uri: Uri) {
         coroutineScope.launch {
@@ -435,8 +469,7 @@ fun ViewerScreen(
             val idx = uiState.scrollToIndexAfterReload
             val size = uiState.imageUris.size
             Triple(idx, size, pendingScrollIndex)
-        }.distinctUntilChanged()
-        .collect { (targetIndex, imageCount, pending) ->
+        }.collect { (targetIndex, imageCount, pending) ->
             if (targetIndex != null && targetIndex > 0 && targetIndex != pending) {
                 //Log.d("ViewerScreen", "scrollToIndexAfterReload triggered: targetIndex=$targetIndex, imageCount=$imageCount")
                 pendingScrollIndex = targetIndex
@@ -551,12 +584,36 @@ fun ViewerScreen(
         }
     }
 
-    // Tạo translatedTextsFiltered để lọc các block có pendingDelete = false
-    // Tối ưu: Dùng remember để không phải tính toán lại mỗi khi recompose nếu data không đổi
-    val translatedTextsFiltered = androidx.compose.runtime.remember(uiState.translatedTexts) {
-        uiState.translatedTexts.mapValues { entry ->
-            val pair = entry.value
-            pair.copy(second = pair.second.filter { !it.pendingDelete })
+    // Tạo translatedTextsFiltered để lọc các block có pendingDelete = false và áp dụng cửa sổ trượt 5 trang
+    val translatedTextsFiltered by remember(
+        uiState.imageUris,
+        uiState.translatedTexts,
+        effectiveViewMode,
+        isFastScrolling
+    ) {
+        derivedStateOf {
+            if (isFastScrolling) {
+                emptyMap()
+            } else {
+                val currentIndex = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
+                    lazyListState.firstVisibleItemIndex
+                } else {
+                    horizontalListState.firstVisibleItemIndex
+                }
+                val totalImages = uiState.imageUris.size
+                if (totalImages == 0) {
+                    emptyMap<Uri, Pair<String, List<com.example.ocrmanga.data.models.TextBlockInfo>>>()
+                } else {
+                    val activeRange = (currentIndex - 2)..(currentIndex + 2)
+                    uiState.translatedTexts.filter { (uri, _) ->
+                        val idx = uiState.imageUris.indexOf(uri)
+                        idx in activeRange
+                    }.mapValues { entry ->
+                        val pair = entry.value
+                        pair.copy(second = pair.second.filter { !it.pendingDelete })
+                    }
+                }
+            }
         }
     }
 
@@ -574,7 +631,6 @@ fun ViewerScreen(
             )
         }
     // Wrap the main content area with AnimatedContent to animate mode transitions
-    val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
     val modeIsHorizontal = vmMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
     val editMode = editTranslationMode
 
@@ -625,12 +681,7 @@ fun ViewerScreen(
                     .background(MaterialTheme.colorScheme.background),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-        val vmMode by viewModel.viewModeFlow.collectAsState(com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL)
-        val effectiveViewMode = if (editTranslationMode) {
-            com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL
-        } else {
-            vmMode
-        }
+
 
         LaunchedEffect(effectiveViewMode) {
             // Keep behavior for external sync when switching away from horizontal
@@ -1279,11 +1330,12 @@ fun ViewerScreen(
         }
 
         if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.VERTICAL) {
-            ImageViewer(
+            VerticalViewer(
                 imageUris = uiState.imageUris,
+                viewModel = viewModel,
+                lazyListState = lazyListState,
                 translatedTexts = translatedTextsFiltered,
                 translationEnabled = uiState.translationEnabled,
-                translatedStatus = uiState.translatedStatus,
                 translatingImages = uiState.translatingImages,
                 recentlySavedUris = uiState.recentlySavedUris,
                 onClearRecentlySavedUri = { uri -> viewModel.clearRecentlySavedUri(uri) },
@@ -1309,20 +1361,13 @@ fun ViewerScreen(
                 dragBlocksMap = dragBlocksMap,
                 onEditTranslationModeToggle = { editTranslationMode = it },
                 onSaveTranslation = { uri, blocks ->
-                    //Log.d("ViewerScreen", "[onSaveTranslation] Saving ${blocks.size} blocks for $uri")
-                    blocks.forEachIndexed { idx, dragBlock ->
-                        val textColorHex = try { dragBlock.textColor?.toArgb()?.let { String.format("#%08X", it) } ?: "null" } catch (_: Exception) { "err" }
-                        val gradCols = dragBlock.textGradientColors?.joinToString(separator = ",") { c -> String.format("#%08X", c) } ?: "null"
-                        //Log.d("ViewerScreen", "[onSaveTranslation] Block[$idx] overlayRotation=${dragBlock.overlayRotation} rotation=${dragBlock.rotation} inset=${dragBlock.overlayInset} insetH=${dragBlock.overlayInsetHorizontal} insetV=${dragBlock.overlayInsetVertical} textColor=$textColorHex gradientColors=$gradCols")
-                    }
                     viewModel.updateTranslatedBlocks(uri, blocks.map { dragBlock ->
-                        // Bounds đã được cập nhật khi drag trong ImageViewer, không cần cộng offset nữa
                         dragBlock.block.copy(
-                            fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize, // Lưu fontSize đã chỉnh sửa
+                            fontSize = dragBlock.fontSize ?: dragBlock.block.fontSize,
                             rotation = dragBlock.rotation,
                             overlayRotation = dragBlock.overlayRotation,
                             shapeType = dragBlock.block.shapeType,
-                            fontFamily = dragBlock.block.fontFamily, // Lưu font family khi save translation
+                            fontFamily = dragBlock.block.fontFamily,
                             customOverlayColor = dragBlock.whiteoutColor?.toArgb(),
                             customTextColor = dragBlock.textColor?.toArgb(),
                             overlayAlpha = dragBlock.overlayAlpha,
@@ -1336,14 +1381,12 @@ fun ViewerScreen(
                             customBorderColor = dragBlock.textBorderColor?.toArgb(),
                             borderThickness = dragBlock.textBorderThickness,
                             borderAlpha = dragBlock.textBorderAlpha,
-                            // persist shadow edits as well
                             customShadowColor = dragBlock.textShadowColor?.toArgb(),
                             shadowAlpha = dragBlock.textShadowAlpha,
                             shadowRadius = dragBlock.textShadowRadius,
                             textGradientColors = dragBlock.textGradientColors,
                             textGradientOffsets = dragBlock.textGradientOffsets,
                             textGradientType = dragBlock.textGradientType,
-                            // Đánh dấu rằng block này đã được edit manual, không áp dụng merge logic
                             applyMerge = false
                         )
                     })
@@ -1359,10 +1402,7 @@ fun ViewerScreen(
                 },
                 onShowImageMenuChange = { showImageMenu = it },
                 onImageMenuUriChange = { imageMenuUri = it },
-                lazyListState = lazyListState,
-                // provide ViewModel accessor so ImageViewer can use stable DB imageId as keys
                 getImageIdForUri = viewModel::getImageIdForUri,
-                // provide a version accessor so replaced images can be forced to reload
                 getImageVersionForUri = viewModel::getImageVersionForUri,
                 getReloadTokenForUri = viewModel::getReloadTokenForUri,
                 translationVersion = uiState.translationVersion,
@@ -1379,7 +1419,6 @@ fun ViewerScreen(
                                 context, uri, maskBmp
                             ) { progress -> removingTextLocalProgress = progress }
                             if (resultUri != null) {
-                                // Use replaceImageUri with persist=false to make this a temporary replacement
                                 viewModel.replaceImageUri(uri, resultUri, persist = false)
                                 Toast.makeText(context, "Đã xóa text thành công!", Toast.LENGTH_SHORT).show()
                             } else {

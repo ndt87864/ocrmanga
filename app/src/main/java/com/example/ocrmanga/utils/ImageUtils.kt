@@ -137,7 +137,11 @@ object ImageUtils {
                 val resizedBitmap = if (options.inSampleSize > 1) {
                     val scaledW = w / options.inSampleSize
                     val scaledH = h / options.inSampleSize
-                    android.graphics.Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+                    val sb = android.graphics.Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
+                    if (sb != bitmap) {
+                        bitmap.recycle()
+                    }
+                    sb
                 } else {
                     bitmap
                 }

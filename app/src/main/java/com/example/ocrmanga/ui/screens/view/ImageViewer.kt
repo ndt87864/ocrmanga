@@ -67,7 +67,6 @@ import com.example.ocrmanga.data.models.TranslationStatus
 import com.example.ocrmanga.utils.ImageUtils.getImageDimensions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.distinctUntilChanged
 import java.io.IOException
 
 data class DragBlockState(
@@ -127,6 +126,28 @@ data class PrecomputedRegion(
     val wrappedText: String? = null
 )
 
+private var globalImageLoader: coil.ImageLoader? = null
+
+private fun getSharedImageLoader(context: android.content.Context): coil.ImageLoader {
+    val appContext = context.applicationContext
+    return globalImageLoader ?: synchronized(coil.ImageLoader::class.java) {
+        globalImageLoader ?: coil.ImageLoader.Builder(appContext)
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(appContext)
+                    .maxSizePercent(0.15) // 15% memory
+                    .build()
+            }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(appContext.cacheDir.resolve("image_cache"))
+                    .maxSizeBytes(100 * 1024 * 1024) // 100MB
+                    .build()
+            }
+            .respectCacheHeaders(false) // Tự quản lý cache key
+            .build().also { globalImageLoader = it }
+    }
+}
+
 @Composable
 fun ImageViewer(
     imageUris: List<Uri>,
@@ -151,18 +172,13 @@ fun ImageViewer(
     isLoadingMoreImages: Boolean = false,
     remainingImagesCount: Int = 0,
     translatingImages: Map<Uri, TranslationStatus> = emptyMap(),
-    // URIs recently saved from the editor; used to apply saved blocks immediately
     recentlySavedUris: Set<Uri> = emptySet(),
-    // Callback to clear the recently-saved marker for a URI after it's been applied
     onClearRecentlySavedUri: ((Uri) -> Unit)? = null,
-    // URIs for which we should re-open the editor after saved blocks are applied
     reopenEditorUris: Set<Uri> = emptySet(),
-    // Callback to clear the reopen-editor marker for a URI after it's been handled
     onClearReopenEditorUri: ((Uri) -> Unit)? = null,
-    // Callback to request that the caller open the editor for a URI (invoked after blocks applied)
     onRequestOpenEditor: ((Uri) -> Unit)? = null,
     isTextRemovalMode: Boolean = false,
-    imageMaxHeight: androidx.compose.ui.unit.Dp? = null,
+    imageMaxHeight: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified,
     onToggleTextRemovalMode: () -> Unit = {},
     onRemoveTextWithMask: (Uri, android.graphics.Bitmap) -> Unit = { _, _ -> },
     brushSize: Float = 40f,
@@ -170,8 +186,9 @@ fun ImageViewer(
     initialPageIndex: Int? = null,
     translationVersion: Int = 0,
     onTagReported: (String, Rect) -> Unit = { _, _ -> },
-    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(0.dp),
-    contentScale: ContentScale = ContentScale.FillWidth
+    isScrollable: Boolean = true,
+    verticalArrangement: Arrangement.Vertical = Arrangement.Top,
+    contentScale: ContentScale = ContentScale.Fit
 ) {
     val context = LocalContext.current
     val readPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -193,24 +210,9 @@ fun ImageViewer(
         }
     val newlyTranslated = remember { mutableStateMapOf<Uri, Boolean>() }
     val visibleRange = remember { mutableStateOf(IntRange(0, -1)) }
-    val prefetchBuffer = 0 // Không preload quá xa
+    val prefetchBuffer = 1
     val bitmapPool = remember { com.example.ocrmanga.utils.BitmapPool.getInstance() }
-    val imageLoader = remember {
-        ImageLoader.Builder(context)
-            .memoryCache {
-                MemoryCache.Builder(context)
-                    .maxSizePercent(0.15) // 15% memory
-                    .build()
-            }
-            .diskCache {
-                DiskCache.Builder()
-                    .directory(context.cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(100 * 1024 * 1024) // 100MB
-                    .build()
-            }
-            .respectCacheHeaders(false) // Tự quản lý cache key
-            .build()
-    }
+    val imageLoader = remember(context) { getSharedImageLoader(context) }
     val suppressDiskCachePref = remember {
         try {
             val prefs =
@@ -237,9 +239,13 @@ fun ImageViewer(
     var lastScrollTime by remember { mutableStateOf(0L) }
     var isScrollingFast by remember { mutableStateOf(false) }
 
-    LaunchedEffect(lazyListState, imageUris) {
+    LaunchedEffect(lazyListState, imageUris, isScrollable) {
+        if (!isScrollable) {
+            visibleRange.value = IntRange(0, imageUris.size - 1)
+            isScrollingFast = false
+            return@LaunchedEffect
+        }
         snapshotFlow { lazyListState.layoutInfo.visibleItemsInfo.map { it.index } }
-            .distinctUntilChanged()
             .collect { visibleIndices ->
                 val currentTime = System.currentTimeMillis()
                 val timeDelta = currentTime - lastScrollTime
@@ -293,64 +299,59 @@ fun ImageViewer(
             }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            state = lazyListState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = if (isTextRemovalMode) 96.dp else 0.dp),
-            verticalArrangement = verticalArrangement
-        ) {
-            itemsIndexed(items = imageUris, key = { index, uri ->
-                val id = getImageIdForUri(uri)
-                if (id != null) id.toString() else "$index:${uri.toString()}"
-            }, contentType = { _, _ -> "image" }) { index, uri ->
-                val isInWindow by remember(index) { derivedStateOf { index in visibleRange.value } }
+    val pageContent: @Composable (Int, Uri) -> Unit = { index, uri ->
+        val isInWindow = if (isScrollable) {
+            val windowState = remember(index) { derivedStateOf { index in visibleRange.value } }
+            windowState.value
+        } else {
+            true
+        }
 
-                // Optimization: Pre-map blocks but only return them when visible
-                val cachedBlocks = remember(uri, translatedTexts[uri], translationVersion) {
-                    translatedTexts[uri]?.second?.filter { !it.pendingDelete }?.map { block ->
-                        val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor
-                        ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
-                        val textInt = (block.customTextColor ?: block.originalTextColor
-                        ?: computeDefaultTextColor(
-                            overlayInt,
-                            block.averageBackgroundColor
-                        )) or 0xFF000000.toInt()
-                        DragBlockState(
-                            block = block.copy(
-                                customOverlayColor = overlayInt,
-                                customTextColor = textInt,
-                                fontSize = block.fontSize
-                            ),
-                            fontSize = null,
-                            rotation = block.rotation ?: 0f,
-                            overlayRotation = block.overlayRotation,
-                            whiteoutColor = Color(overlayInt),
-                            textColor = Color(textInt),
-                            overlayAlpha = block.overlayAlpha,
-                            textBoldness = block.textBoldness,
-                            overlaySaturation = block.overlaySaturation,
-                            textSaturation = block.textSaturation,
-                            lineSpacing = block.lineSpacing,
-                            textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
-                            textBorderThickness = block.borderThickness,
-                            textBorderAlpha = block.borderAlpha,
-                            textShadowColor = block.customShadowColor?.let { Color(it or 0xFF000000.toInt()) },
-                            textShadowAlpha = block.shadowAlpha ?: 1.0f,
-                            textShadowRadius = block.shadowRadius ?: 0f,
-                            overlayInset = block.overlayInset,
-                            overlayInsetHorizontal = block.overlayInsetHorizontal,
-                            overlayInsetVertical = block.overlayInsetVertical,
-                            textAlign = block.textAlign,
-                            textGradientColors = block.textGradientColors,
-                            textGradientOffsets = block.textGradientOffsets,
-                            textGradientType = block.textGradientType
-                        )
-                    } ?: emptyList()
-                }
-
-                val initBlocks = remember(isInWindow) {
-                    if (isInWindow) cachedBlocks else dragBlocksMap[uri] ?: emptyList()
+                // Optimization: Wrap initialization logic in remember to avoid object creation on every recomposition
+                val initBlocks = androidx.compose.runtime.remember(uri, isInWindow, translatedTexts[uri], translationVersion) {
+                    if (isInWindow) {
+                        translatedTexts[uri]?.second?.filter { !it.pendingDelete }?.map { block ->
+                            val overlayInt = (block.customOverlayColor ?: block.averageBackgroundColor
+                            ?: 0xFFFFFFFF.toInt()) or 0xFF000000.toInt()
+                            val textInt = (block.customTextColor ?: block.originalTextColor
+                            ?: computeDefaultTextColor(
+                                overlayInt,
+                                block.averageBackgroundColor
+                            )) or 0xFF000000.toInt()
+                            DragBlockState(
+                                block = block.copy(
+                                    customOverlayColor = overlayInt,
+                                    customTextColor = textInt,
+                                    fontSize = block.fontSize
+                                ),
+                                fontSize = null,
+                                rotation = block.rotation ?: 0f,
+                                overlayRotation = block.overlayRotation,
+                                whiteoutColor = Color(overlayInt),
+                                textColor = Color(textInt),
+                                overlayAlpha = block.overlayAlpha,
+                                textBoldness = block.textBoldness,
+                                overlaySaturation = block.overlaySaturation,
+                                textSaturation = block.textSaturation,
+                                lineSpacing = block.lineSpacing,
+                                textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
+                                textBorderThickness = block.borderThickness,
+                                textBorderAlpha = block.borderAlpha,
+                                textShadowColor = block.customShadowColor?.let { Color(it or 0xFF000000.toInt()) },
+                                textShadowAlpha = block.shadowAlpha ?: 1.0f,
+                                textShadowRadius = block.shadowRadius ?: 0f,
+                                overlayInset = block.overlayInset,
+                                overlayInsetHorizontal = block.overlayInsetHorizontal,
+                                overlayInsetVertical = block.overlayInsetVertical,
+                                textAlign = block.textAlign,
+                                textGradientColors = block.textGradientColors,
+                                textGradientOffsets = block.textGradientOffsets,
+                                textGradientType = block.textGradientType
+                            )
+                        } ?: emptyList()
+                    } else {
+                        dragBlocksMap[uri] ?: emptyList()
+                    }
                 }
 
                 var dragBlocks by remember(uri, translationVersion) {
@@ -361,7 +362,8 @@ fun ImageViewer(
                     uri,
                     isInWindow,
                     translationVersion,
-                    editTranslationMode
+                    editTranslationMode,
+                    translatedTexts[uri]
                 ) {
                     if (isInWindow && !editTranslationMode) {
                         val rawNewBlocks = translatedTexts[uri]?.second?.map { it ->
@@ -432,6 +434,13 @@ fun ImageViewer(
                         if (!isInWindow) {
                             com.example.ocrmanga.utils.BitmapPool.getInstance().remove(uri.toString())
                         }
+                    }
+                }
+
+                // Dọn dẹp bitmap pool triệt để khi ImageViewer bị hủy hoàn toàn (scrolled off-screen)
+                DisposableEffect(uri) {
+                    onDispose {
+                        com.example.ocrmanga.utils.BitmapPool.getInstance().remove(uri.toString())
                     }
                 }
 
@@ -611,9 +620,9 @@ fun ImageViewer(
                             if (isScrollingFast && !editTranslationMode) {
                                 return@LaunchedEffect
                             }
-                            // Debounce: delay 50ms to batch rapid changes (e.g., during scroll)
+                            // Debounce: delay 300ms to batch rapid changes (e.g., during scroll)
                             if (!editTranslationMode) {
-                                delay(50)
+                                delay(300)
                             }
 
                             val isRecentSave = recentlySavedUris.contains(uri)
@@ -1197,22 +1206,51 @@ fun ImageViewer(
                     }
 
                 }
-            }
-            if (isLoadingMoreImages && remainingImagesCount > 0) {
-                item {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        contentAlignment = androidx.compose.ui.Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Đang tải thêm $remainingImagesCount ảnh...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (isScrollable) {
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = if (isTextRemovalMode) 96.dp else 0.dp),
+                verticalArrangement = verticalArrangement
+            ) {
+                itemsIndexed(items = imageUris, key = { idx, u ->
+                    val id = getImageIdForUri(u)
+                    if (id != null) id.toString() else "$idx:${u.toString()}"
+                }, contentType = { _, _ -> "image" }) { idx, u ->
+                    pageContent(idx, u)
+                }
+                if (isLoadingMoreImages && remainingImagesCount > 0) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            contentAlignment = androidx.compose.ui.Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Đang tải thêm $remainingImagesCount ảnh...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
+                    }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = if (isTextRemovalMode) 96.dp else 0.dp),
+                verticalArrangement = verticalArrangement
+            ) {
+                imageUris.forEachIndexed { idx, u ->
+                    androidx.compose.runtime.key(u) {
+                        pageContent(idx, u)
                     }
                 }
             }
