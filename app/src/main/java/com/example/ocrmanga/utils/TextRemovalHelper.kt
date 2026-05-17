@@ -49,22 +49,23 @@ object TextRemovalHelper {
         onProgress: ((String) -> Unit)? = null
     ): Uri? = withContext(Dispatchers.IO) {
         try {
+            onProgress?.invoke("Khởi động AI...")
             LamaInpainter.initialize(context.applicationContext)
 
-            onProgress?.invoke("Lấy dữ liệu...")
+            onProgress?.invoke("Tải ảnh gốc...")
             val bitmap = decodeBitmapFromUri(context, imageUri)
             if (bitmap == null) {
                 Log.e(TAG, "Cannot decode bitmap from Uri: $imageUri")
                 return@withContext null
             }
 
+            onProgress?.invoke("Phân tích vùng text... (${blocks.size} vùng)")
             val inpaintBlocks = blocks.map {
                 LamaInpainter.InpaintBlock(
                     it.bounds, it.shapeType,
                     it.overlayInsetHorizontal, it.overlayInsetVertical
                 )
             }
-            //Log.d(TAG, "Removing text: ${inpaintBlocks.size} blocks, image ${bitmap.width}x${bitmap.height}")
 
             val resultBitmap = LamaInpainter.inpaintBlocks(bitmap, inpaintBlocks, onProgress)
             bitmap.recycle()
@@ -81,7 +82,6 @@ object TextRemovalHelper {
             }
             resultBitmap.recycle()
 
-            //Log.d(TAG, "Text removal complete: ${outputFile.absolutePath}")
             return@withContext Uri.fromFile(outputFile)
         } catch (e: Exception) {
             Log.e(TAG, "Error removing text from image", e)
@@ -105,17 +105,17 @@ object TextRemovalHelper {
         onProgress: ((String) -> Unit)? = null
     ): Uri? = withContext(Dispatchers.IO) {
         try {
+            onProgress?.invoke("Khởi động AI...")
             LamaInpainter.initialize(context.applicationContext)
 
-            onProgress?.invoke("Lấy dữ liệu...")
+            onProgress?.invoke("Tải ảnh gốc...")
             val bitmap = decodeBitmapFromUri(context, imageUri)
             if (bitmap == null) {
                 Log.e(TAG, "Cannot decode bitmap from Uri: $imageUri")
                 return@withContext null
             }
 
-            //Log.d(TAG, "Mask inpainting: image ${bitmap.width}x${bitmap.height}, mask ${maskBitmap.width}x${maskBitmap.height}")
-
+            onProgress?.invoke("Phân tích vùng chọn...")
             val resultBitmap = LamaInpainter.inpaintWithMask(bitmap, maskBitmap, onProgress)
             bitmap.recycle()
 
@@ -131,7 +131,6 @@ object TextRemovalHelper {
             }
             resultBitmap.recycle()
 
-            //Log.d(TAG, "Mask text removal complete: ${outputFile.absolutePath}")
             return@withContext Uri.fromFile(outputFile)
         } catch (e: Exception) {
             Log.e(TAG, "Error removing text with mask", e)

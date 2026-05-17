@@ -247,16 +247,31 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(isRemovingText = true) }
+                _uiState.update {
+                    it.copy(
+                        isRemovingText = true,
+                        removingTextImages = it.removingTextImages + (uri to "Đang chuẩn bị...")
+                    )
+                }
 
                 val blocks = previewBlocks
                 if (blocks.isEmpty()) {
-                    _uiState.update { it.copy(isRemovingText = false) }
+                    _uiState.update {
+                        it.copy(
+                            isRemovingText = false,
+                            removingTextImages = it.removingTextImages - uri
+                        )
+                    }
                     return@launch
                 }
 
                 val onProgress: (String) -> Unit = { progress ->
-                    _uiState.update { it.copy(removingTextProgress = progress) }
+                    _uiState.update {
+                        it.copy(
+                            removingTextProgress = progress,
+                            removingTextImages = it.removingTextImages + (uri to progress)
+                        )
+                    }
                 }
                 val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextFromImage(
                     getApplication(),
@@ -267,6 +282,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                 if (resultUri != null) {
                     replaceImageUri(uri, resultUri, persist = false)
+                    _uiState.update {
+                        it.copy(removingTextImages = it.removingTextImages + (uri to "COMPLETED"))
+                    }
+                    delay(1000)
                     showRemovalResult("Đã tạm xóa text gốc (chưa lưu). Lưu truyện hoặc chờ autosave để ghi vào DB.", true)
                 } else {
                     showRemovalResult("Lỗi khi xóa text gốc", false)
@@ -275,7 +294,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 Log.e(TAG, "Error removing original text", e)
                 showRemovalResult("Lỗi: ${e.message}", false)
             } finally {
-                _uiState.update { it.copy(isRemovingText = false, removingTextProgress = "") }
+                _uiState.update {
+                    it.copy(
+                        isRemovingText = false,
+                        removingTextProgress = "",
+                        removingTextImages = it.removingTextImages - uri
+                    )
+                }
             }
         }
     }
@@ -285,7 +310,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun showRemovalResult(message: String, isSuccess: Boolean) {
-        _uiState.update { it.copy(showRemovalResultDialog = true, removalResultMessage = message, removalResultIsSuccess = isSuccess) }
+        if (!isSuccess) {
+            _uiState.update { it.copy(showRemovalResultDialog = true, removalResultMessage = message, removalResultIsSuccess = isSuccess, removalResultTimestamp = System.currentTimeMillis()) }
+        }
     }
 
     // Hủy preview xóa text
@@ -308,15 +335,27 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun removeTextWithMask(uri: Uri, maskBitmap: Bitmap) {
         viewModelScope.launch {
             try {
-                // Call helper
+                _uiState.update {
+                    it.copy(removingTextImages = it.removingTextImages + (uri to "Lấy dữ liệu..."))
+                }
+                val onProgress: (String) -> Unit = { progress ->
+                    _uiState.update {
+                        it.copy(removingTextImages = it.removingTextImages + (uri to progress))
+                    }
+                }
                 val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextWithMask(
                     getApplication(),
                     uri,
-                    maskBitmap
+                    maskBitmap,
+                    onProgress
                 )
 
                 if (resultUri != null) {
                     replaceImageUri(uri, resultUri, persist = false)
+                    _uiState.update {
+                        it.copy(removingTextImages = it.removingTextImages + (uri to "COMPLETED"))
+                    }
+                    delay(1000)
                     showRemovalResult("Đã xóa vùng chọn thành công!", true)
                 } else {
                     showRemovalResult("Lỗi khi xóa vùng chọn.", false)
@@ -324,6 +363,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 Log.e(TAG, "Error removing text with mask", e)
                 showRemovalResult("Lỗi: ${e.message}", false)
+            } finally {
+                _uiState.update {
+                    it.copy(removingTextImages = it.removingTextImages - uri)
+                }
             }
         }
     }
@@ -3726,6 +3769,7 @@ data class ViewerUiState(
     val isTextRemovalMode: Boolean = false, // Chế độ xóa text thủ công (vẽ mask)
     val isRemovingText: Boolean = false, // Loading state for text removal
     val removingTextProgress: String = "", // Progress text for text removal popup
+    val removingTextImages: Map<android.net.Uri, String> = emptyMap(), // Per-image removal progress (Uri -> step message)
     val showTextRemovalPreview: Boolean = false, // Show mask preview dialog before removal
     val textRemovalPreviewUri: Uri? = null, // Uri of image being previewed for removal
     val textRemovalPreviewBitmap: android.graphics.Bitmap? = null, // Preview bitmap with mask overlay
@@ -3740,5 +3784,6 @@ data class ViewerUiState(
     val isTransitioningMode: Boolean = false,
     val showRemovalResultDialog: Boolean = false,
     val removalResultMessage: String = "",
-    val removalResultIsSuccess: Boolean = true
+    val removalResultIsSuccess: Boolean = true,
+    val removalResultTimestamp: Long = 0L
 )

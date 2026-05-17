@@ -188,7 +188,8 @@ fun ImageViewer(
     onTagReported: (String, Rect) -> Unit = { _, _ -> },
     isScrollable: Boolean = true,
     verticalArrangement: Arrangement.Vertical = Arrangement.Top,
-    contentScale: ContentScale = ContentScale.Fit
+    contentScale: ContentScale = ContentScale.Fit,
+    removingTextImages: Map<Uri, String> = emptyMap()
 ) {
     val context = LocalContext.current
     val readPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -1217,6 +1218,13 @@ fun ImageViewer(
 
                         TranslationOverlay(
                             status = translationStatus,
+                            modifier = Modifier.matchParentSize()
+                        )
+
+                        // Text removal overlay - đè lên ảnh đang được xóa text
+                        val removalProgress = removingTextImages[uri] ?: ""
+                        TextRemovalOverlay(
+                            progressMessage = removalProgress,
                             modifier = Modifier.matchParentSize()
                         )
 

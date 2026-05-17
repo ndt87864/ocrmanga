@@ -7,6 +7,7 @@ import android.content.Intent
 import com.example.ocrmanga.utils.AppLogger as Log
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -30,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -1423,31 +1426,12 @@ fun ViewerScreen(
                 isTextRemovalMode = isTextRemovalMode,
                 onToggleTextRemovalMode = { isTextRemovalMode = !isTextRemovalMode },
                 onRemoveTextWithMask = { uri, maskBmp ->
-                    coroutineScope.launch {
-                        isRemovingText = true
-                        removingTextLocalProgress = "Lấy dữ liệu..."
-                        try {
-                            val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextWithMask(
-                                context, uri, maskBmp
-                            ) { progress -> removingTextLocalProgress = progress }
-                            if (resultUri != null) {
-                                viewModel.replaceImageUri(uri, resultUri, persist = false)
-                                viewModel.showRemovalResult("Đã xóa text thành công!", true)
-                            } else {
-                                viewModel.showRemovalResult("Lỗi khi xóa text", false)
-                            }
-                        } catch (e: Exception) {
-                            Log.e("ViewerScreen", "Error removing text", e)
-                            viewModel.showRemovalResult("Lỗi: ${e.message}", false)
-                        } finally {
-                            isRemovingText = false
-                            removingTextLocalProgress = ""
-                        }
-                    }
+                    viewModel.removeTextWithMask(uri, maskBmp)
                 },
                 brushSize = brushSize,
                 onBrushSizeChange = { brushSize = it },
-                onTagReported = { tag, rect -> targetPositions[tag] = rect }
+                onTagReported = { tag, rect -> targetPositions[tag] = rect },
+                removingTextImages = uiState.removingTextImages
             )
         } else {
             // Horizontal mode
@@ -1530,27 +1514,7 @@ fun ViewerScreen(
                 isTextRemovalMode = isTextRemovalMode,
                 onToggleTextRemovalMode = { isTextRemovalMode = !isTextRemovalMode },
                 onRemoveTextWithMask = { uri, maskBmp ->
-                    coroutineScope.launch {
-                        isRemovingText = true
-                        removingTextLocalProgress = "Lấy dữ liệu..."
-                        try {
-                            val resultUri = com.example.ocrmanga.utils.TextRemovalHelper.removeTextWithMask(
-                                context, uri, maskBmp
-                            ) { progress -> removingTextLocalProgress = progress }
-                            if (resultUri != null) {
-                                viewModel.replaceImageUri(uri, resultUri, persist = false)
-                                viewModel.showRemovalResult("Đã xóa text thành công!", true)
-                            } else {
-                                viewModel.showRemovalResult("Lỗi khi xóa text", false)
-                            }
-                        } catch (e: Exception) {
-                            Log.e("ViewerScreen", "Error removing text", e)
-                            viewModel.showRemovalResult("Lỗi: ${e.message}", false)
-                        } finally {
-                            isRemovingText = false
-                            removingTextLocalProgress = ""
-                        }
-                    }
+                    viewModel.removeTextWithMask(uri, maskBmp)
                 },
                 brushSize = brushSize,
                 onBrushSizeChange = { brushSize = it },
@@ -1561,7 +1525,8 @@ fun ViewerScreen(
                 onAutoScrollToggle = { autoScrollEnabled = it },
                 translatedTexts = translatedTextsFiltered,
                 translationEnabled = uiState.translationEnabled,
-                onTagReported = { tag, rect -> targetPositions[tag] = rect }
+                onTagReported = { tag, rect -> targetPositions[tag] = rect },
+                removingTextImages = uiState.removingTextImages
             )
         }
         Dialogs(
@@ -1809,67 +1774,9 @@ fun ViewerScreen(
         )
     }
 
-    // Text Removal Result Dialog - pops up after text removal completes
-    if (uiState.showRemovalResultDialog) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissRemovalResult() },
-            shape = RoundedCornerShape(20.dp),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(
-                            if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.primaryContainer
-                            else MaterialTheme.colorScheme.errorContainer
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (uiState.removalResultIsSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
-                        contentDescription = null,
-                        tint = if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            },
-            title = {
-                Text(
-                    if (uiState.removalResultIsSuccess) "Thành công" else "Thất bại",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                )
-            },
-            text = {
-                Text(
-                    text = uiState.removalResultMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { viewModel.dismissRemovalResult() },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Đóng", color = MaterialTheme.colorScheme.onPrimary)
-                }
-            }
-        )
-    }
-
-    // Text Removal Loading Popup - sử dụng LoadingOverlay reusable
-    val isLoadingTextRemoval = isRemovingText || uiState.isRemovingText
-    val removalProgressText = when {
-        uiState.removingTextProgress.isNotEmpty() -> uiState.removingTextProgress
-        removingTextLocalProgress.isNotEmpty() -> removingTextLocalProgress
-        else -> "Đang xóa text..."
-    }
+    // Text Removal Loading Popup - Vô hiệu hóa để sử dụng TextRemovalOverlay trực tiếp trên ảnh giống khi dịch
+    val isLoadingTextRemoval = false
+    val removalProgressText = ""
     LoadingOverlay(
         isLoading = isLoadingTextRemoval,
         progress = removalProgressText,
@@ -1885,6 +1792,104 @@ fun ViewerScreen(
         } // end Column
     } // end else
 } // end AnimatedContent
+
+    // Text Removal Result Overlay - pops up over the image after text removal completes
+    AnimatedVisibility(
+        visible = uiState.showRemovalResultDialog,
+        enter = fadeIn(animationSpec = tween(300)),
+        exit = fadeOut(animationSpec = tween(200))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .graphicsLayer(clip = true)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { viewModel.dismissRemovalResult() }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            // Auto-dismiss after 3 seconds
+            LaunchedEffect(uiState.removalResultTimestamp) {
+                delay(3000)
+                viewModel.dismissRemovalResult()
+            }
+
+            Surface(
+                modifier = Modifier
+                    .padding(32.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { }
+                    ),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 4.dp,
+                shadowElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Success/Error icon
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(
+                                if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.errorContainer
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.removalResultIsSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                            contentDescription = null,
+                            tint = if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    // Title
+                    Text(
+                        text = if (uiState.removalResultIsSuccess) "Thành công" else "Thất bại",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    // Message
+                    Text(
+                        text = uiState.removalResultMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Đóng button
+                    Button(
+                        onClick = { viewModel.dismissRemovalResult() },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.primary
+                                           else MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            if (uiState.removalResultIsSuccess) "Đóng" else "Thử lại",
+                            color = if (uiState.removalResultIsSuccess) MaterialTheme.colorScheme.onPrimary
+                                    else MaterialTheme.colorScheme.onError
+                        )
+                    }
+                }
+            }
+        }
+    }
+
 
     // Global loading overlay for room loading/mode switching
     LoadingOverlay(

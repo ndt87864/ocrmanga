@@ -72,7 +72,8 @@ fun VerticalViewer(
     translationEnabled: Boolean = false,
     onTagReported: (String, androidx.compose.ui.geometry.Rect) -> Unit = { _, _ -> },
     isLoadingMoreImages: Boolean = false,
-    remainingImagesCount: Int = 0
+    remainingImagesCount: Int = 0,
+    removingTextImages: Map<Uri, String> = emptyMap()
 ) {
     val conf = LocalConfiguration.current
     // Mỗi page có thể chứa ảnh dài hơn màn hình — dùng LazyListState riêng để cuộn nội dung
@@ -148,7 +149,8 @@ fun VerticalViewer(
                     translatedTexts = translatedTexts,
                     translationEnabled = translationEnabled,
                     onTagReported = onTagReported,
-                    isScrollable = false
+                    isScrollable = false,
+                    removingTextImages = removingTextImages
                 )
             }
 

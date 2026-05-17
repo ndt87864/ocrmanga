@@ -71,7 +71,8 @@ fun HorizontalViewer(
     translationEnabled: Boolean = false,
     onTagReported: (String, androidx.compose.ui.geometry.Rect) -> Unit = { _, _ -> },
     isLoadingMoreImages: Boolean = false,
-    remainingImagesCount: Int = 0
+    remainingImagesCount: Int = 0,
+    removingTextImages: Map<Uri, String> = emptyMap()
 ) {
     // Use LazyRow with snap fling to approximate pager behavior (foundation.pager may not be available)
     val state = horizontalListState ?: rememberLazyListState()
@@ -148,6 +149,7 @@ fun HorizontalViewer(
                         translationVersion = translationVersion,
                         translatedTexts = translatedTexts,
                         translationEnabled = translationEnabled,
+                        removingTextImages = removingTextImages
                     )
                 }
             }
