@@ -2624,7 +2624,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                                     return if (minArea <= 0f) 0f else inter / minArea
                                 }
 
-                                val fixedBlocks = (translatedBlocks as List<TextBlockInfo>).map { block ->
+                                val fixedBlocks = translatedBlocks.map { block ->
                                     // Prefer an explicit custom overlay color; otherwise use detected average background color; fallback to white
                                     val baseOverlay = block.customOverlayColor ?: block.averageBackgroundColor ?: 0xFFFFFFFF.toInt()
                                     val textColor = block.customTextColor ?: block.originalTextColor ?: computeDefaultTextColor(baseOverlay, block.averageBackgroundColor)
@@ -2660,7 +2660,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
                         translatedTexts[uri] = original to resultBlocks
 
-                        sourceLanguages[uri] = sourceLang as String
+                        sourceLanguages[uri] = sourceLang
                         completedCount++
                         _uiState.update {
                             it.copy(

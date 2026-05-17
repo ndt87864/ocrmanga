@@ -1461,7 +1461,7 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
             
             // --- STRICT FIX: Prevent White-on-White and Black-on-Black ---
             // Yêu cầu: Nền sáng -> không được chứa text trắng. Nền tối -> không được chứa text đen.
-            textColor?.let { color ->
+            textColor.let { color ->
                 val tr = (color shr 16) and 0xFF
                 val tg = (color shr 8) and 0xFF
                 val tb = color and 0xFF
@@ -1525,7 +1525,7 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
         
         try {
             val tHex = textColor?.let { String.format("#%08X", it) } ?: "null"
-            val bgHex = if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor?.let { String.format("#%08X", it) } ?: "null" else "WHITE"
+            val bgHex = if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor.let { String.format("#%08X", it) } ?: "null" else "WHITE"
         } catch (_: Exception) { }
         return Triple(backgroundType, if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgColor else null, textColor)
         

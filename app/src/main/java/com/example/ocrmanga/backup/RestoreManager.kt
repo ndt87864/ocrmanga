@@ -59,7 +59,7 @@ class RestoreManager(private val context: Context, private val googleAccount: Go
 
             // Get file size for progress tracking
             val fileMetadata = driveService.files().get(backupFileId).setFields("size").execute()
-            val fileSize = fileMetadata.size?.toLong() ?: 0L
+            val fileSize = fileMetadata.size.toLong() ?: 0L
             
             val localZip = java.io.File(context.cacheDir, "ocrmanga_restore.zip")
 

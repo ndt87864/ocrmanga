@@ -3827,7 +3827,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     val prevFile = try { File(Uri.parse(oldUriStr).path ?: "") } catch (e: Exception) { null }
                     if (prevFile != null && prevFile.exists()) {
                         val parent = prevFile.parentFile
-                        if (parent != null && storedFile != null && parent.absolutePath.startsWith(imagesDir.absolutePath) && prevFile.absolutePath != storedFile!!.absolutePath) {
+                        if (parent != null && storedFile != null && parent.absolutePath.startsWith(imagesDir.absolutePath) && prevFile.absolutePath != storedFile.absolutePath) {
                             prevFile.delete()
                         }
                     }

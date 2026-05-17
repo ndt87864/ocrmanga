@@ -1168,7 +1168,7 @@ fun TranslationEditor(
 
         // Dialog chọn màu text
         if (showTextColorPicker && isBlockSelected && selectedIndex != null) {
-            val idx = selectedIndex!!
+            val idx = selectedIndex
             val block = dragBlocks[idx]
             val currentColor = block.textColor ?: Color.Black
             val currentBoldness = block.textBoldness

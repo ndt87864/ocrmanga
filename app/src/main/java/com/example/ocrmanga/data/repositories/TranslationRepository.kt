@@ -465,7 +465,7 @@ import kotlin.math.max
                     }
                     i = j - 1
 
-                    var translation = ""
+                    var translation: String
                     // Ưu tiên 1: Tìm dấu mũi tên "->" hoặc "→"
                     val arrowLine = blockLines.find { it.contains("→") || it.contains("->") }
                     if (arrowLine != null) {
@@ -1252,10 +1252,10 @@ import kotlin.math.max
 
         var bitmap: Bitmap? = null
         var fullText: String = ""
-        var resultText: String = ""
+        var resultText: String
         var translatedBlocks: List<TextBlockInfo> = emptyList()
         var sourceLanguage: String = "zh"
-        var detectedScript: String? = null
+        var detectedScript: String?
         var hasOCR = false
         try {
             bitmap = MediaStore.Images.Media.getBitmap(application.contentResolver, imageUri)
@@ -1469,7 +1469,7 @@ import kotlin.math.max
                             }
                         }
                         // Log.i("TranslationRepository", "Văn bản sau kiểm tra lần 2: $translatedText") // Tắt log để tăng tốc
-                        val naturalText = translatedText?.let { postProcessTranslation(it) }
+                        val naturalText = translatedText.let { postProcessTranslation(it) }
                         // Log.i("TranslationRepository", "Văn bản tự nhiên sau xử lý: $naturalText") // Tắt log để tăng tốc
                         val isVertical = block.isVertical
                         val reformattedText = if (!isVertical && block.wordCountsPerLine != null) {
@@ -1547,7 +1547,7 @@ import kotlin.math.max
                 val (rawText2, textBlocks2) = recognizeText(bitmap, rotationDegrees)
                 val blocks2 = mutableListOf<TextBlockInfo>()
                 val blocksWithBubble2 = assignSpeechBubblesToBlocks(textBlocks2)
-                val mergedBlocks2 = mergeBlocksByBubble(blocksWithBubble2, bitmap!!)
+                val mergedBlocks2 = mergeBlocksByBubble(blocksWithBubble2, bitmap)
                 for (block in mergedBlocks2) {
                     var translatedText = when (mode) {
                         TranslationMode.OFFLINE -> translateTextOffline(block.text, sourceLanguage)
@@ -1581,7 +1581,7 @@ import kotlin.math.max
                             reformattedLines.add(lineWords.joinToString(" "))
                             wordIndex += wordCount
                         }
-                        val maxWordsPerLine = wordCounts?.lastOrNull() ?: 5
+                        val maxWordsPerLine = wordCounts.lastOrNull() ?: 5
                         while (wordIndex < words.size) {
                             val remainingWords = words.subList(wordIndex, minOf(wordIndex + maxWordsPerLine, words.size))
                             reformattedLines.add(remainingWords.joinToString(" "))
@@ -3174,7 +3174,7 @@ import kotlin.math.max
 
         // Nếu thử hết vẫn không dịch được, trả về văn bản gốc
         if (lastError != null) {
-            val errorMessage = lastError!!.message
+            val errorMessage = lastError.message
             Log.e("TranslationRepository", "[GEMINI-SUMMARY] Thử các key Gemini thất bại | Lỗi cuối: $errorMessage")
             Log.e("TranslationRepository", "[GEMINI-SUMMARY] Số keys đã thử: ${triedKeys.size}")
         }

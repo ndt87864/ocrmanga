@@ -285,7 +285,7 @@ fun Dialogs(
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Button(
                         onClick = {
-                            imageMenuUri?.let { onRemoveImage(it) }
+                            imageMenuUri.let { onRemoveImage(it) }
                             Toast.makeText(context, "Đã xóa ảnh khỏi trang", Toast.LENGTH_SHORT).show()
                             onImageMenuDismiss()
                         },
@@ -296,7 +296,7 @@ fun Dialogs(
 
                     Button(
                         onClick = {
-                            imageMenuUri?.let { viewModel.removeOriginalText(it) }
+                            imageMenuUri.let { viewModel.removeOriginalText(it) }
                             onImageMenuDismiss()
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -306,7 +306,7 @@ fun Dialogs(
 
                     Button(
                         onClick = {
-                            imageMenuUri?.let {
+                            imageMenuUri.let {
                                 viewModel.optimizeImageOverlay(it)
                                 Toast.makeText(context, "Đang tối ưu hiển thị...", Toast.LENGTH_SHORT).show()
                             }
