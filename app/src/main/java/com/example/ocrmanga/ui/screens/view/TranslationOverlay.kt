@@ -128,8 +128,13 @@ fun TextRemovalOverlay(
                 }
                 
                 // Text hiển thị trạng thái
+                val title = when {
+                    isCompleted -> "✓ Hoàn tất!"
+                    progressMessage.contains("OCR", ignoreCase = true) -> "Đang quét OCR..."
+                    else -> "Đang xóa text..."
+                }
                 Text(
-                    text = if (isCompleted) "✓ Hoàn tất!" else "Đang xóa text...",
+                    text = title,
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,

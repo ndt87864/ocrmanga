@@ -192,17 +192,34 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun removeOriginalText(uri: Uri) {
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(removingTextProgress = "Đang OCR vùng text...") }
+                _uiState.update {
+                    it.copy(
+                        isRemovingText = true,
+                        removingTextProgress = "Đang quét OCR...",
+                        removingTextImages = it.removingTextImages + (uri to "Đang quét OCR...")
+                    )
+                }
                 val blocks = translationRepository.recognizeTextRegionsForRemoval(uri)
 
                 if (blocks.isEmpty()) {
                     showRemovalResult("Không tìm thấy vùng text OCR trên ảnh", false)
-                    _uiState.update { it.copy(removingTextProgress = "") }
+                    _uiState.update {
+                        it.copy(
+                            isRemovingText = false,
+                            removingTextProgress = "",
+                            removingTextImages = it.removingTextImages - uri
+                        )
+                    }
                     return@launch
                 }
 
                 // Tạo preview bitmap với mask overlay từ OCR bounds gốc
-                _uiState.update { it.copy(removingTextProgress = "Đang tạo preview...") }
+                _uiState.update {
+                    it.copy(
+                        removingTextProgress = "Đang tạo preview...",
+                        removingTextImages = it.removingTextImages + (uri to "Đang tạo preview...")
+                    )
+                }
                 val previewBitmap = com.example.ocrmanga.utils.TextRemovalHelper.createMaskPreview(
                     getApplication(), uri, blocks
                 )
@@ -214,16 +231,31 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                             textRemovalPreviewUri = uri,
                             textRemovalPreviewBitmap = previewBitmap,
                             textRemovalPreviewBlocks = blocks,
-                            removingTextProgress = ""
+                            isRemovingText = false,
+                            removingTextProgress = "",
+                            removingTextImages = it.removingTextImages - uri
                         )
                     }
                 } else {
                     showRemovalResult("Lỗi khi tạo preview mask", false)
-                    _uiState.update { it.copy(removingTextProgress = "") }
+                    _uiState.update {
+                        it.copy(
+                            isRemovingText = false,
+                            removingTextProgress = "",
+                            removingTextImages = it.removingTextImages - uri
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error preparing text removal preview", e)
                 showRemovalResult("Lỗi: ${e.message}", false)
+                _uiState.update {
+                    it.copy(
+                        isRemovingText = false,
+                        removingTextProgress = "",
+                        removingTextImages = it.removingTextImages - uri
+                    )
+                }
             }
         }
     }
