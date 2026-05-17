@@ -964,7 +964,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         // Kiểm tra xem có ảnh nào chưa được quét/dịch không (bao gồm cả ảnh chưa load hết - Lazy Loading)
         val allUris = _uiState.value.imageUris + _uiState.value.remainingImages
         val imagesToScan = if (reuseExistingOcr) {
-            allUris.filter { !(_uiState.value.translatedStatus[it] ?: false) }
+            allUris.filter { !(_uiState.value.translatedStatus[it] ?: false) || !hasReusableOcrForUri(it) }
         } else {
             allUris
         }
@@ -2071,7 +2071,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 // Only translate new images that haven't been translated yet
                 // Skip this for EXTERNAL mode
                 val imagesToTranslate = allUris.filter { uri ->
-                    !(uiState.value.translatedStatus[uri] ?: false)
+                    !(uiState.value.translatedStatus[uri] ?: false) || !hasReusableOcrForUri(uri)
                 }
                 if (imagesToTranslate.isNotEmpty()) {
                     enqueueTranslation(imagesToTranslate, reuseExistingOcr)
