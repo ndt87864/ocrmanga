@@ -820,46 +820,7 @@ fun ViewerScreen(
                         }
                     }
                     
-                    // Hiển thị tiến độ xóa text khi đang xóa
-                    val isLoadingTextRemoval = isRemovingText || uiState.isRemovingText
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = isLoadingTextRemoval,
-                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(),
-                        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()
-                    ) {
-                        val progressText = when {
-                            uiState.removingTextProgress.isNotEmpty() -> uiState.removingTextProgress
-                            removingTextLocalProgress.isNotEmpty() -> removingTextLocalProgress
-                            else -> "Đang xử lý..."
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier
-                                .background(
-                                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.9f),
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                                )
-                                .border(
-                                    1.dp, 
-                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f),
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
-                                )
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                            Text(
-                                text = progressText,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                            )
-                        }
-                    }
+
                     Box(modifier = Modifier.tutorialTag("viewer_autoscroll") { tag, rect -> targetPositions[tag] = rect }) {
                         AutoScroll(
                             lazyListState = if (effectiveViewMode == com.example.ocrmanga.ui.screens.view.ViewMode.HORIZONTAL) horizontalListState else lazyListState,
