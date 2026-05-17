@@ -601,57 +601,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             val rot = block.rotation ?: 0f
             val blockWithRotation = if (block.rotation == null) block.copy(rotation = 0f) else block
             
-            // Tối ưu hóa kích thước chữ để chống tràn viền trước khi lưu
-            val optimalFontSize = try {
-                val rect = androidx.compose.ui.geometry.Rect(
-                    block.bounds.left.toFloat(),
-                    block.bounds.top.toFloat(),
-                    block.bounds.right.toFloat(),
-                    block.bounds.bottom.toFloat()
-                )
-                val baseFontSize = block.fontSize
-                val originalFontSize = block.originalFontSize ?: block.fontSize
-                val isSolidBubble = block.overlayAlpha >= 0.95f
-                val insetH = if (block.overlayInsetHorizontal != 0f) block.overlayInsetHorizontal else block.overlayInset
-                val insetV = if (block.overlayInsetVertical != 0f) block.overlayInsetVertical else block.overlayInset
-                
-                val windowedResult = com.example.ocrmanga.ui.screens.view.calculateWindowedOverlayBounds(
-                    originalBounds = rect,
-                    text = block.text,
-                    baseFontSize = baseFontSize,
-                    isVertical = block.isVertical,
-                    context = getApplication(),
-                    fontFamilyName = block.fontFamily,
-                    lineSpacing = block.lineSpacing,
-                    shapeType = block.shapeType,
-                    overlayInsetHorizontal = insetH,
-                    overlayInsetVertical = insetV,
-                    horizontalPadding = 4f,
-                    verticalPadding = 4f,
-                    boldness = block.textBoldness,
-                    originalFontSize = originalFontSize,
-                    isSolidBubble = isSolidBubble
-                )
-                
-                val adjResult = com.example.ocrmanga.ui.screens.view.adjustWhiteoutBounds(
-                    text = block.text,
-                    initialWidth = windowedResult.outerBounds.width,
-                    initialHeight = windowedResult.outerBounds.height,
-                    fontSize = windowedResult.optimalFontSize,
-                    isVertical = block.isVertical,
-                    context = getApplication(),
-                    fontFamilyName = block.fontFamily,
-                    shapeType = block.shapeType,
-                    lineSpacing = block.lineSpacing,
-                    boldness = block.textBoldness
-                )
-                adjResult.second
-            } catch (e: Exception) {
-                block.fontSize
-            }
-
             val finalBlock = blockWithRotation.copy(
-                fontSize = optimalFontSize,
+                fontSize = block.fontSize,
                 applyMerge = false
             )
             if (oldBlock == null ||

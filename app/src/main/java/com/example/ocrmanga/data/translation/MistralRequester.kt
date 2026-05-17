@@ -101,9 +101,31 @@ class MistralRequester(
 
             if (!response.isSuccessful) {
                 Log.e(TAG, "Lỗi API Mistral (${response.code}): $responseBody")
-                if (response.code == 429) {
-                    Log.w(TAG, "Key ${apiKey.take(10)}... bị 429. Chuyển sang model $FALLBACK_MODEL")
+                if (response.code == 429 && currentModel != FALLBACK_MODEL) {
+                    Log.w(TAG, "Key ${apiKey.take(10)}... bị 429 với model '$currentModel'. Retry ngay với $FALLBACK_MODEL")
                     keyToModelMap[apiKey] = FALLBACK_MODEL
+
+                    // Đóng response cũ trước khi retry
+                    response.close()
+
+                    // Retry NGAY với fallback model trên cùng key, cùng request
+                    val retryBodyMap = bodyMap.toMutableMap()
+                    retryBodyMap["model"] = FALLBACK_MODEL
+                    val retryJson = gson.toJson(retryBodyMap)
+                    val retryRequest = request.newBuilder()
+                        .post(retryJson.toRequestBody("application/json".toMediaTypeOrNull()))
+                        .build()
+                    val retryResponse = withContext(Dispatchers.IO) { robustClient.newCall(retryRequest).execute() }
+                    val retryBody = retryResponse.body?.string()
+
+                    if (retryResponse.isSuccessful) {
+                        Log.i(TAG, "Retry với $FALLBACK_MODEL thành công trên key ${apiKey.take(10)}...")
+                        val result = parseSuccessfulResponse(retryBody)
+                        return result
+                    } else {
+                        Log.e(TAG, "Retry với $FALLBACK_MODEL cũng thất bại (${retryResponse.code}): $retryBody")
+                        return null
+                    }
                 }
                 return null
             }

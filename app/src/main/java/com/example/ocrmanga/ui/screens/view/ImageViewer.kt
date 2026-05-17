@@ -585,6 +585,7 @@ fun ImageViewer(
                         ) { mutableStateOf<List<PrecomputedRegion>>(emptyList()) }
                         val _conf = LocalConfiguration.current;
                         val _sw = _conf.screenWidthDp.toFloat()
+                        val screenScaleFactor = (_sw / 360f).coerceIn(0.5f, 2.0f)
 
                         val contentScaleVal = remember(contentScale, editTranslationMode, isTextRemovalMode, imageMaxHeight) {
                             if (imageMaxHeight != null && imageMaxHeight != androidx.compose.ui.unit.Dp.Unspecified) {
@@ -626,7 +627,6 @@ fun ImageViewer(
                             }
 
                             val isRecentSave = recentlySavedUris.contains(uri)
-                            val screenScaleFactor = (_sw / 360f).coerceIn(0.5f, 2.0f)
                             withContext(kotlinx.coroutines.Dispatchers.Default) {
                                 val list = dragBlocks.filter { !it.block.pendingDelete }
                                     .mapNotNull { dragBlock ->
@@ -744,6 +744,30 @@ fun ImageViewer(
                                 try {
                                     onClearReopenEditorUri?.invoke(uri)
                                 } catch (e: Exception) {
+                                }
+                            }
+                        }
+
+                        LaunchedEffect(precomputedRegionsState.value) {
+                            val regions = precomputedRegionsState.value
+                            if (regions.isNotEmpty()) {
+                                val updated = dragBlocks.map { dragBlock ->
+                                    val matchingRegion = regions.find { it.block.bounds == dragBlock.block.bounds && it.block.text == dragBlock.block.text }
+                                    if (matchingRegion != null) {
+                                        val unscaledOptimalSize = matchingRegion.fontSize / screenScaleFactor
+                                        val currentSize = dragBlock.fontSize ?: dragBlock.block.fontSize
+                                        if (kotlin.math.abs(currentSize - unscaledOptimalSize) > 0.01f) {
+                                            dragBlock.copy(fontSize = unscaledOptimalSize)
+                                        } else {
+                                            dragBlock
+                                        }
+                                    } else {
+                                        dragBlock
+                                    }
+                                }
+                                if (updated != dragBlocks) {
+                                    dragBlocks = updated
+                                    dragBlocksMap[uri] = updated
                                 }
                             }
                         }
