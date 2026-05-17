@@ -432,7 +432,7 @@ fun calculateOptimalFontSize(
     text: String,
     width: Float,
     height: Float,
-    minFontSize: Float = 20f,
+    minFontSize: Float = 6f,
     maxFontSize: Float = 1000f,
     shapeType: Int = 0, // 0 = rectangle, 1 = oval
     context: Context? = null,
@@ -844,7 +844,7 @@ fun adjustWhiteoutBounds(
     // Compute an optimal font size that fits into the available area. Do not allow it
     // to grow beyond the provided fontSize (we only want to shrink when overflowing).
     // Ensure maxFontSize is at least minFontSize to avoid invalid range.
-    val minSize = 20f
+    val minSize = 6f
     val maxSize = fontSize.coerceAtLeast(minSize)
     val optimal = calculateOptimalFontSize(
         text = text,
@@ -1770,7 +1770,7 @@ fun calculateWindowedOverlayBounds(
     // Expand bounding box dynamically if optimalFontSize < minTargetSize
     // Bỏ logic while loop tự động giãn bounds ở UI layer vì đã chuyển logic scale (originalFontSize và min 15f) vào OverlayOptimizer.kt
     // Giúp data nhất quán giữa Log, Database và UI.
-    val minLimit = 15f
+    val minLimit = 6f
     val targetMinFontSize = if (originalFontSize != null && originalFontSize > minLimit) {
         maxOf(minLimit, originalFontSize)
     } else {
@@ -1778,14 +1778,8 @@ fun calculateWindowedOverlayBounds(
     }
 
     if (optimalFontSize < targetMinFontSize) {
-        // Nếu là solid bubble (thường là bong bóng thoại), ta ưu tiên việc text "nằm lọt" trong overlay.
-        // Cho phép co nhỏ text xuống đến minLimit (15f) thay vì force theo targetMinFontSize (thường là size gốc).
-        if (isSolidBubble) {
-            optimalFontSize = maxOf(optimalFontSize, minLimit)
-        } else {
-            // Trường hợp khác (văn bản trên nền artwork), giữ targetMinFontSize để không bị quá nhỏ khó đọc.
-            optimalFontSize = targetMinFontSize
-        }
+        // Ưu tiên tuyệt đối việc text nằm lọt trong overlay để chống tràn viền
+        optimalFontSize = maxOf(optimalFontSize, minLimit)
     }
 
     // 4. Measure text size với optimal font size

@@ -547,9 +547,9 @@ object OverlayOptimizer {
         if (newFontSize > fontSizeLimit) {
             newFontSize = fontSizeLimit
         }
-        // Giới hạn dưới tuyệt đối (15f) để đảm bảo đọc được
-        if (newFontSize < 15f) {
-            newFontSize = 15f
+        // Giới hạn dưới tuyệt đối (6f) để đảm bảo đọc được và chống tràn viền
+        if (newFontSize < 6f) {
+            newFontSize = 6f
         }
 
         if (!result.needsTransparency) {
