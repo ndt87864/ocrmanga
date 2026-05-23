@@ -1424,9 +1424,27 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
             }
 
             if (candidates.isNotEmpty()) {
+                // Phân tích xem có các pixel màu sắc (chromatic) không
+                val chromaticCandidates = candidates.filter { c ->
+                    val r = (c shr 16) and 0xFF
+                    val g = (c shr 8) and 0xFF
+                    val b = c and 0xFF
+                    val maxChannel = maxOf(r, g, b)
+                    val minChannel = minOf(r, g, b)
+                    (maxChannel - minChannel) > 35 // Có sắc độ rõ ràng (chroma > 35)
+                }
+                
+                // Nếu có đủ pixel có sắc độ (ít nhất 5 pixel hoặc ít nhất 10% ứng viên),
+                // ta sẽ ưu tiên chọn màu từ các pixel này để tránh bị viền đen/xám lấn át màu thực của chữ.
+                val finalCandidates = if (chromaticCandidates.size >= 5 || (chromaticCandidates.isNotEmpty() && chromaticCandidates.size >= candidates.size * 0.10)) {
+                    chromaticCandidates
+                } else {
+                    candidates
+                }
+
                 // Quantize to 16-level buckets per channel to find dominant color
                 val buckets = mutableMapOf<Int, MutableList<Int>>()
-                for (c in candidates) {
+                for (c in finalCandidates) {
                     val r = (c shr 16) and 0xFF
                     val g = (c shr 8) and 0xFF
                     val b = c and 0xFF

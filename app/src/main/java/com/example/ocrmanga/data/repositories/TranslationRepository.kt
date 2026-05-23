@@ -766,6 +766,104 @@ import kotlin.math.max
         return order
     }
 
+    private fun normalizeBlockColors(blocks: List<TextBlockInfo>): List<TextBlockInfo> {
+        if (blocks.isEmpty()) return blocks
+
+        return try {
+            val processedBlocks = blocks.map { it.copy() }.toMutableList()
+            
+            // 1. Phân loại màu cho từng block
+            val ungroupedIndices = mutableListOf<Int>()
+            
+            for (i in processedBlocks.indices) {
+                val block = processedBlocks[i]
+                val color = block.originalTextColor ?: continue // Nếu không có màu text, bỏ qua
+                
+                val a = (color shr 24) and 0xFF
+                val r = (color shr 16) and 0xFF
+                val g = (color shr 8) and 0xFF
+                val b = color and 0xFF
+                val brightness = (r + g + b) / 3
+                
+                if (brightness < 55) {
+                    // Luật 1: Đen hoặc gần đen -> Đen thuần
+                    processedBlocks[i] = block.copy(originalTextColor = 0xFF000000.toInt())
+                } else if (brightness > 200) {
+                    // Luật 2: Trắng hoặc gần trắng -> Trắng thuần
+                    processedBlocks[i] = block.copy(originalTextColor = 0xFFFFFFFF.toInt())
+                } else {
+                    // Cần gom nhóm màu gần giống nhau
+                    ungroupedIndices.add(i)
+                }
+            }
+            
+            // 2. Luật 3: Gom các block có màu gần giống nhau
+            val similarityThreshold = 55.0 // Ngưỡng khoảng cách màu Euclidean trong không gian RGB
+            
+            while (ungroupedIndices.isNotEmpty()) {
+                val baseIdx = ungroupedIndices.removeAt(0)
+                val baseBlock = processedBlocks[baseIdx]
+                val baseColor = baseBlock.originalTextColor!!
+                
+                val baseR = (baseColor shr 16) and 0xFF
+                val baseG = (baseColor shr 8) and 0xFF
+                val baseB = baseColor and 0xFF
+                
+                // Tìm các block khác có màu gần giống baseBlock
+                val clusterIndices = mutableListOf<Int>()
+                clusterIndices.add(baseIdx)
+                
+                val iterator = ungroupedIndices.iterator()
+                while (iterator.hasNext()) {
+                    val idx = iterator.next()
+                    val blockColor = processedBlocks[idx].originalTextColor!!
+                    val r = (blockColor shr 16) and 0xFF
+                    val g = (blockColor shr 8) and 0xFF
+                    val b = blockColor and 0xFF
+                    
+                    val dist = kotlin.math.sqrt(
+                        ((baseR - r) * (baseR - r) + 
+                         (baseG - g) * (baseG - g) + 
+                         (baseB - b) * (baseB - b)).toDouble()
+                    )
+                    
+                    if (dist < similarityThreshold) {
+                        clusterIndices.add(idx)
+                        iterator.remove() // Đã gộp nhóm thì loại khỏi danh sách chờ
+                    }
+                }
+                
+                // Nếu nhóm có từ 1 block trở lên, tính màu trung bình và gán cho cả nhóm
+                if (clusterIndices.isNotEmpty()) {
+                    var sumR = 0
+                    var sumG = 0
+                    var sumB = 0
+                    
+                    clusterIndices.forEach { idx ->
+                        val c = processedBlocks[idx].originalTextColor!!
+                        sumR += (c shr 16) and 0xFF
+                        sumG += (c shr 8) and 0xFF
+                        sumB += c and 0xFF
+                    }
+                    
+                    val avgR = sumR / clusterIndices.size
+                    val avgG = sumG / clusterIndices.size
+                    val avgB = sumB / clusterIndices.size
+                    val avgColor = (0xFF shl 24) or (avgR shl 16) or (avgG shl 8) or avgB
+                    
+                    clusterIndices.forEach { idx ->
+                        processedBlocks[idx] = processedBlocks[idx].copy(originalTextColor = avgColor)
+                    }
+                }
+            }
+            
+            processedBlocks
+        } catch (e: Exception) {
+            Log.e("TranslationRepository", "Lỗi khi chuẩn hóa màu text của các block", e)
+            blocks
+        }
+    }
+
     private fun preloadRecognitionModels() {
         try {
             // Tạo bitmap dummy kích thước tối thiểu 32x32
@@ -1386,14 +1484,15 @@ import kotlin.math.max
                         applyMerge = false
                     )
                 }
-                val fullText = finalBlocks.joinToString("\n") { it.text }
+                val normalizedColorsBlocks = normalizeBlockColors(finalBlocks)
+                val fullText = normalizedColorsBlocks.joinToString("\n") { it.text }
                 
-                cache[cacheKey] = fullText to finalBlocks
+                cache[cacheKey] = fullText to normalizedColorsBlocks
 
 
                 // LOG CHI TIẾT KẾT QUẢ REUSE-OCR
                 Log.i("TranslationRepository", "===== KẾT QUẢ DỊCH (REUSE-$modelTag) =====")
-                finalBlocks.forEachIndexed { index, block ->
+                normalizedColorsBlocks.forEachIndexed { index, block ->
                     Log.i("TranslationRepository", "[REUSE-$modelTag] #$index:")
                     Log.i("TranslationRepository", "    + Bounds: ${block.bounds}")
                     Log.i("TranslationRepository", "    + Gốc: '${block.originalText}'")
@@ -1401,7 +1500,7 @@ import kotlin.math.max
                 }
                 Log.i("TranslationRepository", "====================================")
 
-                return@withContext Triple(fullText, finalBlocks, detectLanguage(fullText) ?: "zh")
+                return@withContext Triple(fullText, normalizedColorsBlocks, detectLanguage(fullText) ?: "zh")
             } catch (e: Exception) {
                 Log.e("TranslationRepository", "Error in REUSE-OCR pipeline", e)
                 // Fallback to normal OCR below if reuse fails
@@ -1826,9 +1925,11 @@ import kotlin.math.max
                     block.copy(applyMerge = true)
                 }
             }
-            val finalResultText = finalBlocks.joinToString("\n") { it.text }
+            val normalizedColorsBlocks = normalizeBlockColors(finalBlocks)
+            val finalResultText = normalizedColorsBlocks.joinToString("\n") { it.text }
             lastTranslationSession.add(Pair(imageUri, Pair(fullText, finalResultText)))
-            return@withContext Triple(finalResultText, finalBlocks, sourceLanguage)
+            cache[cacheKey] = finalResultText to normalizedColorsBlocks
+            return@withContext Triple(finalResultText, normalizedColorsBlocks, sourceLanguage)
         } catch (e: IOException) {
             Log.e("TranslationRepository", "Lỗi IO với $imageUri", e)
             lastTranslationSession.add(Pair(imageUri, Pair(fullText, "")))
