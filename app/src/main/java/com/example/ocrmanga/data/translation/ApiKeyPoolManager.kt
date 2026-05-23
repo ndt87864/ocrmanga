@@ -38,10 +38,12 @@ class ApiKeyPoolManager(private val application: Application) {
     /**
      * Chọn key tiếp theo theo cơ chế Round Robin đơn giản
      */
-    fun selectBestKey(type: String): ApiKeyInfo? {
-        val keys = apiKeysCache[type]?.filter { it.isActive } ?: return null
+    fun selectBestKey(type: String, model: String? = null): ApiKeyInfo? {
+        val keys = apiKeysCache[type]?.filter { 
+            it.isActive && (model == null || it.isModelAllowed(model))
+        } ?: return null
         if (keys.isEmpty()) {
-            Log.w(TAG, "Không có API key $type nào khả dụng!")
+            Log.w(TAG, "Không có API key $type nào khả dụng cho mô hình ${model ?: "bất kỳ"}!")
             return null
         }
 

@@ -60,8 +60,8 @@ class MistralRequester(
         randomSeed: Int? = null,
         apiKeyOverride: String? = null
     ): MistralResponse? {
-        val apiKey = apiKeyOverride ?: poolManager.selectBestKey("mistral")?.value ?: run {
-            Log.w(TAG, "Không tìm thấy API key Mistral khả dụng")
+        val apiKey = apiKeyOverride ?: poolManager.selectBestKey("mistral", model)?.value ?: run {
+            Log.w(TAG, "Không tìm thấy API key Mistral khả dụng cho model $model")
             return null
         }
 

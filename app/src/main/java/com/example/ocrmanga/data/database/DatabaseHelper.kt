@@ -355,7 +355,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "MangaDownloader.db"
-    private const val DATABASE_VERSION = 31
+    private const val DATABASE_VERSION = 32
         private const val TAG = "DatabaseHelper"
         
             /**
@@ -517,7 +517,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 $COLUMN_API_KEY_TYPE TEXT NOT NULL DEFAULT 'default',
                 created_date TEXT NOT NULL,
                 updated_date TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1
+                is_active INTEGER NOT NULL DEFAULT 1,
+                allowed_models TEXT NOT NULL DEFAULT ''
             )
             """
         )
@@ -600,6 +601,13 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 32) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_API_KEYS ADD COLUMN allowed_models TEXT NOT NULL DEFAULT ''")
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể thêm cột allowed_models vào api_keys", e)
+            }
+        }
         if (oldVersion < 31) {
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_images_uri ON $TABLE_IMAGES($COLUMN_IMAGE_URI)")
         }
@@ -4036,14 +4044,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     // Lấy tất cả API key cùng type
     fun getAllApiKeysWithStats(): List<com.example.ocrmanga.data.models.ApiKeyInfo> {
         val db = readableDatabase
-        val cursor = db.rawQuery("SELECT $COLUMN_API_KEY_ID, $COLUMN_API_KEY_VALUE, $COLUMN_API_KEY_TYPE, $COLUMN_IS_ACTIVE FROM $TABLE_API_KEYS", null)
+        val cursor = db.rawQuery("SELECT $COLUMN_API_KEY_ID, $COLUMN_API_KEY_VALUE, $COLUMN_API_KEY_TYPE, $COLUMN_IS_ACTIVE, allowed_models FROM $TABLE_API_KEYS", null)
         val apiKeys = mutableListOf<com.example.ocrmanga.data.models.ApiKeyInfo>()
         while (cursor.moveToNext()) {
+            val allowedModels = try { cursor.getString(4) } catch (e: Exception) { "" } ?: ""
             apiKeys.add(com.example.ocrmanga.data.models.ApiKeyInfo(
                 id = cursor.getInt(0),
                 value = cursor.getString(1),
                 type = cursor.getString(2),
-                isActive = cursor.getInt(3) == 1
+                isActive = cursor.getInt(3) == 1,
+                allowedModels = allowedModels
             ))
         }
         cursor.close()
@@ -4065,7 +4075,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         return apiKeys
     }
 
-    fun insertApiKey(apiKey: String, type: String = "default") {
+    fun insertApiKey(apiKey: String, type: String = "default", allowedModels: String = "") {
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COLUMN_API_KEY_VALUE, apiKey)
@@ -4073,17 +4083,27 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             put(COLUMN_CREATED_DATE, "2025-07-15") // Default created date
             put(COLUMN_UPDATED_DATE, "2025-07-15") // Default updated date
             put(COLUMN_IS_ACTIVE, 1) // Default active status
+            put("allowed_models", allowedModels)
         }
         db.insert(TABLE_API_KEYS, null, values)
     }
 
-    fun updateApiKey(oldKey: String, newKey: String, newType: String? = null) {
+    fun updateApiKey(oldKey: String, newKey: String, newType: String? = null, allowedModels: String? = null) {
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COLUMN_API_KEY_VALUE, newKey)
             if (newType != null) put(COLUMN_API_KEY_TYPE, newType)
+            if (allowedModels != null) put("allowed_models", allowedModels)
         }
         db.update(TABLE_API_KEYS, values, "$COLUMN_API_KEY_VALUE = ?", arrayOf(oldKey))
+    }
+
+    fun updateApiKeyAllowedModels(apiKey: String, allowedModels: String) {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put("allowed_models", allowedModels)
+        }
+        db.update(TABLE_API_KEYS, values, "$COLUMN_API_KEY_VALUE = ?", arrayOf(apiKey))
     }
 
     fun deleteApiKey(apiKey: String) {

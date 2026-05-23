@@ -8,6 +8,15 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.example.ocrmanga.data.database.DatabaseHelper
 import android.content.SharedPreferences
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
 // Data class to represent an API key (Simplified)
 data class ApiKey(
@@ -15,8 +24,14 @@ data class ApiKey(
     val type: String = "default",
     val createdDate: String,
     val updatedDate: String,
-    var isActive: Boolean
-)
+    var isActive: Boolean,
+    val allowedModels: String = ""
+) {
+    fun isModelAllowed(model: String): Boolean {
+        if (allowedModels.isBlank()) return true
+        return allowedModels.split(",").map { it.trim() }.filter { it.isNotEmpty() }.contains(model)
+    }
+}
 
 class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
     private val prefs: SharedPreferences = context.getSharedPreferences("api_key_prefs", Context.MODE_PRIVATE)
@@ -51,14 +66,21 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
                 type = info.type,
                 createdDate = "2025-07-15",
                 updatedDate = "2025-07-15",
-                isActive = info.isActive
+                isActive = info.isActive,
+                allowedModels = info.allowedModels
             )
         })
     }
 
     fun addApiKey(newKey: String, displayType: String = "default", currentDisplayType: String = displayType): Boolean {
         if (newKey.isNotBlank()) {
-            databaseHelper.insertApiKey(newKey, displayType)
+            val defaultAllowedModels = when (displayType.lowercase()) {
+                "gemini" -> "gemini-2.5-flash,gemini-1.5-flash,gemini-1.5-pro,gemini-2.5-pro"
+                "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
+                "zai" -> "glm-4.7-flash,glm-4-plus,glm-4-flash"
+                else -> ""
+            }
+            databaseHelper.insertApiKey(newKey, displayType, defaultAllowedModels)
             setDefaultKeyType(displayType)
             loadApiKeysByType(displayType)
             return displayType != currentDisplayType
@@ -75,7 +97,8 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
                 type = info.type,
                 createdDate = "2025-07-15",
                 updatedDate = "2025-07-15",
-                isActive = info.isActive
+                isActive = info.isActive,
+                allowedModels = info.allowedModels
             )
         })
     }
@@ -84,7 +107,22 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
         val index = apiKeys.indexOf(apiKey)
         if (index != -1 && newKey.isNotBlank()) {
             databaseHelper.updateApiKey(apiKey.key, newKey, newType)
-            apiKeys[index] = ApiKey(newKey, type = newType ?: apiKey.type, createdDate = apiKey.createdDate, updatedDate = "2025-07-15", isActive = apiKey.isActive)
+            apiKeys[index] = ApiKey(
+                key = newKey, 
+                type = newType ?: apiKey.type, 
+                createdDate = apiKey.createdDate, 
+                updatedDate = "2025-07-15", 
+                isActive = apiKey.isActive,
+                allowedModels = apiKey.allowedModels
+            )
+        }
+    }
+
+    fun updateAllowedModels(apiKey: ApiKey, allowedModels: String) {
+        val index = apiKeys.indexOf(apiKey)
+        if (index != -1) {
+            databaseHelper.updateApiKeyAllowedModels(apiKey.key, allowedModels)
+            apiKeys[index] = apiKey.copy(allowedModels = allowedModels)
         }
     }
 
@@ -113,5 +151,124 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
             }
         }
         loadApiKeysFromDatabase()
+    }
+
+    // --- TEST CONNECTION METHODS ---
+
+    fun testConnection(apiKey: String, type: String, model: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = when (type.lowercase()) {
+                    "gemini" -> testGeminiConnection(apiKey, model)
+                    "mistral" -> testMistralConnection(apiKey, model)
+                    "zai" -> testZaiConnection(apiKey, model)
+                    else -> Pair(false, "Loại API không hợp lệ")
+                }
+                withContext(Dispatchers.Main) {
+                    onResult(result.first, result.second)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, e.message ?: "Lỗi không xác định")
+                }
+            }
+        }
+    }
+
+    private suspend fun testGeminiConnection(apiKey: String, model: String): Pair<Boolean, String> {
+        return try {
+            val generativeModel = com.google.ai.client.generativeai.GenerativeModel(
+                modelName = model,
+                apiKey = apiKey,
+                generationConfig = com.google.ai.client.generativeai.type.generationConfig {
+                    maxOutputTokens = 5
+                }
+            )
+            val response = generativeModel.generateContent("test")
+            if (!response.text.isNullOrBlank()) {
+                Pair(true, "Kết nối thành công!")
+            } else {
+                Pair(false, "Không có phản hồi từ Gemini")
+            }
+        } catch (e: Exception) {
+            val msg = e.message ?: "Lỗi kết nối Gemini"
+            Pair(false, msg)
+        }
+    }
+
+    private suspend fun testMistralConnection(apiKey: String, model: String): Pair<Boolean, String> {
+        return try {
+            val client = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+            val gson = com.google.gson.Gson()
+            val bodyMap = mapOf(
+                "model" to model,
+                "messages" to listOf(mapOf("role" to "user", "content" to "test")),
+                "max_tokens" to 5
+            )
+            val requestBody = gson.toJson(bodyMap).toRequestBody("application/json".toMediaTypeOrNull())
+            val request = Request.Builder()
+                .url("https://api.mistral.ai/v1/chat/completions")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .post(requestBody)
+                .build()
+            
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string()
+                if (response.isSuccessful && bodyStr != null) {
+                    Pair(true, "Kết nối thành công!")
+                } else {
+                    val errorMsg = try {
+                        val errorJson = com.google.gson.JsonParser.parseString(bodyStr).asJsonObject
+                        errorJson.getAsJsonObject("error")?.get("message")?.asString ?: bodyStr
+                    } catch (ex: Exception) {
+                        bodyStr
+                    }
+                    Pair(false, "Lỗi (${response.code}): $errorMsg")
+                }
+            }
+        } catch (e: Exception) {
+            Pair(false, e.message ?: "Lỗi kết nối Mistral")
+        }
+    }
+
+    private suspend fun testZaiConnection(apiKey: String, model: String): Pair<Boolean, String> {
+        return try {
+            val client = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+            val gson = com.google.gson.Gson()
+            val bodyMap = mapOf(
+                "model" to model,
+                "messages" to listOf(mapOf("role" to "user", "content" to "test")),
+                "max_tokens" to 5
+            )
+            val requestBody = gson.toJson(bodyMap).toRequestBody("application/json".toMediaTypeOrNull())
+            val request = Request.Builder()
+                .url("https://api.z.ai/api/paas/v4/chat/completions")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .post(requestBody)
+                .build()
+            
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string()
+                if (response.isSuccessful && bodyStr != null) {
+                    Pair(true, "Kết nối thành công!")
+                } else {
+                    val errorMsg = try {
+                        val errorJson = com.google.gson.JsonParser.parseString(bodyStr).asJsonObject
+                        errorJson.getAsJsonObject("error")?.get("message")?.asString ?: bodyStr
+                    } catch (ex: Exception) {
+                        bodyStr
+                    }
+                    Pair(false, "Lỗi (${response.code}): $errorMsg")
+                }
+            }
+        } catch (e: Exception) {
+            Pair(false, e.message ?: "Lỗi kết nối Z.AI")
+        }
     }
 }

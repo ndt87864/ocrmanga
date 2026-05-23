@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -66,6 +67,8 @@ fun ApiKeyManagementScreen(
 
     // Dropdown expanded state
     var dropdownExpanded by remember { mutableStateOf(false) }
+
+    val testResults = remember { mutableStateMapOf<String, Pair<Boolean, String?>>() }
     
     // Tutorial State
     var tutorialDone by remember { mutableStateOf(true) }
@@ -428,27 +431,170 @@ fun ApiKeyManagementScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 14.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
                                     text = "Key: ${apiKey.key}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontWeight = FontWeight.Medium
                                 )
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
                                     Text(
-                                        text = "Loại: ${apiKey.type}",
+                                        text = "Loại: ${apiKey.type.uppercase()}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
                                         text = "Ngày thêm: ${apiKey.createdDate}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                }
+
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+
+                                Text(
+                                    text = "Mô hình được phép sử dụng:",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                val modelsList = when (apiKey.type.lowercase()) {
+                                    "gemini" -> listOf("gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-pro")
+                                    "mistral" -> listOf("mistral-large-latest", "mistral-medium-2508", "open-mixtral-8x22b", "mistral-small-latest")
+                                    "zai" -> listOf("glm-4.7-flash", "glm-4-plus", "glm-4-flash")
+                                    else -> emptyList()
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    modelsList.forEach { modelName ->
+                                        val isAllowed = apiKey.isModelAllowed(modelName)
+                                        FilterChip(
+                                            selected = isAllowed,
+                                            onClick = {
+                                                val currentAllowed = apiKey.allowedModels.split(",")
+                                                    .map { it.trim() }
+                                                    .filter { it.isNotEmpty() }
+                                                    .toMutableList()
+                                                if (isAllowed) {
+                                                    currentAllowed.remove(modelName)
+                                                } else {
+                                                    currentAllowed.add(modelName)
+                                                }
+                                                viewModel.updateAllowedModels(apiKey, currentAllowed.joinToString(","))
+                                            },
+                                            label = { Text(modelName, style = MaterialTheme.typography.labelSmall) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                            ),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                    }
+                                }
+
+                                val allowedList = modelsList.filter { apiKey.isModelAllowed(it) }
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (allowedList.isEmpty()) {
+                                                testResults[apiKey.key] = Pair(false, "Hãy bật ít nhất 1 mô hình!")
+                                                return@OutlinedButton
+                                            }
+                                            testResults[apiKey.key] = Pair(true, "Đang kiểm tra kết nối...")
+                                            viewModel.testConnection(
+                                                apiKey = apiKey.key,
+                                                type = apiKey.type,
+                                                model = allowedList.first(), // Test với mô hình được phép đầu tiên
+                                                onResult = { success, msg ->
+                                                    testResults[apiKey.key] = Pair(false, msg)
+                                                }
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier = Modifier.height(36.dp),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                        )
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(
+                                            "Test kết nối", 
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    val testState = testResults[apiKey.key]
+                                    if (testState != null) {
+                                        val isTesting = testState.first
+                                        val result = testState.second
+                                        if (isTesting) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = "Đang kết nối...",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        } else if (result != null) {
+                                            val isSuccess = result == "Kết nối thành công!"
+                                            val icon = if (isSuccess) Icons.Default.Check else Icons.Default.Close
+                                            val color = if (isSuccess) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(
+                                                    imageVector = icon,
+                                                    contentDescription = null,
+                                                    tint = color,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Text(
+                                                    text = result,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = color,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

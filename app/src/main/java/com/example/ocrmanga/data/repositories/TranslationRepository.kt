@@ -3108,9 +3108,9 @@ import kotlin.math.max
         val maxTries = 6
 
         for (i in 0 until maxTries) {
-            val apiKeyInfo = poolManager.selectBestKey("gemini") ?: break
-            val apiKey = apiKeyInfo.value
             val modelName = getCurrentGeminiModel()
+            val apiKeyInfo = poolManager.selectBestKey("gemini", modelName) ?: break
+            val apiKey = apiKeyInfo.value
 
             triedKeys.add(apiKey)
 
@@ -3255,9 +3255,9 @@ import kotlin.math.max
         var attempt = 0
         var skipped429 = 0
         while (attempt < maxTries) {
-            val apiKeyInfo = poolManager.selectBestKey("gemini") ?: return null
-            val useKey = apiKeyInfo.value
             val modelName = modelOverride ?: getCurrentGeminiModel()
+            val apiKeyInfo = poolManager.selectBestKey("gemini", modelName) ?: return null
+            val useKey = apiKeyInfo.value
 
             try {
                 val safetySettings = listOf(
@@ -3350,13 +3350,13 @@ import kotlin.math.max
     }
     
     private suspend fun translateWithGemini(inputText: String): String? {
-        val apiKeyInfo = poolManager.selectBestKey("gemini") ?: run {
+        val modelName = getCurrentGeminiModel()
+        val apiKeyInfo = poolManager.selectBestKey("gemini", modelName) ?: run {
             Log.e("TranslationRepository", "No Gemini API keys available in pool.")
             return null
         }
 
         val apiKey = apiKeyInfo.value
-        val modelName = getCurrentGeminiModel()
 
         val client = GenerativeModel(
             modelName = modelName,

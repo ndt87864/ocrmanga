@@ -77,8 +77,8 @@ class ZAiRequester(
         max_tokens: Int = 4096,
         apiKeyOverride: String? = null
     ): ZAiResponse? = withContext(Dispatchers.IO) {
-        val rawKey = apiKeyOverride ?: poolManager.selectBestKey("zai")?.value ?: run {
-            Log.w(TAG, "Không tìm thấy API key Z.AI khả dụng")
+        val rawKey = apiKeyOverride ?: poolManager.selectBestKey("zai", model)?.value ?: run {
+            Log.w(TAG, "Không tìm thấy API key Z.AI khả dụng cho model $model")
             return@withContext null
         }
         val apiKey = rawKey.trim()
