@@ -59,6 +59,7 @@ fun ApiKeyManagementScreen(
     var selectedCardIds by remember { mutableStateOf(setOf<String>()) }
     val isSelectionMode = selectedCardIds.isNotEmpty()
     var isDeleteMultiConfirmationVisible by remember { mutableStateOf(false) }
+    var isManageModelsDialogVisible by remember { mutableStateOf(false) }
 
     val apiKeys = viewModel.apiKeys
     val displayedApiKeys = apiKeys.filter { it.type == selectedDisplayType }
@@ -206,114 +207,29 @@ fun ApiKeyManagementScreen(
                         }
                     }
                 }
-            }
 
-            // ===== Global available models configuration =====
-            val availableModels = viewModel.getAvailableModels(selectedDisplayType)
-            var isAddModelDialogVisible by remember { mutableStateOf(false) }
-            var newModelName by remember { mutableStateOf("") }
+                Spacer(modifier = Modifier.weight(1f))
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Mô hình khả dụng của hệ thống:",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                OutlinedButton(
+                    onClick = { isManageModelsDialogVisible = true },
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, MaterialTheme.colorScheme.outlineVariant
                     )
-                    OutlinedButton(
-                        onClick = {
-                            newModelName = ""
-                            isAddModelDialogVisible = true
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text("+ Thêm", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    availableModels.forEach { modelName ->
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = modelName,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Xóa",
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
-                                    modifier = Modifier
-                                        .size(14.dp)
-                                        .clickable {
-                                            viewModel.removeAvailableModel(selectedDisplayType, modelName)
-                                        }
-                                )
-                            }
-                        }
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Quản lý mô hình",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
-            }
-
-            // ADD MODEL DIALOG
-            if (isAddModelDialogVisible) {
-                AlertDialog(
-                    onDismissRequest = { isAddModelDialogVisible = false },
-                    shape = RoundedCornerShape(20.dp),
-                    title = { Text("Thêm mô hình khả dụng", fontWeight = FontWeight.Bold) },
-                    text = {
-                        OutlinedTextField(
-                            value = newModelName,
-                            onValueChange = { newModelName = it },
-                            placeholder = { Text("Ví dụ: gemini-1.5-flash-8b") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                if (newModelName.isNotBlank()) {
-                                    viewModel.addAvailableModel(selectedDisplayType, newModelName)
-                                }
-                                isAddModelDialogVisible = false
-                            },
-                            enabled = newModelName.isNotBlank()
-                        ) {
-                            Text("Lưu")
-                        }
-                    },
-                    dismissButton = {
-                        OutlinedButton(onClick = { isAddModelDialogVisible = false }) {
-                            Text("Hủy")
-                        }
-                    }
-                )
             }
 
             // ===== Select-all bar =====
@@ -921,6 +837,196 @@ fun ApiKeyManagementScreen(
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("Hủy")
+                }
+            }
+        )
+    }
+
+    // ===== MANAGE MODELS DIALOG =====
+    if (isManageModelsDialogVisible) {
+        val availableModels = viewModel.getAvailableModels(selectedDisplayType)
+        val historyModels = viewModel.getHistoryModels(selectedDisplayType)
+        val deletedModels = historyModels.filterNot { availableModels.contains(it) }
+        var newModelName by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { isManageModelsDialogVisible = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Quản lý mô hình ${selectedDisplayType.uppercase()}",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // 1. Current Active Models
+                    Text(
+                        text = "Mô hình đang hoạt động:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    
+                    if (availableModels.isEmpty()) {
+                        Text(
+                            text = "Không có mô hình nào đang hoạt động.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            availableModels.forEach { modelName ->
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = modelName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                viewModel.removeAvailableModel(selectedDisplayType, modelName)
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Xóa",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    // 2. Quick Re-add from History
+                    if (deletedModels.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Thêm nhanh lại từ lịch sử:",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                deletedModels.forEach { deletedModel ->
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.addAvailableModel(selectedDisplayType, deletedModel)
+                                            }
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Add,
+                                                contentDescription = "Thêm lại",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = deletedModel,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontWeight = FontWeight.Normal
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    }
+
+                    // 3. Custom Model Addition
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "Thêm mô hình tùy chỉnh:",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = newModelName,
+                                onValueChange = { newModelName = it },
+                                placeholder = { Text("Tên mô hình...") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            Button(
+                                onClick = {
+                                    if (newModelName.isNotBlank()) {
+                                        viewModel.addAvailableModel(selectedDisplayType, newModelName)
+                                        newModelName = ""
+                                    }
+                                },
+                                enabled = newModelName.isNotBlank(),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                            ) {
+                                Text("Thêm")
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { isManageModelsDialogVisible = false },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Đóng")
                 }
             }
         )
