@@ -50,4 +50,11 @@ class ApiKeyPoolManager(private val application: Application) {
         val index = lastSelectionIndex[type]?.getAndIncrement() ?: 0
         return keys[index % keys.size]
     }
+
+    /**
+     * Lấy toàn bộ API key đang hoạt động của một provider từ cache
+     */
+    fun getActiveKeys(type: String): List<ApiKeyInfo> {
+        return apiKeysCache[type]?.filter { it.isActive } ?: emptyList()
+    }
 }

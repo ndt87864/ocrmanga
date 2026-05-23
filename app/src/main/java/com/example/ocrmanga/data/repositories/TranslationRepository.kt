@@ -189,6 +189,9 @@ import kotlin.math.max
     private val ocrMangaRequester by lazy { com.example.ocrmanga.data.translation.OcrMangaRequester(application, poolManager, httpClient) }
 
     private var currentGeminiModelIndex = 0
+    private var currentMistralModelIndex = 0
+    private var currentZAiModelIndex = 0
+    private var currentOcrMangaModelIndex = 0
 
     private val modelPrefs by lazy { application.getSharedPreferences("api_key_prefs", android.content.Context.MODE_PRIVATE) }
 
@@ -230,18 +233,59 @@ import kotlin.math.max
     // --- ApiKey Management Methods (Removed manual loading) ---
 
     suspend fun translateWithZAi(text: String, sourceLang: String, targetLang: String): String? {
+        val currentModels = zAiModels
+        if (currentModels.isEmpty()) return null
+
+        val modelsInOrder = getModelsInRotationOrder(currentModels, currentZAiModelIndex) {
+            currentZAiModelIndex = (currentZAiModelIndex + 1) % currentModels.size
+        }
+
+        val activeKeys = poolManager.getActiveKeys("zai")
+        if (activeKeys.isEmpty()) return null
+
+        val startingKey = poolManager.selectBestKey("zai") ?: activeKeys[0]
+        val startingKeyIdx = activeKeys.indexOfFirst { it.id == startingKey.id }.coerceAtLeast(0)
+
         // Chuẩn hóa văn bản: gộp dòng để dịch mượt hơn
         val normalizedText = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
         val prompt = TranslationPrompts.getZAiBasicPrompt(normalizedText, isAncientMode = false) // Mặc định false cho dịch đơn lẻ nếu không truyền
         val userMessage = mapOf("role" to "user", "content" to prompt)
 
-        val response = zaiRequester.executeChatCompletion(
-            messages = listOf(userMessage),
-            temperature = 1.0,
-            max_tokens=2048
-        )
+        val maxKeysToTry = activeKeys.size.coerceAtMost(6)
+        for (kOffset in 0 until maxKeysToTry) {
+            val apiKeyInfo = activeKeys[(startingKeyIdx + kOffset) % activeKeys.size]
+            val apiKey = apiKeyInfo.value
 
-        return response?.content
+            val allowedModels = apiKeyInfo.allowedModels.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .filter { currentModels.contains(it) }
+                .ifEmpty { currentModels }
+
+            val modelsToTry = modelsInOrder.filter { allowedModels.contains(it) }
+                .ifEmpty { allowedModels }
+
+            Log.i("TranslationRepository", "[ZAI-ROUTING] Thử Key: ${apiKey.take(10)}... | Models: $modelsToTry")
+
+            for (modelName in modelsToTry) {
+                try {
+                    val response = zaiRequester.executeChatCompletion(
+                        messages = listOf(userMessage),
+                        model = modelName,
+                        temperature = 1.0,
+                        max_tokens = 2048,
+                        apiKeyOverride = apiKey
+                    )
+                    val content = response?.content
+                    if (!content.isNullOrBlank() && !content.equals(text, ignoreCase = true)) {
+                        return content
+                    }
+                } catch (e: Exception) {
+                    Log.w("TranslationRepository", "[ZAI-TRY-FAIL] Lỗi model $modelName trên Key ${apiKey.take(10)}...: ${e.message}")
+                }
+            }
+        }
+        return null
     }
 
     suspend fun translateWithZAiMultiScale(
@@ -578,6 +622,19 @@ import kotlin.math.max
     }
 
     suspend fun translateWithMistral(text: String, sourceLang: String, targetLang: String): String? {
+        val currentModels = mistralModels
+        if (currentModels.isEmpty()) return null
+
+        val modelsInOrder = getModelsInRotationOrder(currentModels, currentMistralModelIndex) {
+            currentMistralModelIndex = (currentMistralModelIndex + 1) % currentModels.size
+        }
+
+        val activeKeys = poolManager.getActiveKeys("mistral")
+        if (activeKeys.isEmpty()) return null
+
+        val startingKey = poolManager.selectBestKey("mistral") ?: activeKeys[0]
+        val startingKeyIdx = activeKeys.indexOfFirst { it.id == startingKey.id }.coerceAtLeast(0)
+
         val prompt = TranslationPrompts.getMistralBasicPrompt(text)
         val systemMessage = mapOf(
             "role" to "system",
@@ -585,16 +642,44 @@ import kotlin.math.max
         )
         val userMessage = mapOf("role" to "user", "content" to prompt)
 
-        val response = mistralRequester.executeChatCompletion(
-            messages = listOf(systemMessage, userMessage),
-            temperature = 0.4,
-            frequency_penalty = 0.0,
-            presence_penalty = 0.0,
-            top_p=0.9,
-            max_tokens=2048
-        )
+        val maxKeysToTry = activeKeys.size.coerceAtMost(6)
+        for (kOffset in 0 until maxKeysToTry) {
+            val apiKeyInfo = activeKeys[(startingKeyIdx + kOffset) % activeKeys.size]
+            val apiKey = apiKeyInfo.value
 
-        return response?.content
+            val allowedModels = apiKeyInfo.allowedModels.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .filter { currentModels.contains(it) }
+                .ifEmpty { currentModels }
+
+            val modelsToTry = modelsInOrder.filter { allowedModels.contains(it) }
+                .ifEmpty { allowedModels }
+
+            Log.i("TranslationRepository", "[MISTRAL-ROUTING] Thử Key: ${apiKey.take(10)}... | Models: $modelsToTry")
+
+            for (modelName in modelsToTry) {
+                try {
+                    val response = mistralRequester.executeChatCompletion(
+                        messages = listOf(systemMessage, userMessage),
+                        model = modelName,
+                        temperature = 0.4,
+                        frequency_penalty = 0.0,
+                        presence_penalty = 0.0,
+                        top_p = 0.9,
+                        max_tokens = 2048,
+                        apiKeyOverride = apiKey
+                    )
+                    val content = response?.content
+                    if (!content.isNullOrBlank() && !content.equals(text, ignoreCase = true)) {
+                        return content
+                    }
+                } catch (e: Exception) {
+                    Log.w("TranslationRepository", "[MISTRAL-TRY-FAIL] Lỗi model $modelName trên Key ${apiKey.take(10)}...: ${e.message}")
+                }
+            }
+        }
+        return null
     }
 
     suspend fun translateWithMistralMultiScale(
@@ -663,7 +748,22 @@ import kotlin.math.max
 
 
     private fun getCurrentGeminiModel(): String {
-        return geminiModels[0] // Trình quản lý pool sẽ tự chọn key, ở đây ta cố định model đầu tiên hoặc tùy chỉnh sau
+        val models = geminiModels
+        return if (models.isNotEmpty()) models[0] else "gemini-2.5-flash"
+    }
+
+    private fun getModelsInRotationOrder(providerModels: List<String>, currentIndex: Int, incrementIndex: () -> Unit): List<String> {
+        if (providerModels.isEmpty()) return emptyList()
+        val startingIdx = synchronized(this) {
+            val idx = currentIndex % providerModels.size
+            incrementIndex()
+            idx
+        }
+        val order = mutableListOf<String>()
+        for (offset in 0 until providerModels.size) {
+            order.add(providerModels[(startingIdx + offset) % providerModels.size])
+        }
+        return order
     }
 
     private fun preloadRecognitionModels() {
@@ -3170,80 +3270,90 @@ import kotlin.math.max
         if (originalText.isEmpty()) return@withContext ""
         if (sourceLanguage == "vi") return@withContext originalText
 
-        val triedKeys = mutableSetOf<String>()
+        val currentModels = geminiModels
+        if (currentModels.isEmpty()) return@withContext originalText
+
+        val modelsInOrder = getModelsInRotationOrder(currentModels, currentGeminiModelIndex) {
+            currentGeminiModelIndex = (currentGeminiModelIndex + 1) % currentModels.size
+        }
+
+        val activeKeys = poolManager.getActiveKeys("gemini")
+        if (activeKeys.isEmpty()) return@withContext originalText
+
+        val startingKey = poolManager.selectBestKey("gemini") ?: activeKeys[0]
+        val startingKeyIdx = activeKeys.indexOfFirst { it.id == startingKey.id }.coerceAtLeast(0)
+
         var lastError: Exception? = null
-        val maxTries = 6
+        val triedKeys = mutableSetOf<String>()
+        val maxKeysToTry = activeKeys.size.coerceAtMost(6)
 
-        for (i in 0 until maxTries) {
-            val modelName = getCurrentGeminiModel()
-            val apiKeyInfo = poolManager.selectBestKey("gemini", modelName) ?: break
+        for (kOffset in 0 until maxKeysToTry) {
+            val apiKeyInfo = activeKeys[(startingKeyIdx + kOffset) % activeKeys.size]
             val apiKey = apiKeyInfo.value
-
             triedKeys.add(apiKey)
 
-            try {
-                val safetySettings = listOf(
-                    SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.NONE),
-                    SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.NONE),
-                    SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.NONE),
-                    SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.NONE),
-                )
+            // Lấy danh sách model được phép của key này
+            val allowedModels = apiKeyInfo.allowedModels.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .filter { currentModels.contains(it) }
+                .ifEmpty { currentModels }
 
-                val config = generationConfig {
-                    temperature = 1.0f
-                    topP = 1.0f
-                    topK = 90
-                    maxOutputTokens = 6000
-                }
+            // Ưu tiên theo thứ tự xoay vòng của request
+            val modelsToTry = modelsInOrder.filter { allowedModels.contains(it) }
+                .ifEmpty { allowedModels }
 
-                val generativeModel = GenerativeModel(
-                    modelName = modelName,
-                    apiKey = apiKey,
-                    safetySettings = safetySettings,
-                    generationConfig = config
-                )
+            Log.i("TranslationRepository", "[GEMINI-ROUTING] Thử Key: ${apiKey.take(10)}... | Models: $modelsToTry")
 
-                val prompt = TranslationPrompts.getMistralBasicPrompt(originalText)
+            for (modelName in modelsToTry) {
+                try {
+                    val safetySettings = listOf(
+                        SafetySetting(HarmCategory.HARASSMENT, BlockThreshold.NONE),
+                        SafetySetting(HarmCategory.HATE_SPEECH, BlockThreshold.NONE),
+                        SafetySetting(HarmCategory.SEXUALLY_EXPLICIT, BlockThreshold.NONE),
+                        SafetySetting(HarmCategory.DANGEROUS_CONTENT, BlockThreshold.NONE),
+                    )
 
-                val response = generativeModel.generateContent(prompt)
-                val content = response.text?.trim() ?: ""
-                val translatedText = content.trim()
-                    .removeSurrounding("\"")
-                    .removeSurrounding("'")
-                    .trim()
-
-                val analysisText = Regex("\\[ANALYSIS\\][\\s\\S]*?(\\[END ANALYSIS\\]|\\[/ANALYSIS\\])").find(content)?.value
-                    ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(content)?.value
-                    ?: "Không tìm thấy [ANALYSIS]"
-                val translationResult = content.replace(analysisText, "").trim()
-                //Log.d("TranslationRepository", "[DEBUG-RESULT] $analysisText")
-                //Log.d("TranslationRepository", "KẾT QUẢ DỊCH:\n$translationResult")
-
-                // Nếu dịch thành công và khác với gốc thì trả về luôn
-                if (!translatedText.equals(originalText, ignoreCase = true)) {
-                    // Báo cáo số token
-                    try {
-                        val usage = response.usageMetadata
-                        if (usage != null) {
-                            Log.i("TranslationRepository", "[GEMINI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
-                        }
-                    } catch (e: Exception) {
-                        Log.w("TranslationRepository", "Không thể lấy token usage từ Gemini: ${e.message}")
+                    val config = generationConfig {
+                        temperature = 1.0f
+                        topP = 1.0f
+                        topK = 90
+                        maxOutputTokens = 6000
                     }
-                    return@withContext translatedText
+
+                    val generativeModel = GenerativeModel(
+                        modelName = modelName,
+                        apiKey = apiKey,
+                        safetySettings = safetySettings,
+                        generationConfig = config
+                    )
+
+                    val prompt = TranslationPrompts.getMistralBasicPrompt(originalText)
+                    val response = generativeModel.generateContent(prompt)
+                    val content = response.text?.trim() ?: ""
+                    val translatedText = content.trim()
+                        .removeSurrounding("\"")
+                        .removeSurrounding("'")
+                        .trim()
+
+                    if (!translatedText.isEmpty() && !translatedText.equals(originalText, ignoreCase = true)) {
+                        try {
+                            val usage = response.usageMetadata
+                            if (usage != null) {
+                                Log.i("TranslationRepository", "[GEMINI-USAGE] Prompt: ${usage.promptTokenCount} | Completion: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount} tokens")
+                            }
+                        } catch (e: Exception) {}
+                        return@withContext translatedText
+                    }
+                } catch (e: Exception) {
+                    lastError = e
+                    Log.w("TranslationRepository", "[GEMINI-TRY-FAIL] Lỗi model $modelName trên Key ${apiKey.take(10)}...: ${e.javaClass.simpleName} - ${e.message}")
                 }
-            } catch (e: Exception) {
-                lastError = e
-                val keyPrefix = apiKey.take(10)
-                Log.e("TranslationRepository", "[GEMINI-ERROR] API key bị lỗi: ${keyPrefix}... | Model: $modelName | Exception: ${e.javaClass.simpleName} - ${e.message}")
             }
         }
 
-        // Nếu thử hết vẫn không dịch được, trả về văn bản gốc
         if (lastError != null) {
-            val errorMessage = lastError.message
-            Log.e("TranslationRepository", "[GEMINI-SUMMARY] Thử các key Gemini thất bại | Lỗi cuối: $errorMessage")
-            Log.e("TranslationRepository", "[GEMINI-SUMMARY] Số keys đã thử: ${triedKeys.size}")
+            Log.e("TranslationRepository", "[GEMINI-SUMMARY] Thử các key/model Gemini thất bại | Lỗi cuối: ${lastError.message} | Số keys đã thử: ${triedKeys.size}")
         }
         return@withContext originalText
     }
@@ -3886,20 +3996,62 @@ import kotlin.math.max
     }
 
     suspend fun translateWithOcrManga(text: String, sourceLang: String, targetLang: String, modelOverride: String? = null): String? {
+        val currentModels = ocrMangaModels
+        if (currentModels.isEmpty()) return null
+
+        val modelsInOrder = if (modelOverride != null) {
+            listOf(modelOverride)
+        } else {
+            getModelsInRotationOrder(currentModels, currentOcrMangaModelIndex) {
+                currentOcrMangaModelIndex = (currentOcrMangaModelIndex + 1) % currentModels.size
+            }
+        }
+
+        val activeKeys = poolManager.getActiveKeys("ocrmanga")
+        if (activeKeys.isEmpty()) return null
+
+        val startingKey = poolManager.selectBestKey("ocrmanga") ?: activeKeys[0]
+        val startingKeyIdx = activeKeys.indexOfFirst { it.id == startingKey.id }.coerceAtLeast(0)
+
         val normalizedText = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
         val prompt = TranslationPrompts.getZAiBasicPrompt(normalizedText, isAncientMode = false)
         val userMessage = mapOf("role" to "user", "content" to prompt)
 
-        val selectedModel = modelOverride ?: getCurrentOcrMangaModel()
+        val maxKeysToTry = activeKeys.size.coerceAtMost(6)
+        for (kOffset in 0 until maxKeysToTry) {
+            val apiKeyInfo = activeKeys[(startingKeyIdx + kOffset) % activeKeys.size]
+            val apiKey = apiKeyInfo.value
 
-        val response = ocrMangaRequester.executeChatCompletion(
-            messages = listOf(userMessage),
-            model = selectedModel,
-            temperature = 1.0,
-            max_tokens = 2048
-        )
+            val allowedModels = apiKeyInfo.allowedModels.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .filter { currentModels.contains(it) }
+                .ifEmpty { currentModels }
 
-        return response?.content
+            val modelsToTry = modelsInOrder.filter { allowedModels.contains(it) }
+                .ifEmpty { allowedModels }
+
+            Log.i("TranslationRepository", "[OCRMANGA-ROUTING] Thử Key: ${apiKey.take(10)}... | Models: $modelsToTry")
+
+            for (modelName in modelsToTry) {
+                try {
+                    val response = ocrMangaRequester.executeChatCompletion(
+                        messages = listOf(userMessage),
+                        model = modelName,
+                        temperature = 1.0,
+                        max_tokens = 2048,
+                        apiKeyOverride = apiKey
+                    )
+                    val content = response?.content
+                    if (!content.isNullOrBlank() && !content.equals(text, ignoreCase = true)) {
+                        return content
+                    }
+                } catch (e: Exception) {
+                    Log.w("TranslationRepository", "[OCRMANGA-TRY-FAIL] Lỗi model $modelName trên Key ${apiKey.take(10)}...: ${e.message}")
+                }
+            }
+        }
+        return null
     }
 
     suspend fun translateWithOcrMangaMultiScale(
