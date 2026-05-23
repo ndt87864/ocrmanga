@@ -199,13 +199,13 @@ import kotlin.math.max
     }
 
     private val geminiModels: List<String>
-        get() = getModelsFromPrefs("gemini", listOf("gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-pro"))
+        get() = getModelsFromPrefs("gemini", listOf("gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash-lite"))
 
     private val mistralModels: List<String>
         get() = getModelsFromPrefs("mistral", listOf("mistral-large-latest", "mistral-medium-2508", "open-mixtral-8x22b", "mistral-small-latest"))
 
     private val zAiModels: List<String>
-        get() = getModelsFromPrefs("zai", listOf("glm-4.7-flash", "glm-4-plus", "glm-4-flash"))
+        get() = getModelsFromPrefs("zai", listOf("glm-4.5", "glm-4.7-flash", "glm-4-plus"))
 
     private val ocrMangaModels: List<String>
         get() = getModelsFromPrefs("ocrmanga", listOf("kr/claude-sonnet-4.5", "kr/glm-5", "cc/claude-opus-4.7", "gh/claude-sonnet-4.6"))

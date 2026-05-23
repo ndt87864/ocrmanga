@@ -50,6 +50,21 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
     val apiKeys: SnapshotStateList<ApiKey> = mutableStateListOf()
 
     init {
+        // Tự động nâng cấp danh sách mô hình mặc định mới cho Gemini và ZAI nếu người dùng đang dùng phiên bản cũ
+        val currentGemini = prefs.getString("gemini_available_models", null)
+        if (currentGemini == null || 
+            currentGemini == "gemini-2.5-flash,gemini-1.5-flash,gemini-1.5-pro,gemini-2.5-pro" ||
+            currentGemini == "gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.5-pro,gemini-3-flash-preview,gemini-3.1-flash-lite,gemini-3.1-pro,gemini-3.5-flash") {
+            prefs.edit().putString("gemini_available_models", "gemini-3.5-flash,gemini-3-flash-preview,gemini-2.5-flash,gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite").apply()
+            prefs.edit().putString("gemini_history_models", "gemini-3.5-flash,gemini-3-flash-preview,gemini-2.5-flash,gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite").apply()
+        }
+
+        val currentZAi = prefs.getString("zai_available_models", null)
+        if (currentZAi == null || currentZAi == "glm-4.7-flash,glm-4-plus,glm-4-flash") {
+            prefs.edit().putString("zai_available_models", "glm-4.5,glm-4.7-flash,glm-4-plus").apply()
+            prefs.edit().putString("zai_history_models", "glm-4.5,glm-4.7-flash,glm-4-plus").apply()
+        }
+
         loadApiKeysFromDatabase()
     }
 
@@ -77,9 +92,9 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
     // Lấy danh sách mô hình khả dụng chung cho provider type
     fun getAvailableModels(type: String): List<String> {
         val defaultModels = when (type.lowercase()) {
-            "gemini" -> "gemini-2.5-flash,gemini-1.5-flash,gemini-1.5-pro,gemini-2.5-pro"
+            "gemini" -> "gemini-3.5-flash,gemini-3-flash-preview,gemini-2.5-flash,gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite"
             "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
-            "zai" -> "glm-4.7-flash,glm-4-plus,glm-4-flash"
+            "zai" -> "glm-4.5,glm-4.7-flash,glm-4-plus"
             "ocrmanga" -> "kr/claude-sonnet-4.5,kr/glm-5,cc/claude-opus-4.7,gh/claude-sonnet-4.6"
             else -> ""
         }
@@ -90,9 +105,9 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
     // Lấy danh sách lịch sử mô hình từng tồn tại (hoặc mặc định) để hiển thị thêm lại nhanh
     fun getHistoryModels(type: String): List<String> {
         val defaultModels = when (type.lowercase()) {
-            "gemini" -> "gemini-2.5-flash,gemini-1.5-flash,gemini-1.5-pro,gemini-2.5-pro"
+            "gemini" -> "gemini-3.5-flash,gemini-3-flash-preview,gemini-2.5-flash,gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite"
             "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
-            "zai" -> "glm-4.7-flash,glm-4-plus,glm-4-flash"
+            "zai" -> "glm-4.5,glm-4.7-flash,glm-4-plus"
             "ocrmanga" -> "kr/claude-sonnet-4.5,kr/glm-5,cc/claude-opus-4.7,gh/claude-sonnet-4.6"
             else -> ""
         }
@@ -232,14 +247,25 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
 
     private suspend fun testGeminiConnection(apiKey: String, model: String): Pair<Boolean, String> {
         return try {
+            val safetySettings = listOf(
+                com.google.ai.client.generativeai.type.SafetySetting(com.google.ai.client.generativeai.type.HarmCategory.HARASSMENT, com.google.ai.client.generativeai.type.BlockThreshold.NONE),
+                com.google.ai.client.generativeai.type.SafetySetting(com.google.ai.client.generativeai.type.HarmCategory.HATE_SPEECH, com.google.ai.client.generativeai.type.BlockThreshold.NONE),
+                com.google.ai.client.generativeai.type.SafetySetting(com.google.ai.client.generativeai.type.HarmCategory.SEXUALLY_EXPLICIT, com.google.ai.client.generativeai.type.BlockThreshold.NONE),
+                com.google.ai.client.generativeai.type.SafetySetting(com.google.ai.client.generativeai.type.HarmCategory.DANGEROUS_CONTENT, com.google.ai.client.generativeai.type.BlockThreshold.NONE),
+            )
+            val config = com.google.ai.client.generativeai.type.generationConfig {
+                temperature = 1.0f
+                topP = 1.0f
+                topK = 90
+                maxOutputTokens = 100
+            }
             val generativeModel = com.google.ai.client.generativeai.GenerativeModel(
                 modelName = model,
                 apiKey = apiKey,
-                generationConfig = com.google.ai.client.generativeai.type.generationConfig {
-                    maxOutputTokens = 5
-                }
+                safetySettings = safetySettings,
+                generationConfig = config
             )
-            val response = generativeModel.generateContent("test")
+            val response = generativeModel.generateContent("Hãy trả về từ: OK")
             if (!response.text.isNullOrBlank()) {
                 Pair(true, "Kết nối thành công!")
             } else {
