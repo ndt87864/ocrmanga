@@ -174,7 +174,7 @@ fun ApiKeyManagementScreen(
                         expanded = dropdownExpanded,
                         onDismissRequest = { dropdownExpanded = false }
                     ) {
-                        listOf("gemini", "mistral", "zai").forEach { type ->
+                        listOf("gemini", "mistral", "zai", "ocrmanga").forEach { type ->
                             DropdownMenuItem(
                                 text = {
                                     Row(
@@ -673,7 +673,7 @@ fun ApiKeyManagementScreen(
                             expanded = typeDropdownExpanded,
                             onDismissRequest = { typeDropdownExpanded = false }
                         ) {
-                            listOf("gemini", "mistral", "zai").forEach { type ->
+                            listOf("gemini", "mistral", "zai", "ocrmanga").forEach { type ->
                                 DropdownMenuItem(
                                     text = { Text(type.uppercase()) },
                                     onClick = {

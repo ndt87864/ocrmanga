@@ -411,6 +411,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 TranslationMode.GEMINI -> hasGeminiApiKeys()
                 TranslationMode.MISTRAL -> hasMistralApiKeys()
                 TranslationMode.ZAI -> hasZAiApiKeys()
+                TranslationMode.OCRMANGA -> hasOcrMangaApiKeys()
                 else -> true
             }
 
@@ -420,6 +421,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
                         TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
                         TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
+                        TranslationMode.OCRMANGA -> "Không có API key OCR Manga. Vui lòng thêm trong cài đặt."
                         else -> "Không có API key. Vui lòng thêm trong cài đặt."
                     }
                     Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
@@ -503,7 +505,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     
                     // Lấy bản dịch của ảnh trước để tham khảo (nếu dịch bằng Gemini/Mistral/ZAI)
                     // Tìm ảnh GẦN NHẤT đã được dịch trước ảnh hiện tại (không chỉ ảnh liền kề)
-                    val previousTranslation: List<TextBlockInfo>? = if (mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI) {
+                    val previousTranslation: List<TextBlockInfo>? = if (mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.OCRMANGA) {
                         val imageUris = uiState.value.imageUris
                         val currentIndex = imageUris.indexOf(uri)
                         var foundTranslation: List<TextBlockInfo>? = null
@@ -2019,6 +2021,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             TranslationMode.GEMINI -> hasGeminiApiKeys()
             TranslationMode.MISTRAL -> hasMistralApiKeys()
             TranslationMode.ZAI -> hasZAiApiKeys()
+            TranslationMode.OCRMANGA -> hasOcrMangaApiKeys()
             else -> true
         }
 
@@ -2027,6 +2030,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 val msg = when(mode) {
                     TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
                     TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
+                    TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
+                    TranslationMode.OCRMANGA -> "Không có API key OCR Manga. Vui lòng thêm trong cài đặt."
                     else -> "Không có API key. Vui lòng thêm trong cài đặt."
                 }
                 Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
@@ -3567,6 +3572,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         return translationRepository.hasZAiApiKeys()
     }
 
+    fun hasOcrMangaApiKeys(): Boolean {
+        return translationRepository.hasOcrMangaApiKeys()
+    }
+
     fun isNetworkAvailable(): Boolean {
         val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = connectivityManager.activeNetwork ?: return false
@@ -3585,6 +3594,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 TranslationMode.GEMINI -> hasGeminiApiKeys()
                 TranslationMode.MISTRAL -> hasMistralApiKeys()
                 TranslationMode.ZAI -> hasZAiApiKeys()
+                TranslationMode.OCRMANGA -> hasOcrMangaApiKeys()
                 else -> true
             }
 
@@ -3594,6 +3604,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         TranslationMode.GEMINI -> "Không có API key Gemini. Vui lòng thêm trong cài đặt."
                         TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
                         TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
+                        TranslationMode.OCRMANGA -> "Không có API key OCR Manga. Vui lòng thêm trong cài đặt."
                         else -> "Không có API key. Vui lòng thêm trong cài đặt."
                     }
                     Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
@@ -3631,7 +3642,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         updateTranslationStatus(uri, status)
                     }
 
-                    val previousTranslation: List<TextBlockInfo>? = if (mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI) {
+                    val previousTranslation: List<TextBlockInfo>? = if (mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.OCRMANGA) {
                         val currentIndex = imageUris.indexOf(uri)
                         var foundTranslation: List<TextBlockInfo>? = null
                         if (currentIndex > 0) {

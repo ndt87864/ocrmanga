@@ -320,17 +320,18 @@ fun Dialogs(
                     Text("Dịch lại ảnh với:", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
 
-                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI, TranslationMode.EXTERNAL).forEach { mode ->
+                    listOf(TranslationMode.OFFLINE, TranslationMode.ONLINE, TranslationMode.GEMINI, TranslationMode.OCRMANGA, TranslationMode.MISTRAL, TranslationMode.ZAI, TranslationMode.EXTERNAL).forEach { mode ->
                         val isNetworkAvailable = viewModel.isNetworkAvailable()
                         val (hasKey, modelName) = when(mode) {
                             TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys() to "Gemini"
                             TranslationMode.MISTRAL -> viewModel.hasMistralApiKeys() to "Mistral"
                             TranslationMode.ZAI -> viewModel.hasZAiApiKeys() to "Z.AI"
+                            TranslationMode.OCRMANGA -> viewModel.hasOcrMangaApiKeys() to "OCR Manga"
                             else -> true to ""
                         }
                         
-                        val isNetworkRequired = mode == TranslationMode.ONLINE || mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
-                        val isApiKeyRequired = mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI
+                        val isNetworkRequired = mode == TranslationMode.ONLINE || mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.OCRMANGA
+                        val isApiKeyRequired = mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.OCRMANGA
                         
                         val isDimmed = (isNetworkRequired && !isNetworkAvailable) || (isApiKeyRequired && !hasKey)
 

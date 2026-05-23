@@ -80,6 +80,7 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
             "gemini" -> "gemini-2.5-flash,gemini-1.5-flash,gemini-1.5-pro,gemini-2.5-pro"
             "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
             "zai" -> "glm-4.7-flash,glm-4-plus,glm-4-flash"
+            "ocrmanga" -> "kr/claude-sonnet-4.5,kr/glm-5,cc/claude-opus-4.7,gh/claude-sonnet-4.6"
             else -> ""
         }
         val raw = prefs.getString("${type}_available_models", defaultModels) ?: defaultModels
@@ -92,6 +93,7 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
             "gemini" -> "gemini-2.5-flash,gemini-1.5-flash,gemini-1.5-pro,gemini-2.5-pro"
             "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
             "zai" -> "glm-4.7-flash,glm-4-plus,glm-4-flash"
+            "ocrmanga" -> "kr/claude-sonnet-4.5,kr/glm-5,cc/claude-opus-4.7,gh/claude-sonnet-4.6"
             else -> ""
         }
         val raw = prefs.getString("${type}_history_models", defaultModels) ?: defaultModels
@@ -214,6 +216,7 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
                     "gemini" -> testGeminiConnection(apiKey, model)
                     "mistral" -> testMistralConnection(apiKey, model)
                     "zai" -> testZaiConnection(apiKey, model)
+                    "ocrmanga" -> testOcrMangaConnection(apiKey, model)
                     else -> Pair(false, "Loại API không hợp lệ")
                 }
                 withContext(Dispatchers.Main) {
@@ -321,6 +324,44 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
             }
         } catch (e: Exception) {
             Pair(false, e.message ?: "Lỗi kết nối Z.AI")
+        }
+    }
+
+    private suspend fun testOcrMangaConnection(apiKey: String, model: String): Pair<Boolean, String> {
+        return try {
+            val client = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+            val gson = com.google.gson.Gson()
+            val bodyMap = mapOf(
+                "model" to model,
+                "messages" to listOf(mapOf("role" to "user", "content" to "test")),
+                "max_tokens" to 5
+            )
+            val requestBody = gson.toJson(bodyMap).toRequestBody("application/json".toMediaTypeOrNull())
+            val request = Request.Builder()
+                .url("https://ocrmanga-ai.vercel.app/api/v1/chat/completions")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .post(requestBody)
+                .build()
+            
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string()
+                if (response.isSuccessful && bodyStr != null) {
+                    Pair(true, "Kết nối thành công!")
+                } else {
+                    val errorMsg = try {
+                        val errorJson = com.google.gson.JsonParser.parseString(bodyStr).asJsonObject
+                        errorJson.getAsJsonObject("error")?.get("message")?.asString ?: bodyStr
+                    } catch (ex: Exception) {
+                        bodyStr
+                    }
+                    Pair(false, "Lỗi (${response.code}): $errorMsg")
+                }
+            }
+        } catch (e: Exception) {
+            Pair(false, e.message ?: "Lỗi kết nối OCR Manga")
         }
     }
 }

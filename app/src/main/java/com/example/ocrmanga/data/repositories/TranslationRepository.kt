@@ -124,6 +124,10 @@ import kotlin.math.max
         return poolManager.selectBestKey("zai") != null
     }
 
+    fun hasOcrMangaApiKeys(): Boolean {
+        return poolManager.selectBestKey("ocrmanga") != null
+    }
+
     // Hàm dịch lại 1 ảnh, trả về Pair<text dịch, list block dịch>
     suspend fun translateImage(
         imageUri: Uri,
@@ -182,6 +186,7 @@ import kotlin.math.max
     private val poolManager by lazy { com.example.ocrmanga.data.translation.ApiKeyPoolManager(application) }
     private val mistralRequester by lazy { com.example.ocrmanga.data.translation.MistralRequester(application, poolManager, httpClient) }
     private val zaiRequester by lazy { com.example.ocrmanga.data.translation.ZAiRequester(application, poolManager, httpClient) }
+    private val ocrMangaRequester by lazy { com.example.ocrmanga.data.translation.OcrMangaRequester(application, poolManager, httpClient) }
 
     private var currentGeminiModelIndex = 0
 
@@ -201,6 +206,9 @@ import kotlin.math.max
 
     private val zAiModels: List<String>
         get() = getModelsFromPrefs("zai", listOf("glm-4.7-flash", "glm-4-plus", "glm-4-flash"))
+
+    private val ocrMangaModels: List<String>
+        get() = getModelsFromPrefs("ocrmanga", listOf("kr/claude-sonnet-4.5", "kr/glm-5", "cc/claude-opus-4.7", "gh/claude-sonnet-4.6"))
 
     // Lưu session dịch gần nhất: Pair<Uri, Pair<text gốc, text dịch cuối>>
     val lastTranslationSession = mutableListOf<Pair<Uri, Pair<String, String>>>()
@@ -316,10 +324,11 @@ import kotlin.math.max
     ): Pair<TranslationMode, List<String>> {
         // Step 1: Xác định chuỗi ưu tiên các dịch vụ dịch AI hoạt động dựa trên lựa chọn ban đầu
         val modeSequence = when (initialMode) {
-            TranslationMode.GEMINI -> listOf(TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI)
-            TranslationMode.MISTRAL -> listOf(TranslationMode.MISTRAL, TranslationMode.GEMINI, TranslationMode.ZAI)
-            TranslationMode.ZAI -> listOf(TranslationMode.ZAI, TranslationMode.GEMINI, TranslationMode.MISTRAL)
-            else -> listOf(TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI)
+            TranslationMode.GEMINI -> listOf(TranslationMode.GEMINI, TranslationMode.OCRMANGA, TranslationMode.MISTRAL, TranslationMode.ZAI)
+            TranslationMode.MISTRAL -> listOf(TranslationMode.MISTRAL, TranslationMode.OCRMANGA, TranslationMode.GEMINI, TranslationMode.ZAI)
+            TranslationMode.ZAI -> listOf(TranslationMode.ZAI, TranslationMode.OCRMANGA, TranslationMode.GEMINI, TranslationMode.MISTRAL)
+            TranslationMode.OCRMANGA -> listOf(TranslationMode.OCRMANGA, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI)
+            else -> listOf(TranslationMode.GEMINI, TranslationMode.OCRMANGA, TranslationMode.MISTRAL, TranslationMode.ZAI)
         }
 
         // Lọc danh sách dịch vụ, chỉ giữ các dịch vụ thực sự có API Key cấu hình
@@ -328,6 +337,7 @@ import kotlin.math.max
                 TranslationMode.GEMINI -> hasGeminiApiKeys()
                 TranslationMode.MISTRAL -> hasMistralApiKeys()
                 TranslationMode.ZAI -> hasZAiApiKeys()
+                TranslationMode.OCRMANGA -> hasOcrMangaApiKeys()
                 else -> false
             }
         }
@@ -340,6 +350,7 @@ import kotlin.math.max
                 TranslationMode.GEMINI -> "Gemini"
                 TranslationMode.MISTRAL -> "Mistral"
                 TranslationMode.ZAI -> "Z.AI"
+                TranslationMode.OCRMANGA -> "OCR Manga"
                 else -> ""
             }
 
@@ -347,6 +358,7 @@ import kotlin.math.max
                 TranslationMode.GEMINI -> geminiModels
                 TranslationMode.MISTRAL -> mistralModels
                 TranslationMode.ZAI -> zAiModels
+                TranslationMode.OCRMANGA -> ocrMangaModels
                 else -> emptyList()
             }
 
@@ -375,6 +387,15 @@ import kotlin.math.max
                             modelOverride = model
                         )
                         TranslationMode.ZAI -> translateWithZAiMultiScale(
+                            textBlocks = textBlocks,
+                            ocrResults = ocrResults,
+                            sourceLang = sourceLanguage,
+                            targetLang = "vi",
+                            previousTranslation = previousTranslation,
+                            isAncientMode = isAncientMode,
+                            modelOverride = model
+                        )
+                        TranslationMode.OCRMANGA -> translateWithOcrMangaMultiScale(
                             textBlocks = textBlocks,
                             ocrResults = ocrResults,
                             sourceLang = sourceLanguage,
@@ -417,6 +438,7 @@ import kotlin.math.max
                     TranslationMode.GEMINI -> "Gemini"
                     TranslationMode.MISTRAL -> "Mistral"
                     TranslationMode.ZAI -> "Z.AI"
+                    TranslationMode.OCRMANGA -> "OCR Manga"
                     else -> "AI khác"
                 }
                 Log.w("TranslationRepository", "[AI-FALLBACK] Tất cả model của $providerName đều lỗi. Chuyển dịch vụ sang $nextProvider...")
@@ -1148,6 +1170,17 @@ import kotlin.math.max
             return@withContext Triple("", emptyList(), "zh")
         }
 
+        if (mode == TranslationMode.OCRMANGA && !hasOcrMangaApiKeys()) {
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    application,
+                    "Không có API key OCR Manga. Vui lòng thêm ít nhất một API key OCR Manga trong cài đặt để dùng tính năng dịch OCR Manga.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+            return@withContext Triple("", emptyList(), "zh")
+        }
+
         val cacheKey = "$imageUri-$mode"
         cache[cacheKey]?.let {
             //log.i("TranslationRepository", "Tìm thấy kết quả trong cache cho $imageUri: ${it.first}")
@@ -1214,6 +1247,21 @@ import kotlin.math.max
                             skipDetailedLogs = false
                         ) ?: sourceTexts.map { "" }
                     }
+                    TranslationMode.OCRMANGA -> {
+                        val fakeOcrResults = listOf(Pair(1.0f, joinedSourceText))
+                        val blockListForTranslation = reuseExistingBlocks.map { b ->
+                            b.copy(text = b.originalText ?: b.text)
+                        }
+                        translateWithOcrMangaMultiScale(
+                            textBlocks = blockListForTranslation,
+                            ocrResults = fakeOcrResults,
+                            sourceLang = detectLanguage(joinedSourceText) ?: "zh",
+                            targetLang = "vi",
+                            previousTranslation = previousTranslation,
+                            isAncientMode = isAncientMode,
+                            skipDetailedLogs = false
+                        ) ?: sourceTexts.map { "" }
+                    }
                     else -> {
                         val onlineRaw = translateTextOnline(joinedSourceText, "zh")
                         onlineRaw.split("\n").map { it.trim() }
@@ -1224,6 +1272,7 @@ import kotlin.math.max
                     TranslationMode.MISTRAL -> "MISTRAL"
                     TranslationMode.GEMINI -> "GEMINI"
                     TranslationMode.ZAI -> "ZAI"
+                    TranslationMode.OCRMANGA -> "OCRMANGA"
                     else -> "OCR"
                 }
                 Log.i("TranslationRepository", "[REUSE-$modelTag-PARSE] Got ${translatedLines.size} translated lines for ${reuseExistingBlocks.size} blocks")
@@ -1332,7 +1381,7 @@ import kotlin.math.max
             }
 
             // --- LOGIC MỚI CHO AI VÀ OCR: THU THẬP TẤT CẢ KẾT QUẢ OCR TỪ CÁC SCALE VÀ THỰC HIỆN DỊCH VỚI DỰ PHÒNG ---
-            if (mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.GEMINI || mode == TranslationMode.OCR) {
+            if (mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.GEMINI || mode == TranslationMode.OCRMANGA || mode == TranslationMode.OCR) {
                 // Thu thập tất cả kết quả OCR từ các scale khác nhau
                 val allOcrResults = recognizeTextAllScales(bitmap, rotationDegrees, forceScript = detectedScript)
 
@@ -1464,6 +1513,7 @@ import kotlin.math.max
                             TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                             TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
                             TranslationMode.ZAI -> translateWithZAi(block.text, sourceLanguage, "vi") ?: ""
+                            TranslationMode.OCRMANGA -> translateWithOcrManga(block.text, sourceLanguage, "vi") ?: ""
                             else -> block.text
                         }
                         // Log.i("TranslationRepository", "Văn bản đã dịch lần 1: $translatedText") // Tắt log để tăng tốc
@@ -1478,6 +1528,7 @@ import kotlin.math.max
                                     TranslationMode.GEMINI -> translateTextWithGemini(translatedText, detectedAfterTranslation)
                                     TranslationMode.MISTRAL -> translateWithMistral(translatedText, detectedAfterTranslation, "vi") ?: translatedText
                                     TranslationMode.ZAI -> translateWithZAi(translatedText, detectedAfterTranslation, "vi") ?: translatedText
+                                    TranslationMode.OCRMANGA -> translateWithOcrManga(translatedText, detectedAfterTranslation, "vi") ?: translatedText
                                     else -> translatedText
                                 }
                             }
@@ -1569,6 +1620,7 @@ import kotlin.math.max
                         TranslationMode.GEMINI -> translateTextWithGemini(block.text, sourceLanguage)
                         TranslationMode.MISTRAL -> translateWithMistral(block.text, sourceLanguage, "vi") ?: ""
                         TranslationMode.ZAI -> translateWithZAi(block.text, sourceLanguage, "vi") ?: ""
+                        TranslationMode.OCRMANGA -> translateWithOcrManga(block.text, sourceLanguage, "vi") ?: ""
                         else -> block.text
                     }
                     val detectedAfterTranslation = detectLanguage(translatedText) ?: "vi"
@@ -1579,6 +1631,7 @@ import kotlin.math.max
                             TranslationMode.GEMINI -> translateTextWithGemini(translatedText, detectedAfterTranslation)
                             TranslationMode.MISTRAL -> translateWithMistral(translatedText, detectedAfterTranslation, "vi") ?: translatedText
                             TranslationMode.ZAI -> translateWithZAi(translatedText, detectedAfterTranslation, "vi") ?: translatedText
+                            TranslationMode.OCRMANGA -> translateWithOcrManga(translatedText, detectedAfterTranslation, "vi") ?: translatedText
                             else -> translatedText
                         }
                     }
@@ -3825,6 +3878,94 @@ import kotlin.math.max
         } else {
             merged
         }
+    }
+
+    private fun getCurrentOcrMangaModel(): String {
+        val models = ocrMangaModels
+        return if (models.isNotEmpty()) models[0] else com.example.ocrmanga.data.translation.OcrMangaRequester.DEFAULT_MODEL
+    }
+
+    suspend fun translateWithOcrManga(text: String, sourceLang: String, targetLang: String, modelOverride: String? = null): String? {
+        val normalizedText = text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+        val prompt = TranslationPrompts.getZAiBasicPrompt(normalizedText, isAncientMode = false)
+        val userMessage = mapOf("role" to "user", "content" to prompt)
+
+        val selectedModel = modelOverride ?: getCurrentOcrMangaModel()
+
+        val response = ocrMangaRequester.executeChatCompletion(
+            messages = listOf(userMessage),
+            model = selectedModel,
+            temperature = 1.0,
+            max_tokens = 2048
+        )
+
+        return response?.content
+    }
+
+    suspend fun translateWithOcrMangaMultiScale(
+        textBlocks: List<TextBlockInfo>,
+        ocrResults: List<Pair<Float, String>>,
+        sourceLang: String,
+        targetLang: String,
+        previousTranslation: List<TextBlockInfo>? = null,
+        isAncientMode: Boolean = false,
+        skipDetailedLogs: Boolean = false,
+        modelOverride: String? = null
+    ): List<String>? {
+        if (ocrResults.isEmpty() || textBlocks.isEmpty()) return null
+
+        val previousContextText = if (!previousTranslation.isNullOrEmpty()) {
+            TranslationPrompts.getPreviousContextText(previousTranslation)
+        } else ""
+
+        val cleanedOcrResults = ocrResults.map { (scale, text) ->
+            val cleaned = text.split("\n")
+                .filter { it.length > 1 && !it.matches(Regex("""^[^\p{L}\p{N}]+$""")) }
+                .joinToString(" ")
+            scale to cleaned
+        }.filter { it.second.isNotBlank() }
+
+        val ocrResultsText = cleanedOcrResults.mapIndexed { index, (scale, text) ->
+            "- Lần quét ${index + 1} (scale ${String.format("%.2f", scale)}): $text"
+        }.joinToString("\n")
+
+        val numberedBlocks = textBlocks.mapIndexed { index, block ->
+            val normalizedText = block.text.replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+            "Block #${index + 1}: Text='$normalizedText' Bounds: Rect(${block.bounds.left}, ${block.bounds.top} - ${block.bounds.right}, ${block.bounds.bottom})"
+        }.joinToString("\n")
+
+        val instructions = TranslationPrompts.getZAiMultiScalePrompt(
+            ocrResultsText = "DỮ LIỆU ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
+            numberedBlocks = "DANH SÁCH ĐƯỢC CUNG CẤP TRONG USER MESSAGE",
+            blockCount = textBlocks.size,
+            previousContextText = previousContextText,
+            isAncientMode = isAncientMode
+        )
+
+        val systemMessage = mapOf(
+            "role" to "system",
+            "content" to instructions
+        )
+
+        val dataContent = """
+            === DỮ LIỆU OCR THAM KHẢO ===
+            $ocrResultsText
+
+            === DANH SÁCH CẦN DỊCH ===
+            $numberedBlocks
+        """.trimIndent()
+
+        val userMessage = mapOf("role" to "user", "content" to dataContent)
+
+        val response = ocrMangaRequester.executeChatCompletion(
+            messages = listOf(systemMessage, userMessage),
+            model = modelOverride ?: com.example.ocrmanga.data.translation.OcrMangaRequester.DEFAULT_MODEL,
+            temperature = 0.7,
+            max_tokens = 2048
+        )
+
+        val content = response?.content ?: return null
+        return parseMultiBlockResponse(content, textBlocks)
     }
 }
 
