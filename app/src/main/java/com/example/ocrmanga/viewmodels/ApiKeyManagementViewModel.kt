@@ -72,14 +72,66 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
         })
     }
 
+    // --- AVAILABLE MODELS GLOBAL CONFIG ---
+
+    // Lấy danh sách mô hình khả dụng chung cho provider type
+    fun getAvailableModels(type: String): List<String> {
+        val defaultModels = when (type.lowercase()) {
+            "gemini" -> "gemini-2.5-flash,gemini-1.5-flash,gemini-1.5-pro,gemini-2.5-pro"
+            "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
+            "zai" -> "glm-4.7-flash,glm-4-plus,glm-4-flash"
+            else -> ""
+        }
+        val raw = prefs.getString("${type}_available_models", defaultModels) ?: defaultModels
+        return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    // Lấy danh sách lịch sử mô hình từng tồn tại (hoặc mặc định) để hiển thị thêm lại nhanh
+    fun getHistoryModels(type: String): List<String> {
+        val defaultModels = when (type.lowercase()) {
+            "gemini" -> "gemini-2.5-flash,gemini-1.5-flash,gemini-1.5-pro,gemini-2.5-pro"
+            "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
+            "zai" -> "glm-4.7-flash,glm-4-plus,glm-4-flash"
+            else -> ""
+        }
+        val raw = prefs.getString("${type}_history_models", defaultModels) ?: defaultModels
+        return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    // Thêm mô hình mới vào danh sách khả dụng
+    fun addAvailableModel(type: String, model: String) {
+        val currentModels = getAvailableModels(type).toMutableList()
+        val historyModels = getHistoryModels(type).toMutableList()
+        val trimmedModel = model.trim()
+        if (trimmedModel.isNotEmpty()) {
+            if (!currentModels.contains(trimmedModel)) {
+                currentModels.add(trimmedModel)
+                prefs.edit().putString("${type}_available_models", currentModels.joinToString(",")).apply()
+            }
+            if (!historyModels.contains(trimmedModel)) {
+                historyModels.add(trimmedModel)
+                prefs.edit().putString("${type}_history_models", historyModels.joinToString(",")).apply()
+            }
+            // Tải lại dữ liệu cho UI
+            loadApiKeysFromDatabase()
+        }
+    }
+
+    // Xóa mô hình khỏi danh sách khả dụng
+    fun removeAvailableModel(type: String, model: String) {
+        val currentModels = getAvailableModels(type).toMutableList()
+        val trimmedModel = model.trim()
+        if (currentModels.contains(trimmedModel)) {
+            currentModels.remove(trimmedModel)
+            prefs.edit().putString("${type}_available_models", currentModels.joinToString(",")).apply()
+            // Tải lại dữ liệu cho UI
+            loadApiKeysFromDatabase()
+        }
+    }
+
     fun addApiKey(newKey: String, displayType: String = "default", currentDisplayType: String = displayType): Boolean {
         if (newKey.isNotBlank()) {
-            val defaultAllowedModels = when (displayType.lowercase()) {
-                "gemini" -> "gemini-2.5-flash,gemini-1.5-flash,gemini-1.5-pro,gemini-2.5-pro"
-                "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
-                "zai" -> "glm-4.7-flash,glm-4-plus,glm-4-flash"
-                else -> ""
-            }
+            val defaultAllowedModels = getAvailableModels(displayType).joinToString(",")
             databaseHelper.insertApiKey(newKey, displayType, defaultAllowedModels)
             setDefaultKeyType(displayType)
             loadApiKeysByType(displayType)

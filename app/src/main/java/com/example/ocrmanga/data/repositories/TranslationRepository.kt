@@ -184,9 +184,23 @@ import kotlin.math.max
     private val zaiRequester by lazy { com.example.ocrmanga.data.translation.ZAiRequester(application, poolManager, httpClient) }
 
     private var currentGeminiModelIndex = 0
-    private val geminiModels = listOf("gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-pro")
-    private val mistralModels = listOf("mistral-large-latest", "mistral-medium-2508", "open-mixtral-8x22b", "mistral-small-latest")
-    private val zAiModels = listOf("glm-4.7-flash", "glm-4-plus", "glm-4-flash")
+
+    private val modelPrefs by lazy { application.getSharedPreferences("api_key_prefs", android.content.Context.MODE_PRIVATE) }
+
+    private fun getModelsFromPrefs(type: String, defaultModels: List<String>): List<String> {
+        val raw = modelPrefs.getString("${type}_available_models", null) ?: return defaultModels
+        val list = raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        return if (list.isEmpty()) defaultModels else list
+    }
+
+    private val geminiModels: List<String>
+        get() = getModelsFromPrefs("gemini", listOf("gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-pro"))
+
+    private val mistralModels: List<String>
+        get() = getModelsFromPrefs("mistral", listOf("mistral-large-latest", "mistral-medium-2508", "open-mixtral-8x22b", "mistral-small-latest"))
+
+    private val zAiModels: List<String>
+        get() = getModelsFromPrefs("zai", listOf("glm-4.7-flash", "glm-4-plus", "glm-4-flash"))
 
     // Lưu session dịch gần nhất: Pair<Uri, Pair<text gốc, text dịch cuối>>
     val lastTranslationSession = mutableListOf<Pair<Uri, Pair<String, String>>>()

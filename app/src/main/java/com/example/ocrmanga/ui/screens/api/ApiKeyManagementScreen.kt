@@ -1,5 +1,6 @@
 package com.example.ocrmanga.ui.screens.api
 
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -205,6 +206,114 @@ fun ApiKeyManagementScreen(
                         }
                     }
                 }
+            }
+
+            // ===== Global available models configuration =====
+            val availableModels = viewModel.getAvailableModels(selectedDisplayType)
+            var isAddModelDialogVisible by remember { mutableStateOf(false) }
+            var newModelName by remember { mutableStateOf("") }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Mô hình khả dụng của hệ thống:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            newModelName = ""
+                            isAddModelDialogVisible = true
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text("+ Thêm", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    availableModels.forEach { modelName ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = modelName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Xóa",
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .clickable {
+                                            viewModel.removeAvailableModel(selectedDisplayType, modelName)
+                                        }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ADD MODEL DIALOG
+            if (isAddModelDialogVisible) {
+                AlertDialog(
+                    onDismissRequest = { isAddModelDialogVisible = false },
+                    shape = RoundedCornerShape(20.dp),
+                    title = { Text("Thêm mô hình khả dụng", fontWeight = FontWeight.Bold) },
+                    text = {
+                        OutlinedTextField(
+                            value = newModelName,
+                            onValueChange = { newModelName = it },
+                            placeholder = { Text("Ví dụ: gemini-1.5-flash-8b") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (newModelName.isNotBlank()) {
+                                    viewModel.addAvailableModel(selectedDisplayType, newModelName)
+                                }
+                                isAddModelDialogVisible = false
+                            },
+                            enabled = newModelName.isNotBlank()
+                        ) {
+                            Text("Lưu")
+                        }
+                    },
+                    dismissButton = {
+                        OutlinedButton(onClick = { isAddModelDialogVisible = false }) {
+                            Text("Hủy")
+                        }
+                    }
+                )
             }
 
             // ===== Select-all bar =====
@@ -468,130 +577,105 @@ fun ApiKeyManagementScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
 
-                                val modelsList = when (apiKey.type.lowercase()) {
-                                    "gemini" -> listOf("gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-pro")
-                                    "mistral" -> listOf("mistral-large-latest", "mistral-medium-2508", "open-mixtral-8x22b", "mistral-small-latest")
-                                    "zai" -> listOf("glm-4.7-flash", "glm-4-plus", "glm-4-flash")
-                                    else -> emptyList()
-                                }
+                                val modelsList = viewModel.getAvailableModels(apiKey.type)
 
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     modelsList.forEach { modelName ->
                                         val isAllowed = apiKey.isModelAllowed(modelName)
-                                        FilterChip(
-                                            selected = isAllowed,
-                                            onClick = {
-                                                val currentAllowed = apiKey.allowedModels.split(",")
-                                                    .map { it.trim() }
-                                                    .filter { it.isNotEmpty() }
-                                                    .toMutableList()
-                                                if (isAllowed) {
-                                                    currentAllowed.remove(modelName)
-                                                } else {
-                                                    currentAllowed.add(modelName)
-                                                }
-                                                viewModel.updateAllowedModels(apiKey, currentAllowed.joinToString(","))
-                                            },
-                                            label = { Text(modelName, style = MaterialTheme.typography.labelSmall) },
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                            ),
-                                            shape = RoundedCornerShape(8.dp)
-                                        )
-                                    }
-                                }
+                                        val testKey = "${apiKey.key}:$modelName"
+                                        val testState = testResults[testKey]
 
-                                val allowedList = modelsList.filter { apiKey.isModelAllowed(it) }
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            if (allowedList.isEmpty()) {
-                                                testResults[apiKey.key] = Pair(false, "Hãy bật ít nhất 1 mô hình!")
-                                                return@OutlinedButton
-                                            }
-                                            testResults[apiKey.key] = Pair(true, "Đang kiểm tra kết nối...")
-                                            viewModel.testConnection(
-                                                apiKey = apiKey.key,
-                                                type = apiKey.type,
-                                                model = allowedList.first(), // Test với mô hình được phép đầu tiên
-                                                onResult = { success, msg ->
-                                                    testResults[apiKey.key] = Pair(false, msg)
-                                                }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(
+                                                    if (isAllowed) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                                    else Color.Transparent,
+                                                    RoundedCornerShape(8.dp)
+                                                )
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Checkbox(
+                                                checked = isAllowed,
+                                                onCheckedChange = { checked ->
+                                                    val currentAllowed = apiKey.allowedModels.split(",")
+                                                        .map { it.trim() }
+                                                        .filter { it.isNotEmpty() }
+                                                        .toMutableList()
+                                                    if (isAllowed) {
+                                                        currentAllowed.remove(modelName)
+                                                    } else {
+                                                        currentAllowed.add(modelName)
+                                                    }
+                                                    viewModel.updateAllowedModels(apiKey, currentAllowed.joinToString(","))
+                                                },
+                                                modifier = Modifier.size(24.dp)
                                             )
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                        modifier = Modifier.height(36.dp),
-                                        border = androidx.compose.foundation.BorderStroke(
-                                            1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(
-                                            "Test kết nối", 
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
 
-                                    val testState = testResults[apiKey.key]
-                                    if (testState != null) {
-                                        val isTesting = testState.first
-                                        val result = testState.second
-                                        if (isTesting) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(18.dp),
-                                                strokeWidth = 2.dp,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
                                             Text(
-                                                text = "Đang kết nối...",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.primary
+                                                text = modelName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.weight(1f),
+                                                fontWeight = if (isAllowed) FontWeight.Medium else FontWeight.Normal,
+                                                color = if (isAllowed) MaterialTheme.colorScheme.onSurface
+                                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                             )
-                                        } else if (result != null) {
-                                            val isSuccess = result == "Kết nối thành công!"
-                                            val icon = if (isSuccess) Icons.Default.Check else Icons.Default.Close
-                                            val color = if (isSuccess) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
 
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                modifier = Modifier.weight(1f)
+                                            // Nút test riêng lẻ cho model này
+                                            IconButton(
+                                                onClick = {
+                                                    testResults[testKey] = Pair(true, "Đang kết nối...")
+                                                    viewModel.testConnection(
+                                                        apiKey = apiKey.key,
+                                                        type = apiKey.type,
+                                                        model = modelName,
+                                                        onResult = { success, msg ->
+                                                            testResults[testKey] = Pair(false, msg)
+                                                        }
+                                                    )
+                                                },
+                                                modifier = Modifier.size(28.dp)
                                             ) {
                                                 Icon(
-                                                    imageVector = icon,
-                                                    contentDescription = null,
-                                                    tint = color,
-                                                    modifier = Modifier.size(18.dp)
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Test",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp)
                                                 )
-                                                Text(
-                                                    text = result,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = color,
-                                                    maxLines = 2,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
+                                            }
+
+                                            // Trạng thái test của model này
+                                            if (testState != null) {
+                                                val isTesting = testState.first
+                                                val result = testState.second
+                                                if (isTesting) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(14.dp),
+                                                        strokeWidth = 2.dp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                } else if (result != null) {
+                                                    val isSuccess = result == "Kết nối thành công!"
+                                                    val icon = if (isSuccess) Icons.Default.Check else Icons.Default.Close
+                                                    val color = if (isSuccess) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+                                                    Icon(
+                                                        imageVector = icon,
+                                                        contentDescription = null,
+                                                        tint = color,
+                                                        modifier = Modifier
+                                                            .size(16.dp)
+                                                            .clickable {
+                                                                if (!isSuccess) {
+                                                                    Toast.makeText(context, result, Toast.LENGTH_LONG).show()
+                                                                }
+                                                            }
+                                                    )
+                                                }
                                             }
                                         }
                                     }
