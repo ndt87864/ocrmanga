@@ -1302,22 +1302,66 @@ fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect
         
         if (allSamplePoints.isEmpty()) return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
         
-        // QUAN TRỌNG: Lọc bỏ các pixel TỐI (có khả năng là text) khi tính background
-        // Chỉ giữ lại các pixel SÁNG (brightness > 150) để tính màu nền
-        val brightPixels = allSamplePoints.filter { color ->
+        // Phân tích các pixel biên (border pixels) để phân biệt Nền Trắng (Speech bubble) và Nền Cảnh (Background)
+        val borderPixels = mutableListOf<Int>()
+        samplePositions.forEachIndexed { index, (x, y) ->
+            if (index != 8) { // Bỏ qua điểm trung tâm (thường là nét chữ)
+                if (x in 0 until bitmap.width && y in 0 until bitmap.height) {
+                    borderPixels.add(bitmap.getPixel(x, y))
+                }
+            }
+        }
+
+        // Đếm số lượng pixel biên có màu trắng hoặc gần trắng
+        val whiteBorderCount = borderPixels.count { color ->
             val r = (color shr 16) and 0xFF
             val g = (color shr 8) and 0xFF
             val b = color and 0xFF
-            val pixelBrightness = (r + g + b) / 3
-            pixelBrightness > 150 // Chỉ giữ pixel sáng
+            val maxC = maxOf(r, g, b)
+            val minC = minOf(r, g, b)
+            // Một pixel được coi là gần trắng nếu cả 3 kênh đều >= 220 và chênh lệch giữa các kênh thấp
+            r >= 220 && g >= 220 && b >= 220 && (maxC - minC) <= 15
         }
-        
-        // Nếu có đủ pixel sáng (ít nhất 30%), dùng chúng để tính background
-        val samplePoints = if (brightPixels.size >= allSamplePoints.size * 0.3) {
-            brightPixels
+
+        // Tỷ lệ pixel biên màu trắng
+        val whiteBorderRatio = if (borderPixels.isNotEmpty()) whiteBorderCount.toFloat() / borderPixels.size else 0f
+
+        val samplePoints = if (whiteBorderRatio >= 0.45f) {
+            // TRƯỜNG HỢP 1: Nền trắng (Speech bubble)
+            // Áp dụng bộ lọc pixel sáng cũ để loại bỏ nét chữ tối và tính nền trắng chính xác
+            val brightPixels = allSamplePoints.filter { color ->
+                val r = (color shr 16) and 0xFF
+                val g = (color shr 8) and 0xFF
+                val b = color and 0xFF
+                val pixelBrightness = (r + g + b) / 3
+                pixelBrightness > 150
+            }
+            if (brightPixels.size >= allSamplePoints.size * 0.3) {
+                brightPixels
+            } else {
+                allSamplePoints
+            }
         } else {
-            // Nếu không đủ pixel sáng, có thể là nền tối thật -> dùng tất cả
-            allSamplePoints
+            // TRƯỜNG HỢP 2: Nền cảnh có màu hoặc nền tối (Colored background)
+            // Tránh lọc pixel sáng cứng nhắc (sẽ loại bỏ hết nền tối/màu và chỉ giữ lại viền trắng của chữ)
+            // Dùng phương pháp Trimmed Mean trên các pixel biên: loại bỏ 20% pixel sáng nhất (có thể là viền trắng)
+            // và 20% pixel tối nhất (có thể là nét chữ đè lên biên) để lấy màu nền cảnh chuẩn nhất.
+            if (borderPixels.isNotEmpty()) {
+                val sortedBorder = borderPixels.sortedBy { color ->
+                    val r = (color shr 16) and 0xFF
+                    val g = (color shr 8) and 0xFF
+                    val b = color and 0xFF
+                    (r + g + b) / 3
+                }
+                val trimCount = (sortedBorder.size * 0.2).toInt()
+                if (sortedBorder.size - 2 * trimCount >= 3) {
+                    sortedBorder.subList(trimCount, sortedBorder.size - trimCount)
+                } else {
+                    sortedBorder
+                }
+            } else {
+                allSamplePoints
+            }
         }
         
         // Tính màu trung bình từ các pixel đã lọc

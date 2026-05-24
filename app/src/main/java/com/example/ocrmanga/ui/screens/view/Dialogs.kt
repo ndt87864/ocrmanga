@@ -352,6 +352,9 @@ fun Dialogs(
 
                                     val targetUri = imageMenuUri
                                     if (targetUri != null) {
+                                        // Đóng popup menu lựa chọn ngay lập tức để cải thiện UX
+                                        onImageMenuDismiss()
+                                        
                                         val existingBlocks = viewModel.getReusableOcrBlocksForUri(targetUri)
                                         if (existingBlocks.isNotEmpty() && mode != TranslationMode.OFF) {
                                             val (remember, reuse) = ocrPreference
@@ -362,7 +365,6 @@ fun Dialogs(
                                                 } else {
                                                     Toast.makeText(context, "Đang dịch lại ảnh...", Toast.LENGTH_SHORT).show()
                                                     viewModel.retranslateImage(targetUri, mode, reuseExistingOcr = reuse, existingBlocks = if (reuse) existingBlocks else null)
-                                                    // (Wait logic omitted for brevity as it's the same)
                                                 }
                                             } else {
                                                 // Có original đã lưu → hỏi user chọn OCR lại hay giữ
@@ -393,13 +395,10 @@ fun Dialogs(
                                                     if (showToast) {
                                                         Toast.makeText(context, "Dịch lại ảnh hoàn tất!", Toast.LENGTH_SHORT).show()
                                                     }
-                                                    onImageMenuDismiss()
                                                 }
-                                                return@clickable
                                             }
                                         }
                                     }
-                                    onImageMenuDismiss()
                                 }
                                 .padding(vertical = 4.dp)
                         ) {

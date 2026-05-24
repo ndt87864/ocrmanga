@@ -335,8 +335,21 @@ fun ImageViewer(
                                 overlaySaturation = block.overlaySaturation,
                                 textSaturation = block.textSaturation,
                                 lineSpacing = block.lineSpacing,
-                                textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) },
-                                textBorderThickness = block.borderThickness,
+                                textBorderColor = block.customBorderColor?.let { Color(it or 0xFF000000.toInt()) }
+                                    ?: if (block.backgroundType == com.example.ocrmanga.data.models.BackgroundType.COLORED ||
+                                            block.backgroundType == com.example.ocrmanga.data.models.BackgroundType.TRANSPARENT) {
+                                        Color.White
+                                    } else {
+                                        null
+                                    },
+                                textBorderThickness = if (block.borderThickness > 0f) {
+                                    block.borderThickness
+                                } else if (block.backgroundType == com.example.ocrmanga.data.models.BackgroundType.COLORED ||
+                                        block.backgroundType == com.example.ocrmanga.data.models.BackgroundType.TRANSPARENT) {
+                                    3.5f
+                                } else {
+                                    0.0f
+                                },
                                 textBorderAlpha = block.borderAlpha,
                                 textShadowColor = block.customShadowColor?.let { Color(it or 0xFF000000.toInt()) },
                                 textShadowAlpha = block.shadowAlpha ?: 1.0f,
@@ -382,8 +395,21 @@ fun ImageViewer(
                                 textAlign = it.textAlign,
                                 textSaturation = it.textSaturation,
                                 lineSpacing = it.lineSpacing,
-                                textBorderColor = it.customBorderColor?.let { c -> Color(c) },
-                                textBorderThickness = it.borderThickness,
+                                textBorderColor = it.customBorderColor?.let { c -> Color(c) }
+                                    ?: if (it.backgroundType == com.example.ocrmanga.data.models.BackgroundType.COLORED ||
+                                            it.backgroundType == com.example.ocrmanga.data.models.BackgroundType.TRANSPARENT) {
+                                        Color.White
+                                    } else {
+                                        null
+                                    },
+                                textBorderThickness = if (it.borderThickness > 0f) {
+                                    it.borderThickness
+                                } else if (it.backgroundType == com.example.ocrmanga.data.models.BackgroundType.COLORED ||
+                                        it.backgroundType == com.example.ocrmanga.data.models.BackgroundType.TRANSPARENT) {
+                                    3.5f
+                                } else {
+                                    0.0f
+                                },
                                 textBorderAlpha = it.borderAlpha,
                                 textShadowColor = it.customShadowColor?.let { c -> Color(c or 0xFF000000.toInt()) },
                                 textShadowAlpha = it.shadowAlpha ?: 1.0f,
