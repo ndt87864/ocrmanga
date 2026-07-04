@@ -1261,8 +1261,209 @@ fun splitNonOverlappingBoxes(blocks: List<TextBlockInfo>): List<TextBlockInfo> {
 // val limitedRect = limitRectToBackground(rect, bgRect)
 // drawRect(..., topLeft = Offset(limitedRect.left, limitedRect.top), size = Size(limitedRect.width, limitedRect.height))
 
-// Phân tích màu nền và màu text của text block từ bitmap gốc
+data class ColorAnalysisResult(
+    val backgroundType: com.example.ocrmanga.data.models.BackgroundType,
+    val backgroundColor: Int?,
+    val textColor: Int?,
+    val borderColor: Int? = null,
+    val borderThickness: Float = 0f
+)
+
+fun analyzeColorsAndBorder(bitmap: Bitmap?, bounds: android.graphics.Rect): ColorAnalysisResult {
+    if (bitmap == null || bounds.isEmpty || bounds.left >= bitmap.width || bounds.top >= bitmap.height) {
+        return ColorAnalysisResult(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
+    }
+
+    val width = bounds.width()
+    val height = bounds.height()
+    if (width < 2 || height < 2) {
+        return ColorAnalysisResult(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
+    }
+
+    val openCvAvailable = com.example.ocrmanga.data.ocr.OpenCvInitializer.ensureInitialized()
+    if (!openCvAvailable) {
+        // Fallback về thuật toán phân tích pixel cũ
+        val oldRes = analyzeBackgroundAndTextColorOld(bitmap, bounds)
+        return ColorAnalysisResult(oldRes.first, oldRes.second, oldRes.third)
+    }
+
+    try {
+        // Step 1: Crop vùng bounds từ bitmap gốc
+        val cropRect = android.graphics.Rect(
+            bounds.left.coerceAtLeast(0),
+            bounds.top.coerceAtLeast(0),
+            bounds.right.coerceAtMost(bitmap.width),
+            bounds.bottom.coerceAtMost(bitmap.height)
+        )
+        val crop = Bitmap.createBitmap(bitmap, cropRect.left, cropRect.top, cropRect.width(), cropRect.height())
+        
+        val mat = org.opencv.core.Mat()
+        org.opencv.android.Utils.bitmapToMat(crop, mat)
+        crop.recycle()
+
+        // Step 2: Grayscale
+        val gray = org.opencv.core.Mat()
+        org.opencv.imgproc.Imgproc.cvtColor(mat, gray, org.opencv.imgproc.Imgproc.COLOR_RGBA2GRAY)
+
+        // Step 3: Tạo mask nét chữ (text strokes) bằng Adaptive Thresholding
+        val binary = org.opencv.core.Mat()
+        org.opencv.imgproc.Imgproc.adaptiveThreshold(
+            gray, binary, 255.0,
+            org.opencv.imgproc.Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
+            org.opencv.imgproc.Imgproc.THRESH_BINARY_INV,
+            15, 8.0
+        )
+
+        // Giãn nở (Dilation) để tạo viền phủ hết nét chữ và viền
+        val dilated = org.opencv.core.Mat()
+        val kernel = org.opencv.imgproc.Imgproc.getStructuringElement(org.opencv.imgproc.Imgproc.MORPH_RECT, org.opencv.core.Size(3.0, 3.0))
+        org.opencv.imgproc.Imgproc.dilate(binary, dilated, kernel)
+        kernel.release()
+
+        // Step 4: Tạo mask cho Nền (Background) bằng cách nghịch đảo dilated
+        val bgMask = org.opencv.core.Mat()
+        org.opencv.core.Core.bitwise_not(dilated, bgMask)
+
+        // Tính màu trung bình của nền
+        val bgMean = org.opencv.core.Core.mean(mat, bgMask)
+        
+        // Tính độ biến thiên màu nền (Standard Deviation)
+        val mean = org.opencv.core.MatOfDouble()
+        val stdDev = org.opencv.core.MatOfDouble()
+        org.opencv.core.Core.meanStdDev(mat, mean, stdDev, bgMask)
+        val stdVal = stdDev.get(0, 0)[0]
+        
+        // Đọc màu trung bình của nền
+        val avgR = bgMean.`val`[0].toInt()
+        val avgG = bgMean.`val`[1].toInt()
+        val avgB = bgMean.`val`[2].toInt()
+        val avgA = bgMean.`val`[3].toInt()
+        
+        val avgBgColor = (avgA shl 24) or (avgR shl 16) or (avgG shl 8) or avgB
+        val brightness = (avgR + avgG + avgB) / 3
+
+        // Phân loại BackgroundType dựa trên độ trong suốt và độ biến thiên
+        val backgroundType = when {
+            avgA < 200 -> com.example.ocrmanga.data.models.BackgroundType.TRANSPARENT
+            brightness >= 235 && stdVal < 15 -> com.example.ocrmanga.data.models.BackgroundType.WHITE
+            brightness >= 200 && stdVal < 25 -> {
+                // Kiểm tra nếu các kênh màu RGB lệch nhau rất ít thì là trắng/xám trắng
+                val rDev = kotlin.math.abs(avgR - avgG)
+                val gDev = kotlin.math.abs(avgG - avgB)
+                val bDev = kotlin.math.abs(avgB - avgR)
+                val rgbDev = (rDev + gDev + bDev) / 3
+                if (rgbDev <= 10) com.example.ocrmanga.data.models.BackgroundType.WHITE
+                else com.example.ocrmanga.data.models.BackgroundType.COLORED
+            }
+            else -> com.example.ocrmanga.data.models.BackgroundType.COLORED
+        }
+
+        // Step 5: Phân tích màu chữ và màu viền chữ
+        // - Thân chữ (Core Text) = nằm ở các pixel màu trắng (255) trong `binary`
+        // - Viền chữ (Border/Stroke) = nằm ở các pixel trong dilated nhưng không có trong binary (dilated - binary)
+        val borderMask = org.opencv.core.Mat()
+        org.opencv.core.Core.subtract(dilated, binary, borderMask)
+
+        // Tính màu trung bình của Thân chữ
+        var textColor: Int? = null
+        val textMean = org.opencv.core.Core.mean(mat, binary)
+        val tR = textMean.`val`[0].toInt()
+        val tG = textMean.`val`[1].toInt()
+        val tB = textMean.`val`[2].toInt()
+        val tA = if (textMean.`val`[3] == 0.0) 0xFF else textMean.`val`[3].toInt()
+        
+        val rawTextColor = (tA shl 24) or (tR shl 16) or (tG shl 8) or tB
+        
+        // Tính màu trung bình của Viền chữ (nếu có pixel viền)
+        var borderColor: Int? = null
+        var borderThickness = 0f
+        
+        val borderPixelsCount = org.opencv.core.Core.countNonZero(borderMask)
+        val textPixelsCount = org.opencv.core.Core.countNonZero(binary)
+        
+        if (borderPixelsCount > 5 && textPixelsCount > 5) {
+            val borderMean = org.opencv.core.Core.mean(mat, borderMask)
+            val bR = borderMean.`val`[0].toInt()
+            val bG = borderMean.`val`[1].toInt()
+            val bB = borderMean.`val`[2].toInt()
+            val bA = if (borderMean.`val`[3] == 0.0) 0xFF else borderMean.`val`[3].toInt()
+            val rawBorderColor = (bA shl 24) or (bR shl 16) or (bG shl 8) or bB
+            
+            // Tính khoảng cách màu giữa màu chữ và màu viền
+            val dist = kotlin.math.sqrt(
+                ((tR - bR) * (tR - bR) + (tG - bG) * (tG - bG) + (tB - bB) * (tB - bB)).toDouble()
+            )
+            
+            // Khoảng cách màu giữa viền và nền
+            val bgDist = kotlin.math.sqrt(
+                ((avgR - bR) * (avgR - bR) + (avgG - bG) * (avgG - bG) + (avgB - bB) * (avgB - bB)).toDouble()
+            )
+            
+            // Nếu màu viền và màu chữ thực sự khác nhau rõ rệt (khoảng cách màu > 45)
+            // và viền khác nền rõ rệt (bgDist > 30) thì chữ đó có viền
+            if (dist > 45.0 && bgDist > 30.0) {
+                textColor = rawTextColor
+                borderColor = rawBorderColor
+                
+                // Ước lượng độ dày viền từ tỉ lệ diện tích: borderPixels / textPixels
+                val areaRatio = borderPixelsCount.toFloat() / textPixelsCount.toFloat()
+                borderThickness = (areaRatio * 1.5f).coerceIn(1.0f, 4.0f)
+            } else {
+                textColor = rawTextColor
+            }
+        } else {
+            textColor = rawTextColor
+        }
+
+        // Dọn dẹp bộ nhớ OpenCV Mat
+        mat.release()
+        gray.release()
+        binary.release()
+        dilated.release()
+        bgMask.release()
+        borderMask.release()
+        mean.release()
+        stdDev.release()
+
+        // Tránh Nền sáng + Chữ sáng hoặc Nền tối + Chữ tối
+        textColor?.let { color ->
+            val cr = (color shr 16) and 0xFF
+            val cg = (color shr 8) and 0xFF
+            val cb = color and 0xFF
+            val textBright = (cr + cg + cb) / 3
+            if (brightness > 170 && textBright > 170) {
+                textColor = 0xFF000000.toInt()
+            } else if (brightness < 85 && textBright < 85) {
+                textColor = 0xFFFFFFFF.toInt()
+            }
+        }
+
+        if (textColor == null) {
+            textColor = if (brightness > 128) 0xFF000000.toInt() else 0xFFFFFFFF.toInt()
+        }
+
+        return ColorAnalysisResult(
+            backgroundType = backgroundType,
+            backgroundColor = if (backgroundType != com.example.ocrmanga.data.models.BackgroundType.WHITE) avgBgColor else null,
+            textColor = textColor,
+            borderColor = borderColor,
+            borderThickness = borderThickness
+        )
+
+    } catch (e: Exception) {
+        Log.e("ImageTextUtils", "Error during OpenCV color analysis, falling back to old method", e)
+        val oldRes = analyzeBackgroundAndTextColorOld(bitmap, bounds)
+        return ColorAnalysisResult(oldRes.first, oldRes.second, oldRes.third)
+    }
+}
+
 fun analyzeBackgroundAndTextColor(bitmap: Bitmap?, bounds: android.graphics.Rect): Triple<com.example.ocrmanga.data.models.BackgroundType, Int?, Int?> {
+    val res = analyzeColorsAndBorder(bitmap, bounds)
+    return Triple(res.backgroundType, res.backgroundColor, res.textColor)
+}
+
+// Phân tích màu nền và màu text của text block từ bitmap gốc (Thuật toán cũ dự phòng)
+private fun analyzeBackgroundAndTextColorOld(bitmap: Bitmap?, bounds: android.graphics.Rect): Triple<com.example.ocrmanga.data.models.BackgroundType, Int?, Int?> {
     if (bitmap == null) return Triple(com.example.ocrmanga.data.models.BackgroundType.WHITE, null, null)
     
     try {

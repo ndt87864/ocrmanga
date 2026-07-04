@@ -50,6 +50,7 @@ import com.google.gson.stream.JsonReader
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.io.StringReader
 import com.example.ocrmanga.ui.screens.view.analyzeBackgroundAndTextColor
+import com.example.ocrmanga.ui.screens.view.analyzeColorsAndBorder
 import com.example.ocrmanga.ui.theme.ThemePreferences
 import com.example.ocrmanga.data.ocr.BubbleDetector
 import com.example.ocrmanga.data.ocr.models.TextContainerInfo
@@ -1609,8 +1610,8 @@ import kotlin.math.max
                     textBoldness = defaultSettings["textBoldness"] as? Float ?: 1.0f,
                     overlayAlpha = defaultSettings["overlayAlpha"] as? Float ?: 0.8f,
                     overlaySaturation = defaultSettings["overlayBrightness"] as? Float ?: 1.0f,
-                    customBorderColor = (defaultSettings["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
-                    borderThickness = defaultSettings["borderThickness"] as? Float ?: 2.0f,
+                    customBorderColor = block.customBorderColor ?: (defaultSettings["borderColor"] as? String)?.let { android.graphics.Color.parseColor(it) },
+                    borderThickness = if (block.borderThickness > 0f) block.borderThickness else (defaultSettings["borderThickness"] as? Float ?: 2.0f),
                     customTextColor = block.originalTextColor,
                     applyMerge = !isReuse
                 )
@@ -2006,7 +2007,7 @@ import kotlin.math.max
                         } else {
                             val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
                             // Phân tích màu nền và màu text
-                            val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
+                            val colorRes = analyzeColorsAndBorder(bitmap, scaledBounds)
                             // DISABLED: Container classification (OpenCV compatibility issue)
                             val containerInfo = detectContainerInfo(bitmap, scaledBounds, bitmap.width, bitmap.height)
                             TextBlockInfo(
@@ -2018,9 +2019,11 @@ import kotlin.math.max
                                 wordCountsPerLine = listOf(wordCount),
                                 originalImageWidth = bitmap.width,
                                 originalImageHeight = bitmap.height,
-                                backgroundType = backgroundType,
-                                averageBackgroundColor = avgColor,
-                                originalTextColor = textColor,
+                                backgroundType = colorRes.backgroundType,
+                                averageBackgroundColor = colorRes.backgroundColor,
+                                originalTextColor = colorRes.textColor,
+                                customBorderColor = colorRes.borderColor,
+                                borderThickness = colorRes.borderThickness,
                                 containerInfo = containerInfo
                             )
                         }
@@ -2132,7 +2135,7 @@ import kotlin.math.max
                 } else {
                     val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
                     // Phân tích màu nền và màu text
-                    val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
+                    val colorRes = analyzeColorsAndBorder(bitmap, scaledBounds)
                     // DISABLED: Container classification
                     val containerInfo = detectContainerInfo(bitmap, scaledBounds, bitmap.width, bitmap.height)
                     TextBlockInfo(
@@ -2143,9 +2146,11 @@ import kotlin.math.max
                         wordCountsPerLine = listOf(wordCount),
                         originalImageWidth = bitmap.width,
                         originalImageHeight = bitmap.height,
-                        backgroundType = backgroundType,
-                        averageBackgroundColor = avgColor,
-                        originalTextColor = textColor,
+                        backgroundType = colorRes.backgroundType,
+                        averageBackgroundColor = colorRes.backgroundColor,
+                        originalTextColor = colorRes.textColor,
+                        customBorderColor = colorRes.borderColor,
+                        borderThickness = colorRes.borderThickness,
                         containerInfo = containerInfo
                     )
                 }
@@ -2216,7 +2221,7 @@ import kotlin.math.max
                     if (shouldFilter) null
                     else {
                         val wordCount = processedText.split(Regex("\\s+")).filter { it.isNotEmpty() }.size
-                        val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, scaledBounds)
+                        val colorRes = analyzeColorsAndBorder(bitmap, scaledBounds)
                         // Phân loại container type (TẠM THỜI TẮT)
                         val containerInfo = detectContainerInfo(bitmap, scaledBounds, bitmap.width, bitmap.height)
                         TextBlockInfo(
@@ -2227,9 +2232,11 @@ import kotlin.math.max
                             wordCountsPerLine = listOf(wordCount),
                             originalImageWidth = bitmap.width,
                             originalImageHeight = bitmap.height,
-                            backgroundType = backgroundType,
-                            averageBackgroundColor = avgColor,
-                            originalTextColor = textColor,
+                            backgroundType = colorRes.backgroundType,
+                            averageBackgroundColor = colorRes.backgroundColor,
+                            originalTextColor = colorRes.textColor,
+                            customBorderColor = colorRes.borderColor,
+                            borderThickness = colorRes.borderThickness,
                             containerInfo = containerInfo
                         )
                     }
@@ -2317,7 +2324,7 @@ import kotlin.math.max
                             }
                             if (!rawHasOverlap) {
                                 val rawWordCount = rawProcessedText.split(Regex("\\s+")).filter { w -> w.isNotEmpty() }.size
-                                val (rawBgType, rawAvgColor, rawTextColor) = analyzeBackgroundAndTextColor(bitmap, rawBounds)
+                                val colorRes = analyzeColorsAndBorder(bitmap, rawBounds)
                                 // DISABLED: Container classification
                                 val rawContainerInfo = detectContainerInfo(bitmap, rawBounds, bitmap.width, bitmap.height)
                                 mergedTextBlocks.add(TextBlockInfo(
@@ -2329,9 +2336,11 @@ import kotlin.math.max
                                     wordCountsPerLine = listOf(rawWordCount),
                                     originalImageWidth = bitmap.width,
                                     originalImageHeight = bitmap.height,
-                                    backgroundType = rawBgType,
-                                    averageBackgroundColor = rawAvgColor,
-                                    originalTextColor = rawTextColor,
+                                    backgroundType = colorRes.backgroundType,
+                                    averageBackgroundColor = colorRes.backgroundColor,
+                                    originalTextColor = colorRes.textColor,
+                                    customBorderColor = colorRes.borderColor,
+                                    borderThickness = colorRes.borderThickness,
                                     containerInfo = rawContainerInfo
                                 ))
                                 Log.i("TranslationRepository", "[RAW-SCAN] Added block: '${rawProcessedText}' bounds=$rawBounds")
@@ -2422,6 +2431,10 @@ import kotlin.math.max
             var assigned = false
             for (cluster in clusters) {
                 val last = cluster.last()
+                val isColorDiff = isTextColorDifferent(block.originalTextColor, last.originalTextColor)
+                if (isColorDiff) {
+                    continue
+                }
                 // Tính khoảng trắng ngang thực sự giữa block và last
                 val hGap = when {
                     block.bounds.right <= last.bounds.left -> last.bounds.left - block.bounds.right
@@ -2487,7 +2500,8 @@ import kotlin.math.max
                             abs(block.bounds.top - other.bounds.bottom),
                             abs(other.bounds.top - block.bounds.bottom)
                         )
-                        xDistance <= horizontalThreshold && yDistance <= verticalThreshold
+                        val isColorDiff = isTextColorDifferent(block.originalTextColor, other.originalTextColor)
+                        xDistance <= horizontalThreshold && yDistance <= verticalThreshold && !isColorDiff
                     }) {
                     cluster.add(block)
                     assigned = true
@@ -2664,7 +2678,7 @@ import kotlin.math.max
             }
 
             // Phân tích màu nền và màu text cho merged block
-            val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
+            val colorRes = analyzeColorsAndBorder(bitmap, mergedBounds)
             val containerInfo = detectContainerInfo(bitmap, mergedBounds, (bitmap?.width ?: 0), (bitmap?.height ?: 0))
 
             val mergedOriginalText = sortedBlocks.joinToString("\n") { it.originalText ?: it.text }
@@ -2677,9 +2691,11 @@ import kotlin.math.max
                 wordCountsPerLine = null, // Reset wordCountsPerLine after merging
                 originalImageWidth = sortedBlocks.firstOrNull()?.originalImageWidth,
                 originalImageHeight = sortedBlocks.firstOrNull()?.originalImageHeight,
-                backgroundType = backgroundType,
-                averageBackgroundColor = avgColor,
-                originalTextColor = textColor,
+                backgroundType = colorRes.backgroundType,
+                averageBackgroundColor = colorRes.backgroundColor,
+                originalTextColor = colorRes.textColor,
+                customBorderColor = colorRes.borderColor,
+                borderThickness = colorRes.borderThickness,
                 containerInfo = containerInfo
             )
 
@@ -2900,7 +2916,7 @@ import kotlin.math.max
                     }
 
                     // Phân tích màu nền và màu text cho merged block
-                    val (backgroundType, avgColor, textColor) = analyzeBackgroundAndTextColor(bitmap, mergedBounds)
+                    val colorRes = analyzeColorsAndBorder(bitmap, mergedBounds)
                     // Re-enabled: Container classification after merging for better accuracy (TẠM THỜI TẮT)
                     val containerInfo = detectContainerInfo(bitmap, mergedBounds, (bitmap?.width ?: 0), (bitmap?.height ?: 0))
 
@@ -2915,9 +2931,11 @@ import kotlin.math.max
                         wordCountsPerLine = null, // Reset wordCountsPerLine after merging
                         originalImageWidth = subGroupBlocks.firstOrNull()?.originalImageWidth,
                         originalImageHeight = subGroupBlocks.firstOrNull()?.originalImageHeight,
-                        backgroundType = backgroundType,
-                        averageBackgroundColor = avgColor,
-                        originalTextColor = textColor,
+                        backgroundType = colorRes.backgroundType,
+                        averageBackgroundColor = colorRes.backgroundColor,
+                        originalTextColor = colorRes.textColor,
+                        customBorderColor = colorRes.borderColor,
+                        borderThickness = colorRes.borderThickness,
                         containerInfo = containerInfo
                     )
 
@@ -3742,6 +3760,9 @@ import kotlin.math.max
                 var assigned = false
                 for (group in groups) {
                     val ref = group.first()
+                    if (isTextColorDifferent(block.originalTextColor, ref.originalTextColor)) {
+                        continue
+                    }
                     if (isVertical) {
                         // Kiểm tra cả left proximity và vertical gap để tránh merge các đoạn văn bản cách xa
                         val leftDiff = kotlin.math.abs(block.bounds.left - ref.bounds.left)
@@ -3830,10 +3851,16 @@ import kotlin.math.max
                     val minFontSize = group.minOf { it.fontSize }
                     // Tối ưu: sử dụng màu của block đầu tiên thay vì phân tích lại để tăng tốc
                     val firstBlock = group.first()
-                    val (backgroundType, avgColor, textColor) = if (bitmap != null) {
-                        analyzeBackgroundAndTextColor(bitmap, mergedBounds)
+                    val colorRes = if (bitmap != null) {
+                        analyzeColorsAndBorder(bitmap, mergedBounds)
                     } else {
-                        Triple(firstBlock.backgroundType, firstBlock.averageBackgroundColor, firstBlock.originalTextColor)
+                        com.example.ocrmanga.ui.screens.view.ColorAnalysisResult(
+                            firstBlock.backgroundType,
+                            firstBlock.averageBackgroundColor,
+                            firstBlock.originalTextColor,
+                            firstBlock.customBorderColor,
+                            firstBlock.borderThickness
+                        )
                     }
                     // DISABLED: Container classification
                     val containerInfo = firstBlock.containerInfo ?: detectContainerInfo(bitmap, mergedBounds, (bitmap?.width ?: 0), (bitmap?.height ?: 0))
@@ -3850,9 +3877,11 @@ import kotlin.math.max
                             originalImageWidth = group.first().originalImageWidth,
                             originalImageHeight = group.first().originalImageHeight,
                             bubbleId = bubbleId,
-                            backgroundType = backgroundType,
-                            averageBackgroundColor = avgColor,
-                            originalTextColor = textColor,
+                            backgroundType = colorRes.backgroundType,
+                            averageBackgroundColor = colorRes.backgroundColor,
+                            originalTextColor = colorRes.textColor,
+                            customBorderColor = colorRes.borderColor,
+                            borderThickness = colorRes.borderThickness,
                             containerInfo = containerInfo
                         )
                     )

@@ -57,7 +57,8 @@ private data class TranslationData(
     val x: Int,
     val y: Int,
     val width: Int,
-    val height: Int
+    val height: Int,
+    val originalTextColor: Int?
 )
 
 class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
@@ -212,6 +213,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             y INTEGER DEFAULT 0,
                             width INTEGER DEFAULT 0,
                             height INTEGER DEFAULT 0,
+                            original_text_color INTEGER,
                             FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
                         )
                     """)
@@ -255,14 +257,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 }
             }
             
-            // Kiểm tra và thêm cột pending_delete nếu chưa có (cho backward compatibility)
+            // Kiểm tra và thêm các cột cần thiết nếu chưa có (cho backward compatibility)
             var hasPendingDelete = false
             var hasApplyMerge = false
+            var hasOriginalTextColor = false
             val cursor3 = db.rawQuery("PRAGMA table_info(translations)", null)
             while (cursor3.moveToNext()) {
                 val colName = cursor3.getString(cursor3.getColumnIndexOrThrow("name"))
                 if (colName == "pending_delete") hasPendingDelete = true
                 if (colName == "apply_merge") hasApplyMerge = true
+                if (colName == "original_text_color") hasOriginalTextColor = true
             }
             cursor3.close()
             if (!hasPendingDelete) {
@@ -270,6 +274,9 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             }
             if (!hasApplyMerge) {
                 db.execSQL("ALTER TABLE translations ADD COLUMN apply_merge INTEGER DEFAULT 1")
+            }
+            if (!hasOriginalTextColor) {
+                db.execSQL("ALTER TABLE translations ADD COLUMN original_text_color INTEGER")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Không thể tự động xử lý bảng translations", e)
@@ -499,6 +506,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 y INTEGER DEFAULT 0,
                 width INTEGER DEFAULT 0,
                 height INTEGER DEFAULT 0,
+                original_text_color INTEGER,
                 FOREIGN KEY ($COLUMN_IMAGE_ID) REFERENCES $TABLE_IMAGES($COLUMN_IMAGE_ID)
             )
         """)
@@ -1759,6 +1767,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put("y", bounds.top)
                             put("width", bounds.width())
                             put("height", bounds.height())
+                            put("original_text_color", textBlock.originalTextColor)
                         }
                             val inserted = db.insert("translations", null, textValues)
                             if (inserted != -1L) {
@@ -1930,6 +1939,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("y", scaledRect.top)
                                 put("width", scaledRect.width())
                                 put("height", scaledRect.height())
+                                put("original_text_color", textBlock.originalTextColor)
                             }
                             val textId = db.insert("translations", null, textValues)
                             if (textId == -1L) {
@@ -2208,6 +2218,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                     put("y", origRect.top)
                                     put("width", origRect.width())
                                     put("height", origRect.height())
+                                    put("original_text_color", textBlock.originalTextColor)
                                 }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -2315,6 +2326,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                                 put("y", finalRect.top)
                                 put("width", finalRect.width())
                                 put("height", finalRect.height())
+                                put("original_text_color", textBlock.originalTextColor)
                             }
                             val inserted = db.insert("translations", null, textValues)
                             if (inserted != -1L) {
@@ -2798,6 +2810,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                             put("y", finalRect.top)
                             put("width", finalRect.width())
                             put("height", finalRect.height())
+                            put("original_text_color", textBlock.originalTextColor)
                         }
                                 val inserted = db.insert("translations", null, textValues)
                                 if (inserted != -1L) {
@@ -3074,16 +3087,18 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
             // 2. Lấy TẤT CẢ translated_text VÀ original_text từ bảng translations (theo thứ tự text_id)
             val translationsCursor = db.rawQuery("""
-                SELECT translated_text, original_text FROM translations
+                SELECT translated_text, original_text, original_text_color FROM translations
                 WHERE $COLUMN_IMAGE_ID = ?
                 AND (pending_delete IS NULL OR pending_delete = 0)
                 ORDER BY text_id ASC
             """, arrayOf(imageId.toString()))
             val translatedTexts = mutableListOf<String>()
             val originalTexts = mutableListOf<String>()
+            val originalTextColors = mutableListOf<Int?>()
             while (translationsCursor.moveToNext()) {
                 translatedTexts.add(translationsCursor.getString(0) ?: "")
                 originalTexts.add(translationsCursor.getString(1) ?: "")
+                originalTextColors.add(if (translationsCursor.isNull(2)) null else translationsCursor.getInt(2))
             }
             translationsCursor.close()
 
@@ -3192,7 +3207,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     shapeType = overlayType,
                     backgroundType = BackgroundType.WHITE,
                     averageBackgroundColor = overlayColor,
-                    originalTextColor = null,
+                    originalTextColor = if (blockIndex - 1 < originalTextColors.size) originalTextColors[blockIndex - 1] else null,
                     customOverlayColor = overlayColor,
                     customTextColor = finalTextColor,
                     overlayAlpha = overlayAlpha,
@@ -3345,7 +3360,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         if (seenImageIds.isNotEmpty()) {
             val placeholders = seenImageIds.joinToString(",") { "?" }
             val translationsCursor = db.rawQuery("""
-                SELECT $COLUMN_IMAGE_ID, translated_text, original_text, x, y, width, height
+                SELECT $COLUMN_IMAGE_ID, translated_text, original_text, x, y, width, height, original_text_color
                 FROM translations
                 WHERE $COLUMN_IMAGE_ID IN ($placeholders)
                 AND (pending_delete IS NULL OR pending_delete = 0)
@@ -3360,9 +3375,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 val y = translationsCursor.getInt(4)
                 val w = translationsCursor.getInt(5)
                 val h = translationsCursor.getInt(6)
+                val origTextColor = if (translationsCursor.isNull(7)) null else translationsCursor.getInt(7)
 
                 translationsByImageId.getOrPut(imgId) { mutableListOf() }.add(
-                    TranslationData(text, origText, x, y, w, h)
+                    TranslationData(text, origText, x, y, w, h, origTextColor)
                 )
             }
             translationsCursor.close()
@@ -3492,7 +3508,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     shapeType = blockData.overlayType,
                     backgroundType = BackgroundType.WHITE,
                     averageBackgroundColor = blockData.overlayColor,
-                    originalTextColor = null,
+                    originalTextColor = transData?.originalTextColor,
                     customOverlayColor = blockData.overlayColor,
                     customTextColor = finalTextColor,
                     overlayAlpha = blockData.overlayAlpha,
@@ -3554,7 +3570,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             
             // Lấy dữ liệu translation (bao gồm bounds) từ bảng translations
             val translationsCursor = db.rawQuery("""
-                SELECT translated_text, original_text, x, y, width, height FROM translations
+                SELECT translated_text, original_text, x, y, width, height, original_text_color FROM translations
                 WHERE $COLUMN_IMAGE_ID = ?
                 AND (pending_delete IS NULL OR pending_delete = 0)
                 ORDER BY text_id ASC
@@ -3568,7 +3584,8 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     x = translationsCursor.getInt(2),
                     y = translationsCursor.getInt(3),
                     width = translationsCursor.getInt(4),
-                    height = translationsCursor.getInt(5)
+                    height = translationsCursor.getInt(5),
+                    originalTextColor = if (translationsCursor.isNull(6)) null else translationsCursor.getInt(6)
                 ))
             }
             translationsCursor.close()
@@ -3694,7 +3711,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                     shapeType = overlayType,
                     backgroundType = BackgroundType.WHITE,
                     averageBackgroundColor = overlayColor,
-                    originalTextColor = null,
+                    originalTextColor = transData?.originalTextColor,
                     customOverlayColor = overlayColor,
                     customTextColor = finalTextColor,
                     overlayAlpha = overlayAlpha,
