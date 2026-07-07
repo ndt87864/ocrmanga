@@ -1,0 +1,75 @@
+package com.example.ocrmanga.data.database
+
+internal const val TAG = "DatabaseHelper"
+
+internal const val TABLE_ROOMS = DatabaseSchema.TABLE_ROOMS
+internal const val COLUMN_ROOM_ID = DatabaseSchema.COLUMN_ROOM_ID
+internal const val COLUMN_TITLE = DatabaseSchema.COLUMN_TITLE
+internal const val COLUMN_COVER_URI = DatabaseSchema.COLUMN_COVER_URI
+
+internal const val TABLE_IMAGES = DatabaseSchema.TABLE_IMAGES
+internal const val COLUMN_IMAGE_ID = DatabaseSchema.COLUMN_IMAGE_ID
+internal const val COLUMN_IMAGE_URI = DatabaseSchema.COLUMN_IMAGE_URI
+internal const val COLUMN_DISPLAY_ORDER = DatabaseSchema.COLUMN_DISPLAY_ORDER
+internal const val COLUMN_IS_TRANSLATED = DatabaseSchema.COLUMN_IS_TRANSLATED
+
+internal const val TABLE_TRANSLATIONS = DatabaseSchema.TABLE_TRANSLATIONS
+internal const val COLUMN_ORIGINAL_TEXT = DatabaseSchema.COLUMN_ORIGINAL_TEXT
+internal const val COLUMN_TRANSLATED_TEXT = DatabaseSchema.COLUMN_TRANSLATED_TEXT
+
+internal const val TABLE_API_KEYS = DatabaseSchema.TABLE_API_KEYS
+internal const val COLUMN_API_KEY_ID = DatabaseSchema.COLUMN_API_KEY_ID
+internal const val COLUMN_API_KEY_VALUE = DatabaseSchema.COLUMN_API_KEY_VALUE
+internal const val COLUMN_CREATED_DATE = DatabaseSchema.COLUMN_CREATED_DATE
+internal const val COLUMN_UPDATED_DATE = DatabaseSchema.COLUMN_UPDATED_DATE
+internal const val COLUMN_IS_ACTIVE = DatabaseSchema.COLUMN_IS_ACTIVE
+internal const val COLUMN_API_KEY_TYPE = DatabaseSchema.COLUMN_API_KEY_TYPE
+
+internal const val TABLE_ROOM_SETTINGS = DatabaseSchema.TABLE_ROOM_SETTINGS
+internal const val COLUMN_SETTING_ROOM_ID = DatabaseSchema.COLUMN_SETTING_ROOM_ID
+internal const val COLUMN_AUTO_TRANSLATE_NEW_IMAGES = DatabaseSchema.COLUMN_AUTO_TRANSLATE_NEW_IMAGES
+internal const val COLUMN_ANCIENT_TRANSLATION_ENABLED = DatabaseSchema.COLUMN_ANCIENT_TRANSLATION_ENABLED
+
+internal const val TABLE_IMAGE_BLOCKS = DatabaseSchema.TABLE_IMAGE_BLOCKS
+internal const val COLUMN_BLOCK_ID = DatabaseSchema.COLUMN_BLOCK_ID
+internal const val COLUMN_BLOCK_IMAGE_ID = DatabaseSchema.COLUMN_BLOCK_IMAGE_ID
+internal const val COLUMN_BLOCK_X = DatabaseSchema.COLUMN_BLOCK_X
+internal const val COLUMN_BLOCK_Y = DatabaseSchema.COLUMN_BLOCK_Y
+internal const val COLUMN_BLOCK_WIDTH = DatabaseSchema.COLUMN_BLOCK_WIDTH
+internal const val COLUMN_BLOCK_HEIGHT = DatabaseSchema.COLUMN_BLOCK_HEIGHT
+internal const val COLUMN_BLOCK_OVERLAY_TYPE = DatabaseSchema.COLUMN_BLOCK_OVERLAY_TYPE
+internal const val COLUMN_BLOCK_OVERLAY_COLOR = DatabaseSchema.COLUMN_BLOCK_OVERLAY_COLOR
+internal const val COLUMN_BLOCK_OVERLAY_BRIGHTNESS = DatabaseSchema.COLUMN_BLOCK_OVERLAY_BRIGHTNESS
+internal const val COLUMN_BLOCK_OVERLAY_ALPHA = DatabaseSchema.COLUMN_BLOCK_OVERLAY_ALPHA
+internal const val COLUMN_BLOCK_OVERLAY_SATURATION = DatabaseSchema.COLUMN_BLOCK_OVERLAY_SATURATION
+internal const val COLUMN_BLOCK_OVERLAY_INSET = DatabaseSchema.COLUMN_BLOCK_OVERLAY_INSET
+internal const val COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL = DatabaseSchema.COLUMN_BLOCK_OVERLAY_INSET_HORIZONTAL
+internal const val COLUMN_BLOCK_OVERLAY_INSET_VERTICAL = DatabaseSchema.COLUMN_BLOCK_OVERLAY_INSET_VERTICAL
+internal const val COLUMN_BLOCK_OVERLAY_ROTATION = DatabaseSchema.COLUMN_BLOCK_OVERLAY_ROTATION
+internal const val COLUMN_BLOCK_TEXT_COLOR = DatabaseSchema.COLUMN_BLOCK_TEXT_COLOR
+internal const val COLUMN_BLOCK_TEXT_BRIGHTNESS = DatabaseSchema.COLUMN_BLOCK_TEXT_BRIGHTNESS
+internal const val COLUMN_BLOCK_TEXT_BOLDNESS = DatabaseSchema.COLUMN_BLOCK_TEXT_BOLDNESS
+internal const val COLUMN_BLOCK_TEXT_SATURATION = DatabaseSchema.COLUMN_BLOCK_TEXT_SATURATION
+internal const val COLUMN_BLOCK_BORDER_COLOR = DatabaseSchema.COLUMN_BLOCK_BORDER_COLOR
+internal const val COLUMN_BLOCK_BORDER_BRIGHTNESS = DatabaseSchema.COLUMN_BLOCK_BORDER_BRIGHTNESS
+internal const val COLUMN_BLOCK_BORDER_BOLDNESS = DatabaseSchema.COLUMN_BLOCK_BORDER_BOLDNESS
+internal const val COLUMN_BLOCK_BORDER_THICKNESS = DatabaseSchema.COLUMN_BLOCK_BORDER_THICKNESS
+internal const val COLUMN_BLOCK_SHADOW_COLOR = DatabaseSchema.COLUMN_BLOCK_SHADOW_COLOR
+internal const val COLUMN_BLOCK_SHADOW_ALPHA = DatabaseSchema.COLUMN_BLOCK_SHADOW_ALPHA
+internal const val COLUMN_BLOCK_SHADOW_RADIUS = DatabaseSchema.COLUMN_BLOCK_SHADOW_RADIUS
+internal const val COLUMN_BLOCK_ROTATION = DatabaseSchema.COLUMN_BLOCK_ROTATION
+internal const val COLUMN_BLOCK_FONT_FAMILY = DatabaseSchema.COLUMN_BLOCK_FONT_FAMILY
+internal const val COLUMN_BLOCK_FONT_SIZE = DatabaseSchema.COLUMN_BLOCK_FONT_SIZE
+internal const val COLUMN_BLOCK_LINE_SPACING = DatabaseSchema.COLUMN_BLOCK_LINE_SPACING
+internal const val COLUMN_BLOCK_TEXT_ALIGN = DatabaseSchema.COLUMN_BLOCK_TEXT_ALIGN
+internal const val COLUMN_BLOCK_TEXT_GRADIENT_COLORS = DatabaseSchema.COLUMN_BLOCK_TEXT_GRADIENT_COLORS
+internal const val COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS = DatabaseSchema.COLUMN_BLOCK_TEXT_GRADIENT_OFFSETS
+internal const val COLUMN_BLOCK_TEXT_GRADIENT_TYPE = DatabaseSchema.COLUMN_BLOCK_TEXT_GRADIENT_TYPE
+internal const val COLUMN_BLOCK_ORIGINAL_WIDTH = DatabaseSchema.COLUMN_BLOCK_ORIGINAL_WIDTH
+internal const val COLUMN_BLOCK_ORIGINAL_HEIGHT = DatabaseSchema.COLUMN_BLOCK_ORIGINAL_HEIGHT
+
+internal const val TABLE_CHANGE_IMAGES = DatabaseSchema.TABLE_CHANGE_IMAGES
+internal const val COLUMN_CHANGE_IMAGE_ID = DatabaseSchema.COLUMN_CHANGE_IMAGE_ID
+internal const val COLUMN_CHANGE_IMAGE_IMAGE_ID = DatabaseSchema.COLUMN_CHANGE_IMAGE_IMAGE_ID
+internal const val COLUMN_CHANGE_IMAGE_ROOM_ID = DatabaseSchema.COLUMN_CHANGE_IMAGE_ROOM_ID
+internal const val COLUMN_CHANGE_IMAGE_FLAG = DatabaseSchema.COLUMN_CHANGE_IMAGE_FLAG
