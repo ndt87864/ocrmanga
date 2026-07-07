@@ -6,13 +6,13 @@ import com.example.ocrmanga.data.constant.AppConfig
 object AppLogger {
     fun d(tag: String, msg: String) {
         if (AppConfig.DEBUG_LOGGING) {
-            //Log.d(tag, msg)
+            Log.d(tag, msg)
         }
     }
 
     fun i(tag: String, msg: String) {
         if (AppConfig.DEBUG_LOGGING) {
-            //Log.i(tag, msg)
+            Log.i(tag, msg)
         }
     }
 
