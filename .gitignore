@@ -78,3 +78,4 @@ app/local.properties
 test_mistral.py
 app/src/main/res/drawable/bill.jpg
 app/debug/output-metadata.json
+/.codex
