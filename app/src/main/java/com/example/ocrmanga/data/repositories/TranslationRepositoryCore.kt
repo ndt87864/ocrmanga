@@ -93,6 +93,10 @@ open class TranslationRepositoryCore(protected val application: Application) {
         return poolManager.selectBestKey("ocrmanga") != null
     }
 
+    fun hasCerebrasApiKeys(): Boolean {
+        return poolManager.selectBestKey("cerebras") != null
+    }
+
     protected val latinRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     protected val chineseRecognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
     protected val japaneseRecognizer = TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
@@ -139,11 +143,13 @@ open class TranslationRepositoryCore(protected val application: Application) {
     protected val mistralRequester by lazy { com.example.ocrmanga.data.translation.MistralRequester(application, poolManager, httpClient) }
     protected val zaiRequester by lazy { com.example.ocrmanga.data.translation.ZAiRequester(application, poolManager, httpClient) }
     protected val ocrMangaRequester by lazy { com.example.ocrmanga.data.translation.OcrMangaRequester(application, poolManager, httpClient) }
+    protected val cerebrasRequester by lazy { com.example.ocrmanga.data.translation.CerebrasRequester(application, poolManager, httpClient) }
 
     protected var currentGeminiModelIndex = 0
     protected var currentMistralModelIndex = 0
     protected var currentZAiModelIndex = 0
     protected var currentOcrMangaModelIndex = 0
+    protected var currentCerebrasModelIndex = 0
 
     protected val modelPrefs by lazy { application.getSharedPreferences("api_key_prefs", android.content.Context.MODE_PRIVATE) }
 
@@ -164,6 +170,9 @@ open class TranslationRepositoryCore(protected val application: Application) {
 
     protected val ocrMangaModels: List<String>
         get() = getModelsFromPrefs("ocrmanga", listOf("kr/claude-sonnet-4.5", "kr/glm-5", "cc/claude-opus-4.7", "gh/claude-sonnet-4.6"))
+
+    protected val cerebrasModels: List<String>
+        get() = getModelsFromPrefs("cerebras", listOf("gpt-oss-120b", "gemma-4-31b", "zai-glm-4.7"))
 
     // Lưu session dịch gần nhất: Pair<Uri, Pair<text gốc, text dịch cuối>>
     val lastTranslationSession = mutableListOf<Pair<Uri, Pair<String, String>>>()

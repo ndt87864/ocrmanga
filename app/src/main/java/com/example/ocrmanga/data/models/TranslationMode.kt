@@ -8,6 +8,7 @@ enum class TranslationMode {
     MISTRAL,      // Dịch bằng Mistral API
     ZAI,          // Dịch bằng Z.AI API (GLM-4.7-flash)
     OCRMANGA,     // Dịch bằng OCRMANGA API (Vercel Custom Proxy)
+    CEREBRAS,     // Dịch bằng Cerebras AI API
     OCR,          // Chỉ thực hiện OCR, không dịch
     EXTERNAL;     // Sử dụng bản dịch ngoài (JSON)
 
@@ -19,6 +20,7 @@ enum class TranslationMode {
         MISTRAL -> "Mistral AI"
         ZAI -> "Z.AI (GLM-4)"
         OCRMANGA -> "OCR Manga"
+        CEREBRAS -> "Cerebras AI"
         OCR -> "Chỉ OCR"
         EXTERNAL -> "Bản dịch ngoài"
     }

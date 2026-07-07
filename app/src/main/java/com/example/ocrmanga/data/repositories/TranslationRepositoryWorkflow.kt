@@ -171,6 +171,17 @@ open class TranslationRepositoryWorkflow(application: Application) : Translation
             return@withContext Triple("", emptyList(), "zh")
         }
 
+        if (mode == TranslationMode.CEREBRAS && !hasCerebrasApiKeys()) {
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    application,
+                    "Không có API key Cerebras AI. Vui lòng thêm ít nhất một API key Cerebras AI trong cài đặt để dùng tính năng dịch Cerebras AI.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+            return@withContext Triple("", emptyList(), "zh")
+        }
+
         val cacheKey = "$imageUri-$mode"
         cache[cacheKey]?.let {
             lastTranslationSession.add(Pair(imageUri, Pair("(cache)", it.first)))

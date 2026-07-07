@@ -10,7 +10,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
-open class TranslationRepositoryAiFallback(application: Application) : TranslationRepositoryOcrManga(application) {
+open class TranslationRepositoryAiFallback(application: Application) : TranslationRepositoryCerebras(application) {
 
     suspend fun translateWithAiFallback(
         initialMode: TranslationMode,
@@ -22,11 +22,12 @@ open class TranslationRepositoryAiFallback(application: Application) : Translati
     ): Pair<TranslationMode, List<String>> {
         // Step 1: Xác định chuỗi ưu tiên các dịch vụ dịch AI hoạt động dựa trên lựa chọn ban đầu
         val modeSequence = when (initialMode) {
-            TranslationMode.GEMINI -> listOf(TranslationMode.GEMINI, TranslationMode.OCRMANGA, TranslationMode.MISTRAL, TranslationMode.ZAI)
-            TranslationMode.MISTRAL -> listOf(TranslationMode.MISTRAL, TranslationMode.OCRMANGA, TranslationMode.GEMINI, TranslationMode.ZAI)
-            TranslationMode.ZAI -> listOf(TranslationMode.ZAI, TranslationMode.OCRMANGA, TranslationMode.GEMINI, TranslationMode.MISTRAL)
-            TranslationMode.OCRMANGA -> listOf(TranslationMode.OCRMANGA, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI)
-            else -> listOf(TranslationMode.GEMINI, TranslationMode.OCRMANGA, TranslationMode.MISTRAL, TranslationMode.ZAI)
+            TranslationMode.GEMINI -> listOf(TranslationMode.GEMINI, TranslationMode.CEREBRAS, TranslationMode.OCRMANGA, TranslationMode.MISTRAL, TranslationMode.ZAI)
+            TranslationMode.MISTRAL -> listOf(TranslationMode.MISTRAL, TranslationMode.CEREBRAS, TranslationMode.OCRMANGA, TranslationMode.GEMINI, TranslationMode.ZAI)
+            TranslationMode.ZAI -> listOf(TranslationMode.ZAI, TranslationMode.CEREBRAS, TranslationMode.OCRMANGA, TranslationMode.GEMINI, TranslationMode.MISTRAL)
+            TranslationMode.OCRMANGA -> listOf(TranslationMode.OCRMANGA, TranslationMode.CEREBRAS, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI)
+            TranslationMode.CEREBRAS -> listOf(TranslationMode.CEREBRAS, TranslationMode.OCRMANGA, TranslationMode.GEMINI, TranslationMode.MISTRAL, TranslationMode.ZAI)
+            else -> listOf(TranslationMode.GEMINI, TranslationMode.CEREBRAS, TranslationMode.OCRMANGA, TranslationMode.MISTRAL, TranslationMode.ZAI)
         }
 
         // Lọc danh sách dịch vụ, chỉ giữ các dịch vụ thực sự có API Key cấu hình
@@ -36,6 +37,7 @@ open class TranslationRepositoryAiFallback(application: Application) : Translati
                 TranslationMode.MISTRAL -> hasMistralApiKeys()
                 TranslationMode.ZAI -> hasZAiApiKeys()
                 TranslationMode.OCRMANGA -> hasOcrMangaApiKeys()
+                TranslationMode.CEREBRAS -> hasCerebrasApiKeys()
                 else -> false
             }
         }
@@ -49,6 +51,7 @@ open class TranslationRepositoryAiFallback(application: Application) : Translati
                 TranslationMode.MISTRAL -> "Mistral"
                 TranslationMode.ZAI -> "Z.AI"
                 TranslationMode.OCRMANGA -> "OCR Manga"
+                TranslationMode.CEREBRAS -> "Cerebras AI"
                 else -> ""
             }
 
@@ -57,6 +60,7 @@ open class TranslationRepositoryAiFallback(application: Application) : Translati
                 TranslationMode.MISTRAL -> "mistral"
                 TranslationMode.ZAI -> "zai"
                 TranslationMode.OCRMANGA -> "ocrmanga"
+                TranslationMode.CEREBRAS -> "cerebras"
                 else -> ""
             }
 
@@ -82,6 +86,7 @@ open class TranslationRepositoryAiFallback(application: Application) : Translati
                     TranslationMode.MISTRAL -> mistralModels
                     TranslationMode.ZAI -> zAiModels
                     TranslationMode.OCRMANGA -> ocrMangaModels
+                    TranslationMode.CEREBRAS -> cerebrasModels
                     else -> emptyList()
                 }
 
@@ -128,6 +133,16 @@ open class TranslationRepositoryAiFallback(application: Application) : Translati
                                 apiKeyOverride = apiKeyVal
                             )
                             TranslationMode.OCRMANGA -> translateWithOcrMangaMultiScale(
+                                textBlocks = textBlocks,
+                                ocrResults = ocrResults,
+                                sourceLang = sourceLanguage,
+                                targetLang = "vi",
+                                previousTranslation = previousTranslation,
+                                isAncientMode = isAncientMode,
+                                modelOverride = model,
+                                apiKeyOverride = apiKeyVal
+                            )
+                            TranslationMode.CEREBRAS -> translateWithCerebrasMultiScale(
                                 textBlocks = textBlocks,
                                 ocrResults = ocrResults,
                                 sourceLang = sourceLanguage,
@@ -196,6 +211,7 @@ open class TranslationRepositoryAiFallback(application: Application) : Translati
                     TranslationMode.MISTRAL -> "Mistral"
                     TranslationMode.ZAI -> "Z.AI"
                     TranslationMode.OCRMANGA -> "OCR Manga"
+                    TranslationMode.CEREBRAS -> "Cerebras AI"
                     else -> "AI khác"
                 }
                 Log.w("TranslationRepository", "[AI-FALLBACK] Tất cả key/model của $providerName đều lỗi. Chuyển dịch vụ sang $nextProvider...")

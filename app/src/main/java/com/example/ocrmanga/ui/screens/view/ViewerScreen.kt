@@ -1111,20 +1111,22 @@ fun ViewerScreen(
                                 TranslationMode.OFFLINE to "Dịch ngoại tuyến",
                                 TranslationMode.ONLINE to "Dịch trực tuyến",
                                 TranslationMode.GEMINI to "Dịch với Gemini AI",
+                                TranslationMode.CEREBRAS to "Dịch với Cerebras AI",
                                 TranslationMode.OCRMANGA to "Dịch với OCR Manga",
                                 TranslationMode.MISTRAL to "Dịch với Mistral AI",
                                 TranslationMode.ZAI to "Dịch với Z.AI (GLM-4)",
                                 TranslationMode.EXTERNAL to "Bản dịch ngoài (JSON)"
                             ).forEach { (mode, label) ->
-                                val isNetworkRequired = mode == TranslationMode.ONLINE || mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.OCRMANGA
+                                val isNetworkRequired = mode == TranslationMode.ONLINE || mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.OCRMANGA || mode == TranslationMode.CEREBRAS
                                 val (hasKey, modelName) = when(mode) {
                                     TranslationMode.GEMINI -> viewModel.hasGeminiApiKeys() to "Gemini"
                                     TranslationMode.MISTRAL -> viewModel.hasMistralApiKeys() to "Mistral"
                                     TranslationMode.ZAI -> viewModel.hasZAiApiKeys() to "Z.AI"
                                     TranslationMode.OCRMANGA -> viewModel.hasOcrMangaApiKeys() to "OCR Manga"
+                                    TranslationMode.CEREBRAS -> viewModel.hasCerebrasApiKeys() to "Cerebras AI"
                                     else -> true to ""
                                 }
-                                val isApiKeyRequired = mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.OCRMANGA
+                                val isApiKeyRequired = mode == TranslationMode.GEMINI || mode == TranslationMode.MISTRAL || mode == TranslationMode.ZAI || mode == TranslationMode.OCRMANGA || mode == TranslationMode.CEREBRAS
                                 val isDimmed = (isNetworkRequired && !isNetworkAvailable) || (isApiKeyRequired && !hasKey)
     
                                 DropdownMenuItem(

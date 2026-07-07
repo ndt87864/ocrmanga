@@ -414,6 +414,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 TranslationMode.MISTRAL -> hasMistralApiKeys()
                 TranslationMode.ZAI -> hasZAiApiKeys()
                 TranslationMode.OCRMANGA -> hasOcrMangaApiKeys()
+                TranslationMode.CEREBRAS -> hasCerebrasApiKeys()
                 else -> true
             }
 
@@ -424,6 +425,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
                         TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
                         TranslationMode.OCRMANGA -> "Không có API key OCR Manga. Vui lòng thêm trong cài đặt."
+                        TranslationMode.CEREBRAS -> "Không có API key Cerebras AI. Vui lòng thêm trong cài đặt."
                         else -> "Không có API key. Vui lòng thêm trong cài đặt."
                     }
                     Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
@@ -1928,6 +1930,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             TranslationMode.MISTRAL -> hasMistralApiKeys()
             TranslationMode.ZAI -> hasZAiApiKeys()
             TranslationMode.OCRMANGA -> hasOcrMangaApiKeys()
+            TranslationMode.CEREBRAS -> hasCerebrasApiKeys()
             else -> true
         }
 
@@ -1938,6 +1941,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
                     TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
                     TranslationMode.OCRMANGA -> "Không có API key OCR Manga. Vui lòng thêm trong cài đặt."
+                    TranslationMode.CEREBRAS -> "Không có API key Cerebras AI. Vui lòng thêm trong cài đặt."
                     else -> "Không có API key. Vui lòng thêm trong cài đặt."
                 }
                 Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
@@ -3035,6 +3039,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         return translationRepository.hasOcrMangaApiKeys()
     }
 
+    fun hasCerebrasApiKeys(): Boolean {
+        return translationRepository.hasCerebrasApiKeys()
+    }
+
     fun isNetworkAvailable(): Boolean {
         val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = connectivityManager.activeNetwork ?: return false
@@ -3054,6 +3062,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 TranslationMode.MISTRAL -> hasMistralApiKeys()
                 TranslationMode.ZAI -> hasZAiApiKeys()
                 TranslationMode.OCRMANGA -> hasOcrMangaApiKeys()
+                TranslationMode.CEREBRAS -> hasCerebrasApiKeys()
                 else -> true
             }
 
@@ -3064,6 +3073,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                         TranslationMode.MISTRAL -> "Không có API key Mistral. Vui lòng thêm trong cài đặt."
                         TranslationMode.ZAI -> "Không có API key Z.AI. Vui lòng thêm trong cài đặt."
                         TranslationMode.OCRMANGA -> "Không có API key OCR Manga. Vui lòng thêm trong cài đặt."
+                        TranslationMode.CEREBRAS -> "Không có API key Cerebras AI. Vui lòng thêm trong cài đặt."
                         else -> "Không có API key. Vui lòng thêm trong cài đặt."
                     }
                     Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()

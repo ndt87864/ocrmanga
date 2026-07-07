@@ -65,6 +65,12 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
             prefs.edit().putString("zai_history_models", "glm-4.5,glm-4.7-flash,glm-4-plus").apply()
         }
 
+        val currentCerebras = prefs.getString("cerebras_available_models", null)
+        if (currentCerebras == null) {
+            prefs.edit().putString("cerebras_available_models", "gpt-oss-120b,gemma-4-31b,zai-glm-4.7").apply()
+            prefs.edit().putString("cerebras_history_models", "gpt-oss-120b,gemma-4-31b,zai-glm-4.7").apply()
+        }
+
         loadApiKeysFromDatabase()
     }
 
@@ -96,6 +102,7 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
             "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
             "zai" -> "glm-4.5,glm-4.7-flash,glm-4-plus"
             "ocrmanga" -> "kr/claude-sonnet-4.5,kr/glm-5,cc/claude-opus-4.7,gh/claude-sonnet-4.6"
+            "cerebras" -> "gpt-oss-120b,gemma-4-31b,zai-glm-4.7"
             else -> ""
         }
         val raw = prefs.getString("${type}_available_models", defaultModels) ?: defaultModels
@@ -109,6 +116,7 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
             "mistral" -> "mistral-large-latest,mistral-medium-2508,open-mixtral-8x22b,mistral-small-latest"
             "zai" -> "glm-4.5,glm-4.7-flash,glm-4-plus"
             "ocrmanga" -> "kr/claude-sonnet-4.5,kr/glm-5,cc/claude-opus-4.7,gh/claude-sonnet-4.6"
+            "cerebras" -> "gpt-oss-120b,gemma-4-31b,zai-glm-4.7"
             else -> ""
         }
         val raw = prefs.getString("${type}_history_models", defaultModels) ?: defaultModels
@@ -232,6 +240,7 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
                     "mistral" -> testMistralConnection(apiKey, model)
                     "zai" -> testZaiConnection(apiKey, model)
                     "ocrmanga" -> testOcrMangaConnection(apiKey, model)
+                    "cerebras" -> testCerebrasConnection(apiKey, model)
                     else -> Pair(false, "Loại API không hợp lệ")
                 }
                 withContext(Dispatchers.Main) {
@@ -388,6 +397,45 @@ class ApiKeyManagementViewModel(private val context: Context) : ViewModel() {
             }
         } catch (e: Exception) {
             Pair(false, e.message ?: "Lỗi kết nối OCR Manga")
+        }
+    }
+
+    private suspend fun testCerebrasConnection(apiKey: String, model: String): Pair<Boolean, String> {
+        return try {
+            val client = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+            val gson = com.google.gson.Gson()
+            val bodyMap = mapOf(
+                "model" to model,
+                "messages" to listOf(mapOf("role" to "user", "content" to "test")),
+                "max_tokens" to 5,
+                "reasoning_effort" to "medium"
+            )
+            val requestBody = gson.toJson(bodyMap).toRequestBody("application/json".toMediaTypeOrNull())
+            val request = Request.Builder()
+                .url("https://api.cerebras.ai/v1/chat/completions")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .post(requestBody)
+                .build()
+            
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string()
+                if (response.isSuccessful && bodyStr != null) {
+                    Pair(true, "Kết nối thành công!")
+                } else {
+                    val errorMsg = try {
+                        val errorJson = com.google.gson.JsonParser.parseString(bodyStr).asJsonObject
+                        errorJson.getAsJsonObject("error")?.get("message")?.asString ?: bodyStr
+                    } catch (ex: Exception) {
+                        bodyStr
+                    }
+                    Pair(false, "Lỗi (${response.code}): $errorMsg")
+                }
+            }
+        } catch (e: Exception) {
+            Pair(false, e.message ?: "Lỗi kết nối Cerebras AI")
         }
     }
 }
