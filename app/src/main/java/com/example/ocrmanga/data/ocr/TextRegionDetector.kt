@@ -2,7 +2,7 @@ package com.example.ocrmanga.data.ocr
 
 import android.graphics.Bitmap
 import android.graphics.Rect
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import com.example.ocrmanga.data.ocr.models.DetectionConfig
 import com.example.ocrmanga.data.ocr.models.RegionType
 import com.example.ocrmanga.data.ocr.models.TextRegion

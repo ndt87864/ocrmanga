@@ -3,7 +3,7 @@ package com.example.ocrmanga.data.translation
 import android.app.Application
 import com.example.ocrmanga.data.database.DatabaseHelper
 import com.example.ocrmanga.data.models.ApiKeyInfo
-import com.example.ocrmanga.utils.AppLogger as Log
+import com.example.ocrmanga.utils.AppLogger
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -43,7 +43,7 @@ class ApiKeyPoolManager(private val application: Application) {
             it.isActive && (model == null || it.isModelAllowed(model))
         } ?: return null
         if (keys.isEmpty()) {
-            Log.w(TAG, "Không có API key $type nào khả dụng cho mô hình ${model ?: "bất kỳ"}!")
+            AppLogger.w(TAG, "Không có API key $type nào khả dụng cho mô hình ${model ?: "bất kỳ"}!")
             return null
         }
 

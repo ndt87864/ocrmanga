@@ -2,7 +2,7 @@ package com.example.ocrmanga.viewmodels
 
 import android.app.Application
 import android.net.Uri
-import com.example.ocrmanga.utils.AppLogger as Log
+import com.example.ocrmanga.utils.AppLogger
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ocrmanga.data.database.DatabaseHelper
@@ -37,7 +37,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 val rooms = databaseHelper.getAllRooms()
                 _uiState.update { it.copy(savedRooms = rooms, isLoading = false) }
             } catch (e: Exception) {
-                Log.e("GalleryViewModel", "Error loading rooms", e)
+                AppLogger.e("GalleryViewModel", "Error loading rooms", e)
                 _uiState.update { it.copy(savedRooms = emptyList(), isLoading = false) }
             }
         }

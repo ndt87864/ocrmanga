@@ -1,7 +1,6 @@
 package com.example.ocrmanga.utils
 
 import android.content.Context
-import android.util.Log
 import android.content.ComponentCallbacks2
 import android.content.res.Configuration
 
@@ -15,18 +14,18 @@ object MemoryManager : ComponentCallbacks2 {
 
     fun init(context: Context) {
         context.registerComponentCallbacks(this)
-        Log.d(TAG, "MemoryManager initialized")
+        AppLogger.d(TAG, "MemoryManager initialized")
     }
 
     override fun onTrimMemory(level: Int) {
-        Log.d(TAG, "onTrimMemory called with level: $level")
+        AppLogger.d(TAG, "onTrimMemory called with level: $level")
         trimMemory(level)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {}
 
     override fun onLowMemory() {
-        Log.w(TAG, "onLowMemory called! Cleaning all caches.")
+        AppLogger.w(TAG, "onLowMemory called! Cleaning all caches.")
         BitmapPool.clearAll()
     }
 
@@ -36,7 +35,7 @@ object MemoryManager : ComponentCallbacks2 {
      */
     fun onAppBackgrounded() {
         isAppInBackground = true
-        Log.d(TAG, "App went to background")
+        AppLogger.d(TAG, "App went to background")
     }
 
     /**
@@ -44,7 +43,7 @@ object MemoryManager : ComponentCallbacks2 {
      */
     fun onAppForegrounded() {
         isAppInBackground = false
-        Log.d(TAG, "App came to foreground")
+        AppLogger.d(TAG, "App came to foreground")
     }
 
     /**
@@ -56,14 +55,14 @@ object MemoryManager : ComponentCallbacks2 {
             ComponentCallbacks2.TRIM_MEMORY_COMPLETE,
             ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
                 // Process đang chạy nhưng memory rất thấp hoặc sắp bị kill - Clean tất cả
-                Log.w(TAG, "Critical memory pressure (level $level). Cleaning all caches.")
+                AppLogger.w(TAG, "Critical memory pressure (level $level). Cleaning all caches.")
                 BitmapPool.clearAll()
             }
             ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN,
             ComponentCallbacks2.TRIM_MEMORY_BACKGROUND,
             ComponentCallbacks2.TRIM_MEMORY_MODERATE -> {
                 // App ở background hoặc UI ẩn - Clean bitmap pool để giải phóng memory
-                Log.d(TAG, "Moderate memory pressure (level $level). Cleaning bitmap pool.")
+                AppLogger.d(TAG, "Moderate memory pressure (level $level). Cleaning bitmap pool.")
                 BitmapPool.clearAll()
             }
         }

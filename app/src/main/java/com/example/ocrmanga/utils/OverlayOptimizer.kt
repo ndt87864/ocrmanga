@@ -3,7 +3,6 @@ package com.example.ocrmanga.utils
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
-import android.util.Log
 import com.example.ocrmanga.data.models.BackgroundType
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.data.ocr.BubbleDetector
@@ -243,7 +242,7 @@ object OverlayOptimizer {
             return isSolidWhite || isSolidBlack
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error in isSolidColorBubble", e)
+            AppLogger.e(TAG, "Error in isSolidColorBubble", e)
             return isSolidBackground(block)
         }
     }

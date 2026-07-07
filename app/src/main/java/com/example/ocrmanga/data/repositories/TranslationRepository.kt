@@ -56,7 +56,7 @@ import com.example.ocrmanga.data.ocr.BubbleDetector
 import com.example.ocrmanga.data.ocr.models.TextContainerInfo
 import kotlin.math.max
 
-    class TranslationRepository(private val application: Application) {
+class TranslationRepository(private val application: Application) {
 
         init {
             TranslationPrompts.initialize(application)
@@ -1662,17 +1662,21 @@ import kotlin.math.max
                         val wordCounts = block.wordCountsPerLine
                         val reformattedLines = mutableListOf<String>()
                         var wordIndex = 0
-                        for (wordCount in wordCounts ?: emptyList()) {
+                        val safeWordCounts = wordCounts ?: emptyList<Int>()
+                        for (i in 0 until safeWordCounts.size) {
+                            val wordCount = safeWordCounts[i]
                             if (wordIndex >= words.size) break
-                            val lineWords = words.subList(wordIndex, minOf(wordIndex + wordCount, words.size))
+                            val nextIdx = minOf(wordIndex + wordCount, words.size)
+                            val lineWords = words.subList(wordIndex, nextIdx)
                             reformattedLines.add(lineWords.joinToString(" "))
-                            wordIndex += wordCount
+                            wordIndex = nextIdx
                         }
-                        val maxWordsPerLine = wordCounts.lastOrNull() ?: 5
+                        val maxWordsPerLine = safeWordCounts.lastOrNull() ?: 5
                         while (wordIndex < words.size) {
-                            val remainingWords = words.subList(wordIndex, minOf(wordIndex + maxWordsPerLine, words.size))
+                            val nextIdx = minOf(wordIndex + maxWordsPerLine, words.size)
+                            val remainingWords = words.subList(wordIndex, nextIdx)
                             reformattedLines.add(remainingWords.joinToString(" "))
-                            wordIndex += maxWordsPerLine
+                            wordIndex = nextIdx
                         }
                         reformattedLines.joinToString("\n")
                     } else {
@@ -3496,150 +3500,18 @@ import kotlin.math.max
 
     private fun postProcessOCRText(text: String, detectedScript: String?): String {
         if (text.isBlank()) return text
+        return cleanText(text, detectedScript ?: "unknown")
+    }
 
-        var result = text
-
-        // Loại bỏ các ký tự nhiễu phổ biến trong OCR manga
-        // Các ký tự này thường bị nhận nhầm từ nét vẽ, mồ hôi, nếp gấp
-        val noisePatterns = listOf(
-            Regex("^[\\s\\-_\\.\\,\\:\\;\\!\\?]+$"),  // Chỉ chứa dấu câu
-            Regex("^[\\d]+$"),  // Chỉ chứa số đơn lẻ
-            Regex("^[|lIi1]+$"),  // Chỉ chứa các ký tự giống đường thẳng
-            Regex("^[\\-]+$"),  // Chỉ chứa gạch ngang
-            Regex("^[\\'\\.\\`]+$"),  // Chỉ chứa dấu chấm/nháy
-            Regex("^[oO0○◯]+$"),  // Chỉ chứa hình tròn (thường là mồ hôi)
-        )
-
-        if (noisePatterns.any { it.matches(result.trim()) }) {
-            return ""
-        }
-
-        // Loại bỏ các ký tự lẻ thường là nhiễu
-        val singleNoiseChars = setOf('|', '/', '\\', '-', '_', '.', ',', '\'', '`', '"', '○', '◯', '・')
-        if (result.length == 1 && result[0] in singleNoiseChars) {
-            return ""
-        }
-
-        // Count Latin characters
-        val latinCount = result.count { it in 'A'..'Z' || it in 'a'..'z' }
-        val totalChars = result.filter { !it.isWhitespace() }.length
-
-        // Nếu script được phát hiện là Latin (en, es) hoặc chứa nhiều chữ Latin
-        val isLatinScript = detectedScript == "en" || detectedScript == "es" ||
-            (latinCount > totalChars * 0.5)
-
-        // FIX COMMON OCR ERRORS: Luôn fix khi có Latin characters (>30%)
-        // Ngay cả khi script detection sai, vẫn fix common errors
-        if (latinCount > totalChars * 0.3) {
-            // Chuyển し (U+3057 - Hiragana Shi) và シ (U+30B7 - Katakana Shi) thành L
-            result = result.replace('し', 'L').replace('シ', 'L')
-
-            // Fix other common OCR errors for Latin text
-            result = result.replace('ｌ', 'l')  // Fullwidth l → normal l
-            result = result.replace('Ｌ', 'L')  // Fullwidth L → normal L
-            result = result.replace('０', '0')  // Fullwidth 0 → normal 0
-            result = result.replace('Ｏ', 'O')  // Fullwidth O → normal O
-        }
-
-        if (isLatinScript) {
-            // Loại bỏ TẤT CẢ ký tự tượng hình (CJK) khỏi kết quả Latin
-            // Bao gồm: CJK Unified Ideographs, CJK Extension A/B, Hiragana, Katakana, Hangul,
-            // CJK Compatibility Ideographs, CJK Symbols, Enclosed CJK, Fullwidth forms
-            result = result.replace(Regex("[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF" +
-                "\u3040-\u309F\u30A0-\u30FF" + // Hiragana, Katakana (trừ đã convert ở trên)
-                "\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F" + // Korean
-                "\u3000-\u303F" + // CJK Symbols and Punctuation
-                "\u31F0-\u31FF" + // Katakana Phonetic Extensions
-                "\uFF65-\uFF9F" + // Halfwidth Katakana
-                "\u2E80-\u2EFF" + // CJK Radicals Supplement
-                "\u3200-\u32FF" + // Enclosed CJK Letters
-                "\u3300-\u33FF" + // CJK Compatibility
-                "\uFE30-\uFE4F" + // CJK Compatibility Forms
-                "\uFF00-\uFF60" + // Fullwidth Latin -> giữ lại, chỉ bỏ CJK fullwidth
-                "]"), "")
-
-            // Nếu sau khi lọc CJK, text trống hoặc chỉ còn khoảng trắng/dấu câu -> trả về rỗng
-            if (result.trim().isEmpty() || Regex("^[\\s\\-_\\.\\,\\:\\;\\!\\?]+$").matches(result.trim())) {
-                return ""
-            }
-        }
-
-        // Loại bỏ khoảng trắng thừa
-        result = result.trim().replace(Regex("\\s+"), " ")
-
-        return result
+    private fun cleanText(text: String, detectedScript: String): String {
+        return OcrNoiseLanguageHelper.cleanText(text, detectedScript)
     }
     
     private fun isNoiseBlock(text: String, bounds: Rect, confidence: Float): Boolean {
-        val cleanText = text.trim()
-        val area = bounds.width() * bounds.height()
-        val aspectRatio = bounds.height().toFloat() / bounds.width().coerceAtLeast(1)
-        
-        // Kiểm tra có chứa ký tự CJK không (bonus cho manga text)
-        val hasCJK = Regex("[\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]").containsMatchIn(cleanText)
-        
-        // CJK text trong manga hầu như luôn hợp lệ (nằm trong bong bóng thoại)
-        // Chỉ lọc CJK nếu là ký tự noise đã biết VÀ kích thước rất nhỏ
-        if (hasCJK) {
-            val cjkNoiseOnly = setOf("ー", "丨", "丶")
-            // Giữ tất cả CJK text trừ khi là single noise char với area cực nhỏ
-            if (cleanText in cjkNoiseOnly && area < MIN_BLOCK_AREA / 2 && bounds.width() < 15 && bounds.height() < 15) {
-                //Log.d("TranslationRepository", "[NOISE-FILTER] CJK noise '$text' rejected: area=$area")
-                return true
-            }
-            // Tất cả CJK text khác: luôn giữ
-            return false
-        }
-        
-        // ---- Phần dưới chỉ áp dụng cho non-CJK text ----
-        
-        // Count noise indicators (cần nhiều dấu hiệu cùng lúc mới reject)
-        var noiseScore = 0
-        
-        // 1. Block quá nhỏ về diện tích
-        if (area < MIN_BLOCK_AREA / 2) {
-            noiseScore += 2
-        } else if (area < MIN_BLOCK_AREA) {
-            noiseScore += 1
-        }
-        
-        // 2. Block ngắn với aspect ratio kỳ lạ (nét vẽ mồ hôi, viền)
-        if (cleanText.length <= 2) {
-            if (aspectRatio > MAX_SINGLE_CHAR_ASPECT_RATIO || aspectRatio < 1.0f / MAX_SINGLE_CHAR_ASPECT_RATIO) {
-                noiseScore += 2
-            }
-        }
-        
-        // 3. Confidence thấp
-        if (confidence < 0.25f) {
-            noiseScore += 3
-        } else if (confidence < MIN_OCR_CONFIDENCE) {
-            noiseScore += 1
-        }
-        
-        // 4. Text chỉ chứa các ký tự nhiễu
-        val noiseOnlyPattern = Regex("^[\\s\\-_\\.\\,\\|/\\\\\\'\"`○◯・]+$")
-        if (noiseOnlyPattern.matches(cleanText)) {
-            noiseScore += 2
-        }
-        
-        // 5. Block chỉ có 1 ký tự phổ biến bị nhận nhầm + size nhỏ
-        val commonFalsePositives = setOf(
-            "I", "l", "|", "1", "-", "_", ".", ",", "'", "`",
-            "○", "◯", "O", "o", "0"
+        return OcrNoiseLanguageHelper.isNoiseBlock(
+            text, bounds, confidence,
+            MIN_BLOCK_AREA, MAX_SINGLE_CHAR_ASPECT_RATIO, MIN_OCR_CONFIDENCE
         )
-        if (cleanText in commonFalsePositives && (bounds.width() < 20 || bounds.height() < 20)) {
-            noiseScore += 2
-        }
-        
-        // Ngưỡng reject: cần noiseScore >= 4
-        val isNoise = noiseScore >= 4
-        
-        if (isNoise) {
-            //Log.d("TranslationRepository", "[NOISE-FILTER] Block '$text' rejected: noiseScore=$noiseScore (area=$area, confidence=$confidence, aspectRatio=$aspectRatio)")
-        }
-        
-        return isNoise
     }
 
     private fun postProcessTranslation(translatedText: String): String {
@@ -3658,39 +3530,11 @@ import kotlin.math.max
     }
 
     private fun mapLanguageToMLKit(language: String): String {
-        return when (language) {
-            "zh" -> TranslateLanguage.CHINESE
-            "ja" -> TranslateLanguage.JAPANESE
-            "ko" -> TranslateLanguage.KOREAN
-            "es" -> TranslateLanguage.SPANISH
-            "en" -> TranslateLanguage.ENGLISH
-            "vi" -> TranslateLanguage.VIETNAMESE
-            else -> TranslateLanguage.ENGLISH
-        }
+        return OcrNoiseLanguageHelper.mapLanguageToMLKit(language)
     }
 
     private fun detectLanguage(text: String): String? {
-        val sampleText = text.take(100)
-        val chinesePattern = Regex("[\\u4E00-\\u9FFF\\u3400-\\u4DBF\\uF900-\\uFAFF]")
-        val japanesePattern = Regex("[\\u3040-\\u309F\\u30A0-\\u30FF]")
-        val koreanPattern = Regex("[\\uAC00-\\uD7AF\\u1100-\\u11FF\\u3130-\\u318F]")
-        val vietnamesePattern = Regex("[àáảãạăắằẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]")
-        val latinPattern = Regex("[A-Za-z]")
-        // Spanish-specific characters and common words
-        val spanishAccentPattern = Regex("[ñÑáÁéÉíÍóÓúÚüÜ]")
-        val spanishWordPattern = Regex("\\b(que|de|la|el|y|en|no|si|por|para|con|una|un|los|las|se|del|al)\\b", RegexOption.IGNORE_CASE)
-
-        return when {
-            vietnamesePattern.containsMatchIn(sampleText) -> "vi"
-            koreanPattern.containsMatchIn(sampleText) -> "ko"
-            japanesePattern.containsMatchIn(sampleText) -> "ja"
-            chinesePattern.containsMatchIn(sampleText) -> "zh"
-            spanishAccentPattern.containsMatchIn(sampleText) -> "es"
-            // If common Spanish words appear enough, assume Spanish
-            spanishWordPattern.findAll(sampleText).count() >= 2 -> "es"
-            latinPattern.containsMatchIn(sampleText) && sampleText.count { it in 'A'..'z' } > sampleText.length * 0.5 -> "en"
-            else -> null
-        }
+        return OcrNoiseLanguageHelper.detectLanguage(text)
     }
 
     private fun getRotationDegrees(imageUri: Uri): Int {
@@ -4055,9 +3899,8 @@ import kotlin.math.max
         val content = response?.content ?: return null
         return parseMultiBlockResponse(content, textBlocks)
     }
-}
 
-private fun isTextColorDifferent(color1: Int?, color2: Int?): Boolean {
+    private fun isTextColorDifferent(color1: Int?, color2: Int?): Boolean {
     if (color1 == color2) return false
     if (color1 == null || color2 == null) return false
     
@@ -4074,20 +3917,17 @@ private fun isTextColorDifferent(color1: Int?, color2: Int?): Boolean {
     val isChrom1 = (max1 - min1) > 35
     val isChrom2 = (max2 - min2) > 35
     
-    if (isChrom1 != isChrom2) {
-        val dist = kotlin.math.sqrt(
-            ((r1 - r2) * (r1 - r2) + 
-             (g1 - g2) * (g1 - g2) + 
-             (b1 - b2) * (b1 - b2)).toDouble()
-        )
-        return dist > 60.0
-    }
-    
     val dist = kotlin.math.sqrt(
         ((r1 - r2) * (r1 - r2) + 
          (g1 - g2) * (g1 - g2) + 
          (b1 - b2) * (b1 - b2)).toDouble()
     )
+    
+    if (isChrom1 != isChrom2) {
+        return dist > 60.0
+    }
     return dist > 75.0
 }
+}
+
 

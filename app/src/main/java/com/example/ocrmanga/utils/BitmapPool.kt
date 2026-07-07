@@ -1,7 +1,6 @@
 package com.example.ocrmanga.utils
 
 import android.graphics.Bitmap
-import android.util.Log
 import java.util.LinkedHashMap
 
 /**
@@ -70,7 +69,7 @@ class BitmapPool(
 
         // Skip nếu bitmap quá lớn
         if (bitmap.byteCount > maxBitmapSize) {
-            Log.w(TAG, "Bitmap too large to cache: ${bitmap.width}x${bitmap.height} (${bitmap.byteCount} bytes)")
+            AppLogger.w(TAG, "Bitmap too large to cache: ${bitmap.width}x${bitmap.height} (${bitmap.byteCount} bytes)")
             return false
         }
 
@@ -88,10 +87,10 @@ class BitmapPool(
 
                 // Add mới
                 cache[uri] = bitmap
-                // Log.d(TAG, "BitmapPool put: $uri (${bitmap.width}x${bitmap.height}) - ${cache.size} bitmaps")
+                // AppLogger.d(TAG, "BitmapPool put: $uri (${bitmap.width}x${bitmap.height}) - ${cache.size} bitmaps")
                 true
             } catch (e: Exception) {
-                Log.e(TAG, "Error putting bitmap to pool: $uri", e)
+                AppLogger.e(TAG, "Error putting bitmap to pool: $uri", e)
                 false
             }
         }
@@ -114,7 +113,7 @@ class BitmapPool(
         synchronized(lock) {
             cache.values.forEach { it.recycle() }
             cache.clear()
-            Log.d(TAG, "BitmapPool cleared")
+            AppLogger.d(TAG, "BitmapPool cleared")
         }
     }
 

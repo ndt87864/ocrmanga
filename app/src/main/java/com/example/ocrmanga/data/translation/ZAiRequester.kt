@@ -1,7 +1,7 @@
 package com.example.ocrmanga.data.translation
 
 import android.app.Application
-import com.example.ocrmanga.utils.AppLogger as Log
+import com.example.ocrmanga.utils.AppLogger
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +59,7 @@ class ZAiRequester(
                 return response
             } catch (e: Exception) {
                 val elapsed = (System.nanoTime() - startTime) / 1e6
-                Log.e("ZAiNetwork", "XXX Lỗi sau ${elapsed}ms: ${e.message}")
+                AppLogger.e("ZAiNetwork", "XXX Lỗi sau ${elapsed}ms: ${e.message}")
                 throw e
             }
         }
@@ -78,7 +78,7 @@ class ZAiRequester(
         apiKeyOverride: String? = null
     ): ZAiResponse? = withContext(Dispatchers.IO) {
         val rawKey = apiKeyOverride ?: poolManager.selectBestKey("zai", model)?.value ?: run {
-            Log.w(TAG, "Không tìm thấy API key Z.AI khả dụng cho model $model")
+            AppLogger.w(TAG, "Không tìm thấy API key Z.AI khả dụng cho model $model")
             return@withContext null
         }
         val apiKey = rawKey.trim()
@@ -103,16 +103,16 @@ class ZAiRequester(
             .build()
 
         try {
-            //Log.i(TAG, "[Z.AI-REQUEST] Bắt đầu gọi API...")
+            //AppLogger.i(TAG, "[Z.AI-REQUEST] Bắt đầu gọi API...")
 
             robustClient.newCall(request).execute().use { response ->
                 val responseCode = response.code
-                //Log.i(TAG, "[Z.AI-RESPONSE] Code: $responseCode")
+                //AppLogger.i(TAG, "[Z.AI-RESPONSE] Code: $responseCode")
 
                 val responseBody = response.body?.string()
 
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "Lỗi API Z.AI ($responseCode): $responseBody")
+                    AppLogger.e(TAG, "Lỗi API Z.AI ($responseCode): $responseBody")
                     return@withContext null
                 }
 
@@ -122,12 +122,12 @@ class ZAiRequester(
                     ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(text)?.value
                     ?: "Không tìm thấy [ANALYSIS]"
                 val translationResult = text.replace(analysisText, "").trim()
-                //Log.d(TAG, "[DEBUG-RESULT] $analysisText")
-                //Log.d(TAG, "KẾT QUẢ DỊCH:\n$translationResult")
+                //AppLogger.d(TAG, "[DEBUG-RESULT] $analysisText")
+                //AppLogger.d(TAG, "KẾT QUẢ DỊCH:\n$translationResult")
                 return@withContext result
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi kết nối Z.AI: ${e.message}", e)
+            AppLogger.e(TAG, "Lỗi kết nối Z.AI: ${e.message}", e)
             return@withContext null
         }
     }
@@ -145,14 +145,14 @@ class ZAiRequester(
 
             val reasoning = message["reasoning_content"]?.asString
             if (!reasoning.isNullOrEmpty()) {
-                //Log.i(TAG, "[Z.AI-REASONING] Model đã suy luận: ${reasoning.take(100)}...")
+                //AppLogger.i(TAG, "[Z.AI-REASONING] Model đã suy luận: ${reasoning.take(100)}...")
             }
 
             val finishReason = choice["finish_reason"]?.asString ?: "unknown"
 
             ZAiResponse(content, finishReason)
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi parse response Z.AI", e)
+            AppLogger.e(TAG, "Lỗi parse response Z.AI", e)
             null
         }
     }

@@ -1,7 +1,7 @@
 package com.example.ocrmanga.data.translation
 
 import android.app.Application
-import com.example.ocrmanga.utils.AppLogger as Log
+import com.example.ocrmanga.utils.AppLogger
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +61,7 @@ class MistralRequester(
         apiKeyOverride: String? = null
     ): MistralResponse? {
         val apiKey = apiKeyOverride ?: poolManager.selectBestKey("mistral", model)?.value ?: run {
-            Log.w(TAG, "Không tìm thấy API key Mistral khả dụng cho model $model")
+            AppLogger.w(TAG, "Không tìm thấy API key Mistral khả dụng cho model $model")
             return null
         }
 
@@ -100,9 +100,9 @@ class MistralRequester(
             val responseBody = response.body?.string()
 
             if (!response.isSuccessful) {
-                Log.e(TAG, "Lỗi API Mistral (${response.code}): $responseBody")
+                AppLogger.e(TAG, "Lỗi API Mistral (${response.code}): $responseBody")
                 if (response.code == 429 && currentModel != FALLBACK_MODEL) {
-                    Log.w(TAG, "Key ${apiKey.take(10)}... bị 429 với model '$currentModel'. Retry ngay với $FALLBACK_MODEL")
+                    AppLogger.w(TAG, "Key ${apiKey.take(10)}... bị 429 với model '$currentModel'. Retry ngay với $FALLBACK_MODEL")
                     keyToModelMap[apiKey] = FALLBACK_MODEL
 
                     // Đóng response cũ trước khi retry
@@ -119,11 +119,11 @@ class MistralRequester(
                     val retryBody = retryResponse.body?.string()
 
                     if (retryResponse.isSuccessful) {
-                        Log.i(TAG, "Retry với $FALLBACK_MODEL thành công trên key ${apiKey.take(10)}...")
+                        AppLogger.i(TAG, "Retry với $FALLBACK_MODEL thành công trên key ${apiKey.take(10)}...")
                         val result = parseSuccessfulResponse(retryBody)
                         return result
                     } else {
-                        Log.e(TAG, "Retry với $FALLBACK_MODEL cũng thất bại (${retryResponse.code}): $retryBody")
+                        AppLogger.e(TAG, "Retry với $FALLBACK_MODEL cũng thất bại (${retryResponse.code}): $retryBody")
                         return null
                     }
                 }
@@ -136,11 +136,11 @@ class MistralRequester(
                 ?: Regex("\\[ANALYSIS\\][\\s\\S]*?(?=\\n\\s*(?:\\*\\*)?Block #1)").find(text)?.value
                 ?: "Không tìm thấy [ANALYSIS]"
             val translationResult = text.replace(analysisText, "").trim()
-            //Log.d(TAG, "[DEBUG-RESULT] $analysisText")
-            //Log.d(TAG, "KẾT QUẢ DỊCH:\n$translationResult")
+            //AppLogger.d(TAG, "[DEBUG-RESULT] $analysisText")
+            //AppLogger.d(TAG, "KẾT QUẢ DỊCH:\n$translationResult")
             return result
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi kết nối đến Mistral API", e)
+            AppLogger.e(TAG, "Lỗi kết nối đến Mistral API", e)
             return null
         }
     }

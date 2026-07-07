@@ -2,7 +2,7 @@ package com.example.ocrmanga.data.ocr
 
 import android.graphics.Bitmap
 import android.graphics.Rect
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger as Log
 import com.example.ocrmanga.data.ocr.models.TextContainerInfo
 import com.example.ocrmanga.data.ocr.models.TextContainerType
 import org.opencv.android.Utils
@@ -207,7 +207,7 @@ class BubbleDetector {
             // Check color variance in the ring between text bounds and contour bounds.
             // High variance = complex artwork/texture, not a real bubble.
             if (isArtworkRegion(crop, bubbleCvRect, textInCrop)) {
-                //Log.d(TAG, "Rejected contour: high color variance (artwork region, not a real bubble)")
+                //AppLogger.d(TAG, "Rejected contour: high color variance (artwork region, not a real bubble)")
                 crop.recycle()
                 gray.release()
                 bestContour.release()

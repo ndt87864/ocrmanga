@@ -1,7 +1,7 @@
 package com.example.ocrmanga.data.ocr
 
 import android.graphics.Rect
-import android.util.Log
+import com.example.ocrmanga.utils.AppLogger
 import com.example.ocrmanga.data.ocr.models.*
 import com.google.mlkit.vision.text.Text
 import kotlin.math.abs

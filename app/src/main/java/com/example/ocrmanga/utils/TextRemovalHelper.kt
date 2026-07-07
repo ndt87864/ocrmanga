@@ -11,7 +11,7 @@ import android.graphics.RectF
 import android.net.Uri
 import com.example.ocrmanga.data.models.TextBlockInfo
 import com.example.ocrmanga.ml.LamaInpainter
-import com.example.ocrmanga.utils.AppLogger as Log
+import com.example.ocrmanga.utils.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -55,7 +55,7 @@ object TextRemovalHelper {
             onProgress?.invoke("Tải ảnh gốc...")
             val bitmap = decodeBitmapFromUri(context, imageUri)
             if (bitmap == null) {
-                Log.e(TAG, "Cannot decode bitmap from Uri: $imageUri")
+                AppLogger.e(TAG, "Cannot decode bitmap from Uri: $imageUri")
                 return@withContext null
             }
 
@@ -71,7 +71,7 @@ object TextRemovalHelper {
             bitmap.recycle()
 
             if (resultBitmap == null) {
-                Log.e(TAG, "Inpainting returned null")
+                AppLogger.e(TAG, "Inpainting returned null")
                 return@withContext null
             }
 
@@ -84,7 +84,7 @@ object TextRemovalHelper {
 
             return@withContext Uri.fromFile(outputFile)
         } catch (e: Exception) {
-            Log.e(TAG, "Error removing text from image", e)
+            AppLogger.e(TAG, "Error removing text from image", e)
             return@withContext null
         }
     }
@@ -111,7 +111,7 @@ object TextRemovalHelper {
             onProgress?.invoke("Tải ảnh gốc...")
             val bitmap = decodeBitmapFromUri(context, imageUri)
             if (bitmap == null) {
-                Log.e(TAG, "Cannot decode bitmap from Uri: $imageUri")
+                AppLogger.e(TAG, "Cannot decode bitmap from Uri: $imageUri")
                 return@withContext null
             }
 
@@ -120,7 +120,7 @@ object TextRemovalHelper {
             bitmap.recycle()
 
             if (resultBitmap == null) {
-                Log.e(TAG, "Mask inpainting returned null")
+                AppLogger.e(TAG, "Mask inpainting returned null")
                 return@withContext null
             }
 
@@ -133,7 +133,7 @@ object TextRemovalHelper {
 
             return@withContext Uri.fromFile(outputFile)
         } catch (e: Exception) {
-            Log.e(TAG, "Error removing text with mask", e)
+            AppLogger.e(TAG, "Error removing text with mask", e)
             return@withContext null
         }
     }
@@ -151,7 +151,7 @@ object TextRemovalHelper {
                 BitmapFactory.decodeStream(stream, null, options)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error decoding bitmap from Uri", e)
+            AppLogger.e(TAG, "Error decoding bitmap from Uri", e)
             null
         }
     }
@@ -174,7 +174,7 @@ object TextRemovalHelper {
         try {
             val bitmap = decodeBitmapFromUri(context, imageUri)
             if (bitmap == null) {
-                Log.e(TAG, "Cannot decode bitmap for preview: $imageUri")
+                AppLogger.e(TAG, "Cannot decode bitmap for preview: $imageUri")
                 return@withContext null
             }
 
@@ -224,10 +224,10 @@ object TextRemovalHelper {
                 }
             }
 
-            //Log.d(TAG, "Mask preview created: ${blocks.size} regions highlighted")
+            //AppLogger.d(TAG, "Mask preview created: ${blocks.size} regions highlighted")
             return@withContext preview
         } catch (e: Exception) {
-            Log.e(TAG, "Error creating mask preview", e)
+            AppLogger.e(TAG, "Error creating mask preview", e)
             return@withContext null
         }
     }
